@@ -1,0 +1,73 @@
+<svg width="100%" viewBox="0 0 680 400" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>The context window explained with xiaohei</title>
+<desc>A small black creature holds up a window frame over a long scroll of writing. Only the part of the scroll inside the frame is crisp and visible; everything outside is faded, and older bits scroll off the edge.</desc>
+<rect x="8" y="8" width="664" height="384" rx="8" fill="#ffffff" stroke="#e6e3dc" stroke-width="1"/>
+
+<g fill="none" stroke="#c9c6c0" stroke-width="5" stroke-linecap="round">
+<line x1="92" y1="174" x2="592" y2="174" stroke-dasharray="36 11 22 11 30 11 17 11 40 11 24 11 33 11 19 11 28 11"/>
+<line x1="92" y1="199" x2="592" y2="199" stroke-dasharray="24 11 38 11 18 11 30 11 26 11 34 11 20 11 36 11 22 11"/>
+<line x1="92" y1="224" x2="592" y2="224" stroke-dasharray="32 11 20 11 40 11 16 11 28 11 24 11 34 11 18 11 30 11"/>
+<line x1="92" y1="249" x2="560" y2="249" stroke-dasharray="20 11 34 11 26 11 38 11 18 11 30 11 22 11 28 11"/>
+</g>
+
+<g fill="none" stroke="#1f1d1a" stroke-width="2.4" stroke-linecap="round">
+<path d="M92 150 C 70 150 62 168 62 188 C 62 208 74 222 90 224"/>
+<path d="M70 165 C 60 168 58 182 62 196"/>
+<path d="M592 150 C 614 150 622 168 622 188 C 622 208 610 222 594 224"/>
+<path d="M614 165 C 624 168 626 182 622 196"/>
+</g>
+
+<clipPath id="win"><rect x="266" y="156" width="156" height="110"/></clipPath>
+<g clip-path="url(#win)" fill="none" stroke="#1f1d1a" stroke-width="5" stroke-linecap="round">
+<line x1="92" y1="174" x2="592" y2="174" stroke-dasharray="36 11 22 11 30 11 17 11 40 11 24 11 33 11 19 11 28 11"/>
+<line x1="92" y1="199" x2="592" y2="199" stroke-dasharray="24 11 38 11 18 11 30 11 26 11 34 11 20 11 36 11 22 11"/>
+<line x1="92" y1="224" x2="592" y2="224" stroke-dasharray="32 11 20 11 40 11 16 11 28 11 24 11 34 11 18 11 30 11"/>
+<line x1="92" y1="249" x2="560" y2="249" stroke-dasharray="20 11 34 11 26 11 38 11 18 11 30 11 22 11 28 11"/>
+</g>
+
+<g fill="none" stroke="#1f1d1a" stroke-linecap="round" stroke-linejoin="round">
+<path d="M260 150 L424 152 L422 268 L258 266 Z" stroke-width="3.4"/>
+<path d="M268 158 L416 159 L415 260 L266 259 Z" stroke-width="1.4"/>
+</g>
+
+<g>
+<path d="M323 340 C 314 300 320 280 342 280 C 365 280 370 300 361 340 Z" fill="#1f1d1a"/>
+<circle cx="336" cy="299" r="3.1" fill="#ffffff"/>
+<circle cx="349" cy="299" r="3.1" fill="#ffffff"/>
+<g fill="none" stroke="#1f1d1a" stroke-width="2.6" stroke-linecap="round">
+<path d="M326 296 Q 290 282 262 268"/>
+<path d="M360 296 Q 394 282 420 268"/>
+<path d="M333 340 L329 360"/>
+<path d="M353 340 L357 360"/>
+</g>
+<circle cx="261" cy="267" r="3" fill="#1f1d1a"/>
+<circle cx="421" cy="267" r="3" fill="#1f1d1a"/>
+</g>
+
+<g fill="none" stroke="#c9c6c0" stroke-width="4" stroke-linecap="round">
+<path d="M58 296 l 30 6 l -4 26 l -30 -6 Z" stroke="#cfccc6" stroke-width="1.6" fill="#ffffff"/>
+<line x1="63" y1="305" x2="80" y2="308" stroke-dasharray="9 5 6 5"/>
+<line x1="62" y1="313" x2="79" y2="316" stroke-dasharray="7 5 8 5"/>
+</g>
+
+<g fill="none" stroke="#e8852c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+<path d="M118 268 Q 88 278 74 296"/>
+<path d="M74 296 l 7 -9 M74 296 l 11 1"/>
+</g>
+
+<text x="74" y="92" font-family="'Bradley Hand','Comic Sans MS',sans-serif" font-size="17" fill="#1f1d1a" transform="rotate(-2 74 92)">everything said so far</text>
+<path d="M150 100 Q 168 128 150 156" fill="none" stroke="#1f1d1a" stroke-width="1.6" stroke-linecap="round"/>
+<path d="M150 156 l -6 -7 M150 156 l 8 -3" fill="none" stroke="#1f1d1a" stroke-width="1.6" stroke-linecap="round"/>
+
+<text x="342" y="118" text-anchor="middle" font-family="'Bradley Hand','Comic Sans MS',sans-serif" font-size="20" fill="#1f1d1a" font-weight="500">the context window</text>
+<path d="M268 128 Q 342 138 416 128" fill="none" stroke="#1f1d1a" stroke-width="1.8" stroke-linecap="round"/>
+
+<text x="448" y="196" font-family="'Bradley Hand','Comic Sans MS',sans-serif" font-size="16" fill="#d8442f" transform="rotate(2 448 196)">= all it can</text>
+<text x="448" y="218" font-family="'Bradley Hand','Comic Sans MS',sans-serif" font-size="16" fill="#d8442f" transform="rotate(2 448 218)">&#8220;see&#8221; right now</text>
+<path d="M444 206 Q 432 208 424 210" fill="none" stroke="#d8442f" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M424 210 l 8 -4 M424 210 l 6 6" fill="none" stroke="#d8442f" stroke-width="1.8" stroke-linecap="round"/>
+
+<text x="40" y="350" font-family="'Bradley Hand','Comic Sans MS',sans-serif" font-size="16" fill="#e8852c">older bits scroll off the edge</text>
+
+<text x="342" y="384" text-anchor="middle" font-family="'Bradley Hand','Comic Sans MS',sans-serif" font-size="16" fill="#2f6fd8">it re-reads only this window, every reply</text>
+</svg>
