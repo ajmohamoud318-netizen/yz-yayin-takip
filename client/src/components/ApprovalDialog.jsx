@@ -16,6 +16,13 @@ import {
 import api, { STAGE_LABELS } from '@/api'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
 
+// Where an approval sends the project, with a destination-aware button label.
+const APPROVE_DEST = {
+  demo_onay: { label: "Özalit'e Gönder", stage: 'ozalit_teslim' },
+  ozalit_onay: { label: 'Üretime Al', stage: 'uretimde' },
+  cin_demo_onay: { label: 'Üretime Al', stage: 'uretimde' },
+}
+
 /**
  * Approval / rejection dialog. The `mode` decides which action the dialog
  * is configured for. Reason is mandatory in `reject` mode.
@@ -27,13 +34,19 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
 
+  // Destination of this approval (e.g. Demo Onay → Özalit). Null on non-approve.
+  const approveDest = project ? APPROVE_DEST[project.stage] : null
+  const approveLabel = approveDest?.label ?? 'Onayla'
+
   const titles = {
-    approve: 'Aşamayı onayla',
+    approve: approveDest?.label ?? 'Aşamayı onayla',
     reject: 'Reddet ve geri gönder',
     advance: advanceLabel,
   }
   const descriptions = {
-    approve: 'Bu proje bir sonraki aşamaya ilerleyecek. Bu işlemi onaylıyor musunuz?',
+    approve: approveDest
+      ? `Onaylandığında proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylıyor musunuz?`
+      : 'Bu proje bir sonraki aşamaya ilerleyecek. Bu işlemi onaylıyor musunuz?',
     reject:
       'Proje tasarım aşamasına geri dönecek ve demo denemesi sayacı artacak. Lütfen bir sebep yazın.',
     advance: 'Bu projeyi sonraki aşamaya elle ilerleteceksiniz. Devam edilsin mi?',
@@ -112,7 +125,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
               disabled={busy}
               variant={mode === 'reject' ? 'destructive' : mode === 'approve' ? 'success' : 'default'}
             >
-              {busy ? 'İşleniyor…' : mode === 'approve' ? 'Onayla' : mode === 'reject' ? 'Reddet' : advanceLabel}
+              {busy ? 'İşleniyor…' : mode === 'approve' ? approveLabel : mode === 'reject' ? 'Reddet' : advanceLabel}
             </Button>
           </DialogFooter>
         </form>

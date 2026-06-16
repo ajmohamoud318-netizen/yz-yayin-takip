@@ -4,12 +4,66 @@
 @tailwind components;
 @tailwind utilities;
 
-html,
-body,
-#root {
-  height: 100%;
+/* ------------------------------------------------------------------ */
+/*  Girlish + professional theme — shadcn tokens as HSL CSS variables  */
+/* ------------------------------------------------------------------ */
+@layer base {
+  :root {
+    --background: 330 100% 98%;        /* #FFF7FB cream pink-white   */
+    --foreground: 325 21% 20%;         /* #3D2834 deep dusty rose    */
+
+    --card: 0 0% 100%;                 /* solid white panels         */
+    --card-foreground: 325 21% 20%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 325 21% 20%;
+
+    --primary: 335 52% 48%;            /* confident rose for buttons */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 330 60% 95%;          /* soft pink                  */
+    --secondary-foreground: 325 25% 28%;
+
+    --muted: 320 30% 95%;              /* light mauve                */
+    --muted-foreground: 327 14% 31%;   /* #5A4450 muted warm gray    */
+
+    --accent: 330 55% 93%;             /* pink hover                 */
+    --accent-foreground: 325 25% 28%;
+
+    --destructive: 350 65% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 324 25% 88%;             /* #E8D9E2 thin pink border   */
+    --input: 324 25% 88%;
+    --ring: 336 51% 69%;               /* #D888A8 dusty rose         */
+
+    --sidebar: 320 33% 94%;            /* #F4E9F0 light mauve gray   */
+
+    --radius: 0.75rem;                 /* 12px feminine softness     */
+  }
 }
 
-body {
-  @apply bg-slate-50 text-slate-800 antialiased;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* Notification toast bars: pale yellow with dark rose text (rule 10) */
+[data-sonner-toast]:not([data-type='error']) {
+  background: #fff2cc !important;
+  color: #7e2547 !important;
+  border-color: #f0dfa0 !important;
+}
+[data-sonner-toast]:not([data-type='error']) [data-icon],
+[data-sonner-toast]:not([data-type='error']) [data-title],
+[data-sonner-toast]:not([data-type='error']) [data-description] {
+  color: #7e2547 !important;
 }

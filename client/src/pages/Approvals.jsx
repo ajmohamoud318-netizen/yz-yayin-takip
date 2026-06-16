@@ -4,7 +4,6 @@ import { ThumbsUp, ThumbsDown, Inbox, Send } from 'lucide-react'
 
 import { useAuth } from '@/hooks/useAuth'
 import { useProjects } from '@/hooks/useProjects'
-import AppShell from '@/components/AppShell'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -49,7 +48,7 @@ export default function Approvals() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-5">
         <header>
           <h1 className="text-2xl font-semibold tracking-tight">Onay Kuyruğu</h1>
@@ -156,6 +155,6 @@ export default function Approvals() {
         advanceLabel="Onaya Gönder"
         onDone={onDone}
       />
-    </AppShell>
+    </>
   )
 }

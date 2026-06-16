@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   Kanban,
@@ -48,7 +48,7 @@ const COLLAPSE_KEY = 'yz-sidebar-collapsed'
  * icon-only rail on desktop (state is remembered) and opens as a drawer on
  * mobile. Badges, pinned projects and the period widget use live data.
  */
-export default function AppShell({ children }) {
+export default function AppShell() {
   const { user, logout } = useAuth()
   const { projects } = useProjects()
   const navigate = useNavigate()
@@ -119,7 +119,7 @@ export default function AppShell({ children }) {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          'sticky top-0 hidden h-screen shrink-0 flex-col border-r bg-card transition-[width] duration-200 ease-out lg:flex',
+          'sticky top-0 hidden h-screen shrink-0 flex-col border-r bg-sidebar transition-[width] duration-200 ease-out lg:flex',
           collapsed ? 'w-[4.25rem]' : 'w-64',
         )}
       >
@@ -203,7 +203,7 @@ export default function AppShell({ children }) {
         </header>
 
         <main key={location.pathname} className="page-enter min-w-0 flex-1 px-4 py-6 lg:px-8">
-          {children}
+          <Outlet />
         </main>
       </div>
 

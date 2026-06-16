@@ -77,10 +77,11 @@ export const STATUS_STYLES = {
     bar: 'bg-blue-500',
   },
   pink: {
+    // "Üretimde" — fuchsia, distinct from the green/blue stages.
     label: 'Üretimde',
-    dot: 'bg-pink-500',
-    badge: 'bg-pink-50 text-pink-700 ring-pink-600/20',
-    bar: 'bg-pink-500',
+    dot: 'bg-fuchsia-500',
+    badge: 'bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-600/20',
+    bar: 'bg-fuchsia-500',
   },
   yellow: {
     label: 'Satışta',
@@ -89,6 +90,28 @@ export const STATUS_STYLES = {
     bar: 'bg-amber-400',
   },
 }
+
+// Alias used by Kanban, AllProjects, YearPlan, DemoRequests, etc.
+// Same shape as STATUS_STYLES — just a friendlier name in the page code.
+export const STATUS_META = STATUS_STYLES
+
+// Pipeline definitions for the Kanban board.
+// Each project type follows a different sequence of stages (see CLAUDE.md).
+export const STAGE_PIPELINE = {
+  TR: ['tasarim', 'demo_teslim', 'demo_onay', 'ozalit_teslim', 'ozalit_onay', 'uretimde', 'satista'],
+  CIN: ['tasarim', 'cin_demo_teslim', 'cin_demo_onay', 'uretimde', 'gumruk', 'satista'],
+}
+
+// Subtask catalog used by NewProjectDialog. Each item has a stable key
+// (used in the project's subtasks array) and a human label.
+export const SUBTASK_LIBRARY = [
+  { key: 'kapak', label: 'Kapak' },
+  { key: 'kutu', label: 'Kutu' },
+  { key: 'ses', label: 'Ses' },
+  { key: 'video', label: 'Video / Animasyon' },
+  { key: 'yazilim', label: 'Yazılım' },
+  { key: 'icerik', label: 'İçerik / Görsel' },
+]
 
 // Project type -> Turkish badge
 export const TYPE_LABELS = { TR: 'TR', CIN: 'ÇİN' }
@@ -139,6 +162,168 @@ export function groupKeyForProject(p) {
   return 'devam_eden'
 }
 
+/**
+ * Normalizes a create/update payload coming from NewProjectDialog into the
+ * shape the rest of the app expects. The dialog sends `assignees` as an array
+ * of user ids and `subtasks` as an array of library keys; here we turn those
+ * into {id,name} assignee objects and real subtask objects, and recompute
+ * progress. `existing` (on edit) lets us preserve already-completed work.
+ */
+function normalizeProjectPayload(payload, existing = null) {
+  const { assignees, subtasks, pageCount, ...rest } = payload
+  const out = { ...rest }
+
+  // assignees: [id, ...] -> [{id, name}, ...] + assigned_to / assigned_name
+  if (Array.isArray(assignees)) {
+    const objs = assignees
+      .map((id) => mockUsers.find((u) => u.id === id))
+      .filter(Boolean)
+      .map((u) => ({ id: u.id, name: u.name }))
+    out.assignees = objs
+    out.assigned_to = objs[0]?.id ?? null
+    out.assigned_name = objs.map((a) => a.name).join(', ') || '—'
+  }
+
+  // subtasks: ['kapak', ...] -> [{id, title, kind, is_done, ...}]
+  if (Array.isArray(subtasks)) {
+    const prev = existing?.subtasks ?? []
+    const subs = []
+    for (const key of subtasks) {
+      if (key === 'sayfa') continue // page count handled below
+      const lib = SUBTASK_LIBRARY.find((s) => s.key === key)
+      const title = lib ? lib.label : key
+      const old = prev.find((s) => s.title === title && s.kind !== 'pages')
+      subs.push({
+        id: old?.id ?? `st-${Date.now()}-${key}`,
+        title,
+        kind: 'check',
+        is_done: old?.is_done ?? false,
+        done_at: old?.done_at ?? null,
+      })
+    }
+    if (subtasks.includes('sayfa') && pageCount) {
+      const old = prev.find((s) => s.kind === 'pages')
+      subs.push({
+        id: old?.id ?? `st-${Date.now()}-sayfa`,
+        title: 'Sayfa Sayısı',
+        kind: 'pages',
+        total_pages: Number(pageCount),
+        pages_done: old?.pages_done ?? 0,
+        is_done: (old?.pages_done ?? 0) >= Number(pageCount),
+      })
+    }
+    out.subtasks = subs
+    const total = subs.length || 1
+    const done = subs.filter((s) => s.is_done).length
+    out.progress = subs.length === 0 ? 0 : Math.round((done / total) * 100)
+  } else if (!existing) {
+    out.progress = 0
+  }
+
+  return out
+}
+
+/**
+ * Builds the full detail shape ProjectDetail expects (subtasks, assignees,
+ * history) from a flat mock project. If the project already carries these
+ * arrays (e.g. after a subtask toggle), they are reused.
+ */
+// Progress % = completed subtasks / total subtasks × 100.
+function subtaskProgress(subs) {
+  if (!Array.isArray(subs) || subs.length === 0) return 0
+  const done = subs.filter((s) => s.is_done).length
+  return Math.round((done / subs.length) * 100)
+}
+
+function buildProjectDetail(p) {
+  // Designers assigned to the project. Tolerate legacy data where assignees
+  // were stored as bare user-id strings instead of {id,name} objects.
+  let assignees
+  if (Array.isArray(p.assignees) && p.assignees.length > 0) {
+    assignees = p.assignees.map((a) => {
+      if (a && typeof a === 'object') return a
+      const u = mockUsers.find((x) => x.id === a)
+      return { id: a, name: u?.name ?? String(a) }
+    })
+  } else {
+    assignees = mockUsers
+      .filter((u) => u.id === p.assigned_to)
+      .map((u) => ({ id: u.id, name: u.name }))
+  }
+
+  // Subtasks. Three cases:
+  //   - missing            -> synthesize from progress (seed projects)
+  //   - array of strings   -> legacy keys, convert to objects
+  //   - array of objects   -> use as-is
+  let subtasks = p.subtasks
+  if (!Array.isArray(subtasks)) {
+    const total = SUBTASK_LIBRARY.length
+    const doneCount = Math.round((p.progress / 100) * total)
+    subtasks = SUBTASK_LIBRARY.map((s, i) => ({
+      id: `${p.id}-${s.key}`,
+      project_id: p.id,
+      title: s.label,
+      kind: 'check',
+      is_done: i < doneCount,
+      done_at: i < doneCount ? new Date().toISOString() : null,
+    }))
+    const totalPages = 48
+    const pagesDone = Math.round((p.progress / 100) * totalPages)
+    subtasks.push({
+      id: `${p.id}-sayfa`,
+      project_id: p.id,
+      title: 'Sayfa Sayısı',
+      kind: 'pages',
+      total_pages: totalPages,
+      pages_done: pagesDone,
+      is_done: pagesDone >= totalPages,
+    })
+  } else if (subtasks.some((s) => typeof s === 'string')) {
+    subtasks = subtasks
+      .filter((key) => key !== 'sayfa')
+      .map((key) => {
+        const lib = SUBTASK_LIBRARY.find((l) => l.key === key)
+        return {
+          id: `${p.id}-${key}`,
+          project_id: p.id,
+          title: lib ? lib.label : key,
+          kind: 'check',
+          is_done: false,
+          done_at: null,
+        }
+      })
+  }
+
+  // A minimal history. Rejections (demo_attempt > 0) are surfaced with a reason.
+  let history = p.history
+  if (!history) {
+    history = [
+      {
+        id: `${p.id}-h0`,
+        action: 'advance',
+        to_stage: 'tasarim',
+        done_by_name: 'Ayşenur Kanak',
+        created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+      },
+    ]
+    if ((p.demo_attempt ?? 0) > 0) {
+      history.push({
+        id: `${p.id}-hr`,
+        action: 'reject',
+        to_stage: 'tasarim',
+        reason: 'Kapak renkleri marka kılavuzuna uymuyor, lütfen revize edin.',
+        done_by_name: 'Ayşenur Kanak',
+        created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+      })
+    }
+  }
+
+  return { ...p, assignees, subtasks, history }
+}
+
+// Standalone demos created from loose files (not part of the pipeline).
+const mockDemos = []
+
 /* ------------------------------------------------------------------ */
 /*  MOCK DATA (stands in for the API until the backend is built)       */
 /* ------------------------------------------------------------------ */
@@ -146,7 +331,7 @@ export function groupKeyForProject(p) {
 const mockUsers = [
   {
     id: 'u-ayse',
-    name: 'Ayşenur Yılmaz',
+    name: 'Ayşenur Kanak',
     email: 'aysenur@yukselenzeka.com',
     password: '123456',
     role: 'team_leader',
@@ -154,8 +339,8 @@ const mockUsers = [
   },
   {
     id: 'u-elif',
-    name: 'Elif Demir',
-    email: 'elif@yukselenzeka.com',
+    name: 'Aylin',
+    email: 'aylin@yukselenzeka.com',
     password: '123456',
     role: 'designer',
     is_active: true,
@@ -193,7 +378,7 @@ const mockProjects = [
     type: 'TR',
     stage: 'tasarim',
     assigned_to: 'u-elif',
-    assigned_name: 'Elif Demir',
+    assigned_name: 'Aylin',
     created_by: 'u-ayse',
     target_month: monthOffset(0),
     demo_attempt: 0,
@@ -217,7 +402,7 @@ const mockProjects = [
     type: 'TR',
     stage: 'demo_onay',
     assigned_to: 'u-elif',
-    assigned_name: 'Elif Demir',
+    assigned_name: 'Aylin',
     created_by: 'u-ayse',
     target_month: monthOffset(1),
     demo_attempt: 1,
@@ -241,7 +426,7 @@ const mockProjects = [
     type: 'TR',
     stage: 'ozalit_teslim',
     assigned_to: 'u-elif',
-    assigned_name: 'Elif Demir',
+    assigned_name: 'Aylin',
     created_by: 'u-ayse',
     target_month: monthOffset(2),
     demo_attempt: 2,
@@ -265,7 +450,7 @@ const mockProjects = [
     type: 'TR',
     stage: 'satista',
     assigned_to: 'u-elif',
-    assigned_name: 'Elif Demir',
+    assigned_name: 'Aylin',
     created_by: 'u-ayse',
     target_month: monthOffset(-1),
     demo_attempt: 1,
@@ -288,6 +473,60 @@ const mockProjects = [
 function delay(ms = 350) {
   return new Promise((r) => setTimeout(r, ms))
 }
+
+/* ------------------------------------------------------------------ */
+/*  localStorage persistence (mock layer only)                         */
+/*  Keeps projects/users/demos across refreshes on the same browser.   */
+/* ------------------------------------------------------------------ */
+const LS_KEY = 'yz_mock_state_v1'
+
+function saveState() {
+  if (!USE_MOCK || typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(
+      LS_KEY,
+      JSON.stringify({ users: mockUsers, projects: mockProjects, demos: mockDemos }),
+    )
+  } catch {
+    /* ignore quota / private-mode errors */
+  }
+}
+
+function hydrateState() {
+  if (!USE_MOCK || typeof localStorage === 'undefined') return
+  try {
+    const raw = localStorage.getItem(LS_KEY)
+    if (!raw) return
+    const saved = JSON.parse(raw)
+    if (Array.isArray(saved.users)) {
+      mockUsers.length = 0
+      mockUsers.push(...saved.users)
+    }
+    if (Array.isArray(saved.projects)) {
+      mockProjects.length = 0
+      mockProjects.push(...saved.projects)
+    }
+    if (Array.isArray(saved.demos)) {
+      mockDemos.length = 0
+      mockDemos.push(...saved.demos)
+    }
+  } catch {
+    /* corrupt state — fall back to the seed data */
+  }
+}
+
+// Reset the mock store back to the original seed (exposed for debugging).
+export function resetMockState() {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.removeItem(LS_KEY)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+hydrateState()
 
 /* ------------------------------------------------------------------ */
 /*  API surface (mock-backed, real-API-ready)                          */
@@ -340,6 +579,308 @@ export const api = {
       return mockUsers.map(({ password: _pw, ...u }) => u)
     }
     const { data } = await client.get('/users')
+    return data
+  },
+
+  async getProject(id) {
+    if (USE_MOCK) {
+      await delay()
+      const idx = mockProjects.findIndex((p) => p.id === id)
+      if (idx === -1) {
+        const err = new Error('Proje bulunamadı.')
+        err.status = 404
+        throw err
+      }
+      const detail = buildProjectDetail(mockProjects[idx])
+      // Persist the resolved subtasks/assignees so later edits (e.g. a designer
+      // checking a subtask) can find them on the stored project.
+      mockProjects[idx] = {
+        ...mockProjects[idx],
+        assignees: detail.assignees,
+        assigned_name: detail.assigned_name ?? mockProjects[idx].assigned_name,
+        subtasks: detail.subtasks,
+      }
+      saveState()
+      return detail
+    }
+    const { data } = await client.get(`/projects/${id}`)
+    return data
+  },
+
+  async createProject(payload) {
+    if (USE_MOCK) {
+      await delay()
+      const normalized = normalizeProjectPayload(payload)
+      const created = {
+        id: `p-${Date.now()}`,
+        stage: 'tasarim',
+        demo_attempt: 0,
+        ...normalized,
+      }
+      mockProjects.push(created)
+      saveState()
+      return created
+    }
+    const { data } = await client.post('/projects', payload)
+    return data
+  },
+
+  async updateProject(id, patch) {
+    if (USE_MOCK) {
+      await delay()
+      const idx = mockProjects.findIndex((p) => p.id === id)
+      if (idx === -1) {
+        const err = new Error('Proje bulunamadı.')
+        err.status = 404
+        throw err
+      }
+      const normalized = normalizeProjectPayload(patch, mockProjects[idx])
+      mockProjects[idx] = { ...mockProjects[idx], ...normalized }
+      saveState()
+      return { ...mockProjects[idx] }
+    }
+    const { data } = await client.patch(`/projects/${id}`, patch)
+    return data
+  },
+
+  async deleteProject(id) {
+    if (USE_MOCK) {
+      await delay()
+      const idx = mockProjects.findIndex((p) => p.id === id)
+      if (idx >= 0) {
+        mockProjects.splice(idx, 1)
+        saveState()
+      }
+      return { ok: true }
+    }
+    await client.delete(`/projects/${id}`)
+  },
+
+  async advanceProject(id) {
+    if (USE_MOCK) {
+      await delay()
+      const idx = mockProjects.findIndex((p) => p.id === id)
+      if (idx === -1) {
+        const err = new Error('Proje bulunamadı.')
+        err.status = 404
+        throw err
+      }
+      const p = mockProjects[idx]
+      const pipeline = p.type === 'CIN' ? STAGE_PIPELINE.CIN : STAGE_PIPELINE.TR
+      const i = pipeline.indexOf(p.stage)
+      if (i === -1 || i === pipeline.length - 1) return { ...p }
+      mockProjects[idx] = { ...p, stage: pipeline[i + 1] }
+      saveState()
+      return { ...mockProjects[idx] }
+    }
+    const { data } = await client.post(`/projects/${id}/advance`)
+    return data
+  },
+
+  async approveStage(id, stage) {
+    if (USE_MOCK) {
+      await delay()
+      const idx = mockProjects.findIndex((p) => p.id === id)
+      if (idx >= 0) {
+        mockProjects[idx] = { ...mockProjects[idx], stage }
+        saveState()
+      }
+      return { ...mockProjects[idx] }
+    }
+    const { data } = await client.post(`/projects/${id}/approve`, { stage })
+    return data
+  },
+
+  async rejectStage(id, stage, reason) {
+    if (USE_MOCK) {
+      await delay()
+      const idx = mockProjects.findIndex((p) => p.id === id)
+      if (idx >= 0) {
+        const p = mockProjects[idx]
+        mockProjects[idx] = {
+          ...p,
+          stage: 'tasarim',
+          demo_attempt: (p.demo_attempt ?? 0) + 1,
+        }
+        saveState()
+      }
+      return { ...mockProjects[idx] }
+    }
+    const { data } = await client.post(`/projects/${id}/reject`, { stage, reason })
+    return data
+  },
+
+  // Approve the current stage → advance to the next stage in the pipeline.
+  async approveProject(id) {
+    if (USE_MOCK) {
+      await delay()
+      const idx = mockProjects.findIndex((p) => p.id === id)
+      if (idx === -1) {
+        const err = new Error('Proje bulunamadı.')
+        err.status = 404
+        throw err
+      }
+      const p = mockProjects[idx]
+      const pipeline = p.type === 'CIN' ? STAGE_PIPELINE.CIN : STAGE_PIPELINE.TR
+      const i = pipeline.indexOf(p.stage)
+      if (i === -1 || i === pipeline.length - 1) return { ...p }
+      mockProjects[idx] = { ...p, stage: pipeline[i + 1] }
+      saveState()
+      return { ...mockProjects[idx] }
+    }
+    const { data } = await client.post(`/projects/${id}/approve`)
+    return data
+  },
+
+  // Reject the current stage → back to Tasarım, attempt counter +1, store reason.
+  async rejectProject(id, reason) {
+    if (USE_MOCK) {
+      await delay()
+      const idx = mockProjects.findIndex((p) => p.id === id)
+      if (idx === -1) {
+        const err = new Error('Proje bulunamadı.')
+        err.status = 404
+        throw err
+      }
+      const p = mockProjects[idx]
+      mockProjects[idx] = {
+        ...p,
+        stage: 'tasarim',
+        demo_attempt: (p.demo_attempt ?? 0) + 1,
+        last_reject_reason: reason,
+      }
+      saveState()
+      return { ...mockProjects[idx] }
+    }
+    const { data } = await client.post(`/projects/${id}/reject`, { reason })
+    return data
+  },
+
+  async toggleSubtask(projectId, subtaskId, isDone) {
+    if (USE_MOCK) {
+      await delay()
+      const idx = mockProjects.findIndex((p) => p.id === projectId)
+      if (idx === -1) {
+        const err = new Error('Proje bulunamadı.')
+        err.status = 404
+        throw err
+      }
+      const p = mockProjects[idx]
+      const subs = (p.subtasks ?? []).map((s) =>
+        s.id === subtaskId ? { ...s, is_done: isDone, done_at: isDone ? new Date().toISOString() : null } : s,
+      )
+      const total = subs.length || 1
+      const done = subs.filter((s) => s.is_done).length
+      const progress = Math.round((done / total) * 100)
+      mockProjects[idx] = { ...p, subtasks: subs, progress }
+      saveState()
+      return { ...mockProjects[idx] }
+    }
+    const { data } = await client.patch(`/subtasks/${subtaskId}`, { is_done: isDone })
+    return data
+  },
+
+  // Check / uncheck a subtask by its id (ProjectDetail passes only the subtask
+  // id). Finds the owning project, updates it, recomputes progress, and returns
+  // { project } so the page can patch its local state.
+  async setSubtaskDone(subtaskId, isDone) {
+    if (USE_MOCK) {
+      await delay()
+      const idx = mockProjects.findIndex((p) =>
+        (p.subtasks ?? []).some((s) => s.id === subtaskId),
+      )
+      if (idx === -1) {
+        const err = new Error('Alt görev bulunamadı.')
+        err.status = 404
+        throw err
+      }
+      const p = mockProjects[idx]
+      const subs = p.subtasks.map((s) =>
+        s.id === subtaskId
+          ? { ...s, is_done: isDone, done_at: isDone ? new Date().toISOString() : null }
+          : s,
+      )
+      mockProjects[idx] = { ...p, subtasks: subs, progress: subtaskProgress(subs) }
+      saveState()
+      return { project: { ...mockProjects[idx] } }
+    }
+    const { data } = await client.patch(`/subtasks/${subtaskId}`, { is_done: isDone })
+    return data
+  },
+
+  // Update the completed page count on a "pages" subtask.
+  async setSubtaskPages(subtaskId, pagesDone) {
+    if (USE_MOCK) {
+      await delay()
+      const idx = mockProjects.findIndex((p) =>
+        (p.subtasks ?? []).some((s) => s.id === subtaskId),
+      )
+      if (idx === -1) {
+        const err = new Error('Alt görev bulunamadı.')
+        err.status = 404
+        throw err
+      }
+      const p = mockProjects[idx]
+      const subs = p.subtasks.map((s) =>
+        s.id === subtaskId
+          ? { ...s, pages_done: pagesDone, is_done: pagesDone >= (s.total_pages ?? 0) }
+          : s,
+      )
+      mockProjects[idx] = { ...p, subtasks: subs, progress: subtaskProgress(subs) }
+      saveState()
+      return { project: { ...mockProjects[idx] } }
+    }
+    const { data } = await client.patch(`/subtasks/${subtaskId}`, { pages_done: pagesDone })
+    return data
+  },
+
+  // Record a demo request against a project (does not change the stage).
+  async requestDemo(projectId) {
+    if (USE_MOCK) {
+      await delay()
+      const idx = mockProjects.findIndex((p) => p.id === projectId)
+      if (idx === -1) {
+        const err = new Error('Proje bulunamadı.')
+        err.status = 404
+        throw err
+      }
+      mockProjects[idx] = {
+        ...mockProjects[idx],
+        demo_requested: true,
+        demo_requested_at: new Date().toISOString(),
+      }
+      saveState()
+      return { ...mockProjects[idx] }
+    }
+    const { data } = await client.post(`/projects/${projectId}/request-demo`)
+    return data
+  },
+
+  // Standalone demos: created from loose files, not tied to the pipeline.
+  async listDemos() {
+    if (USE_MOCK) {
+      await delay()
+      return mockDemos.map((d) => ({ ...d }))
+    }
+    const { data } = await client.get('/demos')
+    return data
+  },
+
+  async createDemo({ title, files = [], items = [] }) {
+    if (USE_MOCK) {
+      await delay()
+      const demo = {
+        id: `demo-${Date.now()}`,
+        title,
+        items: items.map((t, i) => ({ id: `di-${Date.now()}-${i}`, title: t })),
+        files: files.map((f) => ({ name: f.name, size: f.size })),
+        created_at: new Date().toISOString(),
+      }
+      mockDemos.unshift(demo)
+      saveState()
+      return { ...demo }
+    }
+    const { data } = await client.post('/demos', { title, files, items })
     return data
   },
 }

@@ -4,7 +4,6 @@ import { Search } from 'lucide-react'
 
 import { useAuth } from '@/hooks/useAuth'
 import { useProjects } from '@/hooks/useProjects'
-import AppShell from '@/components/AppShell'
 import FilterChip from '@/components/FilterChip'
 import { Card, CardContent } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -46,7 +45,7 @@ export default function MyProjects() {
   }, [mine, query, typeFilter, stageGroup])
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-6">
         <header>
           <h1 className="text-2xl font-semibold tracking-tight">Projelerim</h1>
@@ -167,6 +166,6 @@ export default function MyProjects() {
           </Card>
         )}
       </div>
-    </AppShell>
+    </>
   )
 }

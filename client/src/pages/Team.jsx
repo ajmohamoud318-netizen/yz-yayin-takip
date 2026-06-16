@@ -3,7 +3,6 @@ import { Mail, MoreHorizontal, Search, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 
 import api, { ROLE_LABELS } from '@/api'
-import AppShell from '@/components/AppShell'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -69,7 +68,7 @@ export default function Team() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-6">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -131,7 +130,7 @@ export default function Team() {
       </div>
 
       <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} onInvited={(u) => setUsers((p) => [...p, u])} />
-    </AppShell>
+    </>
   )
 }
 

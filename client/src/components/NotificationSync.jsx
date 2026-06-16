@@ -41,9 +41,9 @@ export default function NotificationSync() {
         if (user.role === 'designer' && isAssigned(p, user.id)) {
           toast.info(`Yeni proje atandı: ${p.title}`, { duration: 6000 })
         }
-        if (user.role === 'team_leader') {
-          toast.success(`Proje oluşturuldu: ${p.title}`)
-        }
+        // (No "proje oluşturuldu" toast for the team leader — NewProjectDialog
+        // already shows one immediately on save, and showing a second one via
+        // the store-watcher is just duplicate noise.)
         continue
       }
 

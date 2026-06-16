@@ -26,12 +26,33 @@ export default function DemoSubmitDialog({ open, onOpenChange, project, onDone }
   const { updateOne } = useProjectsStore()
   const [selected, setSelected] = useState([])
   const [busy, setBusy] = useState(false)
+  // The list-view project has no subtasks; fetch the full detail when opened.
+  const [detail, setDetail] = useState(null)
+  const [loadingDetail, setLoadingDetail] = useState(false)
 
-  // Pre-select all completed subtasks when the project changes or dialog opens.
   useEffect(() => {
-    if (project) {
-      const done = (project.subtasks ?? []).filter((s) => s.is_done).map((s) => s.id)
-      setSelected(done)
+    if (!open || !project) {
+      setDetail(null)
+      setSelected([])
+      return
+    }
+    let active = true
+    setLoadingDetail(true)
+    api
+      .getProject(project.id)
+      .then((full) => {
+        if (!active) return
+        setDetail(full)
+        // Pre-select content that's already done.
+        const done = (full.subtasks ?? [])
+          .filter((s) => s.is_done && s.kind !== 'pages')
+          .map((s) => s.id)
+        setSelected(done)
+      })
+      .catch(() => active && setDetail(null))
+      .finally(() => active && setLoadingDetail(false))
+    return () => {
+      active = false
     }
   }, [project?.id, open])
 
@@ -62,7 +83,8 @@ export default function DemoSubmitDialog({ open, onOpenChange, project, onDone }
 
   if (!project) return null
 
-  const subtasks = project.subtasks ?? []
+  const proj = detail ?? project
+  const subtasks = proj.subtasks ?? []
   const checkable = subtasks.filter((s) => s.kind !== 'pages')
   const pagesSub = subtasks.find((s) => s.kind === 'pages')
 
@@ -82,14 +104,18 @@ export default function DemoSubmitDialog({ open, onOpenChange, project, onDone }
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Project info */}
           <div className="rounded-md border bg-muted/30 px-3 py-2.5 text-sm">
-            <p className="font-medium text-foreground">{project.title}</p>
+            <p className="font-medium text-foreground">{proj.title}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Genel ilerleme: {project.progress}%
+              Genel ilerleme: {proj.progress}%
             </p>
           </div>
 
           {/* Content checkboxes */}
-          {subtasks.length === 0 ? (
+          {loadingDetail ? (
+            <p className="rounded-lg border border-dashed bg-muted/20 p-4 text-center text-sm text-muted-foreground">
+              İçerikler yükleniyor…
+            </p>
+          ) : subtasks.length === 0 ? (
             <p className="rounded-lg border border-dashed bg-muted/20 p-4 text-center text-sm text-muted-foreground">
               Bu proje için tanımlı içerik yok.
             </p>
@@ -156,7 +182,7 @@ export default function DemoSubmitDialog({ open, onOpenChange, project, onDone }
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               İptal
             </Button>
-            <Button type="submit" disabled={busy || selected.length === 0}>
+            <Button type="submit" disabled={busy || loadingDetail || selected.length === 0}>
               <Send className="h-4 w-4" />
               {busy ? 'Gönderiliyor…' : 'Demoya Gönder'}
             </Button>

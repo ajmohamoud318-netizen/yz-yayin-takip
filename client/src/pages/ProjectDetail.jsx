@@ -17,7 +17,6 @@ import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import { useProject } from '@/hooks/useProjects'
 import api, { STAGE_LABELS, TYPE_LABELS } from '@/api'
-import AppShell from '@/components/AppShell'
 import StageBar from '@/components/StageBar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -88,7 +87,7 @@ export default function ProjectDetail() {
 
   if (loading) {
     return (
-      <AppShell>
+      <>
         <div className="space-y-6">
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-24 w-full rounded-xl" />
@@ -97,25 +96,25 @@ export default function ProjectDetail() {
             <Skeleton className="h-64" />
           </div>
         </div>
-      </AppShell>
+      </>
     )
   }
 
   if (!project) {
     return (
-      <AppShell>
+      <>
         <div className="rounded-xl border border-dashed bg-card p-12 text-center">
           <p className="text-sm font-medium text-foreground">Proje bulunamadı.</p>
           <Button asChild variant="outline" size="sm" className="mt-3">
             <Link to="/">Panele dön</Link>
           </Button>
         </div>
-      </AppShell>
+      </>
     )
   }
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-6">
         <div>
           <Button asChild variant="ghost" size="sm" className="-ml-2 text-muted-foreground">
@@ -356,7 +355,7 @@ export default function ProjectDetail() {
           refetch()
         }}
       />
-    </AppShell>
+    </>
   )
 }
 

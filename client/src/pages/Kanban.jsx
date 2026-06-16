@@ -6,7 +6,6 @@ import { useProjects } from '@/hooks/useProjects'
 import { useAuth } from '@/hooks/useAuth'
 import api from '@/api'
 import { toast } from 'sonner'
-import AppShell from '@/components/AppShell'
 import FilterChip from '@/components/FilterChip'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +13,10 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { STAGE_LABELS, STAGE_PIPELINE, TYPE_LABELS } from '@/api'
 import AssigneeAvatars from '@/components/AssigneeAvatars'
+
+// Each column gets a unique soft pastel (rule 11). Light tints keep the
+// dark heading text readable. Cycles if there are more stages than colors.
+const COLUMN_PASTELS = ['#E7DBF5', '#D7F0E4', '#FDE3D1', '#D6ECF8', '#F8DCE8', '#FBF0C9', '#E0E4FA']
 
 /**
  * Kanban-style board: one column per pipeline stage.
@@ -52,7 +55,7 @@ export default function Kanban() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-5">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -82,10 +85,11 @@ export default function Kanban() {
           </div>
         ) : (
           <div className="scrollbar-thin -mx-4 flex gap-3 overflow-x-auto px-4 pb-2">
-            {pipeline.map((stage) => (
+            {pipeline.map((stage, i) => (
               <KanbanColumn
                 key={stage}
                 stage={stage}
+                color={COLUMN_PASTELS[i % COLUMN_PASTELS.length]}
                 items={grouped[stage] ?? []}
                 onOpen={(p) => navigate(`/projects/${p.id}`)}
                 onAdvance={advance}
@@ -96,17 +100,23 @@ export default function Kanban() {
           </div>
         )}
       </div>
-    </AppShell>
+    </>
   )
 }
 
-function KanbanColumn({ stage, items, onOpen, onAdvance, canAdvance, isLast }) {
+function KanbanColumn({ stage, color, items, onOpen, onAdvance, canAdvance, isLast }) {
   return (
-    <section className="flex w-72 shrink-0 flex-col rounded-xl border bg-muted/30">
-      <header className="flex items-center justify-between border-b bg-card px-3 py-2.5">
+    <section
+      className="flex w-72 shrink-0 flex-col overflow-hidden rounded-xl border bg-muted/30"
+      style={{ borderTop: `3px solid ${color}` }}
+    >
+      <header
+        className="flex items-center justify-between border-b px-3 py-2.5"
+        style={{ backgroundColor: color }}
+      >
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold">{STAGE_LABELS[stage]}</h2>
-          <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-secondary-foreground">
+          <h2 className="text-sm font-semibold text-foreground">{STAGE_LABELS[stage]}</h2>
+          <span className="rounded-full bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
             {items.length}
           </span>
         </div>

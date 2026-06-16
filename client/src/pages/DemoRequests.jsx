@@ -1,18 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Send, Clock, Plus, Check } from 'lucide-react'
+import { Send, Plus, Clock, Check, FileText, RefreshCw, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
 import { useProjects } from '@/hooks/useProjects'
-import AppShell from '@/components/AppShell'
-import AssigneeAvatars from '@/components/AssigneeAvatars'
-import DemoSubmitDialog from '@/components/DemoSubmitDialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -52,108 +50,174 @@ function whereLabel(stage) {
 
 export default function DemoRequests() {
   const { user } = useAuth()
-  const { projects, loading } = useProjects()
+  const { projects, loading, refetch } = useProjects()
   const navigate = useNavigate()
-  const [submitProject, setSubmitProject] = useState(null)
-  const [createOpen, setCreateOpen] = useState(false)
+  const [demoOpen, setDemoOpen] = useState(false)
+  const [demos, setDemos] = useState([])
+  const [busy, setBusy] = useState(null)
 
-  const mine = useMemo(() => {
-    if (user?.role === 'team_leader') return projects
-    return projects.filter((p) => (p.assignees ?? []).some((a) => a.id === user?.id))
-  }, [projects, user])
+  // Team leader and designers can request / create demos.
+  const canDemo = user?.role === 'team_leader' || user?.role === 'designer'
 
-  // Any project still in the design stage can be sent to demo — complete or not.
-  const requestable = useMemo(
-    () => mine.filter((p) => p.stage === 'tasarim').sort((a, b) => b.progress - a.progress),
-    [mine],
-  )
-  const inFlow = mine.filter((p) => IN_FLOW.includes(p.stage))
+  async function loadDemos() {
+    try {
+      setDemos(await api.listDemos())
+    } catch {
+      /* demos are optional */
+    }
+  }
+  useEffect(() => {
+    loadDemos()
+  }, [])
 
-  function onDone() {
-    // DemoSubmitDialog already called updateOne — nothing else needed here.
+  const inFlow = useMemo(() => projects.filter((p) => IN_FLOW.includes(p.stage)), [projects])
+
+  async function requestDemo(p) {
+    setBusy(p.id)
+    try {
+      await api.requestDemo(p.id)
+      toast.success(`“${p.title}” için demo istendi.`)
+      refetch()
+    } catch (err) {
+      toast.error(err.message || 'Demo istenemedi.')
+    } finally {
+      setBusy(null)
+    }
   }
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-6">
+        {/* Header */}
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Demo</h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Projeleriniz için matbaadan demo isteyin ve demo sürecini takip edin.
+              Projeler için demo isteyin veya dosyalardan bağımsız demo oluşturun.
             </p>
           </div>
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Demo İsteği Oluştur
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={refetch}>
+              <RefreshCw className="h-4 w-4" />
+              Yenile
+            </Button>
+            {canDemo && (
+              <Button size="sm" onClick={() => setDemoOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Demo Oluştur
+              </Button>
+            )}
+          </div>
         </header>
 
         {loading ? (
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-2">
             {[0, 1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-36 rounded-xl" />
+              <Skeleton key={i} className="h-16 rounded-xl" />
             ))}
           </div>
         ) : (
           <>
-            {/* Request a demo — works for completed and in-progress projects */}
-            <Section title="Demo İste" hint="Tasarım aşamasındaki projeler" icon={Send} count={requestable.length}>
-              {requestable.length === 0 ? (
-                <EmptyNote>Tasarım aşamasında projeniz yok.</EmptyNote>
+            {/* Standalone demos */}
+            {demos.length > 0 && (
+              <section className="space-y-2">
+                <SectionTitle icon={FileText} title="Bağımsız Demolar" count={demos.length} />
+                <div className="space-y-2">
+                  {demos.map((d) => (
+                    <div
+                      key={d.id}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-dashed bg-card px-4 py-3 shadow-sm"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">{d.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {(d.items?.length ?? 0)} içerik · {d.files.length} dosya ·{' '}
+                          {new Date(d.created_at).toLocaleDateString('tr-TR')}
+                        </p>
+                        {d.items?.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {d.items.map((it) => (
+                              <span
+                                key={it.id}
+                                className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"
+                              >
+                                {it.title}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <Badge variant="secondary" className="shrink-0">
+                        Demo
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* All projects with Demo İste */}
+            <section className="space-y-2">
+              <SectionTitle icon={Send} title="Tüm Projeler" count={projects.length} />
+              {projects.length === 0 ? (
+                <EmptyNote>Henüz proje yok.</EmptyNote>
               ) : (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {requestable.map((p) => {
+                <div className="space-y-2">
+                  {projects.map((p) => {
                     const meta = STATUS_META[statusKeyForProject(p)]
-                    const ready = p.progress === 100
                     return (
-                      <Card key={p.id}>
-                        <CardContent className="space-y-3 p-4">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold">{p.title}</p>
-                              <div className="mt-1 flex items-center gap-1.5">
-                                <Badge variant="secondary">{TYPE_LABELS[p.type]}</Badge>
-                                {ready ? (
-                                  <Badge variant="success">Hazır</Badge>
-                                ) : (
-                                  <span className="text-[11px] text-muted-foreground">Tasarım sürüyor</span>
-                                )}
-                              </div>
-                            </div>
-                            <AssigneeAvatars assignees={p.assignees} />
-                          </div>
-                          <div>
-                            <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
-                              <span>İlerleme</span>
-                              <span className="font-semibold text-foreground">{p.progress}%</span>
-                            </div>
-                            <Progress value={p.progress} className="h-1.5" indicatorClassName={meta.dot} />
-                          </div>
-                          <div className="flex items-center gap-2">
+                      <div
+                        key={p.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => navigate(`/projects/${p.id}`)}
+                        onKeyDown={(e) => e.key === 'Enter' && navigate(`/projects/${p.id}`)}
+                        className="flex cursor-pointer items-center gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm transition-colors hover:border-primary/30 hover:bg-muted/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', meta.dot)} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-foreground">{p.title}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {TYPE_LABELS[p.type]} · {STAGE_LABELS[p.stage]} · {p.assigned_name}
+                          </p>
+                        </div>
+
+                        <div className="hidden w-28 items-center gap-2 sm:flex">
+                          <Progress value={p.progress} className="h-1.5 flex-1" indicatorClassName={meta.dot} />
+                          <span className="w-9 text-right text-xs font-semibold text-foreground">{p.progress}%</span>
+                        </div>
+
+                        {canDemo &&
+                          (p.demo_requested ? (
+                            <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
+                              <Check className="h-3.5 w-3.5" />
+                              Demo İstendi
+                            </span>
+                          ) : (
                             <Button
                               size="sm"
-                              variant="ghost"
-                              className="flex-1"
-                              onClick={() => navigate(`/projects/${p.id}`)}
+                              variant="outline"
+                              className="shrink-0"
+                              disabled={busy === p.id}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                requestDemo(p)
+                              }}
                             >
-                              Detay
-                            </Button>
-                            <Button size="sm" className="flex-1" onClick={() => setSubmitProject(p)}>
                               <Send className="h-4 w-4" />
-                              Demoya Gönder
+                              Demo İste
                             </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
+                          ))}
+                      </div>
                     )
                   })}
                 </div>
               )}
-            </Section>
+            </section>
 
             {/* In the demo / approval flow */}
-            <Section title="Demo Sürecinde" hint="Matbaa ve lider onayındaki projeler" icon={Clock} count={inFlow.length}>
+            <section className="space-y-2">
+              <SectionTitle icon={Clock} title="Demo Sürecinde" count={inFlow.length} />
               {inFlow.length === 0 ? (
                 <EmptyNote>Süreçte bekleyen demo yok.</EmptyNote>
               ) : (
@@ -165,14 +229,12 @@ export default function DemoRequests() {
                         key={p.id}
                         type="button"
                         onClick={() => navigate(`/projects/${p.id}`)}
-                        className="flex items-center gap-3 rounded-xl border bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/30 hover:bg-muted/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        className="flex items-center gap-3 rounded-xl border bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/30 hover:bg-muted/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', meta.dot)} />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-semibold">{p.title}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            {STAGE_LABELS[p.stage]}
-                          </p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{STAGE_LABELS[p.stage]}</p>
                         </div>
                         <Badge variant="outline" className="shrink-0">
                           {whereLabel(p.stage)}
@@ -182,282 +244,200 @@ export default function DemoRequests() {
                   })}
                 </div>
               )}
-            </Section>
+            </section>
           </>
         )}
       </div>
 
-      <DemoSubmitDialog
-        open={!!submitProject}
-        onOpenChange={(v) => setSubmitProject(v ? submitProject : null)}
-        project={submitProject}
-        onDone={onDone}
+      <CreateDemoDialog
+        open={demoOpen}
+        onOpenChange={setDemoOpen}
+        onCreated={loadDemos}
       />
-
-      <CreateDemoRequestDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        projects={requestable}
-        onSent={onDone}
-      />
-    </AppShell>
+    </>
   )
 }
 
-/**
- * Two-step dialog: (1) pick a project, (2) select which content items to include in the demo.
- */
-function CreateDemoRequestDialog({ open, onOpenChange, projects, onSent }) {
-  const { updateOne } = useProjects()
-  const [selectedId, setSelectedId] = useState(null)
-  const [step, setStep] = useState(1) // 1 = pick project, 2 = pick content
-  const [selectedSubtasks, setSelectedSubtasks] = useState([])
-  const [busy, setBusy] = useState(false)
+/* ----------------------- create demo dialog ----------------------- */
+// Quick-add suggestions for demo content items.
+const ITEM_SUGGESTIONS = ['Kapak', 'Kutu', 'Ses', 'Video', 'Yazılım', 'İçerik']
 
-  const selectedProject = projects.find((p) => p.id === selectedId) ?? null
-  const completed = projects.filter((p) => p.progress === 100)
-  const inProgress = projects.filter((p) => p.progress < 100)
+function CreateDemoDialog({ open, onOpenChange, onCreated }) {
+  const [title, setTitle] = useState('')
+  const [files, setFiles] = useState([])
+  const [items, setItems] = useState([])
+  const [itemDraft, setItemDraft] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  function handleClose(v) {
+  function close(v) {
     if (!v) {
-      setSelectedId(null)
-      setStep(1)
-      setSelectedSubtasks([])
+      setTitle('')
+      setFiles([])
+      setItems([])
+      setItemDraft('')
     }
     onOpenChange(v)
   }
 
-  function goToStep2() {
-    if (!selectedProject) return
-    // Pre-select done subtasks
-    const done = (selectedProject.subtasks ?? [])
-      .filter((s) => s.kind !== 'pages' && s.is_done)
-      .map((s) => s.id)
-    setSelectedSubtasks(done)
-    setStep(2)
-  }
-
-  function toggleSub(id) {
-    setSelectedSubtasks((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-  }
-
-  async function submit() {
-    if (!selectedId) return
-    if (selectedSubtasks.length === 0) {
-      toast.error('En az bir içerik seçmelisiniz.')
+  function addItem(value) {
+    const v = (value ?? itemDraft).trim()
+    if (!v) return
+    if (items.some((i) => i.toLowerCase() === v.toLowerCase())) {
+      setItemDraft('')
       return
     }
-    setBusy(true)
+    setItems((prev) => [...prev, v])
+    setItemDraft('')
+  }
+
+  function removeItem(value) {
+    setItems((prev) => prev.filter((i) => i !== value))
+  }
+
+  async function submit(e) {
+    e.preventDefault()
+    if (!title.trim()) {
+      toast.error('Lütfen bir demo adı girin.')
+      return
+    }
+    setSaving(true)
     try {
-      const updated = await api.advanceProject(selectedId)
-      updateOne(updated)
-      toast.success('Demo isteği matbaaya gönderildi.')
-      onSent?.(updated)
-      handleClose(false)
+      await api.createDemo({ title: title.trim(), files, items })
+      toast.success('Demo oluşturuldu.')
+      onCreated?.()
+      close(false)
     } catch (err) {
-      toast.error(err.message || 'Demo isteği gönderilemedi.')
+      toast.error(err.message || 'Demo oluşturulamadı.')
     } finally {
-      setBusy(false)
+      setSaving(false)
     }
   }
 
-  const checkableSubtasks = (selectedProject?.subtasks ?? []).filter((s) => s.kind !== 'pages')
-  const pagesSub = (selectedProject?.subtasks ?? []).find((s) => s.kind === 'pages')
-
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+    <Dialog open={open} onOpenChange={close}>
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Send className="h-4 w-4" />
-            {step === 1 ? 'Demo İsteği Oluştur' : 'Demo İçeriğini Seç'}
+            <Plus className="h-4 w-4 text-primary" />
+            Demo Oluştur
           </DialogTitle>
           <DialogDescription>
-            {step === 1
-              ? 'Bir proje seçin; ardından demo içeriğini belirleyeceksiniz.'
-              : 'Bu demo gönderiminde hangi içerikler hazır? En az bir tane seçin.'}
+            Projelerde olmayan dosyalardan bağımsız bir demo oluşturun.
           </DialogDescription>
         </DialogHeader>
 
-        {step === 1 ? (
-          projects.length === 0 ? (
-            <p className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
-              Tasarım aşamasında, demo isteğine uygun projeniz yok.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {completed.length > 0 && (
-                <PickGroup label="Tamamlanan">
-                  {completed.map((p) => (
-                    <PickRow
-                      key={p.id}
-                      project={p}
-                      selected={selectedId === p.id}
-                      onSelect={() => setSelectedId(p.id)}
-                    />
-                  ))}
-                </PickGroup>
-              )}
-              {inProgress.length > 0 && (
-                <PickGroup label="Devam eden">
-                  {inProgress.map((p) => (
-                    <PickRow
-                      key={p.id}
-                      project={p}
-                      selected={selectedId === p.id}
-                      onSelect={() => setSelectedId(p.id)}
-                    />
-                  ))}
-                </PickGroup>
-              )}
-            </div>
-          )
-        ) : (
-          <div className="space-y-3">
-            {/* Selected project info */}
-            <div className="rounded-md border bg-muted/30 px-3 py-2.5 text-sm">
-              <p className="font-medium text-foreground">{selectedProject?.title}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Genel ilerleme: {selectedProject?.progress ?? 0}%
-              </p>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">Demo Adı</label>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="örn. Yeni kapak denemesi"
+            />
+          </div>
+
+          {/* Content items — add your own like Kapak, Kutu, etc. */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">İçerikler</label>
+            <div className="flex gap-2">
+              <Input
+                value={itemDraft}
+                onChange={(e) => setItemDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addItem()
+                  }
+                }}
+                placeholder="örn. Kutu"
+              />
+              <Button type="button" variant="outline" onClick={() => addItem()}>
+                <Plus className="h-4 w-4" />
+                Ekle
+              </Button>
             </div>
 
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              İçerikler
-            </p>
-
-            {checkableSubtasks.map((s) => {
-              const checked = selectedSubtasks.includes(s.id)
-              return (
-                <label
-                  key={s.id}
-                  className={cn(
-                    'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors',
-                    checked ? 'border-primary/40 bg-primary/5' : 'hover:border-input hover:bg-muted/30',
-                  )}
+            {/* Quick suggestions */}
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {ITEM_SUGGESTIONS.filter((s) => !items.includes(s)).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => addItem(s)}
+                  className="rounded-full border border-dashed px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
                 >
-                  <Check
-                    className={cn(
-                      'h-4 w-4 shrink-0 rounded border',
-                      checked ? 'text-primary' : 'text-transparent',
-                    )}
-                    onClick={() => toggleSub(s.id)}
-                  />
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={checked}
-                    onChange={() => toggleSub(s.id)}
-                  />
-                  <span className="flex-1 text-sm font-medium">{s.title}</span>
-                  {s.is_done && (
-                    <span className="text-[11px] font-medium text-emerald-600">Hazır</span>
-                  )}
-                </label>
-              )
-            })}
+                  + {s}
+                </button>
+              ))}
+            </div>
 
-            {pagesSub && (
-              <div className="rounded-lg border bg-muted/20 px-3 py-2.5">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{pagesSub.title}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {pagesSub.pages_done ?? 0} / {pagesSub.total_pages ?? 0} sayfa
+            {/* Added items */}
+            {items.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {items.map((it) => (
+                  <span
+                    key={it}
+                    className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+                  >
+                    {it}
+                    <button
+                      type="button"
+                      onClick={() => removeItem(it)}
+                      className="rounded-full hover:text-primary/70"
+                      aria-label={`${it} kaldır`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
                   </span>
-                </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Sayfa sayısı demo ile otomatik gönderilir.
-                </p>
+                ))}
               </div>
             )}
           </div>
-        )}
 
-        <DialogFooter>
-          {step === 1 ? (
-            <>
-              <Button type="button" variant="ghost" onClick={() => handleClose(false)}>
-                İptal
-              </Button>
-              <Button type="button" onClick={goToStep2} disabled={!selectedId}>
-                Devam
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button type="button" variant="ghost" onClick={() => setStep(1)}>
-                Geri
-              </Button>
-              <Button type="button" onClick={submit} disabled={busy || selectedSubtasks.length === 0}>
-                <Send className="h-4 w-4" />
-                {busy ? 'Gönderiliyor…' : 'Demoya Gönder'}
-              </Button>
-            </>
-          )}
-        </DialogFooter>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">Dosyalar</label>
+            <input
+              type="file"
+              multiple
+              onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+              className="block w-full cursor-pointer rounded-lg border border-dashed bg-background px-3 py-2.5 text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary hover:file:bg-primary/20"
+            />
+            {files.length > 0 && (
+              <ul className="space-y-1 pt-1">
+                {files.map((f, i) => (
+                  <li key={i} className="truncate text-xs text-muted-foreground">
+                    • {f.name}{' '}
+                    <span className="text-muted-foreground/70">({Math.round(f.size / 1024)} KB)</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => close(false)}>
+              İptal
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Oluşturuluyor…' : 'Oluştur'}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )
 }
 
-function PickGroup({ label, children }) {
+/* ----------------------------- bits ------------------------------- */
+function SectionTitle({ icon: Icon, title, count }) {
   return (
-    <div className="space-y-1.5">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
-      <div className="space-y-1.5">{children}</div>
-    </div>
-  )
-}
-
-function PickRow({ project, selected, onSelect }) {
-  const meta = STATUS_META[statusKeyForProject(project)]
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={selected}
-      className={cn(
-        'flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        selected ? 'border-primary bg-primary/5' : 'hover:bg-muted/40',
-      )}
-    >
-      <span
-        className={cn(
-          'grid h-5 w-5 shrink-0 place-items-center rounded-full border',
-          selected ? 'border-primary bg-primary text-primary-foreground' : 'border-input',
-        )}
-      >
-        {selected && <Check className="h-3 w-3" />}
+    <div className="flex items-center gap-2">
+      <Icon className="h-4 w-4 text-muted-foreground" />
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-secondary px-1.5 text-[11px] font-semibold text-secondary-foreground">
+        {count}
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span className="truncate text-sm font-medium">{project.title}</span>
-          <Badge variant="secondary" className="shrink-0">
-            {TYPE_LABELS[project.type]}
-          </Badge>
-        </div>
-        <div className="mt-1.5 flex items-center gap-2">
-          <Progress value={project.progress} className="h-1.5 w-28" indicatorClassName={meta.dot} />
-          <span className="text-[11px] text-muted-foreground">{project.progress}%</span>
-        </div>
-      </div>
-    </button>
-  )
-}
-
-function Section({ title, hint, icon: Icon, count, children }) {
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-muted-foreground" />
-        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-        <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-secondary px-1.5 text-[11px] font-semibold text-secondary-foreground">
-          {count}
-        </span>
-        {hint && <span className="text-xs text-muted-foreground">· {hint}</span>}
-      </div>
-      {children}
-    </section>
+    </div>
   )
 }
 

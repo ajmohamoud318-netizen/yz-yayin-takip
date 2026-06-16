@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, CalendarOff } from 'lucide-react'
 
 import { useProjects } from '@/hooks/useProjects'
-import AppShell from '@/components/AppShell'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -22,7 +21,8 @@ const LEAD_MONTHS = { TR: 3, CIN: 4 }
 
 // Yellow (Satışta) is too light for white text.
 function barText(key) {
-  return key === 'yellow' ? 'text-amber-950' : 'text-white'
+  // Yellow (Satışta) and peach (Üretimde) are too light for white text.
+  return key === 'yellow' || key === 'pink' ? 'text-[#5A3017]' : 'text-white'
 }
 
 export default function YearPlan() {
@@ -99,7 +99,7 @@ export default function YearPlan() {
   }
 
   return (
-    <AppShell>
+    <>
       <div
         className="space-y-6 touch-pan-y"
         onTouchStart={onTouchStart}
@@ -229,7 +229,7 @@ export default function YearPlan() {
                             {/* progress bar */}
                             <div className="absolute inset-x-1.5 bottom-1 h-1 overflow-hidden rounded-full bg-black/20">
                               <div
-                                className={cn('h-full rounded-full', key === 'yellow' ? 'bg-amber-900' : 'bg-white')}
+                                className={cn('h-full rounded-full', key === 'yellow' || key === 'pink' ? 'bg-[#5A3017]' : 'bg-white')}
                                 style={{ width: `${p.progress}%` }}
                               />
                             </div>
@@ -271,6 +271,6 @@ export default function YearPlan() {
           </Card>
         )}
       </div>
-    </AppShell>
+    </>
   )
 }

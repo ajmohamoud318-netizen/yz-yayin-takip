@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { Search, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react'
 
 import { useProjects } from '@/hooks/useProjects'
-import AppShell from '@/components/AppShell'
 import FilterChip from '@/components/FilterChip'
 import { Card, CardContent } from '@/components/ui/card'
 import AssigneeAvatars from '@/components/AssigneeAvatars'
@@ -65,7 +64,7 @@ export default function AllProjects() {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="space-y-6">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -193,7 +192,7 @@ export default function AllProjects() {
           </Card>
         )}
       </div>
-    </AppShell>
+    </>
   )
 }
 
