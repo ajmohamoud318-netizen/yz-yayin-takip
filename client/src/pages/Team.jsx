@@ -102,6 +102,7 @@ export default function Team() {
                 <TabsTrigger value="team_leader">Lider</TabsTrigger>
                 <TabsTrigger value="designer">Tasarımcı</TabsTrigger>
                 <TabsTrigger value="printer">Matbaa</TabsTrigger>
+                <TabsTrigger value="satis">Satış</TabsTrigger>
               </TabsList>
             </Tabs>
           </CardContent>
@@ -184,6 +185,7 @@ function roleBadgeClass(role) {
   if (role === 'team_leader') return 'border-primary/30 bg-primary/10 text-primary'
   if (role === 'designer') return 'border-purple-200 bg-purple-50 text-purple-700'
   if (role === 'printer') return 'border-amber-200 bg-amber-50 text-amber-700'
+  if (role === 'satis') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
   return ''
 }
 
@@ -250,6 +252,7 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
               <SelectContent>
                 <SelectItem value="designer">{ROLE_LABELS.designer}</SelectItem>
                 <SelectItem value="printer">{ROLE_LABELS.printer}</SelectItem>
+                <SelectItem value="satis">{ROLE_LABELS.satis}</SelectItem>
                 <SelectItem value="team_leader">{ROLE_LABELS.team_leader}</SelectItem>
               </SelectContent>
             </Select>

@@ -94,21 +94,28 @@ For ÇİN projects same subtasks apply. Each subtask can be checked off by the d
 ---
 ## 🏗️ System Architecture
 ```
-[React Frontend] ──▶ [Node/Express REST API] ──▶ [PostgreSQL]
-                            │
-                    ┌───────┼────────┐
-                [JWT Auth] [Email]  [Notifications]
+[React Frontend] ──▶ [Node/Fastify REST API] ──▶ [PostgreSQL]
+                            │                          │
+                    ┌───────┼────────┐            [Redis]
+                [OAuth]  [Email]  [Notifications]  (sessions, cache, pub-sub)
 ```
 **Tech Stack:**
-| Layer        | Choice              | Why                                    |
-|--------------|---------------------|----------------------------------------|
-| Frontend     | React + Vite        | Fast, component-based, easy to extend  |
-| Styling      | Tailwind CSS        | Utility-first, no custom CSS bloat     |
-| Backend      | Node.js + Express   | Lightweight, JS everywhere             |
-| Database     | PostgreSQL          | Relational, ACID, great for pipelines  |
-| Auth         | JWT (httpOnly)      | Stateless, role-aware                  |
-| Email        | Nodemailer          | Invitations + stage notifications      |
-| Hosting      | Railway / Render    | One-click deploys, free tier           |
+| Layer        | Choice                  | Why                                          |
+|--------------|-------------------------|----------------------------------------------|
+| Frontend     | React + Vite            | Fast, component-based, easy to extend        |
+| UI / Icons   | shadcn/ui + Tailwind    | Prebuilt accessible components, utility-first |
+| Backend      | Node.js + Fastify       | Faster than Express, built-in schema validation |
+| Database     | PostgreSQL              | Relational, ACID, great for pipelines        |
+| Cache / RT   | Redis                   | Session store, notification pub-sub, caching |
+| Auth         | OAuth (Google)          | No passwords to manage, team uses Google     |
+| Email        | Nodemailer              | Invitations + stage notifications            |
+| Hosting      | Railway / Render        | One-click deploys, free tier                 |
+
+**Redis usage in this app:**
+- OAuth session storage (server-side sessions keyed by session ID)
+- Rate limiting per user/IP on sensitive routes
+- Real-time notification pub-sub (stage changes → push to connected clients)
+- Short-lived cache for dashboard project lists (TTL: 30s)
 ---
 ## 📁 File Structure
 ```
@@ -119,19 +126,21 @@ yz-yayin-takip/
 │
 ├── server/
 │   ├── index.js
-│   ├── db.js
+│   ├── db.js                    # PostgreSQL connection pool
+│   ├── redis.js                 # Redis client + helpers
 │   ├── middleware/
-│   │   ├── auth.js              # JWT verify + role check
+│   │   ├── auth.js              # OAuth session verify + role attach
 │   │   └── requireRole.js       # role-based guard
 │   ├── routes/
-│   │   ├── auth.js              # login, logout, accept-invite
+│   │   ├── auth.js              # OAuth callback, session, logout, /me
 │   │   ├── projects.js          # CRUD + stage transitions
 │   │   ├── subtasks.js          # check/uncheck subtasks
 │   │   ├── approvals.js         # approve / reject with reason
 │   │   └── users.js             # invite, deactivate, list
 │   ├── services/
 │   │   ├── email.js             # nodemailer wrapper
-│   │   └── notifications.js     # stage change notifications
+│   │   ├── notifications.js     # stage change notifications (Redis pub-sub)
+│   │   └── session.js           # Redis session store helpers
 │   └── db/
 │       ├── schema.sql
 │       └── seed.sql
@@ -153,6 +162,7 @@ yz-yayin-takip/
         │   ├── ProjectDetail.jsx # subtasks, stage bar, history
         │   └── Team.jsx          # user management (Ayşenur only)
         └── components/
+            ├── ui/               # shadcn/ui generated components
             ├── ProjectCard.jsx
             ├── StageBar.jsx
             ├── SubtaskList.jsx
@@ -229,10 +239,10 @@ CREATE INDEX idx_history_project ON stage_history(project_id);
 ## 🔌 API Endpoints
 ### Auth
 ```
-POST   /api/auth/login                { email, password } → { token, user }
-POST   /api/auth/logout
-GET    /api/auth/me
-POST   /api/auth/accept-invite        { token, password } → sets password + marks joined
+GET    /api/auth/google               redirect to Google OAuth consent screen
+GET    /api/auth/google/callback      OAuth callback → creates session in Redis → redirect
+POST   /api/auth/logout               destroy session in Redis
+GET    /api/auth/me                   → { user } from session
 ```
 ### Projects
 ```
@@ -268,20 +278,27 @@ PATCH  /api/users/:id/reactivate      [team_leader]
 | printer      | Approval queue   | See projects awaiting Demo/Özalit approval, approve |
 ---
 ## 📐 Conventions
-- Backend: ES modules, async/await, errors as `{ status, message }`
-- Frontend: functional components + hooks only
-- All API calls through `client/src/api.js` (Axios + auth header)
+- Backend: Node.js + Fastify, ES modules, async/await, errors as `{ status, message }`
+- Fastify schema validation on all route inputs (JSON Schema)
+- Frontend: functional components + hooks only, shadcn/ui for all UI primitives
+- All API calls through `client/src/api.js` (Axios + session cookie)
+- Auth: OAuth session cookie (httpOnly, sameSite=strict), session data in Redis
 - Dates: stored UTC, displayed `tr-TR` locale
 - Stage transitions: always go through `/advance`, `/approve`, `/reject` — never direct PATCH on stage
 - Progress %: recalculated server-side on every subtask PATCH
 - Rejection always requires `reason` field — backend enforces this
+- Redis keys: `session:{id}` (TTL 7d), `cache:projects` (TTL 30s), `notify:{userId}` (pub-sub)
 ---
 ## 🚀 Production Checklist
-- [ ] Passwords hashed with bcrypt (cost 12)
-- [ ] JWT in httpOnly cookie
-- [ ] Role middleware on every protected route
-- [ ] Invitation tokens expire after 48 hours
+- [ ] OAuth app registered in Google Cloud Console (client ID + secret in .env)
+- [ ] Session cookie: httpOnly, sameSite=strict, secure=true in production
+- [ ] Redis session TTL set to 7 days; auto-refresh on activity
+- [ ] Role middleware on every protected Fastify route
+- [ ] Fastify JSON schema validation on all POST/PATCH inputs
+- [ ] Rate limiting via Redis on auth + sensitive routes
+- [ ] Invitation flow: add email to allowlist in DB → user signs in via Google
 - [ ] File uploads: type + size validated
 - [ ] `.env` never committed
 - [ ] CORS locked to production domain
 - [ ] DB connection pool max 10
+- [ ] Redis connection with retry + reconnect strategy

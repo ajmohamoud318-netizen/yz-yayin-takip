@@ -15,6 +15,7 @@ import {
 import { Progress } from '@/components/ui/progress'
 import api from '@/api'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
+import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { cn } from '@/lib/utils'
 
 /**
@@ -24,6 +25,7 @@ import { cn } from '@/lib/utils'
  */
 export default function DemoSubmitDialog({ open, onOpenChange, project, onDone }) {
   const { updateOne } = useProjectsStore()
+  const celebrate = useDesignerCelebration()
   const [selected, setSelected] = useState([])
   const [busy, setBusy] = useState(false)
   // The list-view project has no subtasks; fetch the full detail when opened.
@@ -72,6 +74,7 @@ export default function DemoSubmitDialog({ open, onOpenChange, project, onDone }
       const updated = await api.advanceProject(project.id)
       updateOne(updated)
       toast.success('Demo isteği matbaaya gönderildi.')
+      celebrate()
       onDone?.(updated)
       onOpenChange(false)
     } catch (err) {

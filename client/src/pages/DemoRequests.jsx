@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Send, Plus, Clock, Check, FileText, RefreshCw, X } from 'lucide-react'
+import { useProjectModal } from '@/hooks/useProjectModal'
+import { Send, Plus, Clock, Check, FileText, RefreshCw, X, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
@@ -19,6 +19,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import ApprovalDialog from '@/components/ApprovalDialog'
+import DemoFormDialog from '@/components/DemoFormDialog'
 import api, { STAGE_LABELS, STATUS_META, TYPE_LABELS, statusKeyForProject } from '@/api'
 import { cn } from '@/lib/utils'
 
@@ -51,10 +53,11 @@ function whereLabel(stage) {
 export default function DemoRequests() {
   const { user } = useAuth()
   const { projects, loading, refetch } = useProjects()
-  const navigate = useNavigate()
+  const { openProject } = useProjectModal()
   const [demoOpen, setDemoOpen] = useState(false)
   const [demos, setDemos] = useState([])
-  const [busy, setBusy] = useState(null)
+  const [approvalDialog, setApprovalDialog] = useState(null) // { project, mode }
+  const [demoFormState, setDemoFormState] = useState(null)   // { project, mode }
 
   // Team leader and designers can request / create demos.
   const canDemo = user?.role === 'team_leader' || user?.role === 'designer'
@@ -72,17 +75,8 @@ export default function DemoRequests() {
 
   const inFlow = useMemo(() => projects.filter((p) => IN_FLOW.includes(p.stage)), [projects])
 
-  async function requestDemo(p) {
-    setBusy(p.id)
-    try {
-      await api.requestDemo(p.id)
-      toast.success(`“${p.title}” için demo istendi.`)
-      refetch()
-    } catch (err) {
-      toast.error(err.message || 'Demo istenemedi.')
-    } finally {
-      setBusy(null)
-    }
+  function openDemoForm(p, mode = 'request') {
+    setDemoFormState({ project: p, mode })
   }
 
   return (
@@ -147,9 +141,19 @@ export default function DemoRequests() {
                           </div>
                         )}
                       </div>
-                      <Badge variant="secondary" className="shrink-0">
-                        Demo
-                      </Badge>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openDemoForm(
+                            { id: d.id, title: d.title, assignees: [], assigned_name: '', subtasks: [], history: [], demo_attempt: 0 },
+                            'view'
+                          )}
+                        >
+                          <FileText className="h-4 w-4" />
+                          Formu Görüntüle
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -170,8 +174,8 @@ export default function DemoRequests() {
                         key={p.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => navigate(`/projects/${p.id}`)}
-                        onKeyDown={(e) => e.key === 'Enter' && navigate(`/projects/${p.id}`)}
+                        onClick={() => openProject(p.id)}
+                        onKeyDown={(e) => e.key === 'Enter' && openProject(p.id)}
                         className="flex cursor-pointer items-center gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm transition-colors hover:border-primary/30 hover:bg-muted/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', meta.dot)} />
@@ -189,19 +193,22 @@ export default function DemoRequests() {
 
                         {canDemo &&
                           (p.demo_requested ? (
-                            <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); openDemoForm(p, 'view') }}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+                            >
                               <Check className="h-3.5 w-3.5" />
                               Demo İstendi
-                            </span>
+                            </button>
                           ) : (
                             <Button
                               size="sm"
                               variant="outline"
                               className="shrink-0"
-                              disabled={busy === p.id}
                               onClick={(e) => {
                                 e.stopPropagation()
-                                requestDemo(p)
+                                openDemoForm(p, 'request')
                               }}
                             >
                               <Send className="h-4 w-4" />
@@ -224,22 +231,74 @@ export default function DemoRequests() {
                 <div className="grid gap-3 md:grid-cols-2">
                   {inFlow.map((p) => {
                     const meta = STATUS_META[statusKeyForProject(p)]
+                    const canTeslim =
+                      user?.role === 'printer' &&
+                      p.type === 'TR' &&
+                      (p.stage === 'demo_teslim' || p.stage === 'ozalit_teslim')
+                    const canAct =
+                      user?.role === 'team_leader' &&
+                      (p.stage === 'demo_onay' || p.stage === 'ozalit_onay' || p.stage === 'cin_demo_onay')
                     return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => navigate(`/projects/${p.id}`)}
-                        className="flex items-center gap-3 rounded-xl border bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/30 hover:bg-muted/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', meta.dot)} />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold">{p.title}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">{STAGE_LABELS[p.stage]}</p>
-                        </div>
-                        <Badge variant="outline" className="shrink-0">
-                          {whereLabel(p.stage)}
-                        </Badge>
-                      </button>
+                      <div key={p.id} className="rounded-xl border bg-card shadow-sm">
+                        <button
+                          type="button"
+                          onClick={() => openProject(p.id)}
+                          className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-muted/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-t-xl"
+                        >
+                          <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', meta.dot)} />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold">{p.title}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">{STAGE_LABELS[p.stage]}</p>
+                          </div>
+                          <Badge variant="outline" className="shrink-0">
+                            {whereLabel(p.stage)}
+                          </Badge>
+                        </button>
+                        {(canTeslim || canAct) && (
+                          <div className="flex items-center gap-2 border-t px-3 py-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="flex-1 text-xs"
+                              onClick={() => openProject(p.id)}
+                            >
+                              Detay
+                            </Button>
+                            {canTeslim && (
+                              <Button
+                                size="sm"
+                                className="flex-1"
+                                onClick={() => setApprovalDialog({ project: p, mode: 'advance' })}
+                              >
+                                <Send className="h-4 w-4" />
+                                Teslim Et
+                              </Button>
+                            )}
+                            {canAct && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  className="flex-1"
+                                  onClick={() => setApprovalDialog({ project: p, mode: 'reject' })}
+                                >
+                                  <ThumbsDown className="h-4 w-4" />
+                                  Reddet
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="success"
+                                  className="flex-1"
+                                  onClick={() => setApprovalDialog({ project: p, mode: 'approve' })}
+                                >
+                                  <ThumbsUp className="h-4 w-4" />
+                                  Onayla
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )
                   })}
                 </div>
@@ -254,13 +313,30 @@ export default function DemoRequests() {
         onOpenChange={setDemoOpen}
         onCreated={loadDemos}
       />
+
+      <ApprovalDialog
+        open={!!approvalDialog}
+        onOpenChange={(v) => setApprovalDialog(v ? approvalDialog : null)}
+        project={approvalDialog?.project}
+        mode={approvalDialog?.mode ?? 'approve'}
+        advanceLabel="Teslim Et"
+        onDone={() => refetch()}
+      />
+
+      <DemoFormDialog
+        open={!!demoFormState}
+        onOpenChange={(v) => setDemoFormState(v ? demoFormState : null)}
+        project={demoFormState?.project}
+        mode={demoFormState?.mode ?? 'view'}
+        onDone={() => { setDemoFormState(null); refetch() }}
+      />
     </>
   )
 }
 
 /* ----------------------- create demo dialog ----------------------- */
 // Quick-add suggestions for demo content items.
-const ITEM_SUGGESTIONS = ['Kapak', 'Kutu', 'Ses', 'Video', 'Yazılım', 'İçerik']
+const ITEM_SUGGESTIONS = ['Kapak', 'Kutu', 'Ses', 'Video', 'Yazılım']
 
 function CreateDemoDialog({ open, onOpenChange, onCreated }) {
   const [title, setTitle] = useState('')

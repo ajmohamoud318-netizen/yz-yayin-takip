@@ -9,9 +9,12 @@ import { useAuth } from '../hooks/useAuth.js'
  */
 const DEMO_USERS = [
   { email: 'aysenur@yukselenzeka.com', name: 'Ayşenur Kanak', role: 'Takım Lideri', initials: 'AY' },
-  { email: 'aylin@yukselenzeka.com', name: 'Aylin', role: 'Tasarımcı', initials: 'AY' },
-  { email: 'mert@yukselenzeka.com', name: 'Mert Kaya', role: 'Tasarımcı', initials: 'MK' },
+  { email: 'aylin@yukselenzeka.com', name: 'Aylin Ulu', role: 'Tasarımcı', initials: 'AU' },
+  { email: 'feyza@yukselenzeka.com', name: 'Feyza Küçükkurt', role: 'Tasarımcı', initials: 'FK' },
+  { email: 'nur@yukselenzeka.com', name: 'Nur Ekincioğlu', role: 'Tasarımcı', initials: 'NE' },
+  { email: 'sumeyye.arslanturk@yukselenzeka.com', name: 'Sümeyye Arslantürk', role: 'Tasarımcı', initials: 'SA' },
   { email: 'oktay@yukselenzeka.com', name: 'Oktay Şahin', role: 'Matbaa', initials: 'OŞ' },
+  { email: 'esra@yukselenzeka.com', name: 'Esra Kılıçkan', role: 'Satış Ekibi', initials: 'EK' },
 ]
 const DEMO_PASSWORD = '123456'
 
@@ -42,11 +45,11 @@ export default function Login() {
     submit(email, password)
   }
 
-  // Fill the fields when a user chip is clicked (does not auto-submit).
   function pick(user) {
     setEmail(user.email)
     setPassword(DEMO_PASSWORD)
     setError('')
+    submit(user.email, DEMO_PASSWORD)
   }
 
   return (
@@ -140,7 +143,7 @@ export default function Login() {
               ))}
             </div>
             <p className="mt-3 text-center text-xs text-slate-400">
-              Bir kullanıcıya tıklayın, bilgiler otomatik dolar (şifre: 123456)
+              Bir kullanıcıya tıklayın, otomatik giriş yapılır.
             </p>
           </div>
         </div>

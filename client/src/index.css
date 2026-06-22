@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+/* Fonts loaded once in index.html (Baloo 2 + Inter, combined request) */
 
 @tailwind base;
 @tailwind components;
@@ -53,10 +53,128 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, 'Segoe UI', sans-serif;
+    font-optical-sizing: auto;
+  }
+
+  /* Baloo 2 carries brand personality in headings only.
+     Body copy, nav, labels, and UI controls use Inter. */
+  h1 {
+    font-family: 'Baloo 2', cursive;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  h2 {
+    font-family: 'Baloo 2', cursive;
+    font-weight: 700;
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: 'Baloo 2', cursive;
+    font-weight: 600;
+    line-height: 1.3;
+    text-wrap: balance;
   }
 }
 
-/* Notification toast bars: pale yellow with dark rose text (rule 10) */
+/* ------------------------------------------------------------------ */
+/*  Page transition — fade + tiny lift on route change                 */
+/*  AppShell mounts <main key={pathname}> so this fires on navigation  */
+/* ------------------------------------------------------------------ */
+.page-enter {
+  animation: page-enter 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter {
+    animation: page-enter-fade 0.25s ease-out both;
+  }
+
+  @keyframes page-enter-fade {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Sidebar nav highlight — glowy + bouncy when there's work pending   */
+/*  Applied to Demo Onayı / Özalit Onayı items when their count > 0    */
+/* ------------------------------------------------------------------ */
+.nav-pulse-glow {
+  position: relative;
+  background-image: linear-gradient(135deg, hsl(45 100% 96%) 0%, hsl(35 100% 94%) 100%);
+  box-shadow:
+    0 0 0 1px hsl(38 92% 60% / 0.55),
+    0 0 14px 2px hsl(38 95% 60% / 0.45);
+  animation: nav-pulse-glow 1.6s ease-in-out infinite;
+}
+
+.nav-bounce {
+  animation:
+    nav-pulse-glow 2.4s ease-in-out infinite,
+    nav-bounce 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) 2 both;
+  transform-origin: center;
+  will-change: transform, box-shadow;
+}
+
+@keyframes nav-pulse-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px hsl(38 92% 60% / 0.55),
+      0 0 14px 2px hsl(38 95% 60% / 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px hsl(38 92% 65% / 0.85),
+      0 0 22px 5px hsl(38 95% 60% / 0.7);
+  }
+}
+
+@keyframes nav-bounce {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  30% {
+    transform: translateY(-4px) scale(1.03);
+  }
+  60% {
+    transform: translateY(0) scale(1);
+  }
+  80% {
+    transform: translateY(-2px) scale(1.01);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-pulse-glow,
+  .nav-bounce {
+    animation: none;
+    box-shadow:
+      0 0 0 1px hsl(38 92% 60% / 0.55),
+      0 0 10px 1px hsl(38 95% 60% / 0.35);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Notification toast bars: pale yellow with dark rose text           */
+/* ------------------------------------------------------------------ */
 [data-sonner-toast]:not([data-type='error']) {
   background: #fff2cc !important;
   color: #7e2547 !important;

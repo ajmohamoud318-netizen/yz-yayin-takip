@@ -27,6 +27,7 @@ import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { cn, initials, monthOffset } from '@/lib/utils'
 
 const emptySubtasks = () => SUBTASK_LIBRARY.reduce((acc, s) => ({ ...acc, [s.key]: false }), {})
+const emptySubtaskAssignees = () => SUBTASK_LIBRARY.reduce((acc, s) => ({ ...acc, [s.key]: '' }), {})
 
 /**
  * Create / edit a publication project. Team leader only.
@@ -40,7 +41,11 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
   const [type, setType] = useState('TR')
   const [assignedIds, setAssignedIds] = useState([])
   const [pageCount, setPageCount] = useState(32)
+  const [stickerCount, setStickerCount] = useState(1)
   const [subtasks, setSubtasks] = useState(emptySubtasks)
+  // Per-subtask designer assignment: { [subtaskKey]: userId | '' }
+  const [subtaskAssignees, setSubtaskAssignees] = useState(emptySubtaskAssignees)
+  const [targetMonth, setTargetMonth] = useState(monthOffset(1).slice(0, 7))
   const [designers, setDesigners] = useState([])
   const [saving, setSaving] = useState(false)
 
@@ -53,15 +58,24 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
       setTitle(project.title)
       setType(project.type)
       setAssignedIds((project.assignees ?? []).map((a) => a.id))
+      setTargetMonth((project.target_month ?? monthOffset(1)).slice(0, 7))
       const map = emptySubtasks()
+      const assigneeMap = emptySubtaskAssignees()
       let pc = 32
       for (const s of project.subtasks ?? []) {
         const key = SUBTASK_LIBRARY.find((l) => l.label === s.title)?.key
-        if (key) map[key] = true
+        if (key) {
+          map[key] = true
+          if (s.assigned_to) assigneeMap[key] = s.assigned_to
+        }
         if (s.kind === 'pages' && s.total_pages) pc = s.total_pages
+        if (s.kind === 'sticker-count' && s.total_stickers) setStickerCount(s.total_stickers)
       }
       setSubtasks(map)
+      setSubtaskAssignees(assigneeMap)
       setPageCount(pc)
+    } else {
+      setTargetMonth(monthOffset(1).slice(0, 7))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -70,8 +84,11 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
     setTitle('')
     setType('TR')
     setAssignedIds([])
+    setTargetMonth(monthOffset(1).slice(0, 7))
     setSubtasks(emptySubtasks())
+    setSubtaskAssignees(emptySubtaskAssignees())
     setPageCount(32)
+    setStickerCount(1)
   }
 
   function toggleDesigner(id) {
@@ -88,8 +105,12 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
       toast.error('Lütfen en az bir tasarımcı seçin.')
       return
     }
-    if (subtasks.sayfa && (!pageCount || Number(pageCount) < 1)) {
+    if (subtasks.sayfalar && (!pageCount || Number(pageCount) < 1)) {
       toast.error('Lütfen toplam sayfa sayısını girin.')
+      return
+    }
+    if (subtasks.sticker && (!stickerCount || Number(stickerCount) < 1)) {
+      toast.error('Lütfen sticker adedini girin.')
       return
     }
     setSaving(true)
@@ -102,7 +123,10 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         type,
         assignees: assignedIds,
         subtasks: selected,
-        pageCount: subtasks.sayfa ? Number(pageCount) : undefined,
+        pageCount: subtasks.sayfalar ? Number(pageCount) : undefined,
+        stickerCount: subtasks.sticker ? Number(stickerCount) : undefined,
+        subtaskAssignees,
+        target_month: targetMonth ? `${targetMonth}-01` : monthOffset(1),
       }
       if (isEdit) {
         const updated = await api.updateProject(project.id, payload)
@@ -110,7 +134,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         toast.success('Proje güncellendi.')
         onUpdated?.(updated)
       } else {
-        const created = await api.createProject({ ...payload, target_month: monthOffset(1) })
+        const created = await api.createProject(payload)
         addOne(created)
         toast.success('Proje oluşturuldu.')
         onCreated?.(created)
@@ -140,11 +164,11 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
             {isEdit ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
             {isEdit ? 'Projeyi Düzenle' : 'Yeni Proje Oluştur'}
           </DialogTitle>
-          <DialogDescription>
-            {isEdit
-              ? 'Proje bilgilerini, tasarımcıları ve içerikleri güncelleyin.'
-              : 'Yeni bir yayın projesi başlatın ve tasarımcılara atayın.'}
-          </DialogDescription>
+          {isEdit ? (
+            <DialogDescription>
+              Proje bilgilerini, tasarımcıları ve içerikleri güncelleyin.
+            </DialogDescription>
+          ) : null}
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -159,17 +183,30 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
             />
           </div>
 
-          <div className="space-y-1.5 sm:max-w-[12rem]">
-            <Label>Tür</Label>
-            <Select value={type} onValueChange={setType}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="TR">{TYPE_LABELS.TR}</SelectItem>
-                <SelectItem value="CIN">{TYPE_LABELS.CIN}</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap gap-4">
+            <div className="space-y-1.5">
+              <Label>Tür</Label>
+              <Select value={type} onValueChange={setType}>
+                <SelectTrigger className="w-[12rem]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TR">{TYPE_LABELS.TR}</SelectItem>
+                  <SelectItem value="CIN">{TYPE_LABELS.CIN}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="np-month">Hedef Tarih</Label>
+              <Input
+                id="np-month"
+                type="month"
+                value={targetMonth}
+                onChange={(e) => setTargetMonth(e.target.value)}
+                className="w-[12rem]"
+              />
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -200,23 +237,58 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
           </div>
 
           <div className="space-y-2">
-            <Label>Alt Görevler</Label>
-            <div className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/30 p-3 sm:grid-cols-3">
-              {SUBTASK_LIBRARY.map((s) => (
-                <label
-                  key={s.key}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-background"
-                >
-                  <Checkbox
-                    checked={!!subtasks[s.key]}
-                    onCheckedChange={(v) => setSubtasks((prev) => ({ ...prev, [s.key]: !!v }))}
-                  />
-                  <span>{s.label}</span>
-                </label>
-              ))}
+            <div className="flex items-center justify-between">
+              <Label>Alt Görevler</Label>
+              {assignedIds.length > 1 && (
+                <span className="text-[11px] text-muted-foreground">Seçili alt göreve farklı tasarımcı atayabilirsiniz</span>
+              )}
+            </div>
+            <div className="space-y-1 rounded-lg border bg-muted/30 p-3">
+              {SUBTASK_LIBRARY.map((s) => {
+                const isChecked = !!subtasks[s.key]
+                return (
+                  <div key={s.key} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-background">
+                    <Checkbox
+                      id={`st-${s.key}`}
+                      checked={isChecked}
+                      onCheckedChange={(v) => {
+                        setSubtasks((prev) => ({ ...prev, [s.key]: !!v }))
+                        if (!v) setSubtaskAssignees((prev) => ({ ...prev, [s.key]: '' }))
+                      }}
+                    />
+                    <label
+                      htmlFor={`st-${s.key}`}
+                      className="flex-1 cursor-pointer text-sm select-none"
+                    >
+                      {s.label}
+                    </label>
+                    {isChecked && assignedIds.length > 1 && (
+                      <Select
+                        value={subtaskAssignees[s.key] || ''}
+                        onValueChange={(v) =>
+                          setSubtaskAssignees((prev) => ({ ...prev, [s.key]: v }))
+                        }
+                      >
+                        <SelectTrigger className="h-7 w-36 text-xs">
+                          <SelectValue placeholder="Tasarımcı seç…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {designers
+                            .filter((d) => assignedIds.includes(d.id))
+                            .map((d) => (
+                              <SelectItem key={d.id} value={d.id}>
+                                {d.name}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                )
+              })}
             </div>
 
-            {subtasks.sayfa && (
+            {subtasks.sayfalar && (
               <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/30 p-3">
                 <Label htmlFor="np-pages" className="text-sm">
                   Toplam sayfa sayısı
@@ -231,6 +303,25 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                 />
                 <span className="text-xs text-muted-foreground">
                   Tasarımcı bittikçe sayfa ekleyip ilerlemeyi günceller.
+                </span>
+              </div>
+            )}
+
+            {subtasks.sticker && (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/30 p-3">
+                <Label htmlFor="np-stickers" className="text-sm">
+                  Toplam sticker adedi
+                </Label>
+                <Input
+                  id="np-stickers"
+                  type="number"
+                  min="1"
+                  value={stickerCount}
+                  onChange={(e) => setStickerCount(e.target.value)}
+                  className="h-9 w-28"
+                />
+                <span className="text-xs text-muted-foreground">
+                  Tasarımcı bittikçe sticker ekleyip ilerlemeyi günceller.
                 </span>
               </div>
             )}

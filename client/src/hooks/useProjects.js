@@ -1,45 +1,15 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import api from '../api.js'
+import { useProjectsStore } from './useProjectsStore.jsx'
 
 /**
- * Loads the project list for the dashboard. Returns the raw list plus
- * loading/error state and a refetch helper. Grouping/coloring is derived
- * in the components via the helpers exported from api.js.
+ * Project list for the pages. Delegates to the shared ProjectsProvider store so
+ * every page and dialog reads/writes the SAME list — otherwise a mutation made
+ * in a dialog (approve/reject/advance) wouldn't show up on the page that opened
+ * it (e.g. the approval queue would keep showing an already-approved project).
  */
 export function useProjects() {
-  const [projects, setProjects] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-
-  const fetchProjects = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const data = await api.listProjects()
-      setProjects(data)
-    } catch (e) {
-      setError(e.message || 'Projeler yüklenemedi.')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchProjects()
-  }, [fetchProjects])
-
-  // Replace or insert a single project (used after mutations like advance).
-  const updateOne = useCallback((updated) => {
-    setProjects((prev) => {
-      const idx = prev.findIndex((p) => p.id === updated.id)
-      if (idx === -1) return [...prev, updated]
-      const next = prev.slice()
-      next[idx] = updated
-      return next
-    })
-  }, [])
-
-  return { projects, loading, error, refetch: fetchProjects, updateOne }
+  return useProjectsStore()
 }
 
 /**

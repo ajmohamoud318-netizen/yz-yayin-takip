@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -17,14 +17,20 @@ import {
   CalendarClock,
   CheckCircle2,
   Printer,
-  PanelLeft,
   Presentation,
   FolderKanban,
+  MoreVertical,
+  FolderOpen,
+  Package,
+  Zap,
+  ShoppingCart,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
 import { useProjects } from '@/hooks/useProjects'
+import { useProjectModal } from '@/hooks/useProjectModal'
+import ProjectDetail from '@/pages/ProjectDetail'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -35,9 +41,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
-import { ROLE_LABELS, STATUS_META, statusKeyForProject } from '@/api'
+import api, { ROLE_LABELS, STATUS_META, statusKeyForProject } from '@/api'
 import { cn, initials } from '@/lib/utils'
 import NewProjectDialog from '@/components/NewProjectDialog'
 
@@ -52,7 +57,12 @@ export default function AppShell() {
   const { user, logout } = useAuth()
   const { projects } = useProjects()
   const navigate = useNavigate()
+  const { projectId: modalProjectId, openProject, closeProject } = useProjectModal()
   const [open, setOpen] = useState(false) // mobile drawer
+  const [pendingOrders, setPendingOrders] = useState(0)    // team_leader: pending + matbaa_onay
+  const [printerOrders, setPrinterOrders] = useState(0)   // printer: tasarimci_onay
+  const [designerOrders, setDesignerOrders] = useState(0) // designer: goruldu (for their projects)
+  const [orders, setOrders] = useState([])                // full talep list, fed to the bell
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(COLLAPSE_KEY) === '1'
@@ -78,23 +88,28 @@ export default function AppShell() {
   const counts = useMemo(() => {
     const role = user?.role
     let active = 0
-    let approvals = 0
+    let demoApprovals = 0
+    let ozalitApprovals = 0
     let production = 0
     let satista = 0
     let myProjects = 0
+    let urgent = 0
     for (const p of projects) {
       if (p.stage !== 'satista') active++
       else satista++
       // Printer queue = incoming teslim; leader queue = pending onay.
       if (role === 'printer') {
-        if (p.type === 'TR' && (p.stage === 'demo_teslim' || p.stage === 'ozalit_teslim')) approvals++
+        if (p.type === 'TR' && p.stage === 'demo_teslim') demoApprovals++
+        if (p.type === 'TR' && p.stage === 'ozalit_teslim') ozalitApprovals++
       } else if (role === 'team_leader') {
-        if (p.stage === 'demo_onay' || p.stage === 'ozalit_onay' || p.stage === 'cin_demo_onay') approvals++
+        if (p.stage === 'demo_onay' || p.stage === 'cin_demo_onay') demoApprovals++
+        if (p.stage === 'ozalit_onay') ozalitApprovals++
       }
       if (p.stage === 'uretimde' || p.stage === 'gumruk') production++
       if (role === 'designer' && (p.assignees ?? []).some((a) => a.id === user?.id)) myProjects++
+      if ((p.demo_attempt ?? 0) >= 2 || (p.ozalit_attempt ?? 0) >= 2) urgent++
     }
-    return { active, approvals, production, satista, total: projects.length, myProjects }
+    return { active, demoApprovals, ozalitApprovals, production, satista, total: projects.length, myProjects, urgent }
   }, [projects, user?.role, user?.id])
 
   const pinned = useMemo(
@@ -106,7 +121,39 @@ export default function AppShell() {
     [projects],
   )
 
-  const groups = navGroups(user?.role, counts)
+  const groups = navGroups(user?.role, counts, pendingOrders, printerOrders, designerOrders)
+
+  useEffect(() => {
+    const role = user?.role
+    if (!role) return
+    api.listOrderRequests().then((orders) => {
+      setOrders(orders) // full list — the bell derives per-role notifications from it
+      if (role === 'team_leader') {
+        setPendingOrders(orders.filter((o) => o.status === 'pending' || o.status === 'matbaa_onay').length)
+      } else if (role === 'printer') {
+        setPrinterOrders(orders.filter((o) => o.status === 'tasarimci_onay').length)
+      } else if (role === 'designer') {
+        // Only orders where the project is assigned to this designer
+        const myIds = new Set(projects.filter((p) => (p.assignees ?? []).some((a) => a.id === user.id)).map((p) => p.id))
+        setDesignerOrders(orders.filter((o) => o.status === 'goruldu' && myIds.has(o.project_id)).length)
+      }
+    }).catch(() => {})
+  }, [user?.role, user?.id, projects])
+
+  // Safety net: when the project detail Sheet closes, make sure Radix hasn't
+  // left `pointer-events: none` stuck on <body>. Overlapping Radix overlays
+  // (e.g. the notification dropdown handing off to this Sheet) can otherwise
+  // leave the page unclickable until a full refresh.
+  useEffect(() => {
+    if (!modalProjectId) {
+      const id = requestAnimationFrame(() => {
+        if (document.body.style.pointerEvents === 'none') {
+          document.body.style.pointerEvents = ''
+        }
+      })
+      return () => cancelAnimationFrame(id)
+    }
+  }, [modalProjectId])
 
   async function handleLogout() {
     await logout()
@@ -119,7 +166,7 @@ export default function AppShell() {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          'sticky top-0 hidden h-screen shrink-0 flex-col border-r bg-sidebar transition-[width] duration-200 ease-out lg:flex',
+          'sticky top-0 hidden h-screen shrink-0 flex-col border-r bg-background transition-[width] duration-200 ease-out lg:flex',
           collapsed ? 'w-[4.25rem]' : 'w-64',
         )}
       >
@@ -130,6 +177,8 @@ export default function AppShell() {
           counts={counts}
           user={user}
           onLogout={handleLogout}
+          onToggleCollapsed={toggleCollapsed}
+          onOpenProject={openProject}
         />
       </aside>
 
@@ -145,6 +194,7 @@ export default function AppShell() {
               user={user}
               onLogout={handleLogout}
               onNavigate={() => setOpen(false)}
+              onOpenProject={openProject}
             />
           </div>
         </SheetContent>
@@ -161,16 +211,6 @@ export default function AppShell() {
             aria-label="Menüyü aç"
           >
             <Menu className="h-5 w-5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden lg:inline-flex"
-            onClick={toggleCollapsed}
-            aria-label={collapsed ? 'Kenar çubuğunu aç' : 'Kenar çubuğunu kapat'}
-            aria-pressed={!collapsed}
-          >
-            <PanelLeft className="h-4 w-4" />
           </Button>
 
           <Breadcrumb pathname={location.pathname} />
@@ -196,7 +236,8 @@ export default function AppShell() {
             <NotificationBell
               projects={projects}
               user={user}
-              onOpenProject={(id) => navigate(`/projects/${id}`)}
+              orders={orders}
+              onOpenProject={openProject}
             />
             <UserMenu user={user} onLogout={handleLogout} />
           </div>
@@ -208,23 +249,30 @@ export default function AppShell() {
       </div>
 
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
+
+      {/* Project detail modal sheet */}
+      <Sheet open={!!modalProjectId} onOpenChange={(v) => !v && closeProject()}>
+        <SheetContent side="right" className="w-full overflow-y-auto p-4 sm:max-w-3xl">
+          {modalProjectId && <ProjectDetail projectId={modalProjectId} isModal />}
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
 
 /* ----------------------------- sidebar ----------------------------- */
 
-function Sidebar({ collapsed, groups, pinned, counts, user, onLogout, onNavigate }) {
+function Sidebar({ collapsed, groups, pinned, counts, user, onLogout, onNavigate, onToggleCollapsed, onOpenProject }) {
   return (
     <>
-      <SidebarBrand collapsed={collapsed} />
+      <SidebarBrand collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />
       <div className="scrollbar-thin flex-1 overflow-y-auto overflow-x-hidden py-4">
         <div className={cn(collapsed ? 'px-2' : 'px-3')}>
           <SearchButton collapsed={collapsed} />
         </div>
 
         {groups.map((group) => (
-          <SidebarSection key={group.title} title={group.title} collapsed={collapsed}>
+          <SidebarSection key={group.id} collapsed={collapsed} label={group.label}>
             {group.items.map((item) => (
               <SidebarNavItem
                 key={item.label}
@@ -237,22 +285,24 @@ function Sidebar({ collapsed, groups, pinned, counts, user, onLogout, onNavigate
         ))}
 
         {!collapsed && pinned.length > 0 && (
-          <SidebarSection title="Sabitlenmiş" collapsed={collapsed}>
+          <SidebarSection collapsed={collapsed}>
             {pinned.map((p) => {
               const meta = STATUS_META[statusKeyForProject(p)]
               return (
-                <Link
+                <button
                   key={p.id}
-                  to={`/projects/${p.id}`}
-                  onClick={onNavigate}
-                  className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  type="button"
+                  onClick={() => { onNavigate?.(); onOpenProject?.(p.id) }}
+                  className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <span className={cn('h-2 w-2 shrink-0 rounded-full', meta.dot)} />
-                  <span className="flex-1 truncate">{p.title}</span>
+                  <span className="flex-1 truncate text-left">{p.title}</span>
                   {p.demo_attempt >= 2 && (
-                    <span className="shrink-0 text-[10px] font-bold text-destructive">!</span>
+                    <span className="shrink-0 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[9px] font-semibold text-destructive">
+                      Acil
+                    </span>
                   )}
-                </Link>
+                </button>
               )
             })}
           </SidebarSection>
@@ -269,18 +319,45 @@ function Sidebar({ collapsed, groups, pinned, counts, user, onLogout, onNavigate
   )
 }
 
-function SidebarBrand({ collapsed }) {
+function SidebarBrand({ collapsed, onToggleCollapsed }) {
   return (
-    <div className={cn('flex h-14 shrink-0 items-center border-b', collapsed ? 'justify-center px-2' : 'gap-2.5 px-4')}>
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-sm">
-        <BookOpen className="h-4 w-4" />
-      </span>
-      {!collapsed && (
-        <div className="leading-tight">
-          <p className="text-sm font-semibold tracking-tight">YZ Yayın Takip</p>
-          <p className="-mt-0.5 text-[10px] text-muted-foreground">Yükselen Zeka</p>
-        </div>
+    <div
+      className={cn(
+        'flex h-14 shrink-0 items-center border-b',
+        collapsed ? 'justify-between gap-1 px-2' : 'gap-2.5 px-4',
       )}
+    >
+      <Link
+        to="/"
+        aria-label="Ana sayfa"
+        className={cn(
+          'flex min-w-0 items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          collapsed ? 'h-9 w-9 justify-center' : 'h-8',
+        )}
+      >
+        <img
+          src="/yz-logo.png"
+          alt="Yükselen Zeka"
+          className={cn(
+            'block',
+            collapsed
+              ? 'h-9 w-9 object-cover object-left'
+              : 'h-7 w-auto max-w-full object-contain',
+          )}
+        />
+      </Link>
+      <button
+        type="button"
+        aria-label={collapsed ? 'Kenar çubuğunu aç' : 'Kenar çubuğunu kapat'}
+        aria-pressed={!collapsed}
+        onClick={onToggleCollapsed}
+        className={cn(
+          'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          collapsed ? 'ml-1' : 'ml-auto',
+        )}
+      >
+        <MoreVertical className="h-4 w-4" />
+      </button>
     </div>
   )
 }
@@ -288,16 +365,14 @@ function SidebarBrand({ collapsed }) {
 function SearchButton({ collapsed }) {
   if (collapsed) {
     return (
-      <SidebarTooltip label="Hızlı ara">
-        <button
-          type="button"
-          onClick={() => toast.message('Arama yakında eklenecek.')}
-          aria-label="Hızlı ara"
-          className="flex h-9 w-full items-center justify-center rounded-lg border bg-muted/40 text-muted-foreground transition-colors hover:border-input hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Search className="h-4 w-4" />
-        </button>
-      </SidebarTooltip>
+      <button
+        type="button"
+        onClick={() => toast.message('Arama yakında eklenecek.')}
+        aria-label="Hızlı ara"
+        className="flex h-9 w-full items-center justify-center rounded-lg border bg-muted/40 text-muted-foreground transition-colors hover:border-input hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Search className="h-5 w-5" />
+      </button>
     )
   }
   return (
@@ -306,112 +381,81 @@ function SearchButton({ collapsed }) {
       onClick={() => toast.message('Arama yakında eklenecek.')}
       className="flex w-full items-center gap-2 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-input hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
-      <Search className="h-3.5 w-3.5" />
+      <Search className="h-5 w-5" />
       <span className="flex-1 text-left">Hızlı ara…</span>
-      <kbd className="rounded border bg-background px-1 py-0.5 text-[10px] font-medium text-muted-foreground">
-        ⌘K
-      </kbd>
     </button>
   )
 }
 
-function SidebarSection({ title, collapsed, children }) {
+function SidebarSection({ collapsed, label, children }) {
   return (
     <div className={cn('mt-4', collapsed ? 'px-2' : 'px-3')}>
       {collapsed ? (
         <div className="mx-2 mb-1.5 border-t" />
+      ) : label ? (
+        <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+          {label}
+        </p>
       ) : (
-        <div className="mb-1.5 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {title}
-        </div>
+        <div className="mx-2.5 mb-2 border-t" />
       )}
       <nav className="space-y-0.5">{children}</nav>
     </div>
   )
 }
 
-const BADGE_DOT = {
-  default: 'bg-muted-foreground',
-  amber: 'bg-amber-500',
-  pink: 'bg-pink-500',
-}
-
 function NavBadge({ count, tone = 'default', active }) {
   if (!count) return null
   const tones = {
-    default: active
-      ? 'bg-primary-foreground/20 text-primary-foreground'
-      : 'bg-muted text-muted-foreground',
+    default: active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
     amber: 'bg-amber-100 text-amber-700',
     pink: 'bg-pink-100 text-pink-700',
   }
   return (
-    <span className={cn('ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold', tones[tone])}>
+    <span className={cn('ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-semibold', tones[tone])}>
       {count}
     </span>
   )
 }
 
-function SidebarTooltip({ label, children }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
-    </Tooltip>
-  )
-}
-
 function SidebarNavItem({ item, collapsed, onNavigate }) {
-  const { icon: Icon, label, badge, badgeTone = 'default', soon } = item
+  const { icon: Icon, label, badge, badgeTone = 'default', soon, highlight } = item
 
-  // Collapsed: icon-only with a tooltip and a small badge dot.
+  // Collapsed: icon-only.
   if (collapsed) {
-    const dot = badge ? (
-      <span
-        className={cn(
-          'absolute right-1 top-1 h-2 w-2 rounded-full ring-2 ring-card',
-          BADGE_DOT[badgeTone],
-        )}
-      />
-    ) : null
-
     if (soon) {
       return (
-        <SidebarTooltip label={`${label} · yakında`}>
-          <button
-            type="button"
-            onClick={() => toast.message(`${label} yakında eklenecek.`)}
-            aria-label={label}
-            className="relative flex h-9 w-full items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Icon className="h-4 w-4" />
-            {dot}
-          </button>
-        </SidebarTooltip>
+        <button
+          type="button"
+          onClick={() => toast.message(`${label} yakında eklenecek.`)}
+          aria-label={label}
+          className="relative flex h-9 w-full items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Icon className="h-5 w-5" />
+        </button>
       )
     }
 
     return (
-      <SidebarTooltip label={label}>
-        <NavLink
-          to={item.to}
-          end={item.end}
-          onClick={onNavigate}
-          aria-label={label}
-          className={({ isActive }) =>
-            cn(
-              'relative flex h-9 w-full items-center justify-center rounded-md transition-colors',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              isActive
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-            )
-          }
-        >
-          <Icon className="h-4 w-4" />
-          {dot}
-        </NavLink>
-      </SidebarTooltip>
+      <NavLink
+        to={item.to}
+        end={item.end}
+        onClick={onNavigate}
+        aria-label={label}
+        title={label}
+        className={({ isActive }) =>
+          cn(
+            'relative flex h-9 w-full items-center justify-center rounded-md transition-colors',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            isActive
+              ? 'bg-primary/10 text-primary'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+            highlight && !isActive && 'nav-pulse-glow nav-bounce text-foreground',
+          )
+        }
+      >
+        <Icon className="h-5 w-5" />
+      </NavLink>
     )
   }
 
@@ -420,12 +464,12 @@ function SidebarNavItem({ item, collapsed, onNavigate }) {
       <button
         type="button"
         onClick={() => toast.message(`${label} yakında eklenecek.`)}
-        className="group flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground/50 transition-colors hover:bg-muted hover:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Icon className="h-4 w-4" />
+        <Icon className="h-5 w-5" />
         <span className="flex-1 text-left">{label}</span>
-        <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Yakında
+        <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground/60">
+          yakında
         </span>
       </button>
     )
@@ -441,14 +485,15 @@ function SidebarNavItem({ item, collapsed, onNavigate }) {
           'group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           isActive
-            ? 'bg-primary text-primary-foreground shadow-sm'
+            ? 'bg-primary/10 text-primary'
             : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+          highlight && !isActive && 'nav-pulse-glow nav-bounce text-foreground',
         )
       }
     >
       {({ isActive }) => (
         <>
-          <Icon className="h-4 w-4" />
+          <Icon className="h-5 w-5" />
           <span className="flex-1">{label}</span>
           <NavBadge count={badge} tone={badgeTone} active={isActive} />
         </>
@@ -459,23 +504,25 @@ function SidebarNavItem({ item, collapsed, onNavigate }) {
 
 function PeriodWidget({ satista, total }) {
   const pct = total ? Math.round((satista / total) * 100) : 0
+  const now = new Date()
+  const deadline = new Intl.DateTimeFormat('tr-TR', { month: 'long', year: 'numeric' }).format(
+    new Date(now.getFullYear(), now.getMonth() + 1, 0),
+  )
   return (
     <div className="rounded-lg border border-primary/15 bg-primary/5 p-3">
       <div className="flex items-center justify-between">
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-primary">
-          Bu Dönem
-        </div>
-        <div className="text-[10px] text-muted-foreground">{pct}%</div>
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-primary">Bu Dönem</div>
+        <div className="text-[10px] font-medium text-primary">{pct}%</div>
       </div>
-      <div className="mt-2 text-xs font-medium text-foreground">Hedef: projeleri satışa çıkar</div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-background">
+      <div className="mt-1.5 text-xs font-medium text-foreground">Hedef: projeleri satışa çıkar</div>
+      <div className="mt-2 h-1 overflow-hidden rounded-full bg-background">
         <div
           className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
           style={{ width: `${pct}%` }}
         />
       </div>
       <div className="mt-1.5 text-[10px] text-muted-foreground">
-        {satista} / {total} satışta
+        {satista} / {total} satışta · {deadline} sonu
       </div>
     </div>
   )
@@ -485,28 +532,24 @@ function SidebarFooter({ user, onLogout, collapsed }) {
   if (collapsed) {
     return (
       <div className="flex shrink-0 flex-col items-center gap-1 border-t p-2">
-        <SidebarTooltip label={user?.name ?? 'Hesap'}>
-          <Avatar className="h-8 w-8">
-            <AvatarFallback>{initials(user?.name)}</AvatarFallback>
-          </Avatar>
-        </SidebarTooltip>
-        <SidebarTooltip label="Çıkış yap">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onLogout}
-            aria-label="Çıkış yap"
-            className="h-8 w-8 text-muted-foreground"
-          >
-            <LogOut className="h-4 w-4" />
-          </Button>
-        </SidebarTooltip>
+        <Avatar className="h-8 w-8">
+          <AvatarFallback>{initials(user?.name)}</AvatarFallback>
+        </Avatar>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onLogout}
+          aria-label="Çıkış yap"
+          className="h-8 w-8 text-muted-foreground"
+        >
+          <LogOut className="h-4 w-4" />
+        </Button>
       </div>
     )
   }
   return (
     <div className="shrink-0 border-t p-2">
-      <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
+      <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-muted">
         <Avatar className="h-8 w-8">
           <AvatarFallback>{initials(user?.name)}</AvatarFallback>
         </Avatar>
@@ -519,7 +562,7 @@ function SidebarFooter({ user, onLogout, collapsed }) {
           size="icon"
           onClick={onLogout}
           aria-label="Çıkış yap"
-          className="text-muted-foreground"
+          className="shrink-0 text-muted-foreground hover:text-destructive"
         >
           <LogOut className="h-4 w-4" />
         </Button>
@@ -543,49 +586,175 @@ const TONE_DOT = {
  * current user's role. Team leaders see what needs their approval / attention,
  * the printer sees incoming teslim items, designers see their rejected work.
  */
-function buildNotifications(projects, user) {
-  if (!user) return []
+const ORDER_STEP_TEXT = {
+  pending: 'Yeni sipariş talebi — onayınızı bekliyor',
+  goruldu: 'Sipariş kontrolünüzü bekliyor',
+  tasarimci_onay: 'Sipariş ozalit isteniyor',
+  matbaa_onay: 'Sipariş özalit onayınızı bekliyor',
+}
+
+/**
+ * Talep (order) notifications, layered on top of the project ones. Each role
+ * is alerted about the step it must act on; the sales requester (Esra) is
+ * alerted when her talep is finally approved and sent to production.
+ */
+function buildOrderNotifications(orders, projects, user) {
+  if (!user || !Array.isArray(orders)) return []
   const role = user.role
   const items = []
+  const cleanTitle = (t) => String(t ?? '').replace(/ \/ /g, ' ')
+  const myProjectIds = new Set(
+    projects.filter((p) => (p.assignees ?? []).some((a) => a.id === user.id)).map((p) => p.id),
+  )
 
-  for (const p of projects) {
-    if (role === 'team_leader') {
-      if (p.stage === 'demo_onay' || p.stage === 'ozalit_onay' || p.stage === 'cin_demo_onay') {
-        items.push({ id: `${p.id}-onay`, projectId: p.id, tone: 'amber', title: p.title, text: 'Onayınızı bekliyor' })
-      }
-      if (p.stage === 'tasarim' && p.progress === 100) {
-        items.push({ id: `${p.id}-ready`, projectId: p.id, tone: 'green', title: p.title, text: 'Tasarım tamamlandı, demoya hazır' })
-      }
-      if ((p.demo_attempt ?? 0) >= 2) {
-        items.push({ id: `${p.id}-att`, projectId: p.id, tone: 'rose', title: p.title, text: `${p.demo_attempt}. demo denemesinde` })
-      }
-    } else if (role === 'printer') {
-      if (p.type === 'TR' && (p.stage === 'demo_teslim' || p.stage === 'ozalit_teslim')) {
-        const what = p.stage === 'demo_teslim' ? 'Demo teslim' : 'Özalit teslim'
-        items.push({ id: `${p.id}-teslim`, projectId: p.id, tone: 'blue', title: p.title, text: `${what} — incelemenizi bekliyor` })
-      }
-    } else if (role === 'designer') {
-      const mine = (p.assignees ?? []).some((a) => a.id === user.id)
-      if (mine && p.stage === 'tasarim' && (p.demo_attempt ?? 0) > 0) {
-        items.push({ id: `${p.id}-rej`, projectId: p.id, tone: 'rose', title: p.title, text: 'Revizyon gerekiyor — tasarıma geri döndü' })
-      }
+  for (const o of orders) {
+    const ts = o.updated_at ? new Date(o.updated_at).getTime() : 0
+    const base = { projectId: o.project_id, title: cleanTitle(o.project_title), _updatedAt: ts, kind: 'order' }
+
+    // Sales requester — her own talep was approved → production.
+    if (role === 'satis' && o.requested_by === user.id && o.status === 'onaylandi') {
+      items.push({ ...base, id: `ord-${o.id}-onaylandi`, tone: 'green', text: 'Talebiniz onaylandı — üretime alındı', to: '/siparis-talebi' })
+      continue
+    }
+    // Staff — alert on the step this role must advance.
+    if (role === 'team_leader' && (o.status === 'pending' || o.status === 'matbaa_onay')) {
+      items.push({ ...base, id: `ord-${o.id}-${o.status}`, tone: 'amber', text: ORDER_STEP_TEXT[o.status], to: '/siparis-onay' })
+    } else if (role === 'printer' && o.status === 'tasarimci_onay') {
+      items.push({ ...base, id: `ord-${o.id}-${o.status}`, tone: 'blue', text: ORDER_STEP_TEXT[o.status], to: '/approvals/siparis' })
+    } else if (role === 'designer' && o.status === 'goruldu' && myProjectIds.has(o.project_id)) {
+      items.push({ ...base, id: `ord-${o.id}-${o.status}`, tone: 'green', text: ORDER_STEP_TEXT[o.status], to: '/siparis-onay' })
     }
   }
   return items
 }
 
-function NotificationBell({ projects, user, onOpenProject }) {
-  const items = useMemo(() => buildNotifications(projects, user), [projects, user])
-  const count = items.length
+function buildNotifications(projects, user, orders = []) {
+  if (!user) return []
+  const role = user.role
+  const items = buildOrderNotifications(orders, projects, user)
+
+  for (const p of projects) {
+    const ts = p.updated_at ? new Date(p.updated_at).getTime() : 0
+    if (role === 'team_leader') {
+      if (p.stage === 'demo_onay' || p.stage === 'ozalit_onay' || p.stage === 'cin_demo_onay') {
+        const attempt = p.stage === 'ozalit_onay' ? (p.ozalit_attempt ?? 0) : (p.demo_attempt ?? 0)
+        items.push({ id: `${p.id}-onay-${p.stage}-${attempt}`, projectId: p.id, tone: 'amber', title: p.title, text: 'Onayınızı bekliyor', _updatedAt: ts })
+      }
+      if (p.stage === 'tasarim' && p.progress === 100) {
+        items.push({ id: `${p.id}-ready-${p.demo_attempt ?? 0}`, projectId: p.id, tone: 'green', title: p.title, text: 'Tasarım tamamlandı, demoya hazır', _updatedAt: ts })
+      }
+      if ((p.demo_attempt ?? 0) >= 1) {
+        items.push({ id: `${p.id}-att-${p.demo_attempt}`, projectId: p.id, tone: 'rose', title: p.title, text: `${p.demo_attempt + 1}. demo denemesinde`, _updatedAt: ts })
+      }
+      if ((p.ozalit_attempt ?? 0) >= 1) {
+        items.push({ id: `${p.id}-oatt-${p.ozalit_attempt}`, projectId: p.id, tone: 'blue', title: p.title, text: `${p.ozalit_attempt + 1}. ozalit denemesinde`, _updatedAt: ts })
+      }
+    } else if (role === 'printer') {
+      if (p.type === 'TR' && p.stage === 'demo_teslim') {
+        const attempt = (p.demo_attempt ?? 0) + 1
+        items.push({ id: `${p.id}-teslim-demo-${p.demo_attempt}`, projectId: p.id, tone: 'blue', title: p.title, text: `${attempt}. Demo isteniyor`, _updatedAt: ts })
+      } else if (p.type === 'TR' && p.stage === 'ozalit_teslim') {
+        const attempt = (p.ozalit_attempt ?? 0) + 1
+        items.push({ id: `${p.id}-teslim-ozalit-${p.ozalit_attempt}`, projectId: p.id, tone: 'blue', title: p.title, text: `${attempt}. Ozalit isteniyor`, _updatedAt: ts })
+      }
+    } else if (role === 'designer') {
+      const mine = (p.assignees ?? []).some((a) => a.id === user.id)
+      if (mine) {
+        items.push({ id: `${p.id}-assigned`, kind: 'assignment', projectId: p.id, tone: 'green', title: p.title, text: 'Bu projeye eklendiniz', _updatedAt: ts })
+      }
+      if (mine && p.stage === 'tasarim' && (p.demo_attempt ?? 0) > 0) {
+        items.push({ id: `${p.id}-rej-${p.demo_attempt}`, projectId: p.id, tone: 'rose', title: p.title, text: 'Revizyon gerekiyor — tasarıma geri döndü', _updatedAt: ts })
+      }
+    }
+  }
+  return items.sort((a, b) => {
+    // Sort newest first using the stored updatedAt on each item (falls back to 0).
+    return (b._updatedAt ?? 0) - (a._updatedAt ?? 0)
+  })
+}
+
+// Persistent notification log — newest entry first, capped at 50.
+const MAX_NOTIF_LOG = 50
+
+function loadNotifLog(userId) {
+  if (!userId || typeof localStorage === 'undefined') return []
+  try {
+    return JSON.parse(localStorage.getItem(`yz_notif_log_${userId}`)) ?? []
+  } catch {
+    return []
+  }
+}
+
+function saveNotifLog(userId, log) {
+  if (!userId || typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(`yz_notif_log_${userId}`, JSON.stringify(log.slice(0, MAX_NOTIF_LOG)))
+  } catch {
+    /* ignore */
+  }
+}
+
+function NotificationBell({ projects, user, orders, onOpenProject }) {
+  const navigate = useNavigate()
+  const allItems = useMemo(() => buildNotifications(projects, user, orders), [projects, user, orders])
+  const [log, setLog] = useState(() => loadNotifLog(user?.id))
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  // Whenever the derived item list changes, prepend any genuinely new IDs to
+  // the top of the persistent log. Existing entries are never removed so old
+  // notifications stay visible even after the project moves to another stage.
+  useEffect(() => {
+    if (!allItems.length) return
+    setLog((prev) => {
+      const existingIds = new Set(prev.map((n) => n.id))
+      const incoming = allItems.filter((n) => !existingIds.has(n.id))
+      if (!incoming.length) return prev
+      const stamped = incoming.map((n) => ({ ...n, createdAt: Date.now(), isRead: false }))
+      const next = [...stamped, ...prev]
+      saveNotifLog(user?.id, next)
+      return next
+    })
+  }, [allItems, user?.id])
+
+  const unreadCount = log.filter((n) => !n.isRead).length
+
+  function markRead(id) {
+    setLog((prev) => {
+      const next = prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+      saveNotifLog(user?.id, next)
+      return next
+    })
+  }
+
+  function markAllRead() {
+    setLog((prev) => {
+      const next = prev.map((n) => ({ ...n, isRead: true }))
+      saveNotifLog(user?.id, next)
+      return next
+    })
+  }
+
+  // Close dropdown FIRST, then open the Sheet on the next tick.
+  // Both are Radix overlays that lock pointer-events on <body>; overlapping
+  // them leaves the page unclickable until a refresh.
+  function handleItemClick(n) {
+    markRead(n.id)
+    setMenuOpen(false)
+    // Order notifications route to a page; project ones open the detail sheet.
+    setTimeout(() => {
+      if (n.to) navigate(n.to)
+      else onOpenProject(n.projectId)
+    }, 0)
+  }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" aria-label="Bildirimler" className="relative">
           <Bell className="h-4 w-4" />
-          {count > 0 && (
-            <span className="absolute right-1 top-1 grid h-4 min-w-[1rem] place-items-center rounded-full bg-rose-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-background">
-              {count > 9 ? '9+' : count}
+          {unreadCount > 0 && (
+            <span className="absolute right-1 top-1 grid h-4 min-w-[1rem] place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-background">
+              {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}
         </Button>
@@ -593,32 +762,42 @@ function NotificationBell({ projects, user, onOpenProject }) {
       <DropdownMenuContent align="end" className="w-80 p-0">
         <div className="flex items-center justify-between px-3 py-2.5">
           <span className="text-sm font-semibold">Bildirimler</span>
-          {count > 0 && (
-            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-              {count} yeni
-            </span>
+          {unreadCount > 0 && (
+            <button
+              type="button"
+              onClick={markAllRead}
+              className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Tümünü okundu say
+            </button>
           )}
         </div>
         <DropdownMenuSeparator className="my-0" />
-        {count === 0 ? (
+        {log.length === 0 ? (
           <div className="px-3 py-8 text-center">
             <Bell className="mx-auto mb-2 h-5 w-5 text-muted-foreground/40" />
-            <p className="text-xs text-muted-foreground">Yeni bildirim yok</p>
+            <p className="text-xs text-muted-foreground">Henüz bildirim yok</p>
           </div>
         ) : (
           <div className="scrollbar-thin max-h-80 overflow-y-auto py-1">
-            {items.map((n) => (
+            {log.map((n) => (
               <button
                 key={n.id}
                 type="button"
-                onClick={() => onOpenProject(n.projectId)}
-                className="flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted focus:outline-none focus-visible:bg-muted"
+                onClick={() => handleItemClick(n)}
+                className={cn(
+                  'flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted focus:outline-none focus-visible:bg-muted',
+                  n.isRead && 'opacity-50',
+                )}
               >
                 <span className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', TONE_DOT[n.tone])} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-foreground">{n.title}</span>
+                  <span className={cn('block truncate text-sm', n.isRead ? 'font-normal text-foreground' : 'font-semibold text-foreground')}>{n.title}</span>
                   <span className="block text-xs text-muted-foreground">{n.text}</span>
                 </span>
+                {!n.isRead && (
+                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-rose-500" />
+                )}
               </button>
             ))}
           </div>
@@ -669,11 +848,19 @@ function UserMenu({ user, onLogout }) {
 const PAGE_TITLES = [
   { match: (p) => p === '/', label: 'Genel Bakış' },
   { match: (p) => p.startsWith('/kanban'), label: 'İş Akışı' },
+  { match: (p) => p.startsWith('/approvals/demo'), label: 'Demo Onay' },
+  { match: (p) => p.startsWith('/approvals/ozalit'), label: 'Ozalit Onay' },
+  { match: (p) => p.startsWith('/approvals/siparis'), label: 'Sipariş Onayı' },
   { match: (p) => p.startsWith('/approvals'), label: 'Onay Kuyruğu' },
   { match: (p) => p.startsWith('/team'), label: 'Ekip' },
   { match: (p) => p.startsWith('/plan'), label: 'Yıllık Plan' },
   { match: (p) => p.startsWith('/demo'), label: 'Demo' },
   { match: (p) => p.startsWith('/my-projects'), label: 'Projelerim' },
+  { match: (p) => p.startsWith('/documents'), label: 'Dökümanlar' },
+  { match: (p) => p.startsWith('/urun-bilgileri'), label: 'Ürün Bilgileri' },
+  { match: (p) => p.startsWith('/siparis-talebi'), label: 'Sipariş Talebi' },
+  { match: (p) => p.startsWith('/siparis-talepleri'), label: 'Sipariş Talepleri' },
+  { match: (p) => p.startsWith('/siparis-onay'), label: 'Sipariş Onayları' },
   { match: (p) => p.startsWith('/projects/'), label: 'Proje Detayı' },
   { match: (p) => p === '/projects', label: 'Tüm Projeler' },
 ]
@@ -681,9 +868,7 @@ const PAGE_TITLES = [
 function Breadcrumb({ pathname }) {
   const page = PAGE_TITLES.find((x) => x.match(pathname))?.label ?? 'Panel'
   return (
-    <nav aria-label="Breadcrumb" className="hidden items-center gap-1.5 text-sm sm:flex">
-      <span className="text-muted-foreground">Çalışma Alanı</span>
-      <ChevronDown className="h-3.5 w-3.5 -rotate-90 text-muted-foreground/60" />
+    <nav aria-label="Breadcrumb" className="hidden text-sm sm:block">
       <span className="font-medium text-foreground">{page}</span>
     </nav>
   )
@@ -691,40 +876,98 @@ function Breadcrumb({ pathname }) {
 
 /* ----------------------------- role nav ----------------------------- */
 
-function navGroups(role, counts) {
-  const genelItems = [
-    { to: '/', label: 'Genel Bakış', icon: LayoutDashboard, end: true },
-    { to: '/my-projects', label: 'Projelerim', icon: FolderKanban, badge: counts.myProjects, roles: ['designer'] },
-    { to: '/kanban', label: 'İş Akışı', icon: Kanban, badge: counts.active },
-    { to: '/projects', label: 'Tüm Projeler', icon: List, end: true, badge: counts.total },
-    { to: '/plan', label: 'Yıllık Plan', icon: CalendarRange },
-    { to: '/demo', label: 'Demo', icon: Presentation, roles: ['designer', 'team_leader'] },
-  ].filter((i) => !i.roles || i.roles.includes(role))
-  const genel = { title: 'Genel', items: genelItems }
-
-  const yonetimAll = [
+function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerOrders = 0) {
+  // ── Grup 1: Ana menü ──────────────────────────────────────────
+  const mainItems = [
+    { to: '/', label: 'Genel Bakış', icon: LayoutDashboard, end: true, roles: ['team_leader', 'designer', 'printer'] },
+    { to: '/my-projects', label: 'Projelerim', icon: FolderKanban, badge: counts.myProjects || designerOrders || undefined, badgeTone: designerOrders > 0 ? 'amber' : 'default', roles: ['designer'] },
+    { to: '/kanban', label: 'İş Akışı', icon: Kanban, badge: counts.active, roles: ['team_leader', 'designer', 'printer'] },
+    { to: '/projects', label: 'Tüm Projeler', icon: List, end: true, badge: counts.total, roles: ['team_leader', 'designer', 'printer'] },
     {
-      to: '/approvals',
-      label: 'Onay Kuyruğu',
-      icon: CheckCircle2,
-      badge: counts.approvals,
-      badgeTone: 'amber',
-      roles: ['printer', 'team_leader'],
-    },
-    {
-      label: 'Baskı Takip',
+      to: '/baski-listesi',
+      label: 'Baskı Listesi',
       icon: Printer,
-      soon: true,
       badge: counts.production,
       badgeTone: 'pink',
+      roles: ['team_leader', 'designer', 'printer'],
+    },
+    { label: 'Toplantılar', icon: CalendarClock, soon: true, roles: ['team_leader', 'designer', 'printer'] },
+    // Sales-only items
+    { to: '/siparis-talebi', label: 'Sipariş Talebi', icon: ShoppingCart, roles: ['satis'] },
+    { to: '/projects', label: 'Tüm Ürünler', icon: List, end: true, roles: ['satis'] },
+  ].filter((i) => !i.roles || i.roles.includes(role))
+
+  // ── Grup 2: Onaylar (sadece printer + team_leader) ────────────
+  const approvalItems = [
+    {
+      to: '/approvals/demo',
+      label: 'Demo Onay',
+      icon: CheckCircle2,
+      badge: counts.demoApprovals,
+      badgeTone: 'amber',
+      highlight: counts.demoApprovals > 0,
       roles: ['printer', 'team_leader'],
     },
+    {
+      to: '/approvals/ozalit',
+      label: 'Ozalit Onay',
+      icon: CheckCircle2,
+      badge: counts.ozalitApprovals,
+      badgeTone: 'amber',
+      highlight: counts.ozalitApprovals > 0,
+      roles: ['printer', 'team_leader'],
+    },
+    {
+      to: '/approvals/siparis',
+      label: 'Sipariş Teslimi',
+      icon: ShoppingCart,
+      badge: printerOrders,
+      badgeTone: 'amber',
+      highlight: printerOrders > 0,
+      roles: ['printer'],
+    },
+    {
+      to: '/siparis-onay',
+      label: 'Sipariş Onayları',
+      icon: ShoppingCart,
+      badge: designerOrders || undefined,
+      badgeTone: 'amber',
+      highlight: designerOrders > 0,
+      roles: ['designer'],
+    },
+    {
+      to: '/siparis-talepleri',
+      label: 'Sipariş Talepleri',
+      icon: ShoppingCart,
+      badge: pendingOrders,
+      badgeTone: 'amber',
+      highlight: pendingOrders > 0,
+      roles: ['team_leader'],
+    },
+  ].filter((i) => !i.roles || i.roles.includes(role))
+
+  // ── Grup 3: Yönetim / kaynaklar ──────────────────────────────
+  const resourceItems = [
     { to: '/team', label: 'Ekip', icon: Users, roles: ['team_leader'] },
-    { label: 'Toplantılar', icon: CalendarClock, soon: true },
+    { to: '/documents', label: 'Dökümanlar', icon: FolderOpen, roles: ['team_leader', 'designer', 'printer'] },
+    { to: '/urun-bilgileri', label: 'Ürün Bilgileri', icon: Package, roles: ['team_leader'] },
+  ].filter((i) => !i.roles || i.roles.includes(role))
+
+  // ── Grup 4: Acil işler (kişiye göre) ─────────────────────────
+  const urgentItems = [
+    {
+      label: 'Acil İşler',
+      icon: Zap,
+      soon: true,
+      badge: counts.urgent,
+      badgeTone: 'amber',
+      highlight: counts.urgent > 0,
+    },
   ]
 
-  const yonetimItems = yonetimAll.filter((i) => !i.roles || i.roles.includes(role))
-  const groups = [genel]
-  if (yonetimItems.length > 0) groups.push({ title: 'Yönetim', items: yonetimItems })
+  const groups = [{ id: 'main', label: null, items: mainItems }]
+  if (approvalItems.length > 0) groups.push({ id: 'approvals', label: role === 'satis' ? null : 'Onaylar', items: approvalItems })
+  if (resourceItems.length > 0) groups.push({ id: 'resources', label: null, items: resourceItems })
+  if (role !== 'satis') groups.push({ id: 'urgent', label: null, items: urgentItems })
   return groups
 }

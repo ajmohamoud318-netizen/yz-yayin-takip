@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useProjectModal } from '@/hooks/useProjectModal'
 import { ChevronLeft, ChevronRight, CalendarOff } from 'lucide-react'
 
 import { useProjects } from '@/hooks/useProjects'
@@ -27,7 +27,7 @@ function barText(key) {
 
 export default function YearPlan() {
   const { projects, loading } = useProjects()
-  const navigate = useNavigate()
+  const { openProject } = useProjectModal()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
 
@@ -200,7 +200,7 @@ export default function YearPlan() {
                           {/* bar */}
                           <button
                             type="button"
-                            onClick={() => navigate(`/projects/${p.id}`)}
+                            onClick={() => openProject(p.id)}
                             title={`${p.title} · ${STAGE_LABELS[p.stage]} · ${TYPE_LABELS[p.type]} · ${p.assigned_name} · %${p.progress}`}
                             style={{ left: `calc(${leftPct}% + 4px)`, width: `calc(${widthPct}% - 8px)` }}
                             className={cn(
@@ -258,7 +258,7 @@ export default function YearPlan() {
                     <button
                       key={p.id}
                       type="button"
-                      onClick={() => navigate(`/projects/${p.id}`)}
+                      onClick={() => openProject(p.id)}
                       className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs transition-colors hover:border-primary/30 hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className={cn('h-1.5 w-1.5 rounded-full', meta.dot)} />

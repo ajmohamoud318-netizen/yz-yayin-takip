@@ -1,3 +1,5 @@
+import tailwindcssAnimate from 'tailwindcss-animate'
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
@@ -71,8 +73,11 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'Segoe UI', 'Roboto', 'sans-serif'],
+        // Baloo 2 is the brand display font — headings and card titles only,
+        // never body copy, labels, or dense UI elements.
+        display: ['"Baloo 2"', 'cursive'],
       },
     },
   },
-  plugins: [],
+  plugins: [tailwindcssAnimate],
 }

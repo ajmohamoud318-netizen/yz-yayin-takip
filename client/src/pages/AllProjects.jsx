@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useProjectModal } from '@/hooks/useProjectModal'
 import { Search, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react'
 
 import { useProjects } from '@/hooks/useProjects'
@@ -21,7 +21,7 @@ const GROUP_LABELS = { all: 'Tümü', yeni_proje: 'Yeni Proje', devam_eden: 'Dev
 
 export default function AllProjects() {
   const { projects, loading } = useProjects()
-  const navigate = useNavigate()
+  const { openProject } = useProjectModal()
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [groupFilter, setGroupFilter] = useState('all')
@@ -69,9 +69,6 @@ export default function AllProjects() {
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Tüm Projeler</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {rows.length} proje listeleniyor · {projects.length} toplam
-            </p>
           </div>
         </header>
 
@@ -138,11 +135,11 @@ export default function AllProjects() {
                       <tr
                         key={p.id}
                         tabIndex={0}
-                        onClick={() => navigate(`/projects/${p.id}`)}
+                        onClick={() => openProject(p.id)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault()
-                            navigate(`/projects/${p.id}`)
+                            openProject(p.id)
                           }
                         }}
                         className="cursor-pointer border-b border-border/60 transition-colors last:border-0 hover:bg-muted/40 focus:outline-none focus-visible:bg-muted/60"

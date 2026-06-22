@@ -1,15 +1,11 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Inbox, ChevronRight } from 'lucide-react'
+import { Inbox } from 'lucide-react'
 
 import { useProjects } from '@/hooks/useProjects'
-import { useAuth } from '@/hooks/useAuth'
-import api from '@/api'
-import { toast } from 'sonner'
+import { useProjectModal } from '@/hooks/useProjectModal'
 import FilterChip from '@/components/FilterChip'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { STAGE_LABELS, STAGE_PIPELINE, TYPE_LABELS } from '@/api'
 import AssigneeAvatars from '@/components/AssigneeAvatars'
@@ -25,13 +21,9 @@ const COLUMN_PASTELS = ['#E7DBF5', '#D7F0E4', '#FDE3D1', '#D6ECF8', '#F8DCE8', '
  * (team leader / designer for tasarim → demo; printer for demo/ozalit → onay).
  */
 export default function Kanban() {
-  const { projects, loading, updateOne } = useProjects()
-  const { user } = useAuth()
+  const { projects, loading } = useProjects()
+  const { openProject } = useProjectModal()
   const [typeFilter, setTypeFilter] = useState('all')
-  const navigate = useNavigate()
-
-  // Only the team leader can advance projects in the flow.
-  const canAdvance = user?.role === 'team_leader'
 
   // Build columns: pick TR or CIN pipeline
   const pipeline = typeFilter === 'CIN' ? STAGE_PIPELINE.CIN : STAGE_PIPELINE.TR
@@ -44,15 +36,6 @@ export default function Kanban() {
     }
     return map
   }, [projects, pipeline, typeFilter])
-
-  async function advance(p) {
-    try {
-      const updated = await api.advanceProject(p.id)
-      updateOne(updated)
-    } catch (err) {
-      toast.error(err.message || 'Proje ilerletilemedi.')
-    }
-  }
 
   return (
     <>
@@ -91,10 +74,7 @@ export default function Kanban() {
                 stage={stage}
                 color={COLUMN_PASTELS[i % COLUMN_PASTELS.length]}
                 items={grouped[stage] ?? []}
-                onOpen={(p) => navigate(`/projects/${p.id}`)}
-                onAdvance={advance}
-                canAdvance={canAdvance}
-                isLast={pipeline.indexOf(stage) === pipeline.length - 1}
+                onOpen={(p) => openProject(p.id)}
               />
             ))}
           </div>
@@ -104,7 +84,7 @@ export default function Kanban() {
   )
 }
 
-function KanbanColumn({ stage, color, items, onOpen, onAdvance, canAdvance, isLast }) {
+function KanbanColumn({ stage, color, items, onOpen }) {
   return (
     <section
       className="flex w-72 shrink-0 flex-col overflow-hidden rounded-xl border bg-muted/30"
@@ -154,20 +134,6 @@ function KanbanColumn({ stage, color, items, onOpen, onAdvance, canAdvance, isLa
                   <AssigneeAvatars assignees={p.assignees} size="h-5 w-5" text="text-[9px]" />
                   <span className="truncate">{p.assigned_name}</span>
                 </div>
-                {!isLast && canAdvance && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="w-full justify-between text-xs"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onAdvance(p)
-                    }}
-                  >
-                    İlerlet
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Button>
-                )}
               </CardContent>
             </Card>
           ))

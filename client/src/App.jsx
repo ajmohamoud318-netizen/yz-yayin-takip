@@ -1,7 +1,7 @@
-import { Toaster } from 'sonner'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 
 import { useAuth } from './hooks/useAuth.js'
+import { ProjectModalProvider } from './hooks/useProjectModal.jsx'
 import { TooltipProvider } from './components/ui/tooltip.jsx'
 import AppShell from './components/AppShell.jsx'
 import Login from './pages/Login.jsx'
@@ -15,7 +15,14 @@ import Kanban from './pages/Kanban.jsx'
 import Approvals from './pages/Approvals.jsx'
 import AcceptInvite from './pages/AcceptInvite.jsx'
 import MyProjects from './pages/MyProjects.jsx'
+import Documents from './pages/Documents.jsx'
+import BaskiListesi from './pages/BaskiListesi.jsx'
+import UrunBilgileri from './pages/UrunBilgileri.jsx'
+import SiparisListesi from './pages/SiparisListesi.jsx'
+import SiparisTalepleri from './pages/SiparisTalepleri.jsx'
+import SiparisOnay from './pages/SiparisOnay.jsx'
 import NotificationSync from './components/NotificationSync.jsx'
+import { CelebrationProvider } from './hooks/useCelebration.jsx'
 
 function RequireAuth({ children }) {
   const { isAuthenticated } = useAuth()
@@ -32,10 +39,17 @@ function RoleGuard({ allow, children }) {
   return children
 }
 
+function HomeRedirect() {
+  const { user } = useAuth()
+  if (user?.role === 'satis') return <Navigate to="/siparis-talebi" replace />
+  return <Dashboard />
+}
+
 export default function App() {
   return (
     <TooltipProvider delayDuration={150}>
-      <Toaster richColors position="top-right" closeButton />
+      <CelebrationProvider>
+      <ProjectModalProvider>
       <NotificationSync />
       <Routes>
         <Route path="/login" element={<Login />} />
@@ -48,7 +62,7 @@ export default function App() {
             </RequireAuth>
           }
         >
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<HomeRedirect />} />
           <Route path="/projects" element={<AllProjects />} />
           <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/plan" element={<YearPlan />} />
@@ -71,9 +85,29 @@ export default function App() {
           />
           <Route
             path="/approvals"
+            element={<Navigate to="/approvals/demo" replace />}
+          />
+          <Route
+            path="/approvals/demo"
             element={
               <RoleGuard allow={['printer', 'team_leader']}>
-                <Approvals />
+                <Approvals tab="demo" />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="/approvals/ozalit"
+            element={
+              <RoleGuard allow={['printer', 'team_leader']}>
+                <Approvals tab="ozalit" />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="/approvals/siparis"
+            element={
+              <RoleGuard allow={['printer']}>
+                <Approvals tab="siparis" />
               </RoleGuard>
             }
           />
@@ -85,10 +119,46 @@ export default function App() {
               </RoleGuard>
             }
           />
+          <Route path="/documents" element={<Documents />} />
+          <Route path="/baski-listesi" element={<BaskiListesi />} />
+          <Route
+            path="/urun-bilgileri"
+            element={
+              <RoleGuard allow={['team_leader']}>
+                <UrunBilgileri />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="/siparis-talebi"
+            element={
+              <RoleGuard allow={['satis']}>
+                <SiparisListesi />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="/siparis-talepleri"
+            element={
+              <RoleGuard allow={['team_leader']}>
+                <SiparisTalepleri />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="/siparis-onay"
+            element={
+              <RoleGuard allow={['designer']}>
+                <SiparisOnay />
+              </RoleGuard>
+            }
+          />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </ProjectModalProvider>
+      </CelebrationProvider>
     </TooltipProvider>
   )
 }

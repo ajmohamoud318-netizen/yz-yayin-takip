@@ -1,12 +1,11 @@
 import { useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, CalendarOff } from 'lucide-react'
 import { useProjects } from '../hooks/useProjects.js'
+import { useProjectModal } from '../hooks/useProjectModal.jsx'
 import {
   STAGE_LABELS,
   STATUS_STYLES,
   TYPE_LABELS,
-  groupKeyForProject,
   statusKeyForProject,
 } from '../api.js'
 import { Card, CardContent } from '../components/ui/card.jsx'
@@ -14,7 +13,7 @@ import { Skeleton } from '../components/ui/skeleton.jsx'
 import { Button } from '../components/ui/button.jsx'
 import { cn, initials } from '../lib/utils.js'
 
-// The six status colors, in dashboard legend order (from CLAUDE.md).
+// The six status color keys, in legend order.
 const LEGEND_KEYS = ['orange', 'purple', 'green', 'blue', 'pink', 'yellow']
 
 const TR_MONTHS_SHORT = [
@@ -32,20 +31,18 @@ function barText(key) {
 
 export default function Dashboard() {
   const { projects, loading, error, refetch } = useProjects()
-  const navigate = useNavigate()
+  const { openProject } = useProjectModal()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
 
-  // Counts for the summary tiles.
+  // Counts per status group for the summary cards.
   const counts = useMemo(() => {
-    const c = { total: projects.length, yeni: 0, devam: 0, satista: 0 }
+    const c = Object.fromEntries(LEGEND_KEYS.map((k) => [k, 0]))
     for (const p of projects) {
-      const g = groupKeyForProject(p)
-      if (g === 'yeni_proje') c.yeni++
-      else c.devam++
-      if (statusKeyForProject(p) === 'yellow') c.satista++
+      const key = statusKeyForProject(p)
+      if (key in c) c[key]++
     }
-    return c
+    return { ...c, total: projects.length }
   }, [projects])
 
   const { bars, undated } = useMemo(() => {
@@ -129,9 +126,6 @@ export default function Dashboard() {
             <p className="mt-0.5 text-sm text-muted-foreground">
               {year} · {bars.length} proje zaman çizelgesinde
             </p>
-            <p className="mt-0.5 text-xs text-muted-foreground/70">
-              Yıl değiştirmek için sağa / sola kaydırın
-            </p>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">
@@ -160,21 +154,11 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Summary tiles */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <SummaryTile label="Toplam Proje" value={counts.total} accent="bg-brand-500" />
-          <SummaryTile label="Yeni Proje" value={counts.yeni} accent="bg-orange-500" />
-          <SummaryTile label="Devam Eden" value={counts.devam} accent="bg-purple-500" />
-          <SummaryTile label="Satışta" value={counts.satista} accent="bg-amber-400" />
-        </div>
-
-        {/* Legend */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
+        {/* Summary cards — Toplam + one per status group */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+          <SummaryCard label="Toplam Proje" value={counts.total} colorKey="total" />
           {LEGEND_KEYS.map((k) => (
-            <span key={k} className="inline-flex items-center gap-1.5">
-              <span className={cn('h-2 w-2 rounded-full', STATUS_STYLES[k].dot)} />
-              {STATUS_STYLES[k].label}
-            </span>
+            <SummaryCard key={k} label={STATUS_STYLES[k].label} value={counts[k]} colorKey={k} />
           ))}
         </div>
 
@@ -239,7 +223,7 @@ export default function Dashboard() {
                           {/* bar */}
                           <button
                             type="button"
-                            onClick={() => navigate(`/projects/${p.id}`)}
+                            onClick={() => openProject(p.id)}
                             title={`${p.title} · ${STAGE_LABELS[p.stage]} · ${TYPE_LABELS[p.type]} · ${p.assigned_name} · %${p.progress}`}
                             style={{ left: `calc(${leftPct}% + 4px)`, width: `calc(${widthPct}% - 8px)` }}
                             className={cn(
@@ -297,7 +281,7 @@ export default function Dashboard() {
                     <button
                       key={p.id}
                       type="button"
-                      onClick={() => navigate(`/projects/${p.id}`)}
+                      onClick={() => openProject(p.id)}
                       className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs transition-colors hover:border-primary/30 hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className={cn('h-1.5 w-1.5 rounded-full', meta.dot)} />
@@ -315,14 +299,25 @@ export default function Dashboard() {
 }
 
 /* ----------------------------- bits ------------------------------- */
-function SummaryTile({ label, value, accent }) {
+
+function SummaryCard({ label, value, colorKey }) {
+  const isTotal = colorKey === 'total'
+  const meta = isTotal ? null : STATUS_STYLES[colorKey]
   return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-      <div className="flex items-center gap-2">
-        <span className={`h-2.5 w-2.5 rounded-full ${accent}`} />
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      </div>
-      <p className="mt-2 text-2xl font-bold text-foreground">{value}</p>
+    <div
+      className={cn(
+        'relative overflow-hidden rounded-xl border p-4 shadow-sm transition-shadow hover:shadow-md',
+        isTotal
+          ? 'bg-foreground border-foreground'
+          : cn(meta?.surface, meta?.border),
+      )}
+    >
+      <p className={cn('truncate text-xs font-medium opacity-80', isTotal ? 'text-background' : meta?.onSurface)}>
+        {label}
+      </p>
+      <p className={cn('mt-2 text-3xl font-bold tabular-nums', isTotal ? 'text-background' : meta?.onSurface)}>
+        {value}
+      </p>
     </div>
   )
 }

@@ -15,9 +15,20 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Allow any host header (needed when sharing the dev server through a
+    // tunnel like cloudflared/ngrok, which presents its own hostname).
+    allowedHosts: true,
     proxy: {
       // Backend not built yet — proxy is ready for when /api goes live.
       '/api': 'http://localhost:4000',
     },
+  },
+  // When sharing the dev server through a tunnel, browsers (and Cloudflare's
+  // edge) sometimes serve a cached index.html / chunk after a code change.
+  // Force everything to be re-validated on every request.
+  headers: {
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
   },
 })
