@@ -47,7 +47,7 @@ export default function MonthTimeline({ projects, onSelect }) {
           <section key={key} className="flex w-72 shrink-0 flex-col">
             <header className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold text-slate-900">
+                <h2 className="text-sm font-semibold text-foreground">
                   {monthLabel(items[0].target_month)}
                 </h2>
                 {isCurrent && (
@@ -56,11 +56,11 @@ export default function MonthTimeline({ projects, onSelect }) {
                   </span>
                 )}
               </div>
-              <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-slate-100 px-1.5 text-[11px] font-medium text-slate-500">
+              <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-muted px-1.5 font-mono text-[11px] font-medium tabular-nums text-muted-foreground">
                 {items.length}
               </span>
             </header>
-            <div className="flex flex-col gap-3 rounded-xl bg-slate-100/60 p-3">
+            <div className="flex flex-col gap-3 rounded-xl bg-muted/60 p-3">
               {items.map((p) => (
                 <ProjectCard key={p.id} project={p} onClick={onSelect} />
               ))}

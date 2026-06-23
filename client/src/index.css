@@ -1,44 +1,84 @@
-/* Fonts loaded once in index.html (Baloo 2 + Inter, combined request) */
+/* Fonts loaded once in index.html (Baloo 2 + Geist + Geist Mono, combined request) */
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* ------------------------------------------------------------------ */
-/*  Girlish + professional theme — shadcn tokens as HSL CSS variables  */
+/*  Professional internal-tool theme — neutral slate base, rose as the */
+/*  brand accent (primary actions + focus only). shadcn tokens as HSL  */
+/*  CSS variables, with a full dark variant under `.dark`.             */
 /* ------------------------------------------------------------------ */
 @layer base {
   :root {
-    --background: 330 100% 98%;        /* #FFF7FB cream pink-white   */
-    --foreground: 325 21% 20%;         /* #3D2834 deep dusty rose    */
+    --background: 0 0% 100%;           /* clean white app canvas      */
+    --foreground: 222 47% 11%;         /* slate-900 text              */
 
-    --card: 0 0% 100%;                 /* solid white panels         */
-    --card-foreground: 325 21% 20%;
+    --card: 0 0% 100%;                 /* solid white panels          */
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 325 21% 20%;
+    --popover-foreground: 222 47% 11%;
 
-    --primary: 335 52% 48%;            /* confident rose for buttons */
+    --primary: 175 78% 27%;            /* teal — primary actions only */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 330 60% 95%;          /* soft pink                  */
-    --secondary-foreground: 325 25% 28%;
+    --secondary: 210 40% 96%;          /* slate-100                   */
+    --secondary-foreground: 222 47% 18%;
 
-    --muted: 320 30% 95%;              /* light mauve                */
-    --muted-foreground: 327 14% 31%;   /* #5A4450 muted warm gray    */
+    --muted: 210 40% 96%;              /* slate-100                   */
+    --muted-foreground: 215 16% 42%;   /* slate-500/600 — AA on white */
 
-    --accent: 330 55% 93%;             /* pink hover                 */
-    --accent-foreground: 325 25% 28%;
+    --accent: 210 40% 94%;             /* slate hover                 */
+    --accent-foreground: 222 47% 18%;
 
-    --destructive: 350 65% 52%;
+    --destructive: 0 72% 48%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 324 25% 88%;             /* #E8D9E2 thin pink border   */
-    --input: 324 25% 88%;
-    --ring: 336 51% 69%;               /* #D888A8 dusty rose         */
+    --border: 214 32% 91%;             /* slate-200                   */
+    --input: 214 32% 91%;
+    --ring: 175 78% 27%;               /* teal focus ring             */
 
-    --sidebar: 320 33% 94%;            /* #F4E9F0 light mauve gray   */
+    --sidebar: 210 40% 98%;            /* slate-50 rail               */
 
-    --radius: 0.75rem;                 /* 12px feminine softness     */
+    --radius: 0.75rem;
+
+    /* Motion curves — built-in CSS easings are too weak; these carry the
+       intentional "punch" Emil Kowalski's work uses. Referenced by name so
+       every component shares one motion language. */
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);     /* strong ease-out for entering UI  */
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1); /* on-screen movement / morphs      */
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);  /* iOS-like drawer / sheet curve    */
+  }
+
+  .dark {
+    --background: 222 47% 8%;          /* slate-950 canvas            */
+    --foreground: 210 40% 96%;         /* near-white text             */
+
+    --card: 222 44% 11%;               /* slightly raised panel       */
+    --card-foreground: 210 40% 96%;
+    --popover: 222 44% 11%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 172 66% 45%;            /* teal lifted for dark bg     */
+    --primary-foreground: 180 45% 10%; /* deep teal text — AA on the teal */
+
+    --secondary: 217 33% 17%;          /* slate-800                   */
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;   /* slate-400 — AA on dark      */
+
+    --accent: 217 33% 21%;
+    --accent-foreground: 210 40% 96%;
+
+    --destructive: 0 63% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 217 33% 22%;
+    --input: 217 33% 24%;
+    --ring: 172 66% 45%;
+
+    --sidebar: 222 44% 10%;
   }
 }
 
@@ -53,12 +93,12 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', system-ui, 'Segoe UI', sans-serif;
+    font-family: 'Geist', system-ui, 'Segoe UI', sans-serif;
     font-optical-sizing: auto;
   }
 
   /* Baloo 2 carries brand personality in headings only.
-     Body copy, nav, labels, and UI controls use Inter. */
+     Body copy, nav, labels, and UI controls use Geist. */
   h1 {
     font-family: 'Baloo 2', cursive;
     font-weight: 700;
@@ -111,64 +151,87 @@
 }
 
 /* ------------------------------------------------------------------ */
-/*  Sidebar nav highlight — glowy + bouncy when there's work pending   */
-/*  Applied to Demo Onayı / Özalit Onayı items when their count > 0    */
+/*  Sidebar nav highlight — static tinted ring when work is pending.    */
+/*  Applied to Demo Onayı / Özalit Onayı items when their count > 0.    */
+/*  Quiet by design: a soft amber surface + 1px inset ring, no glow or  */
+/*  perpetual motion — the count badge carries the urgency.             */
 /* ------------------------------------------------------------------ */
-.nav-pulse-glow {
-  position: relative;
-  background-image: linear-gradient(135deg, hsl(45 100% 96%) 0%, hsl(35 100% 94%) 100%);
-  box-shadow:
-    0 0 0 1px hsl(38 92% 60% / 0.55),
-    0 0 14px 2px hsl(38 95% 60% / 0.45);
-  animation: nav-pulse-glow 1.6s ease-in-out infinite;
-}
-
+.nav-pulse-glow,
 .nav-bounce {
-  animation:
-    nav-pulse-glow 2.4s ease-in-out infinite,
-    nav-bounce 1.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) 2 both;
-  transform-origin: center;
-  will-change: transform, box-shadow;
+  position: relative;
+  background-color: hsl(45 100% 96%);
+  box-shadow: inset 0 0 0 1px hsl(38 80% 55% / 0.4);
 }
 
-@keyframes nav-pulse-glow {
-  0%, 100% {
-    box-shadow:
-      0 0 0 1px hsl(38 92% 60% / 0.55),
-      0 0 14px 2px hsl(38 95% 60% / 0.45);
+/* ------------------------------------------------------------------ */
+/*  Staggered list entry — children fade + rise in sequence.           */
+/*  Add `stagger-children` to a grid/list wrapper; direct children     */
+/*  animate in with an incremental delay so the list assembles instead */
+/*  of snapping in all at once. Capped so long lists don't drag.       */
+/* ------------------------------------------------------------------ */
+.stagger-children > * {
+  animation: stagger-in 0.42s var(--ease-out) both;
+}
+
+@keyframes stagger-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
   }
-  50% {
-    box-shadow:
-      0 0 0 1px hsl(38 92% 65% / 0.85),
-      0 0 22px 5px hsl(38 95% 60% / 0.7);
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-@keyframes nav-bounce {
-  0% {
-    transform: translateY(0) scale(1);
-  }
-  30% {
-    transform: translateY(-4px) scale(1.03);
-  }
-  60% {
-    transform: translateY(0) scale(1);
-  }
-  80% {
-    transform: translateY(-2px) scale(1.01);
-  }
-  100% {
-    transform: translateY(0) scale(1);
-  }
-}
+.stagger-children > *:nth-child(1)  { animation-delay: 0ms;   }
+.stagger-children > *:nth-child(2)  { animation-delay: 40ms;  }
+.stagger-children > *:nth-child(3)  { animation-delay: 80ms;  }
+.stagger-children > *:nth-child(4)  { animation-delay: 120ms; }
+.stagger-children > *:nth-child(5)  { animation-delay: 160ms; }
+.stagger-children > *:nth-child(6)  { animation-delay: 200ms; }
+.stagger-children > *:nth-child(7)  { animation-delay: 240ms; }
+.stagger-children > *:nth-child(8)  { animation-delay: 280ms; }
+/* Beyond ~8 the delay would feel sluggish — everything after lands together. */
+.stagger-children > *:nth-child(n+9) { animation-delay: 300ms; }
 
 @media (prefers-reduced-motion: reduce) {
-  .nav-pulse-glow,
-  .nav-bounce {
-    animation: none;
-    box-shadow:
-      0 0 0 1px hsl(38 92% 60% / 0.55),
-      0 0 10px 1px hsl(38 95% 60% / 0.35);
+  /* Keep comprehension (the fade) but drop the movement. */
+  .stagger-children > * {
+    animation: stagger-in-fade 0.25s ease-out both;
+  }
+  @keyframes stagger-in-fade {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Overlay / popover easing — tailwindcss-animate's enter/exit use    */
+/*  the default `ease`. Route them through our stronger curves so      */
+/*  dialogs, menus, selects and tooltips feel intentional, not floaty. */
+/* ------------------------------------------------------------------ */
+.motion-pop[data-state='open'],
+.motion-pop[data-state='delayed-open'],
+.motion-pop[data-state='instant-open'] { animation-timing-function: var(--ease-out); }
+.motion-pop[data-state='closed'] { animation-timing-function: var(--ease-in-out); }
+
+/* Reduced motion: keep the fade, drop the scale + slide. We neutralise
+   tailwindcss-animate's transform variables so the enter/exit keyframes
+   animate opacity only — dialogs/menus/selects/tooltips fade, the sheet
+   appears in place instead of sliding. (Setting custom properties never
+   conflicts with the per-state animation-timing-function rules above.) */
+@media (prefers-reduced-motion: reduce) {
+  .motion-pop,
+  .motion-drawer {
+    --tw-enter-scale: 1;
+    --tw-exit-scale: 1;
+    --tw-enter-rotate: 0;
+    --tw-exit-rotate: 0;
+    --tw-enter-translate-x: 0;
+    --tw-enter-translate-y: 0;
+    --tw-exit-translate-x: 0;
+    --tw-exit-translate-y: 0;
   }
 }
 

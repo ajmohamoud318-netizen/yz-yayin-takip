@@ -37,8 +37,8 @@ export default function StageBar({ type, stage, compact = false }) {
         {stages.map((s, i) => (
           <span
             key={s}
-            className={`h-1.5 flex-1 rounded-full ${
-              i <= currentIndex ? 'bg-brand-500' : 'bg-slate-200'
+            className={`h-1.5 flex-1 rounded-full transition-colors duration-500 ease-out motion-reduce:transition-none ${
+              i <= currentIndex ? 'bg-brand-500' : 'bg-muted'
             }`}
           />
         ))}
@@ -55,19 +55,19 @@ export default function StageBar({ type, stage, compact = false }) {
           <li key={s} className="flex items-center">
             <div className="flex flex-col items-center">
               <span
-                className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold ${
+                className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold transition-[background-color,color,box-shadow] duration-300 ease-out motion-reduce:transition-none ${
                   done
                     ? 'bg-brand-500 text-white'
                     : current
                       ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500'
-                      : 'bg-slate-100 text-slate-400'
+                      : 'bg-muted text-muted-foreground'
                 }`}
               >
                 {done ? '✓' : i + 1}
               </span>
               <span
                 className={`mt-1 max-w-[64px] text-center text-[10px] leading-tight ${
-                  current ? 'font-semibold text-brand-700' : 'text-slate-400'
+                  current ? 'font-semibold text-brand-700' : 'text-muted-foreground'
                 }`}
               >
                 {STAGE_LABELS[s]}
@@ -75,8 +75,8 @@ export default function StageBar({ type, stage, compact = false }) {
             </div>
             {i < stages.length - 1 && (
               <span
-                className={`mx-1 h-0.5 w-6 ${
-                  i < currentIndex ? 'bg-brand-500' : 'bg-slate-200'
+                className={`mx-1 h-0.5 w-6 transition-colors duration-500 ease-out motion-reduce:transition-none ${
+                  i < currentIndex ? 'bg-brand-500' : 'bg-muted'
                 }`}
               />
             )}

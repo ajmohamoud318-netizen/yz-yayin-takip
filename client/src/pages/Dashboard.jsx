@@ -24,11 +24,6 @@ const TR_MONTHS_SHORT = [
 // Estimated lead time (months) used to draw a bar that ends at target_month.
 const LEAD_MONTHS = { TR: 3, CIN: 4 }
 
-// Yellow (Satışta) is too light for white text; the rest read fine in white.
-function barText(key) {
-  return key === 'yellow' ? 'text-[#5A3017]' : 'text-white'
-}
-
 export default function Dashboard() {
   const { projects, loading, error, refetch } = useProjects()
   const { openProject } = useProjectModal()
@@ -155,7 +150,7 @@ export default function Dashboard() {
         </div>
 
         {/* Summary cards — Toplam + one per status group */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+        <div className="stagger-children grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
           <SummaryCard label="Toplam Proje" value={counts.total} colorKey="total" />
           {LEGEND_KEYS.map((k) => (
             <SummaryCard key={k} label={STATUS_STYLES[k].label} value={counts[k]} colorKey={k} />
@@ -231,8 +226,8 @@ export default function Dashboard() {
                               'transition-[transform,box-shadow] duration-150 ease-out hover:shadow-md hover:brightness-105',
                               'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
                               'motion-reduce:transition-none',
-                              meta.dot,
-                              barText(key),
+                              meta.barFill,
+                              'text-white',
                             )}
                           >
                             <div className="flex items-center gap-1.5 pb-1">
@@ -252,7 +247,7 @@ export default function Dashboard() {
                             {/* progress bar */}
                             <div className="absolute inset-x-1.5 bottom-1 h-1 overflow-hidden rounded-full bg-black/20">
                               <div
-                                className={cn('h-full rounded-full', key === 'yellow' || key === 'pink' ? 'bg-[#5A3017]' : 'bg-white')}
+                                className="h-full rounded-full bg-white"
                                 style={{ width: `${p.progress}%` }}
                               />
                             </div>
@@ -315,7 +310,7 @@ function SummaryCard({ label, value, colorKey }) {
       <p className={cn('truncate text-xs font-medium opacity-80', isTotal ? 'text-background' : meta?.onSurface)}>
         {label}
       </p>
-      <p className={cn('mt-2 text-3xl font-bold tabular-nums', isTotal ? 'text-background' : meta?.onSurface)}>
+      <p className={cn('mt-2 font-mono text-3xl font-bold tabular-nums', isTotal ? 'text-background' : meta?.onSurface)}>
         {value}
       </p>
     </div>
@@ -324,8 +319,8 @@ function SummaryCard({ label, value, colorKey }) {
 
 function ErrorState({ message, onRetry }) {
   return (
-    <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
-      <p className="text-sm font-medium text-red-700">{message}</p>
+    <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center dark:border-red-900 dark:bg-red-950/40">
+      <p className="text-sm font-medium text-red-700 dark:text-red-300">{message}</p>
       <button
         onClick={onRetry}
         className="mt-3 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"

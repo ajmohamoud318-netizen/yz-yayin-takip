@@ -24,10 +24,13 @@ import {
   Package,
   Zap,
   ShoppingCart,
+  Sun,
+  Moon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
+import { useTheme } from '@/hooks/useTheme'
 import { useProjects } from '@/hooks/useProjects'
 import { useProjectModal } from '@/hooks/useProjectModal'
 import ProjectDetail from '@/pages/ProjectDetail'
@@ -233,6 +236,7 @@ export default function AppShell() {
                 <Plus className="h-4 w-4" />
               </Button>
             )}
+            <ThemeToggle />
             <NotificationBell
               projects={projects}
               user={user}
@@ -512,7 +516,7 @@ function PeriodWidget({ satista, total }) {
     <div className="rounded-lg border border-primary/15 bg-primary/5 p-3">
       <div className="flex items-center justify-between">
         <div className="text-[10px] font-semibold uppercase tracking-wider text-primary">Bu Dönem</div>
-        <div className="text-[10px] font-medium text-primary">{pct}%</div>
+        <div className="font-mono text-[10px] font-medium tabular-nums text-primary">{pct}%</div>
       </div>
       <div className="mt-1.5 text-xs font-medium text-foreground">Hedef: projeleri satışa çıkar</div>
       <div className="mt-2 h-1 overflow-hidden rounded-full bg-background">
@@ -804,6 +808,22 @@ function NotificationBell({ projects, user, orders, onOpenProject }) {
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme()
+  const isDark = theme === 'dark'
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={toggleTheme}
+      aria-label={isDark ? 'Açık temaya geç' : 'Koyu temaya geç'}
+      title={isDark ? 'Açık tema' : 'Koyu tema'}
+    >
+      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+    </Button>
   )
 }
 

@@ -153,7 +153,7 @@ export default function Approvals({ tab = 'demo' }) {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="stagger-children grid gap-3 md:grid-cols-2">
             {queue.map((p) => (
               <Card key={p.id}>
                 <CardContent className="space-y-3 p-4">

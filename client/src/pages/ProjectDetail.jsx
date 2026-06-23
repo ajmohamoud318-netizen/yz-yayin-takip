@@ -350,7 +350,7 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                     {STAGE_LABELS[project.stage]}
                   </Badge>
                   {project.demo_attempt > 0 && (
-                    <Badge variant="outline" className="font-medium text-slate-600">
+                    <Badge variant="outline" className="font-medium text-muted-foreground">
                       Demo {project.demo_attempt + 1}
                     </Badge>
                   )}

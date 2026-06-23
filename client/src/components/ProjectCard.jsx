@@ -30,7 +30,7 @@ export default function ProjectCard({ project, onClick }) {
       type="button"
       onClick={() => onClick?.(project)}
       className={cn(
-        'group flex w-full flex-col gap-3 rounded-xl border bg-white p-4 text-left shadow-sm',
+        'group flex w-full flex-col gap-3 rounded-xl border bg-card p-4 text-left shadow-sm',
         'transition-[transform,box-shadow,border-color] duration-200 ease-out',
         'hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
@@ -72,7 +72,7 @@ export default function ProjectCard({ project, onClick }) {
       <div>
         <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
           <span>İlerleme</span>
-          <span className="font-semibold text-foreground">{project.progress}%</span>
+          <span className="font-mono font-semibold tabular-nums text-foreground">{project.progress}%</span>
         </div>
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
           <div

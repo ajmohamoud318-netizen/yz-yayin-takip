@@ -2,6 +2,7 @@ import tailwindcssAnimate from 'tailwindcss-animate'
 
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
@@ -42,18 +43,20 @@ export default {
         },
         // Light mauve sidebar (rule 3)
         sidebar: 'hsl(var(--sidebar))',
-        // Brand scale repointed to rose/pink (was blue)
+        // Brand scale = teal (matches the --primary accent). 500 is kept
+        // dark enough that white text / the ✓ glyph on a filled brand-500
+        // circle clears WCAG AA.
         brand: {
-          50: '#fff1f7',
-          100: '#ffe0ee',
-          200: '#fcc4dc',
-          300: '#f49cc0',
-          400: '#e96e9f',
-          500: '#d94e83',
-          600: '#c23a6d',
-          700: '#9e2d58',
-          800: '#7e2547',
-          900: '#66203c',
+          50: '#f0fdfa',
+          100: '#ccfbf1',
+          200: '#99f6e4',
+          300: '#5eead4',
+          400: '#2dd4bf',
+          500: '#0f766e',
+          600: '#115e59',
+          700: '#134e4a',
+          800: '#0c3b38',
+          900: '#07302e',
         },
         // Pastel secondary palette for charts + kanban (rules 9 & 11)
         pastel: {
@@ -72,7 +75,9 @@ export default {
         sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: ['Geist', 'system-ui', 'Segoe UI', 'Roboto', 'sans-serif'],
+        // Geist Mono for tabular numerals — counts, progress %, metrics.
+        mono: ['"Geist Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
         // Baloo 2 is the brand display font — headings and card titles only,
         // never body copy, labels, or dense UI elements.
         display: ['"Baloo 2"', 'cursive'],
