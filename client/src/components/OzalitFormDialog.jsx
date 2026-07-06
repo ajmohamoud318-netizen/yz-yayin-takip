@@ -119,7 +119,7 @@ function buildPrintHtml({ form, customRows, project, attemptNo, kind }) {
     </div>`
 
   return `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"/>
-  <link href="https://fonts.googleapis.com/css2?family=Parisienne&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Alex Brush&display=swap" rel="stylesheet"/>
   <title>${attemptSuffix} Formu — ${escapeHtml(project?.title ?? '')} — ${escapeHtml(form.isinAdi || '')}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
@@ -138,7 +138,7 @@ function buildPrintHtml({ form, customRows, project, attemptNo, kind }) {
     .sig-box:last-child{margin-right:0}
     .sig-box p{margin:0}
     .sig-role{font-size:8.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#555;margin-bottom:4px}
-    .sig-name{font-size:16pt;font-family:'Parisienne',cursive;min-height:22px;margin-bottom:8px;color:#3d283499}
+    .sig-name{font-size:16pt;font-family:'Alex Brush',cursive;min-height:22px;margin-bottom:8px;color:#3d283499}
     .sig-line{border-top:1px solid #000;margin-bottom:4px}
     .sig-hint{font-size:8pt;color:#888;text-align:center}
     @media print{body{padding:12mm 14mm}@page{size:A4;margin:0}}
@@ -238,7 +238,7 @@ function SigBox({ role, name }) {
       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{role}</p>
       <div className="mt-3 flex min-h-[2.75rem] items-end border-b border-foreground/25 pb-0.5">
         {name && (
-          <span style={{ fontFamily: "'Parisienne', cursive", fontSize: '1.35rem', color: 'hsl(325 21% 20% / 0.8)' }}>
+          <span style={{ fontFamily: "'Alex Brush', cursive", fontSize: '1.35rem', color: 'hsl(325 21% 20% / 0.8)' }}>
             {name}
           </span>
         )}
@@ -267,7 +267,14 @@ export default function OzalitFormDialog({ open, onOpenChange, project, mode = '
   const [selectedComponents, setSelectedComponents] = useState([]) // [{ id, component, rows }]
   const [busy, setBusy] = useState(false)
 
-  const readOnly = mode === 'history'
+  // Only the team leader authors the ozalit spec. Everyone else views it:
+  //   • the matbaa (printer) receives, signs, and forwards it — never edits;
+  //   • the designer can open it (e.g. from Sipariş Onayı) but must not change
+  //     the spec — they only see and print it.
+  // Their own auto-filled signatures stay read-only, and history snapshots are
+  // read-only for everyone.
+  const readOnly =
+    mode === 'history' || user?.role === 'printer' || user?.role === 'designer'
 
   const catalogComponents = useMemo(
     () => getComponentsForProject(project?.id).map((c) => ({
@@ -291,7 +298,10 @@ export default function OzalitFormDialog({ open, onOpenChange, project, mode = '
       const savedRows = data?.customRows ?? []
       const hasAdet = savedRows.some((r) => r.label?.toUpperCase().startsWith('ADET'))
       setCustomRows(hasAdet ? savedRows : [...buildAdetRows(project.id), ...savedRows])
-      setSelectedComponents(data?.selectedComponents ?? [])
+      // null means never explicitly set — default to all catalog components checked.
+      // [] means the user intentionally cleared them — respect that.
+      const savedComponents = data?.selectedComponents ?? null
+      setSelectedComponents(savedComponents ?? catalogComponents)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, project?.id, viewAttempt])
@@ -527,19 +537,23 @@ export default function OzalitFormDialog({ open, onOpenChange, project, mode = '
             <Printer className="h-4 w-4" />
             Yazdır
           </Button>
-          {mode === 'view' && (
+          {mode === 'view' && !readOnly && (
             <Button onClick={handleSave}>Kaydet</Button>
           )}
           {mode === 'advance' && (
             <Button disabled={busy} onClick={handleAdvance}>
               <Send className="h-4 w-4" />
-              {busy ? 'Gönderiliyor…' : 'Onaya Gönder'}
+              {busy
+                ? 'Gönderiliyor…'
+                : user?.role === 'printer'
+                  ? 'Teslim Et'
+                  : 'Matbaaya Gönder'}
             </Button>
           )}
           {mode === 'approve' && (
             <Button variant="success" disabled={busy} onClick={handleApprove}>
               <Check className="h-4 w-4" />
-              {busy ? 'İşleniyor…' : 'Onayla ve Üretime Al'}
+              {busy ? 'İşleniyor…' : 'Onayla'}
             </Button>
           )}
         </DialogFooter>

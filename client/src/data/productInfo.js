@@ -1,7 +1,7 @@
 // Auto-generated from "MATBAA TAKİP.xlsx".
 // Master product spec per COMPONENT (Kitap, Kutu, Magnetler, ...) — the latest
 // values merged from the sheet. Reference data used when requesting a Demo or
-// an Özalit. A product can have several components.
+// an Ozalit. A product can have several components.
 // Shape: PRODUCT_INFO[projectId] = [ { component, date, fields:[{k,v}] } ]
 export const PRODUCT_INFO = {
   "p-x1": [

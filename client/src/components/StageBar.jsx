@@ -1,26 +1,10 @@
-import { STAGE_LABELS } from '../api.js'
+import { STAGE_LABELS, STAGE_PIPELINE } from '../api.js'
 
-// Pipeline stage order per project type (from CLAUDE.md workflows).
-const TR_STAGES = [
-  'tasarim',
-  'demo_teslim',
-  'demo_onay',
-  'ozalit_teslim',
-  'ozalit_onay',
-  'uretimde',
-  'satista',
-]
-const CIN_STAGES = [
-  'tasarim',
-  'cin_demo_teslim',
-  'cin_demo_onay',
-  'uretimde',
-  'gumruk',
-  'satista',
-]
-
+// Single source of truth for stage order — keep StageBar in sync with the
+// canonical pipeline so post-Ozalit stages (e.g. 'uretime_hazir') resolve
+// correctly instead of falling back to step 1.
 export function stagesForType(type) {
-  return type === 'CIN' ? CIN_STAGES : TR_STAGES
+  return type === 'CIN' ? STAGE_PIPELINE.CIN : STAGE_PIPELINE.TR
 }
 
 /**

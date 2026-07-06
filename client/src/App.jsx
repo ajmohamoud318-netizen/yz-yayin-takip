@@ -21,6 +21,10 @@ import UrunBilgileri from './pages/UrunBilgileri.jsx'
 import SiparisListesi from './pages/SiparisListesi.jsx'
 import SiparisTalepleri from './pages/SiparisTalepleri.jsx'
 import SiparisOnay from './pages/SiparisOnay.jsx'
+import TeslimTalepleri from './pages/TeslimTalepleri.jsx'
+import TeslimOnaylari from './pages/TeslimOnaylari.jsx'
+import UretimeHazir from './pages/UretimeHazir.jsx'
+import Settings from './pages/Settings.jsx'
 import NotificationSync from './components/NotificationSync.jsx'
 import { CelebrationProvider } from './hooks/useCelebration.jsx'
 
@@ -153,6 +157,31 @@ export default function App() {
               </RoleGuard>
             }
           />
+          <Route
+            path="/uretime-hazir"
+            element={
+              <RoleGuard allow={['printer']}>
+                <UretimeHazir />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="/teslim-talepleri"
+            element={
+              <RoleGuard allow={['printer']}>
+                <TeslimTalepleri />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="/teslim-onaylari"
+            element={
+              <RoleGuard allow={['satis']}>
+                <TeslimOnaylari />
+              </RoleGuard>
+            }
+          />
+          <Route path="/settings" element={<Settings />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

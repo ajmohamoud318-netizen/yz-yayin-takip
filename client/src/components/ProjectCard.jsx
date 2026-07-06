@@ -30,9 +30,9 @@ export default function ProjectCard({ project, onClick }) {
       type="button"
       onClick={() => onClick?.(project)}
       className={cn(
-        'group flex w-full flex-col gap-3 rounded-xl border bg-card p-4 text-left shadow-sm',
-        'transition-[transform,box-shadow,border-color] duration-200 ease-out',
-        'hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md',
+        'group flex w-full flex-col gap-3 rounded-lg border bg-card p-4 text-left',
+        'transition-[transform,border-color] duration-200 ease-out',
+        'hover:-translate-y-0.5 hover:border-primary/50',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
         'motion-reduce:transition-none motion-reduce:hover:translate-y-0',
         style.topBorder,
@@ -62,7 +62,7 @@ export default function ProjectCard({ project, onClick }) {
           )}
           {project.ozalit_attempt > 0 && (
             <span className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-600 ring-1 ring-inset ring-blue-200">
-              Özalit {project.ozalit_attempt + 1}
+              Ozalit {project.ozalit_attempt + 1}
             </span>
           )}
         </div>

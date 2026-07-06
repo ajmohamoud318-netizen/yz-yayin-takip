@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useProjectModal } from '@/hooks/useProjectModal'
 import { ThumbsUp, ThumbsDown, Inbox, Send, ShoppingCart, Eye, PenLine } from 'lucide-react'
 
@@ -9,6 +10,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import ApprovalDialog from '@/components/ApprovalDialog'
 import DemoFormDialog from '@/components/DemoFormDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
@@ -23,6 +25,7 @@ import { cn, formatMonthYear } from '@/lib/utils'
 export default function Approvals({ tab = 'demo' }) {
   const { user } = useAuth()
   const { projects, loading } = useProjects()
+  const navigate = useNavigate()
   const [dialog, setDialog] = useState(null)
   const [demoForm, setDemoForm] = useState(null)
   const [ozalitForm, setOzalitForm] = useState(null)
@@ -44,19 +47,23 @@ export default function Approvals({ tab = 'demo' }) {
       .finally(() => setOrdersLoading(false))
   }, [isPrinter, tab])
 
-  const queue = useMemo(() => {
-    return projects.filter((p) => {
+  const filterQueue = (sub) =>
+    projects.filter((p) => {
       if (isPrinter) {
         if (p.type !== 'TR') return false
-        if (tab === 'demo') return p.stage === 'demo_teslim'
-        if (tab === 'ozalit') return p.stage === 'ozalit_teslim'
+        if (sub === 'demo') return p.stage === 'demo_teslim'
+        // Ozalit reaches the matbaa's queue only once it's been requested by the
+        // leader/designer (or on a re-delivery after a reject-to-matbaa).
+        if (sub === 'ozalit') return p.stage === 'ozalit_teslim' && (!!p.ozalit_requested || p.reject_target === 'matbaa')
         return false
       }
-      if (tab === 'demo') return p.stage === 'demo_onay' || p.stage === 'cin_demo_onay'
-      if (tab === 'ozalit') return p.stage === 'ozalit_onay'
+      if (sub === 'demo') return p.stage === 'demo_onay' || p.stage === 'cin_demo_onay'
+      if (sub === 'ozalit') return p.stage === 'ozalit_onay'
       return false
     })
-  }, [projects, tab, isPrinter])
+
+  const demoQueue = useMemo(() => filterQueue('demo'), [projects, isPrinter])
+  const ozalitQueue = useMemo(() => filterQueue('ozalit'), [projects, isPrinter])
 
   function onDone() {}
 
@@ -65,7 +72,7 @@ export default function Approvals({ tab = 'demo' }) {
     setSignOrder(null)
   }
 
-  const isDemo = tab === 'demo'
+  const activeTab = tab === 'ozalit' ? 'ozalit' : 'demo'
 
   // Sipariş tab is printer-only
   if (tab === 'siparis' && isPrinter) {
@@ -120,109 +127,138 @@ export default function Approvals({ tab = 'demo' }) {
     )
   }
 
+  function renderQueue(queue, sub) {
+    if (loading) {
+      return (
+        <div className="grid gap-3 md:grid-cols-2">
+          {[0, 1].map((i) => (
+            <Skeleton key={i} className="h-32" />
+          ))}
+        </div>
+      )
+    }
+    if (queue.length === 0) {
+      return (
+        <Card>
+          <CardContent className="grid place-items-center gap-2 p-10 text-center">
+            <Inbox className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm font-medium">Şu an bekleyen iş yok.</p>
+            <p className="text-xs text-muted-foreground">Yeni bir teslim geldiğinde burada görünecek.</p>
+          </CardContent>
+        </Card>
+      )
+    }
+    return (
+      <div className="stagger-children grid gap-3 md:grid-cols-2">
+        {queue.map((p) => (
+          <Card key={p.id}>
+            <CardContent className="space-y-3 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{p.title}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {p.assigned_name} · {formatMonthYear(p.target_month)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Badge variant="outline">{TYPE_LABELS[p.type]}</Badge>
+                </div>
+              </div>
+              <div className="rounded-md border bg-muted/30 p-2.5 text-xs">
+                <span className="font-medium">Aşama:</span> {STAGE_LABELS[p.stage]}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="flex-1"
+                  onClick={() => openProject(p.id)}
+                >
+                  Detay
+                </Button>
+                {isPrinter ? (
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => {
+                      if (sub === 'demo') setDemoForm({ project: p, mode: 'advance' })
+                      else setOzalitForm({ project: p, mode: 'advance' })
+                    }}
+                  >
+                    <Send className="h-4 w-4" />
+                    Onaya Gönder
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="flex-1"
+                      onClick={() => setDialog({ project: p, mode: 'reject' })}
+                    >
+                      <ThumbsDown className="h-4 w-4" />
+                      Reddet
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="success"
+                      className="flex-1"
+                      onClick={() => {
+                        if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
+                        else setDialog({ project: p, mode: 'approve' })
+                      }}
+                    >
+                      <ThumbsUp className="h-4 w-4" />
+                      Onayla
+                    </Button>
+                  </>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="space-y-5">
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {isDemo ? 'Demo Onayı' : 'Ozalit Onayı'}
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Onaylar</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {isPrinter
-              ? isDemo
-                ? 'Demo teslimlerini alıp lider onayına gönderin.'
-                : 'Ozalit teslimlerini alıp lider onayına gönderin.'
-              : isDemo
-                ? 'Matbaadan gelen demo onaylarını değerlendirin.'
-                : 'Matbaadan gelen Ozalit onaylarını değerlendirin.'}
+              ? 'Demo ve Ozalit teslimlerini alıp lider onayına gönderin.'
+              : 'Matbaadan gelen demo ve Ozalit onaylarını tek ekranda değerlendirin.'}
           </p>
         </header>
 
-        {loading ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {[0, 1].map((i) => (
-              <Skeleton key={i} className="h-32" />
-            ))}
-          </div>
-        ) : queue.length === 0 ? (
-          <Card>
-            <CardContent className="grid place-items-center gap-2 p-10 text-center">
-              <Inbox className="h-8 w-8 text-muted-foreground" />
-              <p className="text-sm font-medium">Şu an bekleyen iş yok.</p>
-              <p className="text-xs text-muted-foreground">Yeni bir teslim geldiğinde burada görünecek.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="stagger-children grid gap-3 md:grid-cols-2">
-            {queue.map((p) => (
-              <Card key={p.id}>
-                <CardContent className="space-y-3 p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{p.title}</p>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {p.assigned_name} · {formatMonthYear(p.target_month)}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <Badge variant="outline">{TYPE_LABELS[p.type]}</Badge>
-                    </div>
-                  </div>
-                  <div className="rounded-md border bg-muted/30 p-2.5 text-xs">
-                    <span className="font-medium">Aşama:</span> {STAGE_LABELS[p.stage]}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="flex-1"
-                      onClick={() => openProject(p.id)}
-                    >
-                      Detay
-                    </Button>
-                    {isPrinter ? (
-                      <Button
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => {
-                          if (tab === 'demo') setDemoForm({ project: p, mode: 'advance' })
-                          else setOzalitForm({ project: p, mode: 'advance' })
-                        }}
-                      >
-                        <Send className="h-4 w-4" />
-                        Onaya Gönder
-                      </Button>
-                    ) : (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          className="flex-1"
-                          onClick={() => setDialog({ project: p, mode: 'reject' })}
-                        >
-                          <ThumbsDown className="h-4 w-4" />
-                          Reddet
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="success"
-                          className="flex-1"
-                          onClick={() => {
-                            if (tab === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
-                            else setDialog({ project: p, mode: 'approve' })
-                          }}
-                        >
-                          <ThumbsUp className="h-4 w-4" />
-                          Onayla
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+        <Tabs value={activeTab} onValueChange={(v) => navigate(`/approvals/${v}`)}>
+          <TabsList>
+            <TabsTrigger value="demo" className="gap-1.5">
+              Demo Onayı
+              {demoQueue.length > 0 && (
+                <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">
+                  {demoQueue.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="ozalit" className="gap-1.5">
+              Ozalit Onayı
+              {ozalitQueue.length > 0 && (
+                <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">
+                  {ozalitQueue.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="demo" className="mt-4">
+            {renderQueue(demoQueue, 'demo')}
+          </TabsContent>
+          <TabsContent value="ozalit" className="mt-4">
+            {renderQueue(ozalitQueue, 'ozalit')}
+          </TabsContent>
+        </Tabs>
       </div>
 
       <ApprovalDialog

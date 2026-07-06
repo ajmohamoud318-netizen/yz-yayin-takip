@@ -114,11 +114,19 @@ export default function Dashboard() {
       onTouchEnd={onTouchEnd}
       onWheel={onWheel}
     >
+        {/* Summary cards — Toplam + one per status group */}
+        <div className="stagger-children grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+          <SummaryCard label="Toplam Proje" value={counts.total} colorKey="total" />
+          {LEGEND_KEYS.map((k) => (
+            <SummaryCard key={k} label={STATUS_STYLES[k].label} value={counts[k]} colorKey={k} />
+          ))}
+        </div>
+
         {/* Title row */}
-        <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-wrap items-end justify-between gap-3 pb-4">
           <div>
-            <h1 className="text-xl font-bold text-foreground">Yıllık Plan</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
+            <h1 className="text-3xl text-foreground">Yıllık Plan</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
               {year} · {bars.length} proje zaman çizelgesinde
             </p>
           </div>
@@ -149,14 +157,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Summary cards — Toplam + one per status group */}
-        <div className="stagger-children grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-          <SummaryCard label="Toplam Proje" value={counts.total} colorKey="total" />
-          {LEGEND_KEYS.map((k) => (
-            <SummaryCard key={k} label={STATUS_STYLES[k].label} value={counts[k]} colorKey={k} />
-          ))}
-        </div>
-
         {/* Yıllık plan chart */}
         {error ? (
           <ErrorState message={error} onRetry={refetch} />
@@ -168,13 +168,13 @@ export default function Dashboard() {
             <p className="mt-1 text-xs text-muted-foreground">Başka bir yıl seçin veya proje hedef ayı belirleyin.</p>
           </div>
         ) : (
-          <Card className="overflow-hidden">
+          <Card className="overflow-hidden shadow-sm ring-1 ring-border/60">
             <div ref={scrollRef} className="scrollbar-thin overflow-x-auto">
-              <div className="relative min-w-[860px]">
+              <div className="relative min-w-[900px] bg-card">
                 {/* Current-month band (spans full height behind rows) */}
                 {isThisYear && (
                   <div
-                    className="pointer-events-none absolute inset-y-0 z-0 bg-primary/[0.06]"
+                    className="pointer-events-none absolute inset-y-0 z-0 border-x border-primary/15 bg-primary/[0.055]"
                     style={{
                       left: `calc(100% * ${currentMonth} / 12)`,
                       width: `calc(100% / 12)`,
@@ -183,17 +183,21 @@ export default function Dashboard() {
                 )}
 
                 {/* Header */}
-                <div className="relative z-10 flex border-b bg-muted/40">
+                <div className="relative z-10 flex bg-muted/50">
                   <div className="flex flex-1">
                     {TR_MONTHS_SHORT.map((m, i) => (
                       <div
                         key={m}
                         className={cn(
-                          'flex-1 border-l px-1 py-2 text-center text-[11px] font-medium',
-                          isThisYear && i === currentMonth ? 'text-primary' : 'text-muted-foreground',
+                          'flex-1 border-l px-1 py-3 text-center text-[11px] font-semibold uppercase',
+                          isThisYear && i === currentMonth
+                            ? 'bg-primary/10 text-primary'
+                            : 'text-muted-foreground',
                         )}
                       >
-                        {m}
+                        <span className="inline-flex h-6 min-w-8 items-center justify-center rounded-full px-2">
+                          {m}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -207,12 +211,15 @@ export default function Dashboard() {
                     const leftPct = (start / 12) * 100
                     const widthPct = ((end - start + 1) / 12) * 100
                     return (
-                      <div key={p.id} className="flex items-center border-b last:border-0 hover:bg-muted/20">
-                        <div className="relative h-14 flex-1">
+                      <div
+                        key={p.id}
+                        className="flex items-center border-b last:border-0 odd:bg-background/35 hover:bg-muted/25"
+                      >
+                        <div className="relative h-[4.5rem] flex-1">
                           {/* gridlines */}
                           <div className="absolute inset-0 flex">
                             {TR_MONTHS_SHORT.map((m) => (
-                              <div key={m} className="flex-1 border-l border-border/40" />
+                              <div key={m} className="flex-1 border-l border-border/35" />
                             ))}
                           </div>
                           {/* bar */}
@@ -220,34 +227,34 @@ export default function Dashboard() {
                             type="button"
                             onClick={() => openProject(p.id)}
                             title={`${p.title} · ${STAGE_LABELS[p.stage]} · ${TYPE_LABELS[p.type]} · ${p.assigned_name} · %${p.progress}`}
-                            style={{ left: `calc(${leftPct}% + 4px)`, width: `calc(${widthPct}% - 8px)` }}
+                            style={{ left: `calc(${leftPct}% + 6px)`, width: `calc(${widthPct}% - 12px)` }}
                             className={cn(
-                              'group absolute top-1/2 flex h-9 -translate-y-1/2 flex-col justify-center overflow-hidden rounded-md px-1.5 shadow-sm',
-                              'transition-[transform,box-shadow] duration-150 ease-out hover:shadow-md hover:brightness-105',
+                              'group absolute top-1/2 flex h-12 -translate-y-1/2 flex-col justify-center overflow-hidden rounded-md px-3 shadow-sm ring-1 ring-black/5',
+                              'transition-[transform,box-shadow,filter] duration-150 ease-out hover:-translate-y-[54%] hover:shadow-lg hover:brightness-105',
                               'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
                               'motion-reduce:transition-none',
                               meta.barFill,
                               'text-white',
                             )}
                           >
-                            <div className="flex items-center gap-1.5 pb-1">
+                            <div className="flex min-w-0 items-center gap-2 pb-1.5">
                               <span
-                                className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full bg-white/25 text-[9px] font-semibold ring-1 ring-white/40"
+                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white/25 text-[10px] font-semibold ring-1 ring-white/40"
                                 title={p.assigned_name}
                               >
                                 {initials(p.assignees?.[0]?.name ?? p.assigned_name)}
                               </span>
-                              <span className="truncate text-[11px] font-semibold leading-none">
+                              <span className="min-w-0 flex-1 truncate text-left text-xs font-semibold leading-none">
                                 {p.title}
                               </span>
-                              <span className="ml-auto shrink-0 text-[10px] font-semibold tabular-nums opacity-90">
+                              <span className="shrink-0 rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
                                 %{p.progress}
                               </span>
                             </div>
                             {/* progress bar */}
-                            <div className="absolute inset-x-1.5 bottom-1 h-1 overflow-hidden rounded-full bg-black/20">
+                            <div className="absolute inset-x-3 bottom-1.5 h-1 overflow-hidden rounded-full bg-black/20">
                               <div
-                                className="h-full rounded-full bg-white"
+                                className="h-full rounded-full bg-white/95"
                                 style={{ width: `${p.progress}%` }}
                               />
                             </div>
@@ -301,7 +308,7 @@ function SummaryCard({ label, value, colorKey }) {
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-xl border p-4 shadow-sm transition-shadow hover:shadow-md',
+        'relative overflow-hidden rounded-lg border p-4',
         isTotal
           ? 'bg-foreground border-foreground'
           : cn(meta?.surface, meta?.border),

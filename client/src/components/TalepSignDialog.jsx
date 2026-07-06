@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { PenLine, ShoppingCart, ChevronDown, ChevronLeft, Package, Pencil, Plus, X, Check, ListChecks, Printer, FileText } from 'lucide-react'
+import { PenLine, ShoppingCart, ChevronDown, ChevronLeft, Package, Pencil, Plus, X, Check, ListChecks, Printer, FileText, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
-import api, { ORDER_STEP_LABELS, ORDER_STEP_NEXT } from '@/api'
+import api, { ORDER_STEP_LABELS, ORDER_STEP_NEXT, ORDER_REJECT_TO, ORDER_REJECT_TARGETS } from '@/api'
 import { PRODUCT_INFO } from '@/data/productInfo'
 import { buildAdetRows } from '@/data/orderAdet'
 import { useAuth } from '@/hooks/useAuth'
@@ -28,7 +28,7 @@ function loadProductComps(projectId) {
   return overrides[projectId] ?? PRODUCT_INFO[projectId] ?? []
 }
 // Designer edits during their step persist to the same catalog Ürün Bilgileri
-// and the Demo/Özalit forms read from.
+// and the Demo/Ozalit forms read from.
 function saveProductComps(projectId, comps) {
   try {
     const all = JSON.parse(localStorage.getItem(OVERRIDES_KEY)) ?? {}
@@ -55,6 +55,16 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
   const isDesignerStep = user?.role === 'designer' && order?.status === 'goruldu'
   const [comps, setComps] = useState([])
   const [editorOpen, setEditorOpen] = useState(false)
+  // Team-leader reject of the sales-side ozalit (matbaa teslim).
+  const [showReject, setShowReject] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+  // Which part re-does the rejected ozalit: 'designer' (→ görüldü) or 'matbaa'
+  // (→ tasarımcı onayı / re-delivery). Only shown when the step offers a choice.
+  const [rejectRoute, setRejectRoute] = useState('matbaa')
+  // Assign step (pending → görüldü): team leader picks the designer(s) for the check.
+  const isAssignStep = user?.role === 'team_leader' && order?.status === 'pending'
+  const [designers, setDesigners] = useState([])
+  const [assignIds, setAssignIds] = useState([])
   const [subtasks, setSubtasks] = useState([])
   const [subsOpen, setSubsOpen] = useState(false)
   const originalRef = useRef('[]')
@@ -65,7 +75,9 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
       const loaded = deepClone(loadProductComps(order.project_id))
       setComps(loaded)
       originalRef.current = JSON.stringify(loaded)
-      setEditorOpen(true)
+      // Subtasks first (open); product info collapsed until needed.
+      setSubsOpen(true)
+      setEditorOpen(false)
       let cancelled = false
       api.getProject(order.project_id)
         .then((p) => {
@@ -79,17 +91,38 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
     }
   }, [open, order?.id, isDesignerStep])
 
+  // Load designers + default selection (the project's current designers) when
+  // the team leader is on the assign step.
+  useEffect(() => {
+    if (!(open && order && isAssignStep)) return
+    let cancelled = false
+    Promise.all([api.listUsers(), api.getProject(order.project_id)])
+      .then(([users, p]) => {
+        if (cancelled) return
+        setDesigners(users.filter((u) => u.role === 'designer' && u.is_active !== false))
+        setAssignIds((p.assignees ?? []).map((a) => a.id))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [open, order?.id, isAssignStep])
+
   if (!order) return null
 
   const nextStep = ORDER_STEP_NEXT[order.status]
   const nextLabel = ORDER_STEP_LABELS[nextStep] ?? 'Onayla'
   const currentStepLabel = ORDER_STEP_LABELS[order.status] ?? order.status
+  // Only the team leader can reject, and only at the ozalit approval step.
+  const canReject = !!ORDER_REJECT_TO[order.status] && user?.role === 'team_leader'
 
   const items = normalizeItems(order.items, order.quantity)
 
   async function handleSign(e) {
     e.preventDefault()
     if (!user) return
+    if (isAssignStep && assignIds.length === 0) {
+      toast.error('En az bir tasarımcı seçin.')
+      return
+    }
     setSaving(true)
     try {
       let signNotes = notes.trim()
@@ -106,9 +139,14 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
           signNotes = signNotes ? `${signNotes} · ${phrase}` : phrase
         }
       }
+      if (isAssignStep) {
+        const names = designers.filter((d) => assignIds.includes(d.id)).map((d) => d.name).join(', ')
+        if (names) signNotes = signNotes ? `${signNotes} · ${names} görevlendirildi` : `${names} görevlendirildi`
+      }
       const updated = await api.advanceOrderRequest(order.id, {
         actor: { id: user.id, name: user.name, role: user.role },
         notes: signNotes,
+        ...(isAssignStep ? { assignees: assignIds } : {}),
       })
       toast.success(`${nextLabel} — İmzalandı.`)
       if (isDesignerStep) celebrate()
@@ -122,9 +160,43 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
     }
   }
 
+  async function handleReject() {
+    if (!user) return
+    if (!rejectReason.trim()) {
+      toast.error('Red sebebi zorunludur.')
+      return
+    }
+    setSaving(true)
+    try {
+      const updated = await api.rejectOrderRequest(order.id, {
+        actor: { id: user.id, name: user.name, role: user.role },
+        reason: rejectReason.trim(),
+        routeTo: rejectRoute,
+      })
+      toast.success(
+        rejectRoute === 'designer'
+          ? 'Sipariş ozaliti reddedildi — tasarımcıya geri gönderildi.'
+          : 'Sipariş ozaliti reddedildi — matbaaya geri gönderildi.',
+      )
+      setRejectReason('')
+      setRejectRoute('matbaa')
+      setShowReject(false)
+      onOpenChange(false)
+      onSigned?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'Reddetme başarısız.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   function handleClose() {
     if (saving) return
     setNotes('')
+    setShowReject(false)
+    setRejectReason('')
+    setRejectRoute('matbaa')
+    setAssignIds([])
     onOpenChange(false)
   }
 
@@ -134,11 +206,11 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PenLine className="h-4 w-4" />
-            İmzala — {nextLabel}
+            {isDesignerStep ? 'İncele ve Gönder' : `İmzala — ${nextLabel}`}
           </DialogTitle>
           <DialogDescription>
             {isDesignerStep
-              ? 'Ürün bilgilerini gözden geçirip düzenleyebilir, ardından bu adımı imzalayabilirsiniz.'
+              ? 'Önce alt görevleri güncelleyin; gerekirse ürün bilgilerini düzenleyin, ardından gönderin.'
               : 'Bu adımı onaylayarak imzalıyorsunuz. İşlem geri alınamaz.'}
           </DialogDescription>
         </DialogHeader>
@@ -181,32 +253,63 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
           {/* Mini-pipeline progress */}
           <MiniPipeline order={order} nextStep={nextStep} />
 
-          {/* Designer-only: edit the product spec before signing */}
+          {/* Designer-only: edit the project's subtasks (alt görevler) — first */}
+          {isDesignerStep && (
+            <div className="overflow-hidden rounded-lg border">
+              <button
+                type="button"
+                onClick={() => setSubsOpen((v) => !v)}
+                className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
+              >
+                <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <ListChecks className="h-3.5 w-3.5" />
+                  Alt Görevler
+                  {subtasks.filter((s) => s.needs_revize).length > 0 && (
+                    <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-700">
+                      {subtasks.filter((s) => s.needs_revize).length} revize
+                    </span>
+                  )}
+                </span>
+                <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform duration-200', subsOpen && 'rotate-180')} />
+              </button>
+              {subsOpen && (
+                <div className="border-t bg-muted/20 p-2">
+                  <SubtaskEditor subtasks={subtasks} onChange={setSubtasks} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Designer-only: edit the product spec (collapsed by default) */}
           {isDesignerStep && (
             <div className="overflow-hidden rounded-lg border">
               <button
                 type="button"
                 onClick={() => setEditorOpen((v) => !v)}
-                className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
+                className="flex w-full items-start justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
               >
-                <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <Pencil className="h-3.5 w-3.5" />
-                  Ürün Bilgilerini Düzenle
-                </span>
-                <div className="flex items-center gap-2">
-                  {items.length > 0
-                    ? items.map((it) => (
-                        <span key={it.name} className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
-                          {it.name} · {it.quantity.toLocaleString('tr-TR')} adet
-                        </span>
-                      ))
-                    : order.quantity != null && (
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
-                          {order.quantity.toLocaleString('tr-TR')} adet
-                        </span>
-                      )}
-                  <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform duration-200', editorOpen && 'rotate-180')} />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    <Pencil className="h-3.5 w-3.5 shrink-0" />
+                    Ürün Bilgileri
+                    <span className="font-normal normal-case tracking-normal text-muted-foreground/60">· gerekirse düzenle</span>
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {items.length > 0
+                      ? items.map((it) => (
+                          <span key={it.name} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground/80">
+                            {it.name}
+                            <span className="text-muted-foreground">{it.quantity.toLocaleString('tr-TR')} adet</span>
+                          </span>
+                        ))
+                      : order.quantity != null && (
+                          <span className="inline-flex items-center whitespace-nowrap rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground/80">
+                            {order.quantity.toLocaleString('tr-TR')} adet
+                          </span>
+                        )}
+                  </div>
                 </div>
+                <ChevronDown className={cn('mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', editorOpen && 'rotate-180')} />
               </button>
               {editorOpen && (
                 <div className="space-y-2 border-t bg-muted/20 p-2">
@@ -226,43 +329,56 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
             </div>
           )}
 
-          {/* Designer-only: edit the project's subtasks (alt görevler) */}
-          {isDesignerStep && (
-            <div className="overflow-hidden rounded-lg border">
-              <button
-                type="button"
-                onClick={() => setSubsOpen((v) => !v)}
-                className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
-              >
-                <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <ListChecks className="h-3.5 w-3.5" />
-                  Alt Görevler
-                  {subtasks.length > 0 && (
-                    <span className="rounded-full bg-muted px-1.5 text-[10px] font-bold text-muted-foreground">
-                      {subtasks.filter((s) => s.is_done).length}/{subtasks.length}
-                    </span>
-                  )}
-                </span>
-                <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform duration-200', subsOpen && 'rotate-180')} />
-              </button>
-              {subsOpen && (
-                <div className="border-t bg-muted/20 p-2">
-                  <SubtaskEditor subtasks={subtasks} onChange={setSubtasks} />
-                </div>
-              )}
+          {/* Assign step: pick the designer(s) who will check this run */}
+          {isAssignStep && (
+            <div className="space-y-1.5">
+              <Label>Tasarımcı(lar) — kim kontrol edecek? *</Label>
+              <p className="text-xs text-muted-foreground">
+                Bu baskıyı orijinal tasarımcı(lar)a veya farklı birine atayabilirsiniz.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {designers.map((d) => {
+                  const sel = assignIds.includes(d.id)
+                  return (
+                    <button
+                      type="button"
+                      key={d.id}
+                      onClick={() =>
+                        setAssignIds((prev) =>
+                          prev.includes(d.id) ? prev.filter((x) => x !== d.id) : [...prev, d.id],
+                        )
+                      }
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                        sel
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border text-muted-foreground hover:bg-muted/50',
+                      )}
+                    >
+                      {sel && <Check className="h-3 w-3" />}
+                      {d.name}
+                    </button>
+                  )
+                })}
+                {designers.length === 0 && (
+                  <span className="text-xs text-muted-foreground">Aktif tasarımcı bulunamadı.</span>
+                )}
+              </div>
             </div>
           )}
 
-          {/* Signature block */}
-          <div className="rounded-lg border-2 border-dashed border-primary/20 bg-primary/5 p-3 space-y-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-primary/60">
-              İmza
-            </p>
-            <p className="text-sm font-semibold text-foreground">{user?.name}</p>
-            <p className="text-xs text-muted-foreground capitalize">
-              {roleLabel(user?.role)} · {new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
-            </p>
-          </div>
+          {/* Signature block — not shown on the designer review step */}
+          {!isDesignerStep && (
+            <div className="rounded-lg border-2 border-dashed border-primary/20 bg-primary/5 p-3 space-y-1">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-primary/60">
+                İmza
+              </p>
+              <p className="text-sm font-semibold text-foreground">{user?.name}</p>
+              <p className="text-xs text-muted-foreground capitalize">
+                {roleLabel(user?.role)} · {new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </p>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="sign-notes">Not (isteğe bağlı)</Label>
@@ -276,14 +392,93 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
             />
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={handleClose} disabled={saving}>
-              İptal
-            </Button>
-            <Button type="submit" disabled={saving}>
-              <PenLine className="h-4 w-4" />
-              {saving ? 'İmzalanıyor…' : `İmzala — ${nextLabel}`}
-            </Button>
+          {/* Team-leader reject of the sales-side ozalit */}
+          {canReject && showReject && (
+            <div className="space-y-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+              {/* Route choice: who re-does the rejected ozalit? */}
+              {ORDER_REJECT_TARGETS[order.status] && (
+                <div className="space-y-1.5">
+                  <Label className="text-destructive">Kime geri gönderilsin?</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRejectRoute('designer')}
+                      className={cn(
+                        'rounded-lg border px-3 py-2 text-left transition',
+                        rejectRoute === 'designer'
+                          ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
+                          : 'hover:bg-muted/50',
+                      )}
+                    >
+                      <span className="block text-sm font-semibold">Tasarımcı</span>
+                      <span className="block text-xs text-muted-foreground">Tasarımı yeniden düzenler</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRejectRoute('matbaa')}
+                      className={cn(
+                        'rounded-lg border px-3 py-2 text-left transition',
+                        rejectRoute === 'matbaa'
+                          ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
+                          : 'hover:bg-muted/50',
+                      )}
+                    >
+                      <span className="block text-sm font-semibold">Matbaa</span>
+                      <span className="block text-xs text-muted-foreground">Yeniden teslim eder</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <Label htmlFor="reject-reason" className="text-destructive">Red Sebebi *</Label>
+                <Textarea
+                  id="reject-reason"
+                  rows={2}
+                  placeholder="Ozalitin neden reddedildiğini yazın…"
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  className="resize-none text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {rejectRoute === 'designer'
+                    ? 'Tasarımcıya geri gönderilir; tasarımı revize eder. Ozalit deneme sayacı artar.'
+                    : 'Matbaaya geri gönderilir; yeni bir Ozalit teslim edilir. Tasarım değişmez. Ozalit deneme sayacı artar.'}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:justify-between">
+            <div>
+              {canReject && !showReject && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setShowReject(true)}
+                  disabled={saving}
+                >
+                  <X className="h-4 w-4" />
+                  Reddet
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="ghost" onClick={handleClose} disabled={saving}>
+                İptal
+              </Button>
+              {showReject ? (
+                <Button type="button" variant="destructive" onClick={handleReject} disabled={saving}>
+                  <X className="h-4 w-4" />
+                  {saving ? 'Reddediliyor…' : 'Reddi Onayla'}
+                </Button>
+              ) : (
+                <Button type="submit" disabled={saving}>
+                  <PenLine className="h-4 w-4" />
+                  {saving ? 'İmzalanıyor…' : isDesignerStep ? 'İncele ve Gönder' : `İmzala — ${nextLabel}`}
+                </Button>
+              )}
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -394,7 +589,7 @@ function OrderSheet({ order, tableRows, dateStr, timeStr, footer }) {
     <div className="overflow-hidden rounded-lg border bg-white">
       {/* Letterhead */}
       <div className="border-b px-6 py-5 text-center">
-        <img src="/yz-logo.png" alt="Yükselen Zeka" className="mx-auto h-9 w-auto object-contain" />
+        <img src="/yz_blacklogo.svg" alt="Yükselen Zeka" className="mx-auto h-9 w-auto object-contain" />
         <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
           Yükselen Zeka Yayıncılık
         </p>
@@ -454,7 +649,7 @@ function OrderSheet({ order, tableRows, dateStr, timeStr, footer }) {
   )
 }
 
-/* Özalit-style sheet for the tasarimci_onay and matbaa_onay steps.
+/* Ozalit-style sheet for the tasarimci_onay and matbaa_onay steps.
    Shows the product specs from the catalog but replaces each component's ADET
    field value with the quantity Esra requested in the sipariş. */
 function OzalitStepSheet({ order, step, footer }) {
@@ -485,12 +680,12 @@ function OzalitStepSheet({ order, step, footer }) {
     <div className="overflow-hidden rounded-lg border bg-white">
       {/* Letterhead */}
       <div className="border-b px-6 py-5 text-center">
-        <img src="/yz-logo.png" alt="Yükselen Zeka" className="mx-auto h-9 w-auto object-contain" />
+        <img src="/yz_blacklogo.svg" alt="Yükselen Zeka" className="mx-auto h-9 w-auto object-contain" />
         <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
           Yükselen Zeka Yayıncılık
         </p>
         <h2 className="mt-3 text-xl font-bold uppercase tracking-[0.18em] text-foreground">
-          Özalit Üretim Formu
+          Ozalit Üretim Formu
         </h2>
         <p className="mt-0.5 text-[11px] text-muted-foreground">{stepLabel}</p>
       </div>
@@ -571,7 +766,11 @@ function OzalitStepSheet({ order, step, footer }) {
    onaylandi     → Ekip Lideri + Tasarımcı + Matbaa Yetkilisi (all except Esra) */
 function StepSignatureFooter({ step, order }) {
   const history = order?.order_history ?? []
-  const signer = (s) => history.find((h) => h.step === s)?.signed_by_name ?? ''
+  // Latest NON-reject signer for a step: a rejection reuses the target step's
+  // name, so filtering reject entries keeps the rejecter off the approver's line,
+  // and taking the last valid entry reflects the newest signature after a re-sign.
+  const signer = (s) =>
+    history.filter((h) => h.step === s && h.action !== 'reject').pop()?.signed_by_name ?? ''
   const esra = order?.requested_by_name ?? ''
   const gorulduSigner = signer('goruldu')
   const tasarimciSigner = signer('tasarimci_onay')
@@ -597,7 +796,7 @@ function StepSignatureFooter({ step, order }) {
           <p className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{c.role}</p>
           <div className="mt-2 flex min-h-[3rem] items-end justify-center border-b border-foreground/25 pb-0.5">
             {c.name && (
-              <span style={{ fontFamily: "'Great Vibes', cursive", fontSize: '1.35rem', color: 'hsl(325 21% 20% / 0.8)' }}>
+              <span style={{ fontFamily: "'Alex Brush', cursive", fontSize: '1.35rem', color: 'hsl(325 21% 20% / 0.8)' }}>
                 {c.name}
               </span>
             )}
@@ -632,7 +831,7 @@ function SignedStepRow({ step, onForm }) {
       </div>
       <div className="mt-2 flex min-h-[2.5rem] items-end border-b border-foreground/25 pb-0.5">
         {step.signed_by_name && (
-          <span style={{ fontFamily: "'Great Vibes', cursive", fontSize: '1.35rem', color: 'hsl(325 21% 20% / 0.8)' }}>
+          <span style={{ fontFamily: "'Alex Brush', cursive", fontSize: '1.35rem', color: 'hsl(325 21% 20% / 0.8)' }}>
             {step.signed_by_name}
           </span>
         )}
@@ -653,74 +852,128 @@ function SignedStepRow({ step, onForm }) {
 }
 
 const STAGE_DEFS = [
-  { step: 'pending',         label: 'Talep',           color: '#e11d48' },
-  { step: 'goruldu',         label: 'Görüldü',         color: '#f97316' },
-  { step: 'tasarimci_onay',  label: 'Tasarımcı Onayı', color: '#10b981' },
-  { step: 'matbaa_onay',     label: 'Matbaa Teslimi',  color: '#3b82f6' },
-  { step: 'onaylandi',       label: 'Üretime Alındı',  color: '#8b5cf6' },
+  { step: 'pending',         label: 'Sipariş Talebi', color: '#e11d48' },
+  { step: 'goruldu',         label: 'Ön İnceleme',    color: '#f97316' },
+  { step: 'tasarimci_onay',  label: 'Ozalit İstendi', color: '#10b981' },
+  { step: 'matbaa_onay',     label: 'Matbaa Teslimi', color: '#3b82f6' },
+  { step: 'onaylandi',       label: 'Üretimde',       color: '#8b5cf6' },
 ]
+
+// ── Order-step progress helpers ──────────────────────────────────────────────
+// An order's TRUE position is its current `status`, NOT whatever lingers in
+// order_history. A rejection loops the order backward (e.g. matbaa_onay →
+// tasarimci_onay) yet leaves the old forward entries in history; deriving state
+// from `status` makes rolled-back steps correctly render as "not yet reached"
+// instead of falsely showing as signed.
+const ORDER_STEP_SEQUENCE = ['pending', 'goruldu', 'tasarimci_onay', 'matbaa_onay', 'onaylandi']
+
+function reachedStepIndex(order) {
+  return ORDER_STEP_SEQUENCE.indexOf(order?.status)
+}
+
+// Latest NON-reject signature entry per step. A rejection reuses the target
+// step's name (a matbaa_onay reject writes a `tasarimci_onay` entry), so
+// excluding reject entries keeps the rejecter's signature from masquerading as
+// the original approver's on that step.
+function signedEntriesByStep(order) {
+  return Object.fromEntries(
+    (order?.order_history ?? [])
+      .filter((h) => h.action !== 'reject')
+      .map((h) => [h.step, h]),
+  )
+}
 
 /* Horizontal connected-circle pipeline (like a project-stage process graphic). */
 function HorizontalStages({ order, onSelect }) {
-  const byStep = Object.fromEntries((order.order_history ?? []).map((h) => [h.step, h]))
+  const byStep = signedEntriesByStep(order)
+  const reached = reachedStepIndex(order)
   const last = STAGE_DEFS.length - 1
+  // The active step is the one right after the furthest step actually reached.
+  const activeIndex = reached + 1
 
   return (
-    <div className="overflow-x-auto px-1 py-2">
-      <div className="flex min-w-[460px]">
+    <div className="overflow-x-auto px-1 pb-1 pt-3">
+      <div className="flex min-w-[480px]">
         {STAGE_DEFS.map((d, i) => {
           const entry = byStep[d.step]
-          const done = !!entry
+          const done = i <= reached
+          const isActive = i === activeIndex
           const prev = STAGE_DEFS[i - 1]
-          const prevDone = i > 0 && !!byStep[prev.step]
-          const date = entry?.signed_at
+          const prevDone = i > 0 && i - 1 <= reached
+          const date = done && entry?.signed_at
             ? new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'short' }).format(new Date(entry.signed_at))
             : null
 
           return (
             <div key={d.step} className="relative flex flex-1 flex-col items-center">
-              {/* connectors (centered on the circle row) */}
+              {/* connectors (centered on the node row) */}
               {i > 0 && (
                 <span
-                  className="absolute left-0 right-1/2 top-6 h-[3px] -translate-y-1/2"
-                  style={{ background: prevDone ? prev.color : '#e5e7eb' }}
+                  className="absolute left-0 right-1/2 top-5 h-0.5 -translate-y-1/2 rounded-full transition-colors"
+                  style={{
+                    background: prevDone
+                      ? `linear-gradient(90deg, ${prev.color}, ${done ? d.color : prev.color})`
+                      : '#e8eaed',
+                  }}
                 />
               )}
               {i < last && (
                 <span
-                  className="absolute left-1/2 right-0 top-6 h-[3px] -translate-y-1/2"
-                  style={{ background: done ? d.color : '#e5e7eb' }}
+                  className="absolute left-1/2 right-0 top-5 h-0.5 -translate-y-1/2 rounded-full transition-colors"
+                  style={{ background: done ? d.color : '#e8eaed' }}
                 />
               )}
 
-              {/* circle */}
+              {/* node */}
               <button
                 type="button"
-                disabled={!done}
-                onClick={done ? () => onSelect(entry) : undefined}
+                disabled={!done || !entry}
+                onClick={done && entry ? () => onSelect(entry) : undefined}
                 aria-label={d.label}
                 className={cn(
-                  'relative z-10 grid h-12 w-12 place-items-center rounded-full border-[3px] bg-white transition',
-                  done ? 'cursor-pointer hover:scale-105 hover:shadow-md' : 'cursor-default',
+                  'group relative z-10 grid h-10 w-10 place-items-center rounded-full transition-all duration-200',
+                  done
+                    ? 'cursor-pointer text-white shadow-sm hover:-translate-y-0.5 hover:shadow-md'
+                    : 'cursor-default bg-white',
                 )}
-                style={{ borderColor: done ? d.color : '#d1d5db' }}
+                style={
+                  done
+                    ? { background: d.color, boxShadow: `0 1px 2px ${d.color}55, 0 0 0 4px ${d.color}1a` }
+                    : isActive
+                      ? { boxShadow: `0 0 0 2px ${d.color}, 0 0 0 6px ${d.color}1f` }
+                      : { boxShadow: 'inset 0 0 0 2px #e2e4e8' }
+                }
               >
                 {done ? (
-                  <Check className="h-5 w-5" style={{ color: d.color }} />
+                  <Check className="h-[18px] w-[18px]" strokeWidth={2.75} />
+                ) : isActive ? (
+                  <span
+                    className="h-2.5 w-2.5 animate-pulse rounded-full"
+                    style={{ background: d.color }}
+                  />
                 ) : (
-                  <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
+                  <span className="h-2 w-2 rounded-full bg-muted-foreground/25" />
                 )}
               </button>
 
               {/* label */}
               <span
-                className="mt-2 max-w-[88px] text-center text-[11px] font-semibold leading-tight"
-                style={{ color: done ? d.color : '#9ca3af' }}
+                className={cn(
+                  'mt-2.5 max-w-[92px] text-center text-[11px] leading-tight',
+                  done || isActive ? 'font-semibold' : 'font-medium',
+                )}
+                style={{ color: done ? d.color : isActive ? d.color : '#9aa0a6' }}
               >
                 {d.label}
               </span>
-              <span className="mt-0.5 text-center text-[9px] text-muted-foreground">
-                {done ? date : 'Bekliyor…'}
+              <span
+                className={cn(
+                  'mt-1 text-center text-[9px] font-medium uppercase tracking-wide',
+                  isActive ? '' : 'text-muted-foreground/70',
+                )}
+                style={isActive ? { color: `${d.color}cc` } : undefined}
+              >
+                {done ? date : isActive ? 'Sırada' : 'Bekliyor'}
               </span>
             </div>
           )
@@ -744,12 +997,12 @@ function PendingStepRow({ step }) {
 }
 
 function MiniPipeline({ order, nextStep }) {
-  const allSteps = ['pending', 'goruldu', 'tasarimci_onay', 'matbaa_onay', 'onaylandi']
-  const completedSteps = new Set((order.order_history ?? []).map((h) => h.step))
+  const allSteps = ORDER_STEP_SEQUENCE
+  const reached = reachedStepIndex(order)
   return (
     <div className="flex items-center gap-1 overflow-x-auto py-1">
       {allSteps.map((step, i) => {
-        const done = completedSteps.has(step)
+        const done = i <= reached
         const isNext = step === nextStep
         const label = stepShortLabel(step)
         return (
@@ -821,84 +1074,71 @@ function EditableComp({ comp, onChange }) {
 }
 
 // ── designer inline subtask (alt görev) editor ───────────────────────────────
+/**
+ * Reprint-check subtask list. The work is already complete, so this is NOT a
+ * done/undone checklist — the designer flags which subtasks need revision for
+ * this run. Marking "Revize" sets needs_revize and drops the item from done
+ * (so the rework shows up); unmarking restores it as complete.
+ */
 function SubtaskEditor({ subtasks, onChange }) {
   const set = (i, patch) => onChange(subtasks.map((s, idx) => (idx === i ? { ...s, ...patch } : s)))
-  const toggle = (i) => {
+  const toggleRevize = (i) => {
     const s = subtasks[i]
-    set(i, { is_done: !s.is_done, done_at: !s.is_done ? new Date().toISOString() : null })
+    const flag = !s.needs_revize
+    if (flag) {
+      const patch = { needs_revize: true, is_done: false, done_at: null }
+      if (s.kind === 'pages') patch.pages_done = 0
+      if (s.kind === 'sticker-count') patch.stickers_done = 0
+      set(i, patch)
+    } else {
+      const patch = { needs_revize: false, is_done: true, done_at: new Date().toISOString() }
+      if (s.kind === 'pages') patch.pages_done = s.total_pages ?? 0
+      if (s.kind === 'sticker-count') patch.stickers_done = s.total_stickers ?? 0
+      set(i, patch)
+    }
   }
-  const remove = (i) => onChange(subtasks.filter((_, idx) => idx !== i))
-  const add = () =>
-    onChange([...subtasks, { id: `st-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, title: '', kind: 'check', is_done: false, done_at: null }])
-  const isCount = (s) => s.kind === 'pages' || s.kind === 'sticker-count'
-  const countOf = (s) => (s.kind === 'pages' ? s.pages_done ?? 0 : s.stickers_done ?? 0)
-  const totalOf = (s) => (s.kind === 'pages' ? s.total_pages ?? 0 : s.total_stickers ?? 0)
-  const setCount = (i, val) => {
-    const s = subtasks[i]
-    const total = totalOf(s)
-    const n = Math.max(0, Math.min(total || Infinity, parseInt(val || '0', 10) || 0))
-    const field = s.kind === 'pages' ? 'pages_done' : 'stickers_done'
-    set(i, { [field]: n, is_done: total > 0 && n >= total })
-  }
+  const revizeCount = subtasks.filter((s) => s.needs_revize).length
 
   return (
     <div className="space-y-1">
+      <p className="px-1 pb-1 text-[11px] text-muted-foreground">
+        Revize ettiğiniz alt görevleri işaretleyin.{' '}
+        {revizeCount > 0 ? `${revizeCount} görev revize edildi.` : 'İşaretlenen yok — her şey hazır.'}
+      </p>
       {subtasks.length === 0 ? (
         <p className="px-2 py-3 text-center text-xs text-muted-foreground">Bu projede alt görev yok.</p>
       ) : (
-        subtasks.map((s, i) => (
-          <div key={s.id ?? i} className="flex items-center gap-2 rounded-md border bg-white px-2 py-1.5">
-            {isCount(s) ? (
-              <span className="grid h-5 w-5 shrink-0 place-items-center rounded text-[11px] font-bold text-muted-foreground">#</span>
-            ) : (
+        subtasks.map((s, i) => {
+          const flagged = !!s.needs_revize
+          return (
+            <div
+              key={s.id ?? i}
+              className={cn(
+                'flex items-center gap-2 rounded-md border px-2 py-1.5',
+                flagged ? 'border-amber-300 bg-amber-50' : 'bg-white',
+              )}
+            >
+              <span className={cn('min-w-0 flex-1 text-[13px]', flagged && 'font-medium text-amber-800')}>
+                {s.title}
+              </span>
               <button
                 type="button"
-                onClick={() => toggle(i)}
-                aria-label={s.is_done ? 'İşareti kaldır' : 'Tamamlandı işaretle'}
+                onClick={() => toggleRevize(i)}
+                aria-pressed={flagged}
                 className={cn(
-                  'grid h-5 w-5 shrink-0 place-items-center rounded border transition active:scale-90',
-                  s.is_done ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-input text-transparent hover:border-primary',
+                  'inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition active:scale-95',
+                  flagged
+                    ? 'border-amber-400 bg-amber-100 text-amber-700'
+                    : 'border-input text-muted-foreground hover:border-amber-300 hover:text-amber-700',
                 )}
               >
-                <Check className="h-3 w-3" />
+                <RefreshCw className="h-3 w-3" />
+                {flagged ? 'Revize edildi' : 'Revize'}
               </button>
-            )}
-            <input
-              value={s.title}
-              onChange={(e) => set(i, { title: e.target.value })}
-              placeholder="Alt görev"
-              className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/50"
-            />
-            {isCount(s) && (
-              <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
-                <input
-                  type="number"
-                  min="0"
-                  value={countOf(s)}
-                  onChange={(e) => setCount(i, e.target.value)}
-                  className="h-7 w-14 rounded border bg-background px-1 text-right text-xs outline-none focus:ring-2 focus:ring-ring/40"
-                />
-                / {totalOf(s)}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => remove(i)}
-              aria-label="Sil"
-              className="shrink-0 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ))
+            </div>
+          )
+        })
       )}
-      <button
-        type="button"
-        onClick={add}
-        className="mt-1 inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
-      >
-        <Plus className="h-3 w-3" /> Alt Görev Ekle
-      </button>
     </div>
   )
 }
@@ -922,7 +1162,7 @@ function openOrderPrintWindow(order, stepFilter) {
   const created = order.created_at ? new Date(order.created_at) : new Date()
   const dateStr = created.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' })
   const timeStr = created.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-  const logoUrl = `${window.location.origin}/yz-logo.png`
+  const logoUrl = `${window.location.origin}/yz_blacklogo.svg`
 
   // Build signature cells based on which step we're printing
   const history = order.order_history ?? []
@@ -969,14 +1209,14 @@ function openOrderPrintWindow(order, stepFilter) {
     .sig .cell{flex:1;border-right:1px solid #000;padding:8px 10px;min-height:70px}
     .sig .cell:last-child{border-right:0}
     .sig .cap{font-size:9pt;text-align:center;color:#333}
-    .sig .name{font-family:'Great Vibes',cursive;font-size:20pt;color:#3d283499;text-align:center;margin-top:10px}
+    .sig .name{font-family:'Alex Brush',cursive;font-size:20pt;color:#3d283499;text-align:center;margin-top:10px}
     @media print{body{padding:12mm 14mm}@page{size:A4;margin:0}}`
 
   let bodyContent
   const bookTitle = order.project_title?.replace(/ \/ /g, ' ') ?? ''
 
   if (activeStep === 'tasarimci_onay' || activeStep === 'matbaa_onay') {
-    // Özalit-style print: product specs + Esra's ordered ADET
+    // Ozalit-style print: product specs + Esra's ordered ADET
     const comps = loadProductComps(order.project_id)
     const stepSubtitle = activeStep === 'tasarimci_onay' ? 'Tasarımcı → Matbaa' : 'Matbaa Teslimi'
 
@@ -1007,7 +1247,7 @@ function openOrderPrintWindow(order, stepFilter) {
         : ''
 
     bodyContent = `
-  <div class="doc-title">Özalit Üretim Formu</div>
+  <div class="doc-title">Ozalit Üretim Formu</div>
   <div class="doc-sub">${escapeHtml(stepSubtitle)}</div>
   <div class="meta">
     <div><div class="label">İşin Adı</div><strong>${escapeHtml(bookTitle)}</strong></div>
@@ -1052,7 +1292,7 @@ function openOrderPrintWindow(order, stepFilter) {
   }
 
   const html = `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"/>
-  <link href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Alex+Brush&display=swap" rel="stylesheet"/>
   <title>Sipariş Formu — ${escapeHtml(order.project_title ?? '')}</title>
   <style>${commonStyles}</style></head><body>
   <div class="head">

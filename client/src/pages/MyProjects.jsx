@@ -276,7 +276,7 @@ function SiparisOrderRow({ order, onSign, onView }) {
               </Button>
               <Button size="sm" className="h-7 px-2.5" onClick={onSign}>
                 <PenLine className="h-3.5 w-3.5" />
-                Onayladım
+                İncele ve Gönder
               </Button>
             </div>
           </div>

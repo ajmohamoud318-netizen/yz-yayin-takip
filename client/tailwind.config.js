@@ -76,11 +76,10 @@ export default {
       },
       fontFamily: {
         sans: ['Geist', 'system-ui', 'Segoe UI', 'Roboto', 'sans-serif'],
-        // Geist Mono for tabular numerals — counts, progress %, metrics.
         mono: ['"Geist Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
-        // Baloo 2 is the brand display font — headings and card titles only,
-        // never body copy, labels, or dense UI elements.
-        display: ['"Baloo 2"', 'cursive'],
+        display: ['Fraunces', 'Georgia', 'serif'],
+        serif: ['Fraunces', 'Georgia', 'serif'],
+        creative: ['"Utter Butter"', 'system-ui', 'sans-serif'],
       },
     },
   },

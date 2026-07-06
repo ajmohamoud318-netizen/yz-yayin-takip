@@ -28,7 +28,7 @@ export default function SiparisOnay() {
       const project = await api.getProject(order.project_id)
       setOzalitProject(project)
     } catch {
-      toast.error('Özalit formu açılamadı.')
+      toast.error('Ozalit formu açılamadı.')
     }
   }
 
@@ -183,11 +183,11 @@ function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
               </Button>
               <Button size="sm" variant="outline" onClick={onOzalit}>
                 <FileText className="h-3.5 w-3.5" />
-                Özalit Formu
+                Ozalit Formu
               </Button>
               <Button size="sm" onClick={onSign}>
                 <PenLine className="h-3.5 w-3.5" />
-                Onayladım
+                İncele ve Gönder
               </Button>
             </div>
           </div>

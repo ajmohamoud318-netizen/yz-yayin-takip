@@ -70,10 +70,11 @@ export default function Team() {
   return (
     <>
       <div className="space-y-6">
-        <header className="flex flex-wrap items-end justify-between gap-3">
+        <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Takım</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
+            <p className="label-eyebrow">Ekip</p>
+            <h1 className="mt-1 text-3xl">Takım</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
               {users.filter((u) => u.is_active).length} aktif üye · {users.length} toplam
             </p>
           </div>

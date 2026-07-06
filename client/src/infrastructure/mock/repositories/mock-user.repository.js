@@ -2,6 +2,7 @@ import { httpClient } from '../../http/client.js'
 import { mockUsers, saveState } from '../store.js'
 import { mockOrHttp } from '../helpers/mock-handler.js'
 import { notFound, conflict } from '../helpers/errors.js'
+import { uid } from '../helpers/id.js'
 
 export function createMockUserRepository() {
   function findById(id) {
@@ -37,7 +38,7 @@ export function createMockUserRepository() {
           const existing = mockUsers.find((u) => u.email.toLowerCase() === email.toLowerCase().trim())
           if (existing) conflict('Bu e-posta zaten kayıtlı.')
           const created = {
-            id: `u-${Date.now()}`,
+            id: uid('u-'),
             name: name.trim(),
             email: email.trim().toLowerCase(),
             password: '123456',

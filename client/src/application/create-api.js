@@ -5,7 +5,12 @@ import { createMockProjectRepository } from '../infrastructure/mock/repositories
 import { createMockSubtaskRepository } from '../infrastructure/mock/repositories/mock-subtask.repository.js'
 import { createMockDemoRepository } from '../infrastructure/mock/repositories/mock-demo.repository.js'
 import { createMockOrderRepository } from '../infrastructure/mock/repositories/mock-order.repository.js'
+import { createMockHandoverRepository } from '../infrastructure/mock/repositories/mock-handover.repository.js'
 import { makeAdvanceOrderRequest } from './use-cases/orders/advance-order-request.js'
+import { makeCreateOrderRequest } from './use-cases/orders/create-order-request.js'
+import { makeRejectOrderRequest } from './use-cases/orders/reject-order-request.js'
+import { makeCreateHandover } from './use-cases/handovers/create-handover.js'
+import { makeConfirmHandover } from './use-cases/handovers/confirm-handover.js'
 
 let hydrated = false
 
@@ -25,8 +30,17 @@ export function createApi() {
   const subtaskRepo = createMockSubtaskRepository()
   const demoRepo = createMockDemoRepository()
   const orderRepo = createMockOrderRepository(userRepo)
+  const handoverRepo = createMockHandoverRepository()
+
+  // Freeze imported seed history into the store once, so it becomes canonical
+  // append-only data instead of being re-fabricated on every render.
+  projectRepo.backfillHistories()
 
   const advanceOrderRequest = makeAdvanceOrderRequest({ orderRepo, projectRepo })
+  const createOrderRequest = makeCreateOrderRequest({ orderRepo, projectRepo })
+  const rejectOrderRequest = makeRejectOrderRequest({ orderRepo, projectRepo })
+  const createHandover = makeCreateHandover({ handoverRepo, projectRepo })
+  const confirmHandover = makeConfirmHandover({ handoverRepo, projectRepo })
 
   return {
     // Auth
@@ -45,11 +59,8 @@ export function createApi() {
     updateProject: (id, patch) => projectRepo.updateProject(id, patch),
     deleteProject: (id) => projectRepo.deleteProject(id),
     advanceProject: (id) => projectRepo.advanceProject(id),
-    approveStage: (id, stage) => projectRepo.approveStage(id, stage),
-    rejectStage: (id, stage, reason) => projectRepo.rejectStage(id, stage, reason),
     approveProject: (id) => projectRepo.approveProject(id),
-    rejectProject: (id, reason, revizeIds) => projectRepo.rejectProject(id, reason, revizeIds),
-    requestDemo: (projectId) => projectRepo.requestDemo(projectId),
+    rejectProject: (id, reason, revizeIds, target) => projectRepo.rejectProject(id, reason, revizeIds, target),
 
     // Subtasks
     toggleSubtask: (projectId, subtaskId, isDone) =>
@@ -67,8 +78,14 @@ export function createApi() {
 
     // Orders
     listOrderRequests: () => orderRepo.listOrderRequests(),
-    createOrderRequest: (payload) => orderRepo.createOrderRequest(payload),
+    createOrderRequest,
     updateOrderRequest: (id, status) => orderRepo.updateOrderRequest(id, status),
     advanceOrderRequest,
+    rejectOrderRequest,
+
+    // Handovers (Matbaa → Sales "teslim")
+    listHandovers: () => handoverRepo.listHandovers(),
+    createHandover,
+    confirmHandover,
   }
 }

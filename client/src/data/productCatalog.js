@@ -1,5 +1,5 @@
 // Bridge between Ürün Bilgileri (editable product catalog) and the
-// Demo / Özalit forms. Exposes the same shape Ürün Bilgileri writes:
+// Demo / Ozalit forms. Exposes the same shape Ürün Bilgileri writes:
 //   { component, date, fields: [{ k, v }] }
 //
 // Reads order:

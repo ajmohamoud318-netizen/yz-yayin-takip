@@ -29,62 +29,66 @@ function saveOverrides(o) {
   }
 }
 
-/* ---------- read-only spec row (LABEL : value) ---------- */
+/* ---------- read-only spec row (definition-list: key / value) ---------- */
 function SheetRow({ label, value }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,2fr)] items-stretch border-b last:border-b-0">
-      <span className="py-1.5 pr-3 text-[12px] font-semibold tracking-wide text-foreground">{up(label)}</span>
-      <span className="px-2 py-1.5 text-sm font-bold text-muted-foreground">:</span>
-      <span className="whitespace-pre-wrap border-l px-2.5 py-1.5 text-[13px] leading-snug text-foreground">{value}</span>
+    <div className="grid grid-cols-[minmax(6.5rem,10rem)_1fr] gap-x-4 px-4 py-2.5 transition-colors hover:bg-primary/[0.025]">
+      <dt className="pt-px text-[11px] font-semibold uppercase leading-snug tracking-wide text-muted-foreground">{up(label)}</dt>
+      <dd className="whitespace-pre-wrap text-[13px] font-medium leading-snug text-foreground tabular-nums">{value}</dd>
     </div>
   )
 }
 
-/* ---------- read-only component spec sheet (mirrors the Demo/Özalit form) ---------- */
+/* ---------- read-only component spec sheet (mirrors the Demo/Ozalit form) ---------- */
 function SpecSheet({ comp }) {
   const fields = (comp.fields ?? []).filter((f) => f.v)
   return (
-    <div className="overflow-hidden rounded-lg border bg-white shadow-[0_1px_2px_rgba(120,40,80,0.04)]">
-      <div className="border-b px-4 py-2.5 text-center">
-        <h3 className="text-sm font-bold uppercase tracking-widest text-foreground">{comp.component}</h3>
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-[0_1px_2px_rgba(120,40,80,0.04),0_10px_28px_-18px_rgba(176,52,108,0.22)]">
+      <div className="flex items-center gap-2.5 border-b bg-gradient-to-r from-primary/[0.07] via-primary/[0.03] to-transparent px-4 py-3">
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+          <Box className="h-3.5 w-3.5" />
+        </span>
+        <h3 className="min-w-0 flex-1 truncate text-[13px] font-bold uppercase tracking-wide text-foreground">{comp.component}</h3>
+        {comp.date && (
+          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+            {comp.date}
+          </span>
+        )}
       </div>
-      {comp.date && (
-        <div className="border-b px-4 py-1 text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Son veri · {comp.date}
-        </div>
-      )}
-      <div className="px-4 py-1">
+      <dl className="divide-y divide-border/50">
         {fields.map((f, i) => (
           <SheetRow key={i} label={f.k} value={f.v} />
         ))}
-      </div>
+      </dl>
     </div>
   )
 }
 
 /* ---------- editable spec row ---------- */
-const cellInput = 'h-8 w-full bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/60'
+const cellInput = 'w-full bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/50'
 function EditableSheetRow({ label, value, onLabel, onValue, onRemove }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,2fr)] items-center border-b last:border-b-0">
+    <div className="group/row grid grid-cols-[minmax(6.5rem,10rem)_1fr_auto] items-center gap-x-3 px-4 py-1.5 transition-colors hover:bg-primary/[0.025]">
       <input
         value={label}
         onChange={(e) => onLabel(e.target.value)}
         placeholder="ALAN"
-        className={cn(cellInput, 'pr-2 text-[12px] font-semibold uppercase tracking-wide')}
+        className={cn(cellInput, 'text-[11px] font-semibold uppercase tracking-wide text-muted-foreground')}
       />
-      <span className="px-2 text-sm font-bold text-muted-foreground">:</span>
-      <div className="relative flex items-center border-l pl-2.5">
-        <input value={value} onChange={(e) => onValue(e.target.value)} placeholder="Değer" className={cn(cellInput, 'pr-7')} />
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label="Satırı sil"
-          className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition active:scale-90 hover:text-destructive"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      <input
+        value={value}
+        onChange={(e) => onValue(e.target.value)}
+        placeholder="Değer"
+        className={cn(cellInput, 'font-medium text-foreground')}
+      />
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label="Satırı sil"
+        className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground/50 opacity-0 transition active:scale-90 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
     </div>
   )
 }
@@ -97,15 +101,19 @@ function EditableSpecSheet({ comp, onChange }) {
   const removeField = (i) => onChange({ ...comp, fields: fields.filter((_, idx) => idx !== i) })
 
   return (
-    <div className="overflow-hidden rounded-lg border border-primary/40 bg-white ring-1 ring-primary/10">
-      <div className="border-b px-4 py-2.5 text-center">
+    <div className="overflow-hidden rounded-xl border border-primary/40 bg-card shadow-[0_1px_2px_rgba(120,40,80,0.04)] ring-1 ring-primary/10">
+      <div className="flex items-center gap-2.5 border-b bg-gradient-to-r from-primary/[0.09] via-primary/[0.04] to-transparent px-4 py-2.5">
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+          <Box className="h-3.5 w-3.5" />
+        </span>
         <input
           value={comp.component}
           onChange={(e) => onChange({ ...comp, component: e.target.value })}
-          className="w-full bg-transparent text-center text-sm font-bold uppercase tracking-widest text-foreground outline-none"
+          placeholder="PARÇA ADI"
+          className="min-w-0 flex-1 bg-transparent text-[13px] font-bold uppercase tracking-wide text-foreground outline-none placeholder:text-muted-foreground/50"
         />
       </div>
-      <div className="px-4 py-1">
+      <dl className="divide-y divide-border/50">
         {fields.map((f, i) => (
           <EditableSheetRow
             key={i}
@@ -116,15 +124,15 @@ function EditableSpecSheet({ comp, onChange }) {
             onRemove={() => removeField(i)}
           />
         ))}
-        <div className="py-2">
-          <button
-            type="button"
-            onClick={addField}
-            className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
-          >
-            <Plus className="h-3.5 w-3.5" /> Satır Ekle
-          </button>
-        </div>
+      </dl>
+      <div className="border-t border-dashed px-4 py-2.5">
+        <button
+          type="button"
+          onClick={addField}
+          className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
+        >
+          <Plus className="h-3.5 w-3.5" /> Satır Ekle
+        </button>
       </div>
     </div>
   )
@@ -283,10 +291,19 @@ function ProductCard({ project, comps, open, onToggle, canEdit, editing, draft, 
               <div className="mb-3 flex items-center justify-between">
                 <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
                   <CornerDownRight className="h-3.5 w-3.5" />
-                  {list.length} parça · demo / özalit verisi
+                  {list.length} parça · demo / ozalit verisi
                 </span>
                 {editing ? (
                   <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={onAddComponent}
+                      title="Parça ekle"
+                      className="inline-flex items-center gap-1 rounded-lg border border-dashed border-primary/40 bg-background px-2.5 py-1.5 text-xs font-semibold text-primary transition active:scale-95 hover:border-primary/60 hover:bg-primary/5"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Parça Ekle
+                    </button>
+                    <span className="mx-0.5 h-5 w-px bg-border" />
                     <button
                       type="button"
                       onClick={onDeleteProduct}
@@ -322,8 +339,8 @@ function ProductCard({ project, comps, open, onToggle, canEdit, editing, draft, 
               </div>
             )}
 
-            {/* one spec sheet per component */}
-            <div className="space-y-5">
+            {/* one spec sheet per component — side by side when a product has multiple parça */}
+            <div className={cn(multi ? 'grid grid-cols-1 items-start gap-4 sm:grid-cols-2' : 'space-y-5')}>
               {list.map((c, i) => (
                 <div key={i} className="space-y-2.5">
                   {multi && (
@@ -348,16 +365,6 @@ function ProductCard({ project, comps, open, onToggle, canEdit, editing, draft, 
                   {editing ? <EditableSpecSheet comp={c} onChange={(nc) => onDraftComp(i, nc)} /> : <SpecSheet comp={c} />}
                 </div>
               ))}
-
-              {editing && canEdit && (
-                <button
-                  type="button"
-                  onClick={onAddComponent}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-dashed bg-background px-3 py-2 text-xs font-semibold text-primary transition active:scale-95 hover:border-primary/50 hover:bg-primary/5"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Parça Ekle
-                </button>
-              )}
             </div>
           </div>
         </div>
@@ -484,7 +491,7 @@ export default function UrunBilgileri() {
           </div>
           <h1 className="text-3xl tracking-tight md:text-4xl">Ürün Bilgileri</h1>
           <p className="mt-2 max-w-[60ch] text-sm leading-relaxed text-muted-foreground">
-            Her ürünün parçalarına (kitap, kutu, magnet…) ait üretim verileri — demo ve özalit isteklerinde kullanılan bilgiler
+            Her ürünün parçalarına (kitap, kutu, magnet…) ait üretim verileri — demo ve ozalit isteklerinde kullanılan bilgiler
             {canEdit ? '. Her kartı tek tek düzenleyebilirsiniz.' : '.'}
           </p>
         </div>

@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import App from './App.jsx'
 import { AuthProvider } from './hooks/useAuth.js'
 import { ProjectsProvider } from './hooks/useProjectsStore.jsx'
@@ -12,6 +13,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <AuthProvider>
         <ProjectsProvider>
           <App />
+          <Toaster richColors closeButton position="top-right" />
         </ProjectsProvider>
       </AuthProvider>
     </BrowserRouter>

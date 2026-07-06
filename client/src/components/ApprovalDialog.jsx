@@ -14,14 +14,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import api, { STAGE_LABELS } from '@/api'
+import api, { STAGE_LABELS, STAGES_REQUIRING_FULL_PROGRESS } from '@/api'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
+import { cn } from '@/lib/utils'
 
 // Where an approval sends the project, with a destination-aware button label.
+// NOTE: özalit and çin-demo approval land the project on `uretime_hazir`
+// (production-ready) — NOT `uretimde`. Actual production only begins later via
+// the order/handover flow, so announcing "Üretimde" here misled the user.
 const APPROVE_DEST = {
-  demo_onay: { label: "Ozalit'e Gönder", stage: 'ozalit_teslim' },
-  ozalit_onay: { label: 'Üretime Al', stage: 'uretimde' },
-  cin_demo_onay: { label: 'Üretime Al', stage: 'uretimde' },
+  demo_onay: { label: 'Onayla', stage: 'ozalit_teslim' },
+  ozalit_onay: { label: 'Üretime Al', stage: 'uretime_hazir' },
+  cin_demo_onay: { label: 'Üretime Al', stage: 'uretime_hazir' },
 }
 
 /**
@@ -36,6 +40,8 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
   const [busy, setBusy] = useState(false)
   // IDs of the subtasks the leader wants the designer to revise.
   const [revizeIds, setRevizeIds] = useState([])
+  // Who the rejection is routed to: 'designer' (redesign) or 'matbaa' (re-deliver).
+  const [rejectTarget, setRejectTarget] = useState('designer')
 
   // Project's own subtasks (drop any legacy revize-kind rows).
   const revisableSubtasks = (project?.subtasks ?? []).filter((s) => s.kind !== 'revize')
@@ -45,6 +51,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
     if (open) {
       setRevizeIds([])
       setReason('')
+      setRejectTarget('designer')
     }
   }, [open, project?.id])
 
@@ -56,27 +63,40 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
 
   // Destination of this approval (e.g. Demo Onay → Ozalit). Null on non-approve.
   const approveDest = project ? APPROVE_DEST[project.stage] : null
-  const approveLabel = approveDest?.label ?? 'Onayla'
 
-  // A project can't enter production until its design is 100% complete.
+  // Ozalit Onay is a two-step sign-off: the team leader approves first (which
+  // does NOT advance the project — it just records their sign-off and waits for
+  // the assigned designer(s)), then the designers approve to reach Üretime Hazır.
+  // When the leader hasn't signed yet, this dialog is that leader step.
+  const isOzalitLeaderStep =
+    project?.stage === 'ozalit_onay' && !project?.ozalit_leader_approved
+
+  const approveLabel = isOzalitLeaderStep ? 'Onayla' : approveDest?.label ?? 'Onayla'
+
+  // A project can't reach Ozalit or production until its design is 100% complete.
   const blocksUretim =
     mode === 'approve' &&
-    approveDest?.stage === 'uretimde' &&
+    approveDest &&
+    STAGES_REQUIRING_FULL_PROGRESS.has(approveDest.stage) &&
     (project?.progress ?? 0) < 100
 
   const titles = {
-    approve: approveDest?.label ?? 'Aşamayı onayla',
+    approve: isOzalitLeaderStep ? 'Ozalit onayı' : approveDest?.label ?? 'Aşamayı onayla',
     reject: 'Reddet ve geri gönder',
     advance: advanceLabel,
   }
   const isOzalitReject = project?.stage === 'ozalit_onay'
+  const teslimLabel = isOzalitReject ? 'Ozalit Teslim' : 'Demo Teslim'
   const descriptions = {
-    approve: approveDest
-      ? `Onaylandığında proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylıyor musunuz?`
-      : 'Bu proje bir sonraki aşamaya ilerleyecek. Bu işlemi onaylıyor musunuz?',
-    reject: isOzalitReject
-      ? 'Proje tasarım aşamasına geri dönecek ve Ozalit denemesi sayacı artacak. Revize edilmesini istediğiniz alt görevleri seçin ve bir sebep yazın.'
-      : 'Proje tasarım aşamasına geri dönecek ve demo denemesi sayacı artacak. Revize edilmesini istediğiniz alt görevleri seçin ve bir sebep yazın.',
+    approve: isOzalitLeaderStep
+      ? 'Ekip lideri onayınız kaydedilecek. Proje, atanan tasarımcı(lar) da onayladığında "Üretime Hazır" aşamasına geçer. Onaylıyor musunuz?'
+      : approveDest
+        ? `Onaylandığında proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylamaya emin misiniz?`
+        : 'Bu proje bir sonraki aşamaya ilerleyecek. Onaylamaya emin misiniz?',
+    reject:
+      rejectTarget === 'matbaa'
+        ? `Proje "${teslimLabel}" aşamasına döner; matbaa yeniden teslim eder. Tasarım değişmez. Bir red sebebi yazın.`
+        : 'Proje tasarım aşamasına döner; seçtiğiniz alt görevler revize edilir. Bir red sebebi yazın.',
     advance: 'Bu projeyi sonraki aşamaya elle ilerleteceksiniz. Devam edilsin mi?',
   }
 
@@ -87,7 +107,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
       toast.error('Red sebebi zorunludur.')
       return
     }
-    if (mode === 'reject' && revisableSubtasks.length > 0 && revizeIds.length === 0) {
+    if (mode === 'reject' && rejectTarget === 'designer' && revisableSubtasks.length > 0 && revizeIds.length === 0) {
       toast.error('Revize edilecek en az bir alt görev seçin.')
       return
     }
@@ -95,7 +115,13 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
     try {
       let updated
       if (mode === 'approve') updated = await api.approveProject(project.id)
-      else if (mode === 'reject') updated = await api.rejectProject(project.id, reason.trim(), revizeIds)
+      else if (mode === 'reject')
+        updated = await api.rejectProject(
+          project.id,
+          reason.trim(),
+          rejectTarget === 'designer' ? revizeIds : [],
+          rejectTarget,
+        )
       else updated = await api.advanceProject(project.id)
       updateOne(updated)
       toast.success(
@@ -137,12 +163,49 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
 
           {blocksUretim && (
             <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-              Bu proje %100 tamamlanmadan üretime alınamaz. Lütfen önce tüm alt görevlerin
-              tamamlandığından emin olun.
+              Bu proje %100 tamamlanmadan Ozalit / üretim aşamasına geçemez. Lütfen önce tüm
+              alt görevlerin tamamlandığından emin olun.
             </div>
           )}
 
-          {mode === 'reject' && revisableSubtasks.length > 0 && (
+          {/* "Matbaa" re-delivery only exists in the TR pipeline; ÇİN demos have
+              no matbaa teslim step, so ÇİN rejections always go to the designer
+              (→ Tasarım) and the chooser is hidden. */}
+          {mode === 'reject' && project?.type === 'TR' && (
+            <div className="space-y-1.5">
+              <Label>Kime gönderilsin?</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRejectTarget('designer')}
+                  className={cn(
+                    'rounded-lg border px-3 py-2 text-left transition',
+                    rejectTarget === 'designer'
+                      ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
+                      : 'hover:bg-muted/50',
+                  )}
+                >
+                  <span className="block text-sm font-semibold">Tasarımcı</span>
+                  <span className="block text-xs text-muted-foreground">Tasarımı revize eder</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRejectTarget('matbaa')}
+                  className={cn(
+                    'rounded-lg border px-3 py-2 text-left transition',
+                    rejectTarget === 'matbaa'
+                      ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
+                      : 'hover:bg-muted/50',
+                  )}
+                >
+                  <span className="block text-sm font-semibold">Matbaa</span>
+                  <span className="block text-xs text-muted-foreground">Yeniden teslim eder</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {mode === 'reject' && rejectTarget === 'designer' && revisableSubtasks.length > 0 && (
             <div className="space-y-1.5">
               <Label>Revize Edilecek Alt Görevler *</Label>
               <p className="text-xs text-muted-foreground">
@@ -191,7 +254,15 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
             </Button>
             <Button
               type="submit"
-              disabled={busy || blocksUretim}
+              disabled={
+                busy ||
+                blocksUretim ||
+                (mode === 'reject' &&
+                  (!reason.trim() ||
+                    (rejectTarget === 'designer' &&
+                      revisableSubtasks.length > 0 &&
+                      revizeIds.length === 0)))
+              }
               variant={mode === 'reject' ? 'destructive' : mode === 'approve' ? 'success' : 'default'}
             >
               {busy ? 'İşleniyor…' : mode === 'approve' ? approveLabel : mode === 'reject' ? 'Reddet' : advanceLabel}

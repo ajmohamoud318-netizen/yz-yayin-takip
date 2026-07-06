@@ -1,6 +1,7 @@
 import { httpClient } from '../../http/client.js'
 import { mockDemos, saveState } from '../store.js'
 import { mockOrHttp } from '../helpers/mock-handler.js'
+import { uid } from '../helpers/id.js'
 
 export function createMockDemoRepository() {
   return {
@@ -18,9 +19,9 @@ export function createMockDemoRepository() {
       return mockOrHttp(
         () => {
           const demo = {
-            id: `demo-${Date.now()}`,
+            id: uid('demo-'),
             title,
-            items: items.map((t, i) => ({ id: `di-${Date.now()}-${i}`, title: t })),
+            items: items.map((t) => ({ id: uid('di-'), title: t })),
             files: files.map((f) => ({ name: f.name, size: f.size })),
             created_at: new Date().toISOString(),
           }

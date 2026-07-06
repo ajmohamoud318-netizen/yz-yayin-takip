@@ -3,6 +3,7 @@ import { ORDER_STEP_LABELS } from '../../../domain/index.js'
 import { mockOrderRequests, mockUsers, saveState } from '../store.js'
 import { mockOrHttp } from '../helpers/mock-handler.js'
 import { notFound } from '../helpers/errors.js'
+import { uid } from '../helpers/id.js'
 
 export function createMockOrderRepository(userRepo) {
   return {
@@ -22,11 +23,11 @@ export function createMockOrderRepository(userRepo) {
           const now = new Date().toISOString()
           const actor = requester ?? userRepo.findById('u-esra') ?? mockUsers.find((u) => u.id === 'u-esra')
           const req = {
-            id: `or-${Date.now()}`,
+            id: uid('or-'),
             project_id: projectId,
             project_title: projectTitle,
             requested_by: actor?.id ?? 'u-esra',
-            requested_by_name: actor?.name ?? 'Esra Kılıçkan',
+            requested_by_name: actor?.name ?? 'Esra Kılıç',
             items,
             quantity,
             notes: notes ?? '',
@@ -35,11 +36,11 @@ export function createMockOrderRepository(userRepo) {
             updated_at: now,
             order_history: [
               {
-                id: `oh-${Date.now()}-1`,
+                id: uid('oh-'),
                 step: 'pending',
                 step_label: ORDER_STEP_LABELS.pending,
                 signed_by_id: actor?.id ?? 'u-esra',
-                signed_by_name: actor?.name ?? 'Esra Kılıçkan',
+                signed_by_name: actor?.name ?? 'Esra Kılıç',
                 signed_by_role: actor?.role ?? 'satis',
                 signed_at: now,
                 notes: notes ?? '',
@@ -80,6 +81,19 @@ export function createMockOrderRepository(userRepo) {
           const { data } = await httpClient.patch(`/order-requests/${id}`, { status })
           return data
         },
+      )
+    },
+
+    /**
+     * An order is "open" until it reaches `onaylandi` (Üretime Alındı). Used to
+     * enforce one in-flight order per project — mirrors the handover pending
+     * guard.
+     */
+    findOpenByProject(projectId) {
+      return (
+        mockOrderRequests.find(
+          (r) => r.project_id === projectId && r.status !== 'onaylandi',
+        ) ?? null
       )
     },
 

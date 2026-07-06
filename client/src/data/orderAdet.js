@@ -27,7 +27,7 @@ export function loadOrderAdet(projectId) {
 }
 
 /**
- * Builds the ADET custom-row(s) to prepend to a Demo / Özalit form.
+ * Builds the ADET custom-row(s) to prepend to a Demo / Ozalit form.
  * Returns [] if no order ADET is stored for the project.
  *
  * If the order has per-component items (e.g. Kitap: 500, Kutu: 250) each gets its own row.

@@ -94,9 +94,14 @@ function generateHistory(p, assignees, subtasksDone, subtasksTotal) {
   const demoOnayStage = isCin ? 'cin_demo_onay' : 'demo_onay'
   const currentIdx = pipeline.indexOf(p.stage)
 
-  // Space events evenly — older projects have more history
+  // Space events evenly — older projects have more history.
+  // Anchor on the project's created_at so backfilled history is deterministic
+  // and stable across reloads (falls back to a now-relative window for any
+  // project that somehow lacks created_at).
   const totalEvents = 2 + currentIdx * 2 + demoAttempt * 5 + ozalitAttempt * 4
-  let t = Date.now() - totalEvents * 1.8 * 86400000
+  let t = p.created_at
+    ? new Date(p.created_at).getTime()
+    : Date.now() - totalEvents * 1.8 * 86400000
   const tick = (days = 1) => {
     t += days * 86400000
     return new Date(t).toISOString()
@@ -202,7 +207,7 @@ function generateHistory(p, assignees, subtasksDone, subtasksTotal) {
   if (isCin) {
     // approve landed on 'uretime_hazir' (afterDemoOnay). Order pushes to üretim.
     if (p.stage === 'uretime_hazir') return h
-    h.push({ id: `${p.id}-hoh`, action: 'advance', from_stage: 'uretime_hazir', to_stage: 'uretimde', done_by_name: 'Esra Kılıçkan', created_at: tick(2), note: 'Sipariş alındı' })
+    h.push({ id: `${p.id}-hoh`, action: 'advance', from_stage: 'uretime_hazir', to_stage: 'uretimde', done_by_name: 'Esra Kılıç', created_at: tick(2), note: 'Sipariş alındı' })
     if (p.stage === 'uretimde') return h
     h.push({ id: `${p.id}-hug`, action: 'advance', from_stage: 'uretimde', to_stage: 'gumruk', done_by_name: 'Ayşenur Kanak', created_at: tick(7) })
     if (p.stage === 'gumruk') return h
@@ -251,7 +256,7 @@ function generateHistory(p, assignees, subtasksDone, subtasksTotal) {
   if (p.stage === 'uretime_hazir') return h
 
   // ── Sipariş alındı → üretimde ─────────────────────────────────────────────
-  h.push({ id: `${p.id}-hoh`, action: 'advance', from_stage: 'uretime_hazir', to_stage: 'uretimde', done_by_name: 'Esra Kılıçkan', created_at: tick(2), note: 'Sipariş alındı' })
+  h.push({ id: `${p.id}-hoh`, action: 'advance', from_stage: 'uretime_hazir', to_stage: 'uretimde', done_by_name: 'Esra Kılıç', created_at: tick(2), note: 'Sipariş alındı' })
   if (p.stage === 'uretimde') return h
 
   h.push({ id: `${p.id}-hus`, action: 'advance', from_stage: 'uretimde', to_stage: 'satista', done_by_name: 'Ayşenur Kanak', created_at: tick(10) })
@@ -324,7 +329,12 @@ function buildProjectDetail(p) {
   // Real history is stored server-side; in mock we reconstruct it deterministically.
   const history = p.history ?? generateHistory(p, assignees, subtasksDone, subtasksTotal)
 
-  return { ...p, assignees, subtasks, history }
+  // Pass model defaults (Pass 2 loop). Seed projects predate these fields.
+  const pass_number = p.pass_number ?? 1
+  const pass_kind = p.pass_kind ?? (pass_number === 1 ? 'first_edition' : 'reprint')
+  const passes = Array.isArray(p.passes) ? p.passes : []
+
+  return { ...p, assignees, subtasks, history, pass_number, pass_kind, passes }
 }
 
   return { normalizeProjectPayload, buildProjectDetail, generateHistory }

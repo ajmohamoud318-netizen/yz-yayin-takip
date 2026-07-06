@@ -46,7 +46,7 @@ export default function YearPlan() {
       const start = Math.max(0, end - (dur - 1))
       barList.push({ p, start, end })
     }
-    barList.sort((a, b) => a.start - b.start || a.end - b.end || a.p.title.localeCompare(b.p.title, 'tr'))
+    barList.sort((a, b) => (b.p.created_at ?? '').localeCompare(a.p.created_at ?? ''))
     return { bars: barList, undated: undatedList }
   }, [projects, year])
 

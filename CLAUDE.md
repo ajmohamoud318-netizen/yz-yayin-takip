@@ -1,12 +1,15 @@
 # YZ Yayın Takip — Internal Publication Tracker
-> Production-ready MVP for Yükselen Zeka's internal book publishing pipeline
+> Internal book-publishing pipeline tracker for Yükselen Zeka.
+> **Current state: frontend-only MVP running on an in-memory mock data layer. The backend is planned and will be built after the frontend is complete (see "Backend — Planned / Future Work" at the bottom).**
 ---
 ## 🏢 What This Is
-YZ Yayın Takip replaces analog/Excel workflows with a unified dashboard where the team leader (Ayşenur) can see every book project, who is working on what, and what stage it's in — in real time.
-**Roles:**
-- **Ayşenur (team_leader)** — the only user who creates projects, assigns designers, approves/rejects at every stage, manages team members
-- **Designer (designer)** — works on assigned projects, checks off subtasks, marks completion
-- **Oktay (printer)** — approves Demo and Özalit stages for TR projects only
+YZ Yayın Takip replaces analog/Excel workflows with a unified dashboard where the team leader (Ayşenur) can see every book project, who is working on what, and what stage it's in — in real time. It also tracks reprint/production **orders (sipariş)** raised by the Sales team and the physical **handover (teslim)** of produced materials.
+
+**Roles (4):**
+- **Ayşenur (team_leader)** — creates projects, assigns designers, approves/rejects at every stage, manages team members, and owns key steps of the order (sipariş) workflow
+- **Designer (designer)** — works on assigned projects, checks off subtasks, submits demos; also confirms order requests routed to them
+- **Oktay (printer / "Matbaa")** — approves Demo and Özalit stages for TR projects, marks production-ready items, raises handover (teslim) requests, and handles the matbaa steps of the order workflow
+- **Esra (satis / Sales)** — raises order (sipariş) requests for projects that have reached Satışta, and confirms handover ("Alındı") which moves a project to Satışta
 ---
 ## 🗂️ Project Types
 Every project is either **TR** or **ÇİN** — this determines which pipeline it follows.
@@ -27,12 +30,14 @@ Demo Onay
 Özalit Teslim
     ↓
 Özalit Onay
-    ✓ Oktay approves → Üretimde
+    ✓ Oktay approves → Üretime Hazır
     ✗ Ayşenur rejects (reason REQUIRED) → back to Tasarım (attempt counter +1)
+    ↓
+Üretime Hazır
     ↓
 Üretimde
     ↓
-Satışta ✅
+Satışta ✅ (reached when Sales confirms handover — see Handover flow)
 ```
 ### ÇİN Pipeline
 ```
@@ -43,262 +48,144 @@ Tasarım (designer checks off subtasks → progress % auto-calculated)
 Çin Demo Teslim
     ↓
 Çin Demo Onay
-    ✓ Ayşenur approves → Üretimde
+    ✓ Ayşenur approves → Üretime Hazır
     ✗ Ayşenur rejects (reason REQUIRED) → back to Tasarım (attempt counter +1)
+    ↓
+Üretime Hazır
     ↓
 Üretimde
     ↓
 Gümrük
     ↓
-Satışta ✅
+Satışta ✅ (reached when Sales confirms handover — see Handover flow)
 ```
+Stage keys (from `client/src/domain/constants/stages.js`):
+```
+TR:  tasarim → demo_teslim → demo_onay → ozalit_teslim → ozalit_onay → uretime_hazir → uretimde → satista
+CIN: tasarim → cin_demo_teslim → cin_demo_onay → uretime_hazir → uretimde → gumruk → satista
+```
+
 ### Rejection Rule
 - Every rejection requires a written reason
 - The reason is stored and visible on the project history
-- The demo attempt counter increments on each rejection (Demo 1, Demo 2, etc.)
-- Only Ayşenur can reject at any stage
+- The demo/özalit attempt counter increments on each rejection (Demo 1, Demo 2, etc.)
+- Only Ayşenur (team_leader) can reject at any stage
+
+### Order (Sipariş) Workflow — separate mini-pipeline
+Raised by Sales once a project is **Satışta** (`ORDERABLE_STAGES = { satista }`). Steps and owners (`client/src/domain/constants/orders.js`):
+```
+pending        (Talep Gönderildi)      owner: team_leader  → aktarır
+    ↓
+goruldu        (Tasarımcıya Aktarıldı) owner: designer     → onaylar
+    ↓
+tasarimci_onay (Tasarımcı Onayı)       owner: printer      → matbaa teslim
+    ↓
+matbaa_onay    (Matbaa Teslimi)        owner: team_leader  → onaylar
+    ↓
+onaylandi      (Üretime Alındı) ✅
+```
+Rejection: team_leader can reject at `matbaa_onay`, looping back to `tasarimci_onay` (özalit attempt counter +1, reason required).
+
+### Handover (Teslim) Flow
+- **Matbaa (printer)** raises a handover request for a project whose production is finished (TR: `uretimde`, ÇİN: `gumruk`). One pending request per project.
+- **Sales (satis)** confirms receipt ("Alındı") → this is the **only path that moves a project to Satışta**.
 ---
 ## 📊 Dashboard View
 **Grouping labels (not pipeline stages):**
 - **Yeni Proje** — created by Ayşenur, designer has not started yet
 - **Devam Eden Proje** — designer has started (Tasarım stage is active)
-**Main dashboard shows:**
-- Monthly timeline view (projects mapped to target months)
-- Project cards with current stage, assigned designer, progress %
-- Color-coded by status (see below)
-**Status colors:**
-- 🟠 Orange — Yeni Proje / just started
-- 🟣 Purple — Devam Eden / in progress
-- 🟢 Green — Demo aşamasında
-- 🔵 Blue — Özalit aşamasında
-- 🩷 Pink — Üretimde
-- 🟡 Yellow — Satışta
+
+**Main dashboard shows:** monthly timeline view, project cards (current stage, assigned designer(s), progress %), color-coded by status. Additional views exist: Kanban (İş Akışı), Yıl Planı, Tüm Projeler, Dökümanlar, Ürün Bilgileri, and role-specific sipariş/teslim screens.
 ---
 ## 👥 User Management
 - Only Ayşenur can add / deactivate team members
-- When adding a user: name + email + role (designer or printer)
-- System sends email invitation with a link to set password
+- When adding a user: name + email + role (designer, printer, or satis)
 - Deactivated users lose access immediately but their project history is preserved
-- Roles: `team_leader` | `designer` | `printer`
+- Roles: `team_leader` | `designer` | `printer` | `satis`
+- Role display labels (`client/src/domain/constants/labels.js`): Takım Lideri, Tasarımcı, Matbaa, Satış Ekibi
+> Note: the invitation email / set-password flow is part of the planned backend. The current frontend uses seed users with mock auth.
 ---
 ## 📋 Project Subtasks
-When creating a TR project, Ayşenur selects which subtasks apply:
-- Kapak (cover)
-- Kutu (box)
-- Ses (sound)
-- Video / Animasyon
-- Yazılım (software)
-- İçerik / Görsel (content / visuals)
-- Sayfa Sayısı (page count — numeric field)
-For ÇİN projects same subtasks apply. Each subtask can be checked off by the designer. Progress % = completed subtasks / total subtasks × 100.
----
-## 🏗️ System Architecture
-```
-[React Frontend] ──▶ [Node/Fastify REST API] ──▶ [PostgreSQL]
-                            │                          │
-                    ┌───────┼────────┐            [Redis]
-                [OAuth]  [Email]  [Notifications]  (sessions, cache, pub-sub)
-```
-**Tech Stack:**
-| Layer        | Choice                  | Why                                          |
-|--------------|-------------------------|----------------------------------------------|
-| Frontend     | React + Vite            | Fast, component-based, easy to extend        |
-| UI / Icons   | shadcn/ui + Tailwind    | Prebuilt accessible components, utility-first |
-| Backend      | Node.js + Fastify       | Faster than Express, built-in schema validation |
-| Database     | PostgreSQL              | Relational, ACID, great for pipelines        |
-| Cache / RT   | Redis                   | Session store, notification pub-sub, caching |
-| Auth         | OAuth (Google)          | No passwords to manage, team uses Google     |
-| Email        | Nodemailer              | Invitations + stage notifications            |
-| Hosting      | Railway / Render        | One-click deploys, free tier                 |
-
-**Redis usage in this app:**
-- OAuth session storage (server-side sessions keyed by session ID)
-- Rate limiting per user/IP on sensitive routes
-- Real-time notification pub-sub (stage changes → push to connected clients)
-- Short-lived cache for dashboard project lists (TTL: 30s)
----
-## 📁 File Structure
-```
-yz-yayin-takip/
-├── CLAUDE.md
-├── .env.example
-├── docker-compose.yml
-│
-├── server/
-│   ├── index.js
-│   ├── db.js                    # PostgreSQL connection pool
-│   ├── redis.js                 # Redis client + helpers
-│   ├── middleware/
-│   │   ├── auth.js              # OAuth session verify + role attach
-│   │   └── requireRole.js       # role-based guard
-│   ├── routes/
-│   │   ├── auth.js              # OAuth callback, session, logout, /me
-│   │   ├── projects.js          # CRUD + stage transitions
-│   │   ├── subtasks.js          # check/uncheck subtasks
-│   │   ├── approvals.js         # approve / reject with reason
-│   │   └── users.js             # invite, deactivate, list
-│   ├── services/
-│   │   ├── email.js             # nodemailer wrapper
-│   │   ├── notifications.js     # stage change notifications (Redis pub-sub)
-│   │   └── session.js           # Redis session store helpers
-│   └── db/
-│       ├── schema.sql
-│       └── seed.sql
-│
-└── client/
-    ├── index.html
-    ├── vite.config.js
-    └── src/
-        ├── main.jsx
-        ├── App.jsx
-        ├── api.js
-        ├── hooks/
-        │   ├── useAuth.js
-        │   └── useProjects.js
-        ├── pages/
-        │   ├── Login.jsx
-        │   ├── AcceptInvite.jsx  # set password from email link
-        │   ├── Dashboard.jsx     # monthly timeline + project cards
-        │   ├── ProjectDetail.jsx # subtasks, stage bar, history
-        │   └── Team.jsx          # user management (Ayşenur only)
-        └── components/
-            ├── ui/               # shadcn/ui generated components
-            ├── ProjectCard.jsx
-            ├── StageBar.jsx
-            ├── SubtaskList.jsx
-            ├── ApprovalModal.jsx # approve / reject + reason input
-            └── MonthTimeline.jsx
-```
----
-## 🗄️ Database Schema
-```sql
-CREATE TABLE users (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name          TEXT NOT NULL,
-  email         TEXT UNIQUE NOT NULL,
-  password      TEXT,                        -- null until invite accepted
-  role          TEXT NOT NULL
-    CHECK (role IN ('team_leader','designer','printer')),
-  is_active     BOOLEAN DEFAULT TRUE,
-  invited_at    TIMESTAMPTZ,
-  joined_at     TIMESTAMPTZ,
-  created_at    TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE TABLE projects (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  title         TEXT NOT NULL,
-  type          TEXT NOT NULL CHECK (type IN ('TR','CIN')),
-  stage         TEXT NOT NULL DEFAULT 'tasarim'
-    CHECK (stage IN (
-      'tasarim','demo_teslim','demo_onay',
-      'ozalit_teslim','ozalit_onay',
-      'cin_demo_teslim','cin_demo_onay',
-      'uretimde','gumruk','satista'
-    )),
-  assigned_to   UUID REFERENCES users(id),
-  created_by    UUID REFERENCES users(id),
-  target_month  DATE,                        -- first day of target month
-  demo_attempt  INTEGER DEFAULT 0,
-  progress      INTEGER DEFAULT 0,           -- 0-100, auto-calculated
-  created_at    TIMESTAMPTZ DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE TABLE subtasks (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id    UUID REFERENCES projects(id) ON DELETE CASCADE,
-  title         TEXT NOT NULL,              -- 'Kapak', 'Kutu', 'Ses' etc.
-  is_done       BOOLEAN DEFAULT FALSE,
-  done_at       TIMESTAMPTZ
-);
-CREATE TABLE stage_history (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id    UUID REFERENCES projects(id) ON DELETE CASCADE,
-  from_stage    TEXT,
-  to_stage      TEXT NOT NULL,
-  action        TEXT NOT NULL              -- 'advance' | 'approve' | 'reject'
-    CHECK (action IN ('advance','approve','reject')),
-  reason        TEXT,                      -- required when action = 'reject'
-  done_by       UUID REFERENCES users(id),
-  created_at    TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE TABLE invitations (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id       UUID REFERENCES users(id) ON DELETE CASCADE,
-  token         TEXT UNIQUE NOT NULL,
-  expires_at    TIMESTAMPTZ NOT NULL,
-  used_at       TIMESTAMPTZ
-);
--- Indexes
-CREATE INDEX idx_projects_stage ON projects(stage);
-CREATE INDEX idx_projects_assigned ON projects(assigned_to);
-CREATE INDEX idx_projects_month ON projects(target_month);
-CREATE INDEX idx_subtasks_project ON subtasks(project_id);
-CREATE INDEX idx_history_project ON stage_history(project_id);
-```
----
-## 🔌 API Endpoints
-### Auth
-```
-GET    /api/auth/google               redirect to Google OAuth consent screen
-GET    /api/auth/google/callback      OAuth callback → creates session in Redis → redirect
-POST   /api/auth/logout               destroy session in Redis
-GET    /api/auth/me                   → { user } from session
-```
-### Projects
-```
-GET    /api/projects                  → all projects (filter: type, stage, month, assigned_to)
-GET    /api/projects/:id              → project + subtasks + stage history
-POST   /api/projects                  { title, type, assigned_to, target_month, subtasks[] } [team_leader]
-PATCH  /api/projects/:id              { title, assigned_to, target_month } [team_leader]
-DELETE /api/projects/:id              [team_leader]
-```
-### Stage Transitions
-```
-POST   /api/projects/:id/advance      move to next stage [designer or team_leader]
-POST   /api/projects/:id/approve      { stage } [printer for demo/ozalit, team_leader for cin]
-POST   /api/projects/:id/reject       { stage, reason } [team_leader only]
-```
-### Subtasks
-```
-PATCH  /api/subtasks/:id              { is_done: true/false } [designer]
-```
-### Users
-```
-GET    /api/users                     [team_leader]
-POST   /api/users/invite              { name, email, role } → sends email [team_leader]
-PATCH  /api/users/:id/deactivate      [team_leader]
-PATCH  /api/users/:id/reactivate      [team_leader]
-```
+When creating a project, Ayşenur selects which subtasks apply: Kapak, Kutu, Ses, Video / Animasyon, Yazılım, İçerik / Görsel, Sayfa Sayısı (numeric). Each subtask can be checked off by the designer. Progress % = completed subtasks / total subtasks × 100 (recalculated in `client/src/domain/services/progress.js`).
 ---
 ## 🖥️ UI Views by Role
-| Role         | Default landing  | Can do                                              |
-|--------------|------------------|-----------------------------------------------------|
-| team_leader  | Dashboard        | Everything — create, assign, approve, reject, manage team |
-| designer     | My Projects      | See assigned projects, check subtasks, submit demo  |
-| printer      | Approval queue   | See projects awaiting Demo/Özalit approval, approve |
+| Role         | Default landing           | Can do                                                              |
+|--------------|---------------------------|--------------------------------------------------------------------|
+| team_leader  | Dashboard                 | Everything — create, assign, approve, reject, manage team, order steps |
+| designer     | My Projects (Projelerim)  | See assigned projects, check subtasks, submit demo, confirm routed orders |
+| printer      | Approvals / Üretime Hazır | Approve Demo/Özalit (TR), mark production-ready, raise handovers, matbaa order steps |
+| satis        | Sipariş Talebi            | Raise order requests (Satışta projects), confirm handovers ("Alındı") |
+
+Route guards live in `client/src/App.jsx` (`RoleGuard`); navigation per role in `client/src/components/AppShell.jsx`.
+---
+## 🏗️ Current Architecture (Frontend-Only)
+```
+[React + Vite SPA]
+   └── client/src/
+        ├── pages/            # route screens
+        ├── components/       # UI (shadcn/ui) + dialogs
+        ├── hooks/            # useAuth, useProjects, stores
+        ├── domain/           # constants + pure business rules (stages, orders, pipeline, progress)
+        ├── application/      # use-cases (orders, handovers) + create-api + ports
+        └── infrastructure/
+             ├── mock/        # in-memory store, seed data, mock repositories  ← ACTIVE
+             ├── http/        # httpClient (Axios) — wired for the future backend
+             └── config.js    # USE_MOCK = true  ← flip to false when backend exists
+```
+- **No `server/` directory exists yet.** All data is in-memory (`client/src/infrastructure/mock/store.js`) seeded from `client/src/infrastructure/mock/seed/`.
+- Auth is mocked (seed users, plaintext demo passwords) — **not production auth**.
+- Business logic is cleanly separated (hexagonal-style): `domain` (pure) → `application` (use-cases) → `infrastructure` (mock or http). Each use-case already has both a mock branch and an HTTP branch via `mockOrHttp`, so swapping in the real backend is mostly flipping `USE_MOCK` and implementing the endpoints.
+
+**Tech stack (current):**
+| Layer        | Choice               |
+|--------------|----------------------|
+| Frontend     | React + Vite         |
+| UI / Icons   | shadcn/ui + Tailwind |
+| Data         | In-memory mock layer |
+| HTTP (ready) | Axios (`client/src/infrastructure/http/client.js`) |
 ---
 ## 📐 Conventions
-- Backend: Node.js + Fastify, ES modules, async/await, errors as `{ status, message }`
-- Fastify schema validation on all route inputs (JSON Schema)
-- Frontend: functional components + hooks only, shadcn/ui for all UI primitives
-- All API calls through `client/src/api.js` (Axios + session cookie)
-- Auth: OAuth session cookie (httpOnly, sameSite=strict), session data in Redis
-- Dates: stored UTC, displayed `tr-TR` locale
-- Stage transitions: always go through `/advance`, `/approve`, `/reject` — never direct PATCH on stage
-- Progress %: recalculated server-side on every subtask PATCH
-- Rejection always requires `reason` field — backend enforces this
-- Redis keys: `session:{id}` (TTL 7d), `cache:projects` (TTL 30s), `notify:{userId}` (pub-sub)
+- Frontend: functional components + hooks only; shadcn/ui for all UI primitives
+- Business rules live in `domain/` (pure, testable) — do not hardcode stage/role logic in components
+- Data access goes through `application/` use-cases and `infrastructure/` repositories, never directly
+- Stage transitions go through use-cases (advance / approve / reject) — never mutate `stage` directly
+- Progress % recalculated on every subtask change
+- Rejection always requires a `reason`
+- Dates: handled as ISO UTC, displayed `tr-TR` locale
+- Order/handover logic is separate from the main project pipeline (`domain/constants/orders.js`, `application/use-cases/orders`, `application/use-cases/handovers`)
 ---
-## 🚀 Production Checklist
-- [ ] OAuth app registered in Google Cloud Console (client ID + secret in .env)
-- [ ] Session cookie: httpOnly, sameSite=strict, secure=true in production
-- [ ] Redis session TTL set to 7 days; auto-refresh on activity
-- [ ] Role middleware on every protected Fastify route
-- [ ] Fastify JSON schema validation on all POST/PATCH inputs
-- [ ] Rate limiting via Redis on auth + sensitive routes
-- [ ] Invitation flow: add email to allowlist in DB → user signs in via Google
-- [ ] File uploads: type + size validated
-- [ ] `.env` never committed
-- [ ] CORS locked to production domain
-- [ ] DB connection pool max 10
-- [ ] Redis connection with retry + reconnect strategy
+## 🚧 Backend — Planned / Future Work
+> **Not built yet. This is the target design for after the frontend is finished.** The frontend's `infrastructure/http` layer is already stubbed to talk to it.
+
+**Planned stack:** Node.js + Fastify · PostgreSQL · Redis (sessions/cache/pub-sub) · Google OAuth · Nodemailer (invites + notifications) · Railway/Render hosting.
+
+**Planned API (subject to change — must also cover the order & handover workflows the frontend already implements):**
+```
+Auth:      GET /api/auth/google, /callback · POST /api/auth/logout · GET /api/auth/me
+Projects:  GET /api/projects · GET /api/projects/:id · POST/PATCH/DELETE (team_leader)
+Stages:    POST /api/projects/:id/advance | /approve | /reject
+Subtasks:  PATCH /api/subtasks/:id
+Users:     GET /api/users · POST /api/users/invite · PATCH /:id/deactivate | /reactivate
+Orders:    (sipariş) create / advance / reject  — mirrors client use-cases
+Handovers: (teslim) create / confirm            — mirrors client use-cases
+```
+
+**Planned DB schema (base — will also need `orders`, `order_history`, and `handovers` tables):**
+```sql
+-- users: id, name, email, password (null until invite accepted),
+--        role CHECK IN ('team_leader','designer','printer','satis'),
+--        is_active, invited_at, joined_at, created_at
+-- projects: id, title, type CHECK IN ('TR','CIN'),
+--           stage CHECK IN ('tasarim','demo_teslim','demo_onay','ozalit_teslim',
+--             'ozalit_onay','cin_demo_teslim','cin_demo_onay',
+--             'uretime_hazir','uretimde','gumruk','satista'),
+--           assigned_to, created_by, target_month, demo_attempt, progress,
+--           created_at, updated_at
+-- subtasks: id, project_id, title, is_done, done_at
+-- stage_history: id, project_id, from_stage, to_stage,
+--                action CHECK IN ('advance','approve','reject'), reason, done_by, created_at
+-- invitations: id, user_id, token, expires_at, used_at
+-- orders / order_history / handovers: TBD to match domain/constants/orders.js
+```
+
+**Production checklist (for when backend work starts):** register Google OAuth app · httpOnly/sameSite=strict/secure cookies · Redis session TTL 7d w/ refresh · role middleware on every route · Fastify JSON-schema validation on all POST/PATCH · Redis rate limiting on auth · invite-via-allowlist flow · file upload type/size validation · `.env` never committed · CORS locked to prod domain · DB pool max 10 · Redis retry/reconnect.

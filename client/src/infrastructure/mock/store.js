@@ -3,12 +3,13 @@ import { SEED_USERS } from './seed/users.js'
 import { SEED_PROJECTS } from './seed/projects.js'
 import { SEED_ORDER_REQUESTS } from './seed/order-requests.js'
 
-const LS_KEY = 'yz_mock_state_v6'
+const LS_KEY = 'yz_mock_state_v7'
 
 export const mockUsers = [...SEED_USERS]
 export const mockProjects = [...SEED_PROJECTS]
 export const mockDemos = []
 export const mockOrderRequests = [...SEED_ORDER_REQUESTS]
+export const mockHandovers = []
 
 export function saveState() {
   if (!USE_MOCK || typeof localStorage === 'undefined') return
@@ -20,6 +21,7 @@ export function saveState() {
         projects: mockProjects,
         demos: mockDemos,
         orderRequests: mockOrderRequests,
+        handovers: mockHandovers,
       }),
     )
   } catch {
@@ -55,6 +57,10 @@ export function hydrateState() {
       mockOrderRequests.length = 0
       mockOrderRequests.push(...saved.orderRequests)
     }
+    if (Array.isArray(saved.handovers)) {
+      mockHandovers.length = 0
+      mockHandovers.push(...saved.handovers)
+    }
   } catch {
     /* corrupt state — fall back to seed data */
   }
@@ -75,6 +81,7 @@ export function resetMockState() {
   mockDemos.length = 0
   mockOrderRequests.length = 0
   mockOrderRequests.push(...SEED_ORDER_REQUESTS)
+  mockHandovers.length = 0
 }
 
 export function delay(ms = 350) {

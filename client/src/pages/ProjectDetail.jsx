@@ -108,11 +108,19 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
 
   const isAssigned = (project?.assignees ?? []).some((a) => a.id === user?.id)
 
-  // Base condition: designer must be on the project and in tasarım stage.
+  // Stages where a designer may still work on the subtasks after submitting an
+  // early demo. The demo can be sent before the design is finished, so as long
+  // as the project hasn't hit 100% the assigned designer keeps editing — once
+  // it's complete the project can move on to Ozalit (which requires 100%).
+  const DEMO_STAGES = ['demo_teslim', 'demo_onay', 'cin_demo_teslim', 'cin_demo_onay']
+
+  // Base condition: the assigned designer can edit during tasarım, or during a
+  // demo stage while the project is still under 100%.
   const canEditBase =
     user?.role === 'designer' &&
     isAssigned &&
-    project?.stage === 'tasarim'
+    (project?.stage === 'tasarim' ||
+      (DEMO_STAGES.includes(project?.stage) && (project?.progress ?? 0) < 100))
 
   // The "Güncelle" (what-changed) log is an additive record, so the assigned
   // designer may add updates at any stage — not only during tasarım.
@@ -141,8 +149,12 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
   const actions = availableActions({ project, user })
   const advanceLabel = project ? advanceActionLabel(project, user?.role) : 'İlerlet'
   const approveLabel = project ? approveActionLabel(project) : 'Onayla'
-  // Suppress "Demoya Gönderildi" pill for the printer — they get an action button instead.
-  const sentStatus = project && user?.role !== 'printer' ? sentStatusLabel(project) : null
+  // Suppress the "Gönderildi" pill for anyone who instead has an action button
+  // at this stage (the printer, and now the leader/designer at Ozalit Teslim).
+  const sentStatus =
+    project && user?.role !== 'printer' && !actions.includes('advance')
+      ? sentStatusLabel(project)
+      : null
 
   // Pre-compute demo/ozalit attempt numbers for each history entry so the
   // Görüntüle button can open the correct snapshot.
@@ -406,11 +418,25 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                   <Button
                     size="sm"
                     onClick={() => {
-                      // tasarım → demo: open demo form dialog for all project types
-                      if (project.stage === 'tasarim') {
+                      // An ozalit-revision redesign resubmits straight to the
+                      // ozalit flow (a simple confirm), not the demo form.
+                      if (project.stage === 'tasarim' && project.last_reject_type === 'ozalit') {
+                        setDialog('advance')
+                        return
+                      }
+                      // Demo stages open the demo form: the designer requests it
+                      // at Tasarım, and the matbaa forwards it at Demo Teslim —
+                      // both go through the same form (read-only for the matbaa),
+                      // matching the Onaylar page.
+                      if (project.stage === 'tasarim' || project.stage === 'demo_teslim') {
                         setDemoFormMode('advance')
                         setDemoFormAttempt(null)
                         setDemoFormOpen(true)
+                      } else if (project.stage === 'ozalit_teslim') {
+                        // ozalit teslim → onay: submit the ozalit spec form.
+                        setOzalitFormMode('advance')
+                        setOzalitFormAttempt(null)
+                        setOzalitFormOpen(true)
                       } else {
                         setDialog('advance')
                       }
@@ -451,6 +477,45 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                 )}
               </div>
             </div>
+
+            {/* Ozalit requested — handed to the matbaa, waiting for delivery */}
+            {project.stage === 'ozalit_teslim' && project.ozalit_requested && (
+              <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+                <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-blue-800">
+                    Ozalit istendi — matbaa teslimi bekleniyor
+                  </p>
+                  <p className="mt-0.5 text-xs text-blue-600">
+                    {user?.role === 'printer'
+                      ? 'Ozaliti teslim ettiğinizde ekip lideri ve tasarımcı onayına gönderilecek.'
+                      : 'Matbaa ozaliti teslim ettiğinde onay aşamasına geçecek.'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Ozalit sign-off: leader approved, waiting on every assigned designer */}
+            {project.stage === 'ozalit_onay' && project.ozalit_leader_approved && (() => {
+              const total = (project.assignees ?? []).length
+              const done = (project.ozalit_designer_approvals ?? []).length
+              const iApproved = (project.ozalit_designer_approvals ?? []).includes(user?.id)
+              return (
+                <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-blue-800">
+                      Ekip lideri ozaliti onayladı — tasarımcı onayı bekleniyor ({done}/{total})
+                    </p>
+                    <p className="mt-0.5 text-xs text-blue-600">
+                      {isAssigned && user?.role === 'designer' && !iApproved
+                        ? 'Ozaliti onayladığınızda diğer tasarımcıların onayı beklenecek.'
+                        : 'Tüm atanmış tasarımcılar onayladığında proje üretime alınacak.'}
+                    </p>
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Rejection banner — shown whenever the project is back in tasarım after a rejection */}
             {isAssigned && project.stage === 'tasarim' && ((project.demo_attempt ?? 0) > 0 || (project.ozalit_attempt ?? 0) > 0) && (
@@ -927,25 +992,64 @@ function availableActions({ project, user }) {
   // Team leader moves a project forward. TR demo/ozalit teslim are forwarded by
   // the printer (matbaa) via the approval queue, so the leader doesn't advance
   // those — instead they see a "Gönderildi" status (see sentStatusLabel).
-  const advanceableStages = ['tasarim', 'cin_demo_teslim', 'uretimde', 'gumruk']
-  if (role === 'team_leader' && advanceableStages.includes(stage)) {
+  //
+  // The leader no longer pushes a project into Satışta: reaching Satışta now
+  // happens only when Sales confirms Matbaa's handover ("Alındı"). So the leader
+  // advances 'tasarim' and 'cin_demo_teslim', plus ÇİN 'uretimde' → 'gumruk'
+  // (customs). TR 'uretimde' and ÇİN 'gumruk' are handled by the handover flow.
+  const leaderAdvanceable = new Set(['tasarim', 'cin_demo_teslim'])
+  if (
+    role === 'team_leader' &&
+    (leaderAdvanceable.has(stage) || (stage === 'uretimde' && project.type === 'CIN'))
+  ) {
     set.add('advance')
   }
-  if ((stage === 'demo_onay' || stage === 'ozalit_onay' || stage === 'cin_demo_onay') && role === 'team_leader') {
+  const isAssignedDesigner =
+    role === 'designer' && (project.assignees ?? []).some((a) => a.id === user.id)
+
+  if ((stage === 'demo_onay' || stage === 'cin_demo_onay') && role === 'team_leader') {
     set.add('approve')
     set.add('reject')
   }
 
-  // Designer: can request demo at any progress level. Revision subtasks are
-  // shown directly in the alt görevler section — no "Revize Başla" gate needed.
-  const isAssignedDesigner =
-    role === 'designer' && (project.assignees ?? []).some((a) => a.id === user.id)
+  // Ozalit Onay is a two-step sign-off: the team leader approves first, then the
+  // assigned designer gives the final approval (which sends it to production).
+  // The leader can reject at any point.
+  if (stage === 'ozalit_onay') {
+    if (role === 'team_leader') {
+      if (!project.ozalit_leader_approved) set.add('approve')
+      set.add('reject')
+    } else if (
+      isAssignedDesigner &&
+      project.ozalit_leader_approved &&
+      !(project.ozalit_designer_approvals ?? []).includes(user.id)
+    ) {
+      // Each assigned designer approves once; all must approve to reach production.
+      set.add('approve')
+    }
+  }
   if (isAssignedDesigner && stage === 'tasarim') {
     set.add('advance')
   }
+  // Ozalit Teslim two-step handoff: the leader or assigned designer requests the
+  // ozalit (which hands it to the matbaa), then the matbaa delivers it to Ozalit
+  // Onay. A reject-to-matbaa locks the step to the matbaa (re-delivery). TR only.
+  if (stage === 'ozalit_teslim' && project.type === 'TR') {
+    const ozalitRequested = !!project.ozalit_requested
+    const matbaaLock = project.reject_target === 'matbaa'
+    if (role === 'printer') {
+      if (ozalitRequested || matbaaLock) set.add('advance')
+    } else if (!ozalitRequested && !matbaaLock && (role === 'team_leader' || isAssignedDesigner)) {
+      set.add('advance')
+    }
+  }
 
-  // Printer: confirms receipt of TR demo/ozalit and forwards to the leader's onay queue.
-  if (role === 'printer' && project.type === 'TR' && (stage === 'demo_teslim' || stage === 'ozalit_teslim')) {
+  // Printer: confirms receipt of the TR demo and forwards it to the leader's
+  // onay queue, and takes an approved project into production ("Üretime Al").
+  if (role === 'printer' && project.type === 'TR' && stage === 'demo_teslim') {
+    set.add('advance')
+  }
+  if (role === 'printer' && stage === 'uretime_hazir') {
     set.add('advance')
   }
 
@@ -956,18 +1060,23 @@ function availableActions({ project, user }) {
 function advanceActionLabel(project, userRole) {
   if (userRole === 'printer') {
     if (project.stage === 'demo_teslim' || project.stage === 'ozalit_teslim') return 'Teslim Et'
+    if (project.stage === 'uretime_hazir') return 'Üretime Al'
   }
   switch (project.stage) {
     case 'tasarim':
-      return "Demo'ya Gönder"
-    case 'demo_teslim':
+      // A design that's back in Tasarım after an ozalit rejection resubmits to
+      // the ozalit flow, not the demo.
+      return project.last_reject_type === 'ozalit' ? "Ozalit'e Gönder" : "Demo'ya Gönder"
     case 'ozalit_teslim':
+      // Leader / assigned designer requesting the ozalit proof.
+      return 'Ozalit İste'
+    case 'demo_teslim':
     case 'cin_demo_teslim':
       return 'Onaya Gönder'
     case 'uretimde':
-      return project.type === 'CIN' ? 'Gümrüğe Gönder' : 'Satışa Çıkar'
-    case 'gumruk':
-      return 'Satışa Çıkar'
+      // Only ÇİN reaches here as a leader-advanceable stage (→ Gümrük). TR
+      // Üretimde is closed out via the Sales handover, not this button.
+      return 'Gümrüğe Gönder'
     default:
       return 'İlerlet'
   }
@@ -976,12 +1085,15 @@ function advanceActionLabel(project, userRole) {
 /** Destination-aware label for the "approve" action button. */
 function approveActionLabel(project) {
   switch (project.stage) {
-    case 'demo_onay':
-      return "Ozalit'e Gönder"
     case 'ozalit_onay':
+      // Two-step sign-off: both the leader's and the designer's approval simply
+      // read "Onayla" (the designer's is the final one that sends to production).
+      return 'Onayla'
     case 'cin_demo_onay':
       return 'Üretime Al'
     default:
+      // Demo Onay and every other approval: the leader is approving the item
+      // in front of them, so the button simply reads "Onayla".
       return 'Onayla'
   }
 }

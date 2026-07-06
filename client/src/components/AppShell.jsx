@@ -2,28 +2,30 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
-  Kanban,
-  Users,
+  Columns3,
+  UsersRound,
   Plus,
   LogOut,
-  BookOpen,
   ChevronDown,
   Search,
   Bell,
   Menu,
   Sparkles,
-  List,
-  CalendarRange,
-  CalendarClock,
-  CheckCircle2,
+  LayoutGrid,
+  CalendarDays,
+  BadgeCheck,
   Printer,
-  Presentation,
-  FolderKanban,
+  Briefcase,
   MoreVertical,
-  FolderOpen,
-  Package,
-  Zap,
-  ShoppingCart,
+  Files,
+  Boxes,
+  Flame,
+  ClipboardPlus,
+  ClipboardCheck,
+  ClipboardList,
+  PackageCheck,
+  Truck,
+  Factory,
   Sun,
   Moon,
 } from 'lucide-react'
@@ -45,11 +47,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
-import api, { ROLE_LABELS, STATUS_META, statusKeyForProject } from '@/api'
+import api, { ROLE_LABELS, STATUS_META, statusKeyForProject, canRequestHandover } from '@/api'
 import { cn, initials } from '@/lib/utils'
 import NewProjectDialog from '@/components/NewProjectDialog'
 
 const COLLAPSE_KEY = 'yz-sidebar-collapsed'
+const YZ_LOGO_WHITE = '/yz_whitelogo.svg'
+const YZ_LOGO_BLACK = '/yz_blacklogo.svg'
 
 /**
  * Layout used by every authenticated page. The sidebar can collapse to an
@@ -65,6 +69,7 @@ export default function AppShell() {
   const [pendingOrders, setPendingOrders] = useState(0)    // team_leader: pending + matbaa_onay
   const [printerOrders, setPrinterOrders] = useState(0)   // printer: tasarimci_onay
   const [designerOrders, setDesignerOrders] = useState(0) // designer: goruldu (for their projects)
+  const [pendingHandovers, setPendingHandovers] = useState(0) // satis: teslim onay bekleyen
   const [orders, setOrders] = useState([])                // full talep list, fed to the bell
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -97,22 +102,26 @@ export default function AppShell() {
     let satista = 0
     let myProjects = 0
     let urgent = 0
+    let handoverEligible = 0
+    let productionReady = 0
     for (const p of projects) {
       if (p.stage !== 'satista') active++
       else satista++
       // Printer queue = incoming teslim; leader queue = pending onay.
       if (role === 'printer') {
         if (p.type === 'TR' && p.stage === 'demo_teslim') demoApprovals++
-        if (p.type === 'TR' && p.stage === 'ozalit_teslim') ozalitApprovals++
+        if (p.type === 'TR' && p.stage === 'ozalit_teslim' && (p.ozalit_requested || p.reject_target === 'matbaa')) ozalitApprovals++
       } else if (role === 'team_leader') {
         if (p.stage === 'demo_onay' || p.stage === 'cin_demo_onay') demoApprovals++
         if (p.stage === 'ozalit_onay') ozalitApprovals++
       }
       if (p.stage === 'uretimde' || p.stage === 'gumruk') production++
+      if (role === 'printer' && p.stage === 'uretime_hazir') productionReady++
+      if (role === 'printer' && canRequestHandover(p)) handoverEligible++
       if (role === 'designer' && (p.assignees ?? []).some((a) => a.id === user?.id)) myProjects++
       if ((p.demo_attempt ?? 0) >= 2 || (p.ozalit_attempt ?? 0) >= 2) urgent++
     }
-    return { active, demoApprovals, ozalitApprovals, production, satista, total: projects.length, myProjects, urgent }
+    return { active, demoApprovals, ozalitApprovals, production, satista, total: projects.length, myProjects, urgent, handoverEligible, productionReady }
   }, [projects, user?.role, user?.id])
 
   const pinned = useMemo(
@@ -124,7 +133,7 @@ export default function AppShell() {
     [projects],
   )
 
-  const groups = navGroups(user?.role, counts, pendingOrders, printerOrders, designerOrders)
+  const groups = navGroups(user?.role, counts, pendingOrders, printerOrders, designerOrders, pendingHandovers)
 
   useEffect(() => {
     const role = user?.role
@@ -141,7 +150,20 @@ export default function AppShell() {
         setDesignerOrders(orders.filter((o) => o.status === 'goruldu' && myIds.has(o.project_id)).length)
       }
     }).catch(() => {})
+
+    if (role === 'satis') {
+      api.listHandovers()
+        .then((hs) => setPendingHandovers(hs.filter((h) => h.status === 'pending').length))
+        .catch(() => {})
+    }
   }, [user?.role, user?.id, projects])
+
+  // Apply Utter Butter font for designer + team_leader roles.
+  useEffect(() => {
+    const creative = user?.role === 'designer' || user?.role === 'team_leader'
+    document.documentElement.classList.toggle('font-creative', creative)
+    return () => document.documentElement.classList.remove('font-creative')
+  }, [user?.role])
 
   // Safety net: when the project detail Sheet closes, make sure Radix hasn't
   // left `pointer-events: none` stuck on <body>. Overlapping Radix overlays
@@ -160,7 +182,6 @@ export default function AppShell() {
 
   async function handleLogout() {
     await logout()
-    toast.success('Çıkış yapıldı.')
     navigate('/login', { replace: true })
   }
 
@@ -205,20 +226,30 @@ export default function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur lg:px-6">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            onClick={() => setOpen(true)}
-            aria-label="Menüyü aç"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur lg:px-6">
+          {/* Left — mobile menu + greeting */}
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lg:hidden"
+              onClick={() => setOpen(true)}
+              aria-label="Menüyü aç"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            <span className="hidden text-base sm:block">
+              Merhaba, <strong>{user?.name?.split(' ')[0]}</strong>!
+            </span>
+          </div>
 
-          <Breadcrumb pathname={location.pathname} />
+          {/* Center — search */}
+          <div className="flex flex-1 justify-center px-2">
+            <TopbarSearch />
+          </div>
 
-          <div className="ml-auto flex items-center gap-2">
+          {/* Right — actions */}
+          <div className="flex shrink-0 items-center gap-2">
             {user?.role === 'team_leader' && (
               <Button size="sm" onClick={() => setNewProjectOpen(true)} className="hidden sm:inline-flex">
                 <Plus className="h-4 w-4" />
@@ -271,10 +302,6 @@ function Sidebar({ collapsed, groups, pinned, counts, user, onLogout, onNavigate
     <>
       <SidebarBrand collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />
       <div className="scrollbar-thin flex-1 overflow-y-auto overflow-x-hidden py-4">
-        <div className={cn(collapsed ? 'px-2' : 'px-3')}>
-          <SearchButton collapsed={collapsed} />
-        </div>
-
         {groups.map((group) => (
           <SidebarSection key={group.id} collapsed={collapsed} label={group.label}>
             {group.items.map((item) => (
@@ -331,25 +358,16 @@ function SidebarBrand({ collapsed, onToggleCollapsed }) {
         collapsed ? 'justify-between gap-1 px-2' : 'gap-2.5 px-4',
       )}
     >
-      <Link
-        to="/"
-        aria-label="Ana sayfa"
-        className={cn(
-          'flex min-w-0 items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          collapsed ? 'h-9 w-9 justify-center' : 'h-8',
-        )}
-      >
-        <img
-          src="/yz-logo.png"
-          alt="Yükselen Zeka"
-          className={cn(
-            'block',
-            collapsed
-              ? 'h-9 w-9 object-cover object-left'
-              : 'h-7 w-auto max-w-full object-contain',
-          )}
-        />
-      </Link>
+      {!collapsed && (
+        <Link
+          to="/"
+          aria-label="Ana sayfa"
+          className="flex h-8 min-w-0 items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <img src={YZ_LOGO_BLACK} alt="Yükselen Zeka" className="block h-7 w-auto max-w-full object-contain dark:hidden" />
+          <img src={YZ_LOGO_WHITE} alt="Yükselen Zeka" className="hidden h-7 w-auto max-w-full object-contain dark:block" />
+        </Link>
+      )}
       <button
         type="button"
         aria-label={collapsed ? 'Kenar çubuğunu aç' : 'Kenar çubuğunu kapat'}
@@ -363,6 +381,19 @@ function SidebarBrand({ collapsed, onToggleCollapsed }) {
         <MoreVertical className="h-4 w-4" />
       </button>
     </div>
+  )
+}
+
+function TopbarSearch() {
+  return (
+    <button
+      type="button"
+      onClick={() => toast.message('Arama yakında eklenecek.')}
+      className="flex w-full max-w-sm items-center gap-2 rounded-full border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-input hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Search className="h-4 w-4 shrink-0" />
+      <span className="flex-1 text-left">Ara…</span>
+    </button>
   )
 }
 
@@ -594,7 +625,7 @@ const ORDER_STEP_TEXT = {
   pending: 'Yeni sipariş talebi — onayınızı bekliyor',
   goruldu: 'Sipariş kontrolünüzü bekliyor',
   tasarimci_onay: 'Sipariş ozalit isteniyor',
-  matbaa_onay: 'Sipariş özalit onayınızı bekliyor',
+  matbaa_onay: 'Sipariş ozalit onayınızı bekliyor',
 }
 
 /**
@@ -657,7 +688,7 @@ function buildNotifications(projects, user, orders = []) {
       if (p.type === 'TR' && p.stage === 'demo_teslim') {
         const attempt = (p.demo_attempt ?? 0) + 1
         items.push({ id: `${p.id}-teslim-demo-${p.demo_attempt}`, projectId: p.id, tone: 'blue', title: p.title, text: `${attempt}. Demo isteniyor`, _updatedAt: ts })
-      } else if (p.type === 'TR' && p.stage === 'ozalit_teslim') {
+      } else if (p.type === 'TR' && p.stage === 'ozalit_teslim' && (p.ozalit_requested || p.reject_target === 'matbaa')) {
         const attempt = (p.ozalit_attempt ?? 0) + 1
         items.push({ id: `${p.id}-teslim-ozalit-${p.ozalit_attempt}`, projectId: p.id, tone: 'blue', title: p.title, text: `${attempt}. Ozalit isteniyor`, _updatedAt: ts })
       }
@@ -666,8 +697,11 @@ function buildNotifications(projects, user, orders = []) {
       if (mine) {
         items.push({ id: `${p.id}-assigned`, kind: 'assignment', projectId: p.id, tone: 'green', title: p.title, text: 'Bu projeye eklendiniz', _updatedAt: ts })
       }
-      if (mine && p.stage === 'tasarim' && (p.demo_attempt ?? 0) > 0) {
-        items.push({ id: `${p.id}-rej-${p.demo_attempt}`, projectId: p.id, tone: 'rose', title: p.title, text: 'Revizyon gerekiyor — tasarıma geri döndü', _updatedAt: ts })
+      if (mine && p.stage === 'tasarim' && ((p.demo_attempt ?? 0) > 0 || (p.ozalit_attempt ?? 0) > 0)) {
+        items.push({ id: `${p.id}-rej-${p.demo_attempt ?? 0}-${p.ozalit_attempt ?? 0}`, projectId: p.id, tone: 'rose', title: p.title, text: 'Revizyon gerekiyor — tasarıma geri döndü', _updatedAt: ts })
+      }
+      if (mine && p.stage === 'ozalit_onay' && p.ozalit_leader_approved && !(p.ozalit_designer_approvals ?? []).includes(user.id)) {
+        items.push({ id: `${p.id}-ozalit-des-onay-${p.ozalit_attempt ?? 0}`, projectId: p.id, tone: 'amber', title: p.title, text: 'Ozalit onayınızı bekliyor', _updatedAt: ts })
       }
     }
   }
@@ -849,9 +883,11 @@ function UserMenu({ user, onLogout }) {
         <DropdownMenuItem asChild>
           <Link to="/team">Takım</Link>
         </DropdownMenuItem>
-        <DropdownMenuItem disabled>
-          <Sparkles className="h-4 w-4" />
-          Ayarlar (yakında)
+        <DropdownMenuItem asChild>
+          <Link to="/settings">
+            <Sparkles className="h-4 w-4" />
+            Ayarlar
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onLogout} className="text-destructive focus:text-destructive">
@@ -868,10 +904,8 @@ function UserMenu({ user, onLogout }) {
 const PAGE_TITLES = [
   { match: (p) => p === '/', label: 'Genel Bakış' },
   { match: (p) => p.startsWith('/kanban'), label: 'İş Akışı' },
-  { match: (p) => p.startsWith('/approvals/demo'), label: 'Demo Onay' },
-  { match: (p) => p.startsWith('/approvals/ozalit'), label: 'Ozalit Onay' },
   { match: (p) => p.startsWith('/approvals/siparis'), label: 'Sipariş Onayı' },
-  { match: (p) => p.startsWith('/approvals'), label: 'Onay Kuyruğu' },
+  { match: (p) => p.startsWith('/approvals'), label: 'Onaylar' },
   { match: (p) => p.startsWith('/team'), label: 'Ekip' },
   { match: (p) => p.startsWith('/plan'), label: 'Yıllık Plan' },
   { match: (p) => p.startsWith('/demo'), label: 'Demo' },
@@ -881,6 +915,9 @@ const PAGE_TITLES = [
   { match: (p) => p.startsWith('/siparis-talebi'), label: 'Sipariş Talebi' },
   { match: (p) => p.startsWith('/siparis-talepleri'), label: 'Sipariş Talepleri' },
   { match: (p) => p.startsWith('/siparis-onay'), label: 'Sipariş Onayları' },
+  { match: (p) => p.startsWith('/uretime-hazir'), label: 'Üretime Hazır' },
+  { match: (p) => p.startsWith('/teslim-talepleri'), label: 'Teslim Talepleri' },
+  { match: (p) => p.startsWith('/teslim-onaylari'), label: 'Teslim Onayları' },
   { match: (p) => p.startsWith('/projects/'), label: 'Proje Detayı' },
   { match: (p) => p === '/projects', label: 'Tüm Projeler' },
 ]
@@ -896,13 +933,13 @@ function Breadcrumb({ pathname }) {
 
 /* ----------------------------- role nav ----------------------------- */
 
-function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerOrders = 0) {
+function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerOrders = 0, pendingHandovers = 0) {
   // ── Grup 1: Ana menü ──────────────────────────────────────────
   const mainItems = [
     { to: '/', label: 'Genel Bakış', icon: LayoutDashboard, end: true, roles: ['team_leader', 'designer', 'printer'] },
-    { to: '/my-projects', label: 'Projelerim', icon: FolderKanban, badge: counts.myProjects || designerOrders || undefined, badgeTone: designerOrders > 0 ? 'amber' : 'default', roles: ['designer'] },
-    { to: '/kanban', label: 'İş Akışı', icon: Kanban, badge: counts.active, roles: ['team_leader', 'designer', 'printer'] },
-    { to: '/projects', label: 'Tüm Projeler', icon: List, end: true, badge: counts.total, roles: ['team_leader', 'designer', 'printer'] },
+    { to: '/my-projects', label: 'Projelerim', icon: Briefcase, badge: counts.myProjects || designerOrders || undefined, badgeTone: designerOrders > 0 ? 'amber' : 'default', roles: ['designer'] },
+    { to: '/kanban', label: 'İş Akışı', icon: Columns3, badge: counts.active, roles: ['team_leader', 'designer', 'printer'] },
+    { to: '/projects', label: 'Tüm Projeler', icon: LayoutGrid, end: true, badge: counts.total, roles: ['team_leader', 'designer', 'printer'] },
     {
       to: '/baski-listesi',
       label: 'Baskı Listesi',
@@ -911,36 +948,27 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
       badgeTone: 'pink',
       roles: ['team_leader', 'designer', 'printer'],
     },
-    { label: 'Toplantılar', icon: CalendarClock, soon: true, roles: ['team_leader', 'designer', 'printer'] },
+    { label: 'Toplantılar', icon: CalendarDays, soon: true, roles: ['team_leader', 'designer', 'printer'] },
     // Sales-only items
-    { to: '/siparis-talebi', label: 'Sipariş Talebi', icon: ShoppingCart, roles: ['satis'] },
-    { to: '/projects', label: 'Tüm Ürünler', icon: List, end: true, roles: ['satis'] },
+    { to: '/siparis-talebi', label: 'Sipariş Talebi', icon: ClipboardPlus, roles: ['satis'] },
+    { to: '/projects', label: 'Tüm Ürünler', icon: LayoutGrid, end: true, roles: ['satis'] },
   ].filter((i) => !i.roles || i.roles.includes(role))
 
   // ── Grup 2: Onaylar (sadece printer + team_leader) ────────────
   const approvalItems = [
     {
       to: '/approvals/demo',
-      label: 'Demo Onay',
-      icon: CheckCircle2,
-      badge: counts.demoApprovals,
+      label: 'Onaylar',
+      icon: BadgeCheck,
+      badge: counts.demoApprovals + counts.ozalitApprovals,
       badgeTone: 'amber',
-      highlight: counts.demoApprovals > 0,
-      roles: ['printer', 'team_leader'],
-    },
-    {
-      to: '/approvals/ozalit',
-      label: 'Ozalit Onay',
-      icon: CheckCircle2,
-      badge: counts.ozalitApprovals,
-      badgeTone: 'amber',
-      highlight: counts.ozalitApprovals > 0,
+      highlight: counts.demoApprovals + counts.ozalitApprovals > 0,
       roles: ['printer', 'team_leader'],
     },
     {
       to: '/approvals/siparis',
       label: 'Sipariş Teslimi',
-      icon: ShoppingCart,
+      icon: PackageCheck,
       badge: printerOrders,
       badgeTone: 'amber',
       highlight: printerOrders > 0,
@@ -949,7 +977,7 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
     {
       to: '/siparis-onay',
       label: 'Sipariş Onayları',
-      icon: ShoppingCart,
+      icon: ClipboardCheck,
       badge: designerOrders || undefined,
       badgeTone: 'amber',
       highlight: designerOrders > 0,
@@ -958,26 +986,53 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
     {
       to: '/siparis-talepleri',
       label: 'Sipariş Talepleri',
-      icon: ShoppingCart,
+      icon: ClipboardList,
       badge: pendingOrders,
       badgeTone: 'amber',
       highlight: pendingOrders > 0,
       roles: ['team_leader'],
     },
+    {
+      to: '/uretime-hazir',
+      label: 'Üretime Hazır',
+      icon: Factory,
+      badge: counts.productionReady || undefined,
+      badgeTone: 'amber',
+      highlight: counts.productionReady > 0,
+      roles: ['printer'],
+    },
+    {
+      to: '/teslim-talepleri',
+      label: 'Teslim Talepleri',
+      icon: Truck,
+      badge: counts.handoverEligible || undefined,
+      badgeTone: 'pink',
+      highlight: counts.handoverEligible > 0,
+      roles: ['printer'],
+    },
+    {
+      to: '/teslim-onaylari',
+      label: 'Teslim Onayları',
+      icon: PackageCheck,
+      badge: pendingHandovers || undefined,
+      badgeTone: 'amber',
+      highlight: pendingHandovers > 0,
+      roles: ['satis'],
+    },
   ].filter((i) => !i.roles || i.roles.includes(role))
 
   // ── Grup 3: Yönetim / kaynaklar ──────────────────────────────
   const resourceItems = [
-    { to: '/team', label: 'Ekip', icon: Users, roles: ['team_leader'] },
-    { to: '/documents', label: 'Dökümanlar', icon: FolderOpen, roles: ['team_leader', 'designer', 'printer'] },
-    { to: '/urun-bilgileri', label: 'Ürün Bilgileri', icon: Package, roles: ['team_leader'] },
+    { to: '/team', label: 'Ekip', icon: UsersRound, roles: ['team_leader'] },
+    { to: '/documents', label: 'Dökümanlar', icon: Files, roles: ['team_leader', 'designer', 'printer'] },
+    { to: '/urun-bilgileri', label: 'Ürün Bilgileri', icon: Boxes, roles: ['team_leader'] },
   ].filter((i) => !i.roles || i.roles.includes(role))
 
   // ── Grup 4: Acil işler (kişiye göre) ─────────────────────────
   const urgentItems = [
     {
       label: 'Acil İşler',
-      icon: Zap,
+      icon: Flame,
       soon: true,
       badge: counts.urgent,
       badgeTone: 'amber',

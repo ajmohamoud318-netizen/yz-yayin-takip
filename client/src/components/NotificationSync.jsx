@@ -51,16 +51,26 @@ export default function NotificationSync() {
 
       const stageChanged = old.stage !== p.stage
 
+      // Production milestones broadcast to whoever is signed in.
+      //   • uretime_hazir → Matbaa can now take it into production ("Üretime Al")
+      //   • uretimde       → everyone learns it was taken into production
+      //   • satista        → everyone learns it went on sale
+      if (stageChanged) {
+        if (p.stage === 'uretime_hazir' && user.role === 'printer') {
+          toast.info(`${p.title} — Üretime hazır, üretime alabilirsiniz.`, { duration: 7000 })
+        } else if (p.stage === 'uretimde') {
+          toast.success(`${p.title} — Üretime alındı.`, { duration: 6000 })
+        } else if (p.stage === 'satista') {
+          toast.success(`${p.title} — Satışa çıktı! 🎉`, { duration: 6000 })
+        }
+      }
+
       // Notifications for designers
       if (user.role === 'designer' && isAssigned(p, user.id)) {
-        if (stageChanged) {
-          if (p.stage === 'tasarim' && old.demo_attempt !== p.demo_attempt) {
-            toast.error(`${p.title} — Demo reddedildi, revizyon gerekiyor.`, { duration: 8000 })
-          } else if (p.stage === 'uretimde') {
-            toast.success(`${p.title} — Üretime geçti! 🎉`, { duration: 6000 })
-          } else if (p.stage === 'satista') {
-            toast.success(`${p.title} — Satışa çıktı! 🎉`, { duration: 6000 })
-          }
+        if (stageChanged && p.stage === 'tasarim' && old.demo_attempt !== p.demo_attempt) {
+          toast.error(`${p.title} — Demo reddedildi, revizyon gerekiyor.`, { duration: 8000 })
+        } else if (stageChanged && p.stage === 'ozalit_teslim' && p.type === 'TR') {
+          toast.info(`${p.title} — Ozalit isteyebilirsiniz.`, { duration: 7000 })
         }
         // Progress hit 100 %
         if (!stageChanged && old.progress < 100 && p.progress === 100) {

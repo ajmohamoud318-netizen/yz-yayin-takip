@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useProjectModal } from '@/hooks/useProjectModal'
-import { Send, Plus, Clock, Check, FileText, RefreshCw, X, ThumbsUp, ThumbsDown } from 'lucide-react'
+import { Send, Plus, Clock, FileText, RefreshCw, X, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
@@ -75,7 +75,7 @@ export default function DemoRequests() {
 
   const inFlow = useMemo(() => projects.filter((p) => IN_FLOW.includes(p.stage)), [projects])
 
-  function openDemoForm(p, mode = 'request') {
+  function openDemoForm(p, mode = 'advance') {
     setDemoFormState({ project: p, mode })
   }
 
@@ -191,30 +191,20 @@ export default function DemoRequests() {
                           <span className="w-9 text-right text-xs font-semibold text-foreground">{p.progress}%</span>
                         </div>
 
-                        {canDemo &&
-                          (p.demo_requested ? (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); openDemoForm(p, 'view') }}
-                              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                              Demo İstendi
-                            </button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="shrink-0"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                openDemoForm(p, 'request')
-                              }}
-                            >
-                              <Send className="h-4 w-4" />
-                              Demo İste
-                            </Button>
-                          ))}
+                        {canDemo && p.stage === 'tasarim' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openDemoForm(p, 'advance')
+                            }}
+                          >
+                            <Send className="h-4 w-4" />
+                            Demo İste
+                          </Button>
+                        )}
                       </div>
                     )
                   })}

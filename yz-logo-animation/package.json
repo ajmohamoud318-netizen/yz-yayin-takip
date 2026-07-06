@@ -1,0 +1,22 @@
+{
+  "name": "yz-logo-animation",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "studio": "npx remotion studio src/Root.jsx",
+    "render": "npx remotion render src/Root.jsx YZLogoAnimation out/yz-logo.mp4"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@remotion/cli": "^4.0.484",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.484"
+  },
+  "remotion": {
+    "entryPoint": "./src/Root.jsx"
+  }
+}

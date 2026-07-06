@@ -248,7 +248,7 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
-            {isDemo ? 'Demo Üretim Formu' : 'Özalit Üretim Formu'}
+            {isDemo ? 'Demo Üretim Formu' : 'Ozalit Üretim Formu'}
           </DialogTitle>
         </DialogHeader>
 
@@ -337,7 +337,7 @@ function DocumentCard({ project, form, attemptNo, docType, approved, printerName
 
   const requestDate = docType === 'demo' ? form?.demoIstemTarihi : form?.ozalitIstemTarihi
   const requester = docType === 'demo' ? form?.demoIsteyenKisi : form?.ozalitIsteyenKisi
-  const docLabel = docType === 'demo' ? 'Demo' : 'Özalit'
+  const docLabel = docType === 'demo' ? 'Demo' : 'Ozalit'
 
   return (
     <Card>
@@ -488,7 +488,7 @@ export default function Documents() {
 
   const emptyText = isDemo
     ? subTab === 'istenen' ? 'Henüz gönderilen demo yok.' : 'Henüz onaylanan demo yok.'
-    : subTab === 'istenen' ? 'Henüz gönderilen özalit yok.' : 'Henüz onaylanan özalit yok.'
+    : subTab === 'istenen' ? 'Henüz gönderilen ozalit yok.' : 'Henüz onaylanan ozalit yok.'
 
   const demoCounts = {
     istenen: demoIstenen.length,
@@ -505,15 +505,15 @@ export default function Documents() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Dökümanlar</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Gönderilen ve onaylanan demo / özalit üretim formları.
+          Gönderilen ve onaylanan demo / ozalit üretim formları.
         </p>
       </header>
 
-      {/* Primary tabs: Demolar | Özalitler */}
+      {/* Primary tabs: Demolar | Ozalitler */}
       <div className="flex gap-0 border-b">
         {[
           { key: 'demo', label: 'Demolar', count: demoCounts.istenen },
-          { key: 'ozalit', label: 'Özalitler', count: ozalitCounts.istenen },
+          { key: 'ozalit', label: 'Ozalitler', count: ozalitCounts.istenen },
         ].map(({ key, label, count }) => (
           <button
             key={key}

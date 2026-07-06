@@ -11,36 +11,36 @@
 /* ------------------------------------------------------------------ */
 @layer base {
   :root {
-    --background: 0 0% 100%;           /* clean white app canvas      */
-    --foreground: 222 47% 11%;         /* slate-900 text              */
+    --background: 40 30% 98%;          /* warm ivory paper canvas     */
+    --foreground: 25 12% 16%;          /* warm ink                    */
 
-    --card: 0 0% 100%;                 /* solid white panels          */
-    --card-foreground: 222 47% 11%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --card: 40 50% 99%;                /* near-white warm panel        */
+    --card-foreground: 25 12% 16%;
+    --popover: 40 50% 99%;
+    --popover-foreground: 25 12% 16%;
 
-    --primary: 175 78% 27%;            /* teal — primary actions only */
+    --primary: 345 72% 40%;            /* rose-burgundy — primary actions only */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96%;          /* slate-100                   */
-    --secondary-foreground: 222 47% 18%;
+    --secondary: 40 20% 94%;           /* warm light                  */
+    --secondary-foreground: 25 12% 22%;
 
-    --muted: 210 40% 96%;              /* slate-100                   */
-    --muted-foreground: 215 16% 42%;   /* slate-500/600 — AA on white */
+    --muted: 40 20% 94%;               /* warm light                  */
+    --muted-foreground: 30 8% 40%;     /* warm gray — AA on paper     */
 
-    --accent: 210 40% 94%;             /* slate hover                 */
-    --accent-foreground: 222 47% 18%;
+    --accent: 40 24% 91%;              /* warm hover                  */
+    --accent-foreground: 25 12% 22%;
 
-    --destructive: 0 72% 48%;
+    --destructive: 0 65% 47%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 214 32% 91%;             /* slate-200                   */
-    --input: 214 32% 91%;
-    --ring: 175 78% 27%;               /* teal focus ring             */
+    --border: 36 18% 88%;              /* warm hairline               */
+    --input: 36 18% 88%;
+    --ring: 345 72% 40%;               /* rose focus ring             */
 
-    --sidebar: 210 40% 98%;            /* slate-50 rail               */
+    --sidebar: 42 28% 96%;             /* warm paper rail             */
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;                  /* tighter, editorial          */
 
     /* Motion curves — built-in CSS easings are too weak; these carry the
        intentional "punch" Emil Kowalski's work uses. Referenced by name so
@@ -51,34 +51,34 @@
   }
 
   .dark {
-    --background: 222 47% 8%;          /* slate-950 canvas            */
-    --foreground: 210 40% 96%;         /* near-white text             */
+    --background: 30 8% 9%;            /* warm near-black canvas      */
+    --foreground: 40 18% 92%;          /* warm off-white text         */
 
-    --card: 222 44% 11%;               /* slightly raised panel       */
-    --card-foreground: 210 40% 96%;
-    --popover: 222 44% 11%;
-    --popover-foreground: 210 40% 96%;
+    --card: 30 7% 12%;                 /* slightly raised warm panel  */
+    --card-foreground: 40 18% 92%;
+    --popover: 30 7% 12%;
+    --popover-foreground: 40 18% 92%;
 
-    --primary: 172 66% 45%;            /* teal lifted for dark bg     */
-    --primary-foreground: 180 45% 10%; /* deep teal text — AA on the teal */
+    --primary: 345 65% 55%;            /* rose lifted for dark bg     */
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 217 33% 17%;          /* slate-800                   */
-    --secondary-foreground: 210 40% 96%;
+    --secondary: 30 6% 18%;            /* warm charcoal               */
+    --secondary-foreground: 40 18% 92%;
 
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;   /* slate-400 — AA on dark      */
+    --muted: 30 6% 18%;
+    --muted-foreground: 36 10% 64%;    /* warm gray — AA on dark      */
 
-    --accent: 217 33% 21%;
-    --accent-foreground: 210 40% 96%;
+    --accent: 30 6% 22%;
+    --accent-foreground: 40 18% 92%;
 
     --destructive: 0 63% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 217 33% 22%;
-    --input: 217 33% 24%;
-    --ring: 172 66% 45%;
+    --border: 30 6% 22%;
+    --input: 30 6% 24%;
+    --ring: 345 65% 55%;
 
-    --sidebar: 222 44% 10%;
+    --sidebar: 30 7% 11%;
   }
 }
 
@@ -97,27 +97,39 @@
     font-optical-sizing: auto;
   }
 
-  /* Baloo 2 carries brand personality in headings only.
-     Body copy, nav, labels, and UI controls use Geist. */
-  h1 {
-    font-family: 'Baloo 2', cursive;
-    font-weight: 700;
-    line-height: 1.2;
-    letter-spacing: -0.01em;
+  /* Fraunces (editorial serif) carries the publishing-house character in
+     headings only. Body copy, nav, labels, and UI controls use Geist.
+     opsz lets the serif bloom at display sizes; normal tracking — serifs
+     don't want the tight rounded-sans letter-spacing. */
+  h1, h2, h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
     text-wrap: balance;
+  }
+  h1 {
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.005em;
   }
   h2 {
-    font-family: 'Baloo 2', cursive;
-    font-weight: 700;
-    line-height: 1.25;
-    text-wrap: balance;
+    font-weight: 600;
+    line-height: 1.2;
   }
   h3 {
-    font-family: 'Baloo 2', cursive;
     font-weight: 600;
     line-height: 1.3;
-    text-wrap: balance;
   }
+}
+
+/* Editorial label — small, uppercase, tracked. Use on eyebrow/section
+   labels above titles for the publishing-house feel. */
+.label-eyebrow {
+  font-family: 'Geist', system-ui, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
 }
 
 /* ------------------------------------------------------------------ */
@@ -159,8 +171,8 @@
 .nav-pulse-glow,
 .nav-bounce {
   position: relative;
-  background-color: hsl(45 100% 96%);
-  box-shadow: inset 0 0 0 1px hsl(38 80% 55% / 0.4);
+  background-color: hsl(345 72% 97%);
+  box-shadow: inset 0 0 0 1px hsl(345 72% 40% / 0.25);
 }
 
 /* ------------------------------------------------------------------ */
@@ -204,6 +216,13 @@
     from { opacity: 0; }
     to   { opacity: 1; }
   }
+}
+
+/* Utter Butter font — applied for designer + team_leader roles */
+html.font-creative,
+html.font-creative body,
+html.font-creative * {
+  font-family: 'Utter Butter', system-ui, sans-serif !important;
 }
 
 /* ------------------------------------------------------------------ */

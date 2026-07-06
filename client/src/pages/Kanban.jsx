@@ -40,10 +40,11 @@ export default function Kanban() {
   return (
     <>
       <div className="space-y-5">
-        <header className="flex flex-wrap items-end justify-between gap-3">
+        <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Pano</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
+            <p className="label-eyebrow">İş Akışı</p>
+            <h1 className="mt-1 text-3xl">Pano</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
               Tüm projeleri aşamaya göre yan yana görüntüleyin.
             </p>
           </div>

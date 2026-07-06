@@ -25,7 +25,7 @@ export default function AllProjects() {
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [groupFilter, setGroupFilter] = useState('all')
-  const [sort, setSort] = useState({ key: 'title', dir: 'asc' })
+  const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' })
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -45,9 +45,9 @@ export default function AllProjects() {
       if (sort.key === 'progress') {
         av = a.progress
         bv = b.progress
-      } else if (sort.key === 'target_month') {
-        av = a.target_month ?? ''
-        bv = b.target_month ?? ''
+      } else if (sort.key === 'target_month' || sort.key === 'created_at') {
+        av = a[sort.key] ?? ''
+        bv = b[sort.key] ?? ''
       } else {
         av = (a[sort.key] ?? '').toString().toLowerCase()
         bv = (b[sort.key] ?? '').toString().toLowerCase()

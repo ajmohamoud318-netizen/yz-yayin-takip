@@ -50,7 +50,7 @@ export const SEED_USERS =
   },
   {
     id: 'u-esra',
-    name: 'Esra Kılıçkan',
+    name: 'Esra Kılıç',
     email: 'esra@yukselenzeka.com',
     password: '123456',
     role: 'satis',
