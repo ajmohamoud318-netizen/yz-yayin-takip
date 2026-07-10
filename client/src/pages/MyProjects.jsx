@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import { STAGE_LABELS, STATUS_META, TYPE_LABELS, statusKeyForProject } from '@/api'
-import { cn, formatMonthYear } from '@/lib/utils'
+import { cn, formatTargetDate } from '@/lib/utils'
 
 const STAGE_GROUPS = {
   all: 'Tümü',
@@ -59,7 +59,7 @@ export default function MyProjects() {
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return mine.filter((p) => {
+    const filtered = mine.filter((p) => {
       if (typeFilter !== 'all' && p.type !== typeFilter) return false
       if (stageGroup === 'active' && p.stage === 'satista') return false
       if (stageGroup === 'waiting') {
@@ -69,16 +69,15 @@ export default function MyProjects() {
       if (!q) return true
       return p.title.toLowerCase().includes(q)
     })
+    // Newest assignments on top. created_at is ISO; lexicographic compare = chronological.
+    return [...filtered].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
   }, [mine, query, typeFilter, stageGroup])
 
   return (
     <>
-      <div className="space-y-6">
+      <div className="mx-auto max-w-7xl 2xl:max-w-screen-2xl 3xl:max-w-[88rem] space-y-6 2xl:space-y-8">
         <header>
           <h1 className="text-2xl font-semibold tracking-tight">Projelerim</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {rows.length} proje listeleniyor · {mine.length} toplam atama
-          </p>
         </header>
 
         {/* Sipariş onay queue — shown only when there are pending orders */}
@@ -105,7 +104,7 @@ export default function MyProjects() {
 
         <Card>
           <CardContent className="flex flex-wrap items-center justify-between gap-3 p-3">
-            <div className="flex w-full max-w-sm items-center gap-2 rounded-md border bg-background px-2.5 py-1.5 text-sm focus-within:ring-2 focus-within:ring-ring">
+            <div className="flex w-full max-w-sm 2xl:max-w-md items-center gap-2 rounded-md border bg-background px-2.5 py-1.5 text-sm focus-within:ring-2 focus-within:ring-ring">
               <Search className="h-4 w-4 text-muted-foreground" />
               <input
                 value={query}
@@ -151,8 +150,48 @@ export default function MyProjects() {
           </div>
         ) : (
           <Card className="overflow-hidden">
-            <div className="scrollbar-thin overflow-x-auto">
-              <table className="w-full min-w-[560px] text-sm">
+            {/* Card-on-mobile: below sm the table is replaced with a list of
+              cards so each row fits a 360px screen. Above sm the table
+              scrolls horizontally with min-width. */}
+            <div className="space-y-2 sm:hidden">
+            {rows.map((p) => {
+              const meta = STATUS_META[statusKeyForProject(p)]
+              return (
+                <Card
+                  key={p.id}
+                  tabIndex={0}
+                  aria-label={`${p.title} – detayları aç`}
+                  className="cursor-pointer transition-colors hover:border-primary/40 hover:bg-muted/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => openProject(p.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      openProject(p.id)
+                    }
+                  }}
+                >
+                  <CardContent className="space-y-2 p-3.5">
+                    <div className="flex items-start gap-2">
+                      <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', meta.dot)} />
+                      <p className="text-sm font-semibold leading-snug">{p.title}</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {TYPE_LABELS[p.type]} · {STAGE_LABELS[p.stage]} · {p.assigned_name}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Progress value={p.progress} className="h-1.5 flex-1" indicatorClassName={meta.dot} />
+                      <span className="font-mono text-xs tabular-nums">{p.progress}%</span>
+                    </div>
+                    {p.target_month && (
+                      <p className="text-[11px] text-muted-foreground/80">Hedef: {p.target_month}</p>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+          <div className="hidden overflow-x-auto sm:block">
+            <table className="w-full min-w-[560px] text-sm">
                 <thead>
                   <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
                     <th className="px-4 py-2.5 font-medium">Proje</th>
@@ -176,6 +215,7 @@ export default function MyProjects() {
                             openProject(p.id)
                           }
                         }}
+                        aria-label={`${p.title} – detayları aç`}
                         className="cursor-pointer border-b border-border/60 transition-colors last:border-0 hover:bg-muted/40 focus:outline-none focus-visible:bg-muted/60"
                       >
                         <td className="px-4 py-3">
@@ -204,7 +244,7 @@ export default function MyProjects() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">
-                          {p.target_month ? formatMonthYear(p.target_month) : '—'}
+                          {p.target_month ? formatTargetDate(p.target_month) : '—'}
                         </td>
                       </tr>
                     )
@@ -265,16 +305,16 @@ function SiparisOrderRow({ order, onSign, onView }) {
             )}
             {order.notes && <p className="mt-0.5 text-xs text-muted-foreground">{order.notes}</p>}
           </div>
-          <div className="flex shrink-0 flex-col items-end gap-1.5">
-            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px]">
+          <div className="flex w-full shrink-0 flex-col items-stretch gap-1.5 sm:w-auto sm:items-end">
+            <Badge variant="outline" className="self-start bg-blue-50 text-blue-700 border-blue-200 text-[10px] sm:self-auto">
               {ORDER_STEP_LABELS.goruldu}
             </Badge>
             <div className="flex gap-1">
-              <Button size="sm" variant="ghost" className="h-7 px-2" onClick={onView}>
+              <Button size="sm" variant="ghost" className="h-7 flex-1 px-2 sm:flex-none" onClick={onView}>
                 <Eye className="h-3.5 w-3.5" />
                 <span className="sr-only">Form</span>
               </Button>
-              <Button size="sm" className="h-7 px-2.5" onClick={onSign}>
+              <Button size="sm" className="h-7 flex-1 px-2.5 sm:flex-none" onClick={onSign}>
                 <PenLine className="h-3.5 w-3.5" />
                 İncele ve Gönder
               </Button>

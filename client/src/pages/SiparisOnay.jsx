@@ -56,9 +56,6 @@ export default function SiparisOnay() {
       <div className="space-y-6">
         <header>
           <h1 className="text-2xl font-semibold tracking-tight">Sipariş Onayı</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Ekip liderinin ilettiği sipariş taleplerini onaylayın.
-          </p>
         </header>
 
         {loading ? (

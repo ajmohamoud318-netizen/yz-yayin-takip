@@ -98,17 +98,28 @@ export function createMockOrderRepository(userRepo) {
     },
 
     /** Advance order status in mock store; returns updated order or throws. */
-    advanceOrderInStore(id, { actor, notes = '' }) {
+    advanceOrderInStore(id, { actor, notes = '', expectedVersion = null } = {}) {
       const idx = mockOrderRequests.findIndex((r) => r.id === id)
       if (idx === -1) notFound('Talep bulunamadı.')
       const order = mockOrderRequests[idx]
+      // Optimistic-concurrency guard. Each call that wants to advance the
+      // order passes the version it loaded; if anyone else has already
+      // advanced the order, the persisted version no longer matches and we
+      // throw. Stops two leaders from double-signing the same step.
+      if (expectedVersion !== null && order.version !== expectedVersion) {
+        const err = new Error('Bu talep başka biri tarafından güncellendi. Sayfayı yenileyin.')
+        err.status = 409
+        err.code = 'stale_order'
+        throw err
+      }
       return { idx, order }
     },
 
     persistOrder(idx, order) {
-      mockOrderRequests[idx] = order
+      const next = { ...order, version: (order.version ?? 0) + 1 }
+      mockOrderRequests[idx] = next
       saveState()
-      return { ...order }
+      return { ...next }
     },
   }
 }

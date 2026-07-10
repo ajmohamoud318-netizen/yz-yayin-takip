@@ -99,7 +99,7 @@ export default function TeslimTalepleri() {
             <div className="grid gap-3">
               {eligible.map((p) => (
                 <Card key={p.id} className="transition-colors hover:border-primary/30">
-                  <CardContent className="flex flex-wrap items-center gap-3 p-4">
+                  <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:flex-wrap sm:items-center">
                     <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-pink-50 text-pink-600">
                       <PackageCheck className="h-5 w-5" />
                     </span>
@@ -109,8 +109,13 @@ export default function TeslimTalepleri() {
                         {STAGE_LABELS[p.stage] ?? p.stage} · üretim tamamlandı
                       </p>
                     </div>
-                    <Badge variant="outline" className="shrink-0 text-[10px]">{TYPE_LABELS[p.type] ?? p.type}</Badge>
-                    <Button size="sm" onClick={() => setConfirmProject(p)} disabled={savingId === p.id}>
+                    <Badge variant="outline" className="shrink-0 self-start text-[10px] sm:self-auto">{TYPE_LABELS[p.type] ?? p.type}</Badge>
+                    <Button
+                      size="sm"
+                      className="w-full sm:w-auto"
+                      onClick={() => setConfirmProject(p)}
+                      disabled={savingId === p.id}
+                    >
                       <Send className="h-3.5 w-3.5" />
                       {savingId === p.id ? 'Gönderiliyor…' : 'Teslim Talebi Oluştur'}
                     </Button>
@@ -162,7 +167,7 @@ function HandoverRow({ handover: h }) {
   const received = h.status === 'received'
   return (
     <Card className={cn(received && 'border-emerald-200')}>
-      <CardContent className="flex flex-wrap items-center gap-3 p-3.5">
+      <CardContent className="flex flex-col gap-3 p-3.5 sm:flex-row sm:flex-wrap sm:items-center">
         <span
           className={cn(
             'grid h-9 w-9 shrink-0 place-items-center rounded-full',
@@ -182,7 +187,7 @@ function HandoverRow({ handover: h }) {
         <Badge
           variant="outline"
           className={cn(
-            'shrink-0 text-[11px]',
+            'self-start text-[11px] sm:self-auto',
             received ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700',
           )}
         >

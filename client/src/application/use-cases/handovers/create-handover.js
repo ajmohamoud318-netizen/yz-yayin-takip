@@ -7,7 +7,7 @@ import { mockOrHttp } from '../../../infrastructure/mock/helpers/mock-handler.js
  * Matbaa raises a handover ("teslim") request for a project whose production is
  * finished (TR: Üretimde, ÇİN: Gümrük). One pending request per project.
  */
-export function makeCreateHandover({ handoverRepo, projectRepo }) {
+export function makeCreateHandover({ handoverRepo, projectRepo, onProjectChanged = null }) {
   return function createHandover({ projectId, creator }) {
     return mockOrHttp(
       () => {

@@ -20,7 +20,7 @@ export function canRequestOrder(project) {
  * @param {{ stage: string }} project
  */
 export function assertOrderable(project) {
-  if (project && !ORDERABLE_STAGES.has(project.stage)) {
+  if (!project || !ORDERABLE_STAGES.has(project.stage)) {
     const err = new Error('Sipariş talebi yalnızca satışta olan ürünler için oluşturulabilir.')
     err.status = 400
     throw err

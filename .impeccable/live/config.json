@@ -1,0 +1,15 @@
+{
+  "framework": "vite-spa",
+  "devServer": {
+    "command": "npm run dev",
+    "cwd": "client",
+    "url": "http://localhost:5173"
+  },
+  "files": [
+    "client/index.html"
+  ],
+  "insertBefore": "</head>",
+  "commentSyntax": "<!--",
+  "cspChecked": false,
+  "notes": "Vite SPA; index.html is the only entry, scripts are loaded as ES modules by Vite. The live overlay attaches to the running dev server."
+}

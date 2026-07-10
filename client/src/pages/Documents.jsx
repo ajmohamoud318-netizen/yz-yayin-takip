@@ -244,7 +244,7 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
@@ -504,9 +504,6 @@ export default function Documents() {
     <div className="space-y-5">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Dökümanlar</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          Gönderilen ve onaylanan demo / ozalit üretim formları.
-        </p>
       </header>
 
       {/* Primary tabs: Demolar | Ozalitler */}

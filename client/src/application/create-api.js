@@ -36,11 +36,23 @@ export function createApi() {
   // append-only data instead of being re-fabricated on every render.
   projectRepo.backfillHistories()
 
-  const advanceOrderRequest = makeAdvanceOrderRequest({ orderRepo, projectRepo })
+  // Bridge: keep the shared project store in lockstep with mutations the use
+  // cases perform on the project aggregate (reassignment, handover
+  // confirmation, pass reopen). Pages read from useProjectsStore() — without
+  // this push, they'd only see the change after the 30 s refetch tick.
+  const projectStoreListeners = new Set()
+  function bridgeProjects(project) {
+    if (!project?.id) return
+    for (const fn of projectStoreListeners) {
+      try { fn(project) } catch { /* swallow subscriber errors */ }
+    }
+  }
+
+  const advanceOrderRequest = makeAdvanceOrderRequest({ orderRepo, projectRepo, userRepo })
   const createOrderRequest = makeCreateOrderRequest({ orderRepo, projectRepo })
   const rejectOrderRequest = makeRejectOrderRequest({ orderRepo, projectRepo })
-  const createHandover = makeCreateHandover({ handoverRepo, projectRepo })
-  const confirmHandover = makeConfirmHandover({ handoverRepo, projectRepo })
+  const createHandover = makeCreateHandover({ handoverRepo, projectRepo, onProjectChanged: bridgeProjects })
+  const confirmHandover = makeConfirmHandover({ handoverRepo, projectRepo, onProjectChanged: bridgeProjects })
 
   return {
     // Auth
@@ -87,5 +99,13 @@ export function createApi() {
     listHandovers: () => handoverRepo.listHandovers(),
     createHandover,
     confirmHandover,
+
+    // Live-sync hook: subscribe to project mutations performed by the cross-
+    // aggregate use cases (orders, handovers) so the shared store updates
+    // immediately rather than waiting for the next 30 s refetch.
+    subscribeProjects(fn) {
+      projectStoreListeners.add(fn)
+      return () => projectStoreListeners.delete(fn)
+    },
   }
 }

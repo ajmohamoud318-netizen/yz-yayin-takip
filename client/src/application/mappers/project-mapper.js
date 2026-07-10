@@ -1,4 +1,4 @@
-import { STAGE_PIPELINE, SUBTASK_LIBRARY } from '../../domain/index.js'
+import { STAGE_PIPELINE, SUBTASK_LIBRARY, defaultPassKindFor } from '../../domain/index.js'
 
 /** @param {{ findUserById: (id: string) => object|undefined, listUsers: () => object[] }} deps */
 export function createProjectMapper({ findUserById, listUsers }) {
@@ -331,7 +331,7 @@ function buildProjectDetail(p) {
 
   // Pass model defaults (Pass 2 loop). Seed projects predate these fields.
   const pass_number = p.pass_number ?? 1
-  const pass_kind = p.pass_kind ?? (pass_number === 1 ? 'first_edition' : 'reprint')
+  const pass_kind = p.pass_kind ?? defaultPassKindFor(pass_number)
   const passes = Array.isArray(p.passes) ? p.passes : []
 
   return { ...p, assignees, subtasks, history, pass_number, pass_kind, passes }

@@ -1,6 +1,19 @@
 # YZ Yayın Takip — Internal Publication Tracker
-> Internal book-publishing pipeline tracker for Yükselen Zeka.
-> **Current state: frontend-only MVP running on an in-memory mock data layer. The backend is planned and will be built after the frontend is complete (see "Backend — Planned / Future Work" at the bottom).**
+
+> **Canonical documentation lives in [AGENTS.md](AGENTS.md).**
+> This file is kept as a thin pointer; the product description, pipelines,
+> architecture, file structure, database schema, API endpoints, and conventions
+> are all documented in `AGENTS.md`. If you change one, change the other.
+> See `PASSES.md` for the discovery notes that drove the current pass design.
+
+---
+## One-paragraph summary
+
+YZ Yayın Takip is an internal book-publishing pipeline tracker for Yükselen
+Zeka. Frontend-only MVP, React + Vite, in-memory mock data layer
+(localStorage), Clean Architecture. The backend (Node + Fastify + PostgreSQL
++ Redis + Google OAuth) is planned and designed in `AGENTS.md`; the
+frontend's `infrastructure/http` layer is already stubbed for it.
 ---
 ## 🏢 What This Is
 YZ Yayın Takip replaces analog/Excel workflows with a unified dashboard where the team leader (Ayşenur) can see every book project, who is working on what, and what stage it's in — in real time. It also tracks reprint/production **orders (sipariş)** raised by the Sales team and the physical **handover (teslim)** of produced materials.

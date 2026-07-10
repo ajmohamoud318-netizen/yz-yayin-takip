@@ -67,9 +67,6 @@ export default function SiparisTalepleri() {
       <div className="space-y-6">
         <header>
           <h1 className="text-2xl font-semibold tracking-tight">Sipariş Talepleri</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Satış ekibinden gelen sipariş talepleri · {requests.length} toplam
-          </p>
         </header>
 
         <Tabs value={tab} onValueChange={setTab}>

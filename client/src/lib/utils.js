@@ -33,6 +33,22 @@ export function monthOffset(n) {
   return d.toISOString().slice(0, 10)
 }
 
+/**
+ * Format the project's target date for display.
+ * `target_month` historically held a YYYY-MM-01 string (month-only precision).
+ * After the 2026-07 update it can hold a full YYYY-MM-DD. We keep the visual
+ * output backward-compatible: dates that still snap to the 1st render as
+ * "Haziran 2026", anything else renders as "15 Haziran 2026".
+ */
+export function formatTargetDate(iso) {
+  if (!iso) return '—'
+  const d = iso instanceof Date ? iso : new Date(iso)
+  if (d.getDate() === 1) {
+    return d.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })
+  }
+  return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
 /** "AY" suffix for card initials etc. */
 export function initials(name = '') {
   return name

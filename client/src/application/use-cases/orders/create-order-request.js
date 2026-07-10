@@ -19,7 +19,7 @@ export function makeCreateOrderRequest({ orderRepo, projectRepo }) {
   return function createOrderRequest(payload) {
     return mockOrHttp(
       () => {
-        const { projectId, requester, kind = 'reprint' } = payload
+        const { projectId, requester, kind = PASS_KIND.REPRINT } = payload
         const project = projectId ? projectRepo.findProjectById(projectId) : null
 
         // Rule: only Satışta-stage products are orderable.

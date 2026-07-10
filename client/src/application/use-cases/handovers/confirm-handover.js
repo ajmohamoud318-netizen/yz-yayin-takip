@@ -7,7 +7,7 @@ import { mockOrHttp } from '../../../infrastructure/mock/helpers/mock-handler.js
  * handover and moves the linked project to Satışta — the only path to Satışta
  * in the current workflow.
  */
-export function makeConfirmHandover({ handoverRepo, projectRepo }) {
+export function makeConfirmHandover({ handoverRepo, projectRepo, onProjectChanged = null }) {
   return function confirmHandover(id, { actor }) {
     return mockOrHttp(
       () => {
@@ -40,6 +40,11 @@ export function makeConfirmHandover({ handoverRepo, projectRepo }) {
             toStage: 'satista',
             note: `Teslim alındı — ${actor?.name ?? 'Satış'} onayladı, ürün satışa çıktı`,
           })
+          // Push the freshly-stage-flipped project into the shared store so
+          // the bell + dashboard reflect "satışta" immediately rather than
+          // after the next 30 s refetch tick.
+          const updated = projectRepo.findProjectById(handover.project_id)
+          onProjectChanged?.(updated)
         }
 
         return { ...updated }

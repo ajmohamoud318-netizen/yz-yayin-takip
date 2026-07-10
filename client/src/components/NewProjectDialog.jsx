@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Plus, Pencil } from 'lucide-react'
+import { Plus, Pencil, X } from 'lucide-react'
 
 import api, { TYPE_LABELS, SUBTASK_LIBRARY } from '@/api'
 import { Button } from '@/components/ui/button'
@@ -24,10 +24,39 @@ import {
 } from '@/components/ui/select'
 import { useAuth } from '@/hooks/useAuth'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
-import { cn, initials, monthOffset } from '@/lib/utils'
+import { cn, initials } from '@/lib/utils'
+
+// Default target date for new projects: today + 1 month, snapped to the 1st.
+// (When the user picks a more specific day in the date picker, the value is
+// stored verbatim — but the default stays month-aligned.)
+function defaultTargetDate() {
+  const d = new Date()
+  d.setMonth(d.getMonth() + 1)
+  d.setDate(1)
+  return d.toISOString().slice(0, 10)
+}
+
+// Today as an ISO YYYY-MM-DD string. Used as the date picker's `min` value so
+// the target date can never land in the past.
+function todayISO() {
+  return new Date().toISOString().slice(0, 10)
+}
 
 const emptySubtasks = () => SUBTASK_LIBRARY.reduce((acc, s) => ({ ...acc, [s.key]: false }), {})
 const emptySubtaskAssignees = () => SUBTASK_LIBRARY.reduce((acc, s) => ({ ...acc, [s.key]: '' }), {})
+
+// Build a stable, collision-free key for a custom (ad-hoc) subtask label.
+// We never put customs into SUBTASK_LIBRARY, so a synthetic key keeps them
+// out of the library's namespace while still being unique per dialog session.
+function customSubtaskKey(label) {
+  const slug =
+    label
+      .toLowerCase('tr-TR')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 24) || 'item'
+  return `custom-${slug}-${Math.random().toString(36).slice(2, 7)}`
+}
 
 /**
  * Create / edit a publication project. Team leader only.
@@ -45,7 +74,11 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
   const [subtasks, setSubtasks] = useState(emptySubtasks)
   // Per-subtask designer assignment: { [subtaskKey]: userId | '' }
   const [subtaskAssignees, setSubtaskAssignees] = useState(emptySubtaskAssignees)
-  const [targetMonth, setTargetMonth] = useState(monthOffset(1).slice(0, 7))
+  // Custom (ad-hoc) subtasks added by the team leader for this project.
+  // Shape: { id: string, label: string }[]
+  const [customSubtasks, setCustomSubtasks] = useState([])
+  const [customDraft, setCustomDraft] = useState('')
+  const [targetDate, setTargetDate] = useState(defaultTargetDate())
   const [designers, setDesigners] = useState([])
   const [saving, setSaving] = useState(false)
 
@@ -58,24 +91,35 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
       setTitle(project.title)
       setType(project.type)
       setAssignedIds((project.assignees ?? []).map((a) => a.id))
-      setTargetMonth((project.target_month ?? monthOffset(1)).slice(0, 7))
+      setTargetDate(((project.target_month ?? defaultTargetDate()).slice(0, 10) < todayISO())
+        ? todayISO()
+        : (project.target_month ?? defaultTargetDate()).slice(0, 10))
       const map = emptySubtasks()
       const assigneeMap = emptySubtaskAssignees()
+      const customs = []
       let pc = 32
       for (const s of project.subtasks ?? []) {
-        const key = SUBTASK_LIBRARY.find((l) => l.label === s.title)?.key
-        if (key) {
-          map[key] = true
-          if (s.assigned_to) assigneeMap[key] = s.assigned_to
+        const libMatch = SUBTASK_LIBRARY.find((l) => l.label === s.title)
+        if (libMatch) {
+          map[libMatch.key] = true
+          if (s.assigned_to) assigneeMap[libMatch.key] = s.assigned_to
+        } else if (s.kind !== 'pages' && s.kind !== 'sticker-count' && s.title) {
+          // Anything in the project's saved subtasks that isn't a library
+          // item or a numeric counter is a custom one — rehydrate it so the
+          // team leader can edit / remove it.
+          const id = customSubtaskKey(s.title)
+          customs.push({ id, label: s.title })
+          if (s.assigned_to) assigneeMap[id] = s.assigned_to
         }
         if (s.kind === 'pages' && s.total_pages) pc = s.total_pages
         if (s.kind === 'sticker-count' && s.total_stickers) setStickerCount(s.total_stickers)
       }
       setSubtasks(map)
       setSubtaskAssignees(assigneeMap)
+      setCustomSubtasks(customs)
       setPageCount(pc)
     } else {
-      setTargetMonth(monthOffset(1).slice(0, 7))
+      setTargetDate(defaultTargetDate())
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -84,11 +128,33 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
     setTitle('')
     setType('TR')
     setAssignedIds([])
-    setTargetMonth(monthOffset(1).slice(0, 7))
+    setTargetDate(defaultTargetDate())
     setSubtasks(emptySubtasks())
     setSubtaskAssignees(emptySubtaskAssignees())
+    setCustomSubtasks([])
+    setCustomDraft('')
     setPageCount(32)
     setStickerCount(1)
+  }
+
+  function addCustomSubtask() {
+    const label = customDraft.trim()
+    if (!label) return
+    setCustomSubtasks((prev) => [...prev, { id: customSubtaskKey(label), label }])
+    setCustomDraft('')
+  }
+
+  function removeCustomSubtask(id) {
+    setCustomSubtasks((prev) => prev.filter((c) => c.id !== id))
+  }
+
+  // Force the page/sticker count to stay at >= 1. The HTML `min="1"` only
+  // validates on form submit; clamping on every change keeps the UI honest
+  // even if the user clears the field, pastes "0", or types 0.
+  function clampPositiveInt(value) {
+    const n = Number(value)
+    if (!Number.isFinite(n) || n < 1) return 1
+    return Math.floor(n)
   }
 
   function toggleDesigner(id) {
@@ -105,12 +171,27 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
       toast.error('Lütfen en az bir tasarımcı seçin.')
       return
     }
-    if (subtasks.sayfalar && (!pageCount || Number(pageCount) < 1)) {
-      toast.error('Lütfen toplam sayfa sayısını girin.')
+    if (subtasks.sayfalar && (pageCount === '' || pageCount === null || Number(pageCount) < 1)) {
+      toast.error('Sayfa sayısı en az 1 olmalıdır (0 girilemez).')
       return
     }
-    if (subtasks.sticker && (!stickerCount || Number(stickerCount) < 1)) {
-      toast.error('Lütfen sticker adedini girin.')
+    if (subtasks.sticker && (stickerCount === '' || stickerCount === null || Number(stickerCount) < 1)) {
+      toast.error('Sticker adedi en az 1 olmalıdır (0 girilemez).')
+      return
+    }
+    const trimmedCustoms = customSubtasks
+      .map((c) => c.label.trim())
+      .filter(Boolean)
+    const dup = trimmedCustoms.find((l, i) => trimmedCustoms.indexOf(l) !== i)
+    if (dup) {
+      toast.error(`"${dup}" alt görevi zaten eklenmiş.`)
+      return
+    }
+    const labelClash = trimmedCustoms.find((l) =>
+      SUBTASK_LIBRARY.some((s) => s.label.toLowerCase() === l.toLowerCase()),
+    )
+    if (labelClash) {
+      toast.error(`"${labelClash}" listede zaten var, tekrar eklemeye gerek yok.`)
       return
     }
     setSaving(true)
@@ -118,15 +199,24 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
       const selected = Object.entries(subtasks)
         .filter(([, v]) => v)
         .map(([k]) => k)
+      // Custom subtasks are sent alongside the library keys. The mapper
+      // recognises unknown keys and stores them verbatim as `kind: 'check'`.
+      const customSelected = customSubtasks.map((c) => c.label)
+      const mergedSubtasks = [...selected, ...customSelected]
+      const customAssignees = customSubtasks.reduce((acc, c) => {
+        const v = subtaskAssignees[c.id]
+        if (v) acc[c.label] = v
+        return acc
+      }, {})
       const payload = {
         title: title.trim(),
         type,
         assignees: assignedIds,
-        subtasks: selected,
+        subtasks: mergedSubtasks,
         pageCount: subtasks.sayfalar ? Number(pageCount) : undefined,
         stickerCount: subtasks.sticker ? Number(stickerCount) : undefined,
-        subtaskAssignees,
-        target_month: targetMonth ? `${targetMonth}-01` : monthOffset(1),
+        subtaskAssignees: { ...subtaskAssignees, ...customAssignees },
+        target_month: targetDate || defaultTargetDate(),
       }
       if (isEdit) {
         const updated = await api.updateProject(project.id, payload)
@@ -158,7 +248,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         onOpenChange(v)
       }}
     >
-      <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isEdit ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
@@ -198,12 +288,13 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="np-month">Hedef Tarih</Label>
+              <Label htmlFor="np-date">Hedef Tarih</Label>
               <Input
-                id="np-month"
-                type="month"
-                value={targetMonth}
-                onChange={(e) => setTargetMonth(e.target.value)}
+                id="np-date"
+                type="date"
+                value={targetDate}
+                min={todayISO()}
+                onChange={(e) => setTargetDate(e.target.value)}
                 className="w-[12rem]"
               />
             </div>
@@ -243,6 +334,34 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                 <span className="text-[11px] text-muted-foreground">Seçili alt göreve farklı tasarımcı atayabilirsiniz</span>
               )}
             </div>
+
+            {/* Custom subtask entry row. Each project can come with its own
+                ad-hoc items in addition to the predefined library. */}
+            <div className="flex items-center gap-2">
+              <Input
+                value={customDraft}
+                onChange={(e) => setCustomDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addCustomSubtask()
+                  }
+                }}
+                placeholder="Örn. Sticker Şablonu, Öğretmen Kılavuzu…"
+                className="h-9 flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addCustomSubtask}
+                disabled={!customDraft.trim()}
+                className="h-9 shrink-0"
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" /> Ekle
+              </Button>
+            </div>
+
             <div className="space-y-1 rounded-lg border bg-muted/30 p-3">
               {SUBTASK_LIBRARY.map((s) => {
                 const isChecked = !!subtasks[s.key]
@@ -286,6 +405,49 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                   </div>
                 )
               })}
+              {customSubtasks.length > 0 && (
+                <div className="mt-2 space-y-1 border-t pt-2">
+                  {customSubtasks.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5"
+                    >
+                      <span className="flex-1 text-sm">{c.label}</span>
+                      {assignedIds.length > 1 && (
+                        <Select
+                          value={subtaskAssignees[c.id] || ''}
+                          onValueChange={(v) =>
+                            setSubtaskAssignees((prev) => ({ ...prev, [c.id]: v }))
+                          }
+                        >
+                          <SelectTrigger className="h-7 w-36 text-xs">
+                            <SelectValue placeholder="Tasarımcı seç…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {designers
+                              .filter((d) => assignedIds.includes(d.id))
+                              .map((d) => (
+                                <SelectItem key={d.id} value={d.id}>
+                                  {d.name}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeCustomSubtask(c.id)}
+                        aria-label={`${c.label} alt görevini kaldır`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {subtasks.sayfalar && (
@@ -297,8 +459,21 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                   id="np-pages"
                   type="number"
                   min="1"
+                  step="1"
                   value={pageCount}
-                  onChange={(e) => setPageCount(e.target.value)}
+                  onChange={(e) => setPageCount(clampPositiveInt(e.target.value))}
+                  onBlur={(e) => setPageCount(clampPositiveInt(e.target.value))}
+                  onKeyDown={(e) => {
+                    // Block "-" / "e" / "+" and a leading "0" so the field
+                    // can never land on 0 via keystroke, paste, or arrow keys.
+                    if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') {
+                      e.preventDefault()
+                      return
+                    }
+                    if (e.key === '0' && (e.currentTarget.value === '' || e.currentTarget.value === '0')) {
+                      e.preventDefault()
+                    }
+                  }}
                   className="h-9 w-28"
                 />
                 <span className="text-xs text-muted-foreground">
@@ -316,8 +491,19 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                   id="np-stickers"
                   type="number"
                   min="1"
+                  step="1"
                   value={stickerCount}
-                  onChange={(e) => setStickerCount(e.target.value)}
+                  onChange={(e) => setStickerCount(clampPositiveInt(e.target.value))}
+                  onBlur={(e) => setStickerCount(clampPositiveInt(e.target.value))}
+                  onKeyDown={(e) => {
+                    if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') {
+                      e.preventDefault()
+                      return
+                    }
+                    if (e.key === '0' && (e.currentTarget.value === '' || e.currentTarget.value === '0')) {
+                      e.preventDefault()
+                    }
+                  }}
                   className="h-9 w-28"
                 />
                 <span className="text-xs text-muted-foreground">

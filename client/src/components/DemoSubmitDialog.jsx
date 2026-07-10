@@ -93,7 +93,7 @@ export default function DemoSubmitDialog({ open, onOpenChange, project, onDone }
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) setSelected([]); onOpenChange(v) }}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Send className="h-4 w-4 text-primary" />

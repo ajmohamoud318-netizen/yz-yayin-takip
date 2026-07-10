@@ -58,8 +58,9 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
   // Team-leader reject of the sales-side ozalit (matbaa teslim).
   const [showReject, setShowReject] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
-  // Which part re-does the rejected ozalit: 'designer' (→ görüldü) or 'matbaa'
-  // (→ tasarımcı onayı / re-delivery). Only shown when the step offers a choice.
+  // Which part re-does the rejected ozalit: 'designer' (→ görüldü), 'matbaa'
+  // (→ tasarımcı onayı / re-delivery), or 'reassign' (→ back to pending so the
+  // leader can pick a new team). Only shown when the step offers a choice.
   const [rejectRoute, setRejectRoute] = useState('matbaa')
   // Assign step (pending → görüldü): team leader picks the designer(s) for the check.
   const isAssignStep = user?.role === 'team_leader' && order?.status === 'pending'
@@ -103,8 +104,19 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
         setAssignIds((p.assignees ?? []).map((a) => a.id))
       })
       .catch(() => {})
-    return () => { cancelled = true }
-  }, [open, order?.id, isAssignStep])
+    // Live-refresh the assignee selection if the project is reassigned
+    // somewhere else (another tab / another leader). Without this the leader
+    // could sign with a stale selection that no longer matches the project.
+    const unsubscribe = api.subscribeProjects?.((updated) => {
+      if (cancelled) return
+      if (updated?.id !== order.project_id) return
+      setAssignIds((updated.assignees ?? []).map((a) => a.id))
+    })
+    return () => {
+      cancelled = true
+      unsubscribe?.()
+    }
+  }, [open, order?.id, order?.project_id, isAssignStep])
 
   if (!order) return null
 
@@ -122,6 +134,21 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
     if (isAssignStep && assignIds.length === 0) {
       toast.error('En az bir tasarımcı seçin.')
       return
+    }
+    // Re-validate the assignee selection against the current user list before
+    // submitting. Catches the case where a teammate was deactivated in
+    // another tab while this dialog was open — without this, the request
+    // would still go through and the server would 400 mid-flight with a less
+    // friendly message.
+    if (isAssignStep) {
+      const stillActive = new Set(
+        designers.filter((d) => d.is_active !== false).map((d) => d.id),
+      )
+      const stale = assignIds.filter((id) => !stillActive.has(id))
+      if (stale.length > 0) {
+        toast.error('Seçili tasarımcılardan biri artık aktif değil. Listeyi yenileyin.')
+        return
+      }
     }
     setSaving(true)
     try {
@@ -146,6 +173,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
       const updated = await api.advanceOrderRequest(order.id, {
         actor: { id: user.id, name: user.name, role: user.role },
         notes: signNotes,
+        expectedVersion: order.version ?? null,
         ...(isAssignStep ? { assignees: assignIds } : {}),
       })
       toast.success(`${nextLabel} — İmzalandı.`)
@@ -172,10 +200,13 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
         actor: { id: user.id, name: user.name, role: user.role },
         reason: rejectReason.trim(),
         routeTo: rejectRoute,
+        expectedVersion: order.version ?? null,
       })
       toast.success(
         rejectRoute === 'designer'
           ? 'Sipariş ozaliti reddedildi — tasarımcıya geri gönderildi.'
+          : rejectRoute === 'reassign'
+          ? 'Sipariş reddedildi — tasarımcı kadrosu yeniden seçilecek.'
           : 'Sipariş ozaliti reddedildi — matbaaya geri gönderildi.',
       )
       setRejectReason('')
@@ -202,7 +233,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className={cn('max-w-md', isDesignerStep && 'max-w-lg max-h-[90vh] overflow-y-auto')}>
+      <DialogContent className={cn('max-w-md max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none', isDesignerStep && 'max-w-lg max-h-[90vh] overflow-y-auto')}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PenLine className="h-4 w-4" />
@@ -399,7 +430,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
               {ORDER_REJECT_TARGETS[order.status] && (
                 <div className="space-y-1.5">
                   <Label className="text-destructive">Kime geri gönderilsin?</Label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
                       onClick={() => setRejectRoute('designer')}
@@ -426,6 +457,19 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
                       <span className="block text-sm font-semibold">Matbaa</span>
                       <span className="block text-xs text-muted-foreground">Yeniden teslim eder</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setRejectRoute('reassign')}
+                      className={cn(
+                        'rounded-lg border px-3 py-2 text-left transition',
+                        rejectRoute === 'reassign'
+                          ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
+                          : 'hover:bg-muted/50',
+                      )}
+                    >
+                      <span className="block text-sm font-semibold">Kadro değişsin</span>
+                      <span className="block text-xs text-muted-foreground">Tasarımcıyı yeniden seçer</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -442,6 +486,8 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
                 <p className="text-xs text-muted-foreground">
                   {rejectRoute === 'designer'
                     ? 'Tasarımcıya geri gönderilir; tasarımı revize eder. Ozalit deneme sayacı artar.'
+                    : rejectRoute === 'reassign'
+                    ? 'Talep başa sarılır; takım lideri tasarımcı kadrosunu yeniden seçer. Ozalit deneme sayacı artar.'
                     : 'Matbaaya geri gönderilir; yeni bir Ozalit teslim edilir. Tasarım değişmez. Ozalit deneme sayacı artar.'}
                 </p>
               </div>
@@ -525,7 +571,7 @@ export function TalepHistoryViewer({ order, open, onOpenChange, initialStep = nu
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShoppingCart className="h-4 w-4" />
@@ -589,7 +635,7 @@ function OrderSheet({ order, tableRows, dateStr, timeStr, footer }) {
     <div className="overflow-hidden rounded-lg border bg-white">
       {/* Letterhead */}
       <div className="border-b px-6 py-5 text-center">
-        <img src="/yz_blacklogo.svg" alt="Yükselen Zeka" className="mx-auto h-9 w-auto object-contain" />
+        <img src="/yz_blacklogo.svg" alt="Yükselen Zeka" width={120} height={36} loading="lazy" decoding="async" className="mx-auto h-9 w-auto object-contain" />
         <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
           Yükselen Zeka Yayıncılık
         </p>
@@ -680,7 +726,7 @@ function OzalitStepSheet({ order, step, footer }) {
     <div className="overflow-hidden rounded-lg border bg-white">
       {/* Letterhead */}
       <div className="border-b px-6 py-5 text-center">
-        <img src="/yz_blacklogo.svg" alt="Yükselen Zeka" className="mx-auto h-9 w-auto object-contain" />
+        <img src="/yz_blacklogo.svg" alt="Yükselen Zeka" width={120} height={36} loading="lazy" decoding="async" className="mx-auto h-9 w-auto object-contain" />
         <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
           Yükselen Zeka Yayıncılık
         </p>
@@ -1296,7 +1342,7 @@ function openOrderPrintWindow(order, stepFilter) {
   <title>Sipariş Formu — ${escapeHtml(order.project_title ?? '')}</title>
   <style>${commonStyles}</style></head><body>
   <div class="head">
-    <img src="${logoUrl}" alt="Yükselen Zeka"/>
+    <img src="${logoUrl}" alt="Yükselen Zeka" width={120} height={36} loading="lazy" decoding="async"/>
     <div class="co">Yükselen Zeka Yayıncılık</div>
   </div>
   ${bodyContent}

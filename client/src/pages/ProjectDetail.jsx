@@ -313,6 +313,8 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
         <div className="space-y-6">
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-24 w-full rounded-xl" />
+          {/* 1-col on mobile/tablet, 3-col only on lg+ — subtasks + history
+              stack vertically below desktop. */}
           <div className="grid gap-4 lg:grid-cols-3">
             <Skeleton className="h-64 lg:col-span-2" />
             <Skeleton className="h-64" />
@@ -380,7 +382,7 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                   </span>
                   <span className="inline-flex items-center gap-1.5">
                     <Calendar className="h-3.5 w-3.5" />
-                    Hedef: {formatDateTr(project.target_month, { day: undefined, month: 'long', year: 'numeric' })}
+                    Hedef: {formatDateTr(project.target_month, { day: 'numeric', month: 'long', year: 'numeric' })}
                   </span>
                 </div>
               </div>
@@ -545,8 +547,13 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
               <Progress value={project.progress} className="h-2" />
             </div>
 
-            <div className="rounded-lg bg-muted/30 px-4 py-5">
-              <StageBar type={project.type} stage={project.stage} />
+            {/* `-mx-1` lets the StageBar bleed to the card edge so the scroll
+                affordance (if needed at narrow widths) sits flush; padding is
+                restored on the scroll container itself. */}
+            <div className="-mx-1 rounded-lg bg-muted/30 py-5">
+              <div className="overflow-x-auto px-1">
+                <StageBar type={project.type} stage={project.stage} />
+              </div>
             </div>
           </CardContent>
         </Card>

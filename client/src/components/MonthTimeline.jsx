@@ -29,12 +29,18 @@ export default function MonthTimeline({ projects, onSelect }) {
     groups.get(key).push(p)
   }
 
-  // Sort month keys chronologically ('none' last).
-  const keys = [...groups.keys()].sort((a, b) => {
-    if (a === 'none') return 1
-    if (b === 'none') return -1
-    return a < b ? -1 : 1
-  })
+  // Sort month keys chronologically ('none' last) and rotate so the cycle
+  // starts in May (the planning year begins in May).
+  const datedKeys = [...groups.keys()]
+    .filter((k) => k !== 'none')
+    .sort((a, b) => (a < b ? -1 : 1))
+  const hasNone = groups.has('none')
+  const firstMayIdx = datedKeys.findIndex((k) => Number(k.slice(5, 7)) >= 5)
+  const rotated =
+    firstMayIdx > 0
+      ? [...datedKeys.slice(firstMayIdx), ...datedKeys.slice(0, firstMayIdx)]
+      : datedKeys
+  const keys = hasNone ? [...rotated, 'none'] : rotated
 
   const nowKey = new Date().toISOString().slice(0, 7)
 

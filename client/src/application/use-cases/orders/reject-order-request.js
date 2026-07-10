@@ -12,10 +12,10 @@ import { mockOrHttp } from '../../../infrastructure/mock/helpers/mock-handler.js
  * and the project history, and the project's stage is left untouched.
  */
 export function makeRejectOrderRequest({ orderRepo, projectRepo }) {
-  return function rejectOrderRequest(id, { actor, reason = '', routeTo = 'matbaa' }) {
+  return function rejectOrderRequest(id, { actor, reason = '', routeTo = 'matbaa', expectedVersion = null } = {}) {
     return mockOrHttp(
       () => {
-        const { idx, order } = orderRepo.advanceOrderInStore(id, { actor })
+        const { idx, order } = orderRepo.advanceOrderInStore(id, { actor, expectedVersion })
         // The leader chooses who re-does the rejected ozalit: the Tasarımcı
         // (→ görüldü) or the Matbaa (→ tasarımcı onayı / re-delivery). Falls back
         // to the fixed matbaa loop if no valid choice was supplied.

@@ -13,8 +13,9 @@ import { Skeleton } from '../components/ui/skeleton.jsx'
 import { Button } from '../components/ui/button.jsx'
 import { cn, initials } from '../lib/utils.js'
 
-// The six status color keys, in legend order.
-const LEGEND_KEYS = ['orange', 'purple', 'green', 'blue', 'pink', 'yellow']
+// The seven status color keys, in legend order.
+// Order = pipeline order (Yeni → Devam → Demo → Özalit → Üretime Hazır → Üretimde → Satışta)
+const LEGEND_KEYS = ['orange', 'purple', 'green', 'blue', 'teal', 'pink', 'yellow']
 
 const TR_MONTHS_SHORT = [
   'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
@@ -55,7 +56,13 @@ export default function Dashboard() {
       const start = Math.max(0, end - (dur - 1))
       barList.push({ p, start, end })
     }
-    barList.sort((a, b) => a.start - b.start || a.end - b.end || a.p.title.localeCompare(b.p.title, 'tr'))
+    // Newest project first (matches Yıllık Planı). Falls back to title
+    // for ties when two projects share the same created_at second.
+    barList.sort(
+      (a, b) =>
+        (b.p.created_at ?? '').localeCompare(a.p.created_at ?? '') ||
+        a.p.title.localeCompare(b.p.title, 'tr'),
+    )
     return { bars: barList, undated: undatedList }
   }, [projects, year])
 
@@ -109,13 +116,16 @@ export default function Dashboard() {
 
   return (
     <div
-      className="mx-auto max-w-7xl space-y-6 touch-pan-y"
+      className="mx-auto max-w-7xl 2xl:max-w-screen-2xl 3xl:max-w-[88rem] space-y-6 2xl:space-y-8 touch-pan-y"
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
       onWheel={onWheel}
     >
-        {/* Summary cards — Toplam + one per status group */}
-        <div className="stagger-children grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+        {/* Summary cards — Toplam + one per status group.
+            8 cards on a single row from xl+ (desktop with sidebar rail) so the count
+            strip reads as one horizontal metric row. 4-col at lg (tablet) where 8
+            would feel cramped, and 2-col on mobile. Gaps widen at 2xl for breathing. */}
+        <div className="stagger-children grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8 2xl:gap-4">
           <SummaryCard label="Toplam Proje" value={counts.total} colorKey="total" />
           {LEGEND_KEYS.map((k) => (
             <SummaryCard key={k} label={STATUS_STYLES[k].label} value={counts[k]} colorKey={k} />

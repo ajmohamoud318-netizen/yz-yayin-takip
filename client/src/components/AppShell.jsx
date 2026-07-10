@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -8,7 +8,7 @@ import {
   LogOut,
   ChevronDown,
   Search,
-  Bell,
+  Bell, BellRing,
   Menu,
   Sparkles,
   LayoutGrid,
@@ -26,16 +26,15 @@ import {
   PackageCheck,
   Truck,
   Factory,
-  Sun,
-  Moon,
+
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
-import { useTheme } from '@/hooks/useTheme'
 import { useProjects } from '@/hooks/useProjects'
 import { useProjectModal } from '@/hooks/useProjectModal'
 import ProjectDetail from '@/pages/ProjectDetail'
+import RouteFallback from '@/components/RouteFallback'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -50,6 +49,7 @@ import { Sheet, SheetContent } from '@/components/ui/sheet'
 import api, { ROLE_LABELS, STATUS_META, statusKeyForProject, canRequestHandover } from '@/api'
 import { cn, initials } from '@/lib/utils'
 import NewProjectDialog from '@/components/NewProjectDialog'
+import { loadSeen, addSeen } from '@/components/notification-seen'
 
 const COLLAPSE_KEY = 'yz-sidebar-collapsed'
 const YZ_LOGO_WHITE = '/yz_whitelogo.svg'
@@ -187,11 +187,21 @@ export default function AppShell() {
 
   return (
     <div className="flex min-h-screen bg-muted/30">
-      {/* Desktop sidebar */}
+      {/* Skip link — keyboard/screen-reader users skip the entire sidebar */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:shadow-lg"
+      >
+        İçeriğe atla
+      </a>
+
+      {/* Desktop sidebar — wider on huge screens so the rail doesn't feel cramped */}
       <aside
         className={cn(
           'sticky top-0 hidden h-screen shrink-0 flex-col border-r bg-background transition-[width] duration-200 ease-out lg:flex',
-          collapsed ? 'w-[4.25rem]' : 'w-64',
+          collapsed
+            ? 'w-[4.25rem]'
+            : 'w-64 2xl:w-72 3xl:w-80',
         )}
       >
         <Sidebar
@@ -206,9 +216,11 @@ export default function AppShell() {
         />
       </aside>
 
-      {/* Mobile drawer (always expanded) */}
+      {/* Mobile drawer (always expanded). showCloseButton={false} hides the
+          shadcn default X — the drawer already closes via backdrop tap, the
+          <Menu /> button toggle, and the onNavigate handler on every link. */}
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="left" className="w-72 p-0">
+        <SheetContent side="left" showCloseButton={false} className="w-[min(20rem,calc(100vw-3rem))] p-0 sm:w-72">
           <div className="flex h-full flex-col">
             <Sidebar
               collapsed={false}
@@ -218,15 +230,18 @@ export default function AppShell() {
               user={user}
               onLogout={handleLogout}
               onNavigate={() => setOpen(false)}
+              onToggleCollapsed={() => setOpen(false)}
               onOpenProject={openProject}
             />
           </div>
         </SheetContent>
       </Sheet>
-
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Top bar */}
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur lg:px-6">
+        {/* Top bar — wider gutters on huge screens to keep the search/CTA from feeling stranded */}
+        <header
+          className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/95 px-3 backdrop-blur sm:px-4 lg:px-6 2xl:px-8 3xl:px-12"
+          style={{ paddingTop: 'max(0px, var(--safe-top, 0px))' }}
+        >
           {/* Left — mobile menu + greeting */}
           <div className="flex shrink-0 items-center gap-2">
             <Button
@@ -267,8 +282,7 @@ export default function AppShell() {
                 <Plus className="h-4 w-4" />
               </Button>
             )}
-            <ThemeToggle />
-            <NotificationBell
+                        <NotificationBell
               projects={projects}
               user={user}
               orders={orders}
@@ -278,16 +292,29 @@ export default function AppShell() {
           </div>
         </header>
 
-        <main key={location.pathname} className="page-enter min-w-0 flex-1 px-4 py-6 lg:px-8">
-          <Outlet />
+        <main
+          key={location.pathname}
+          id="main-content"
+          tabIndex={-1}
+          className="page-enter min-w-0 flex-1 px-3 py-4 sm:px-4 sm:py-6 lg:px-8 2xl:px-10 3xl:px-16"
+        >
+          {/* Suspense wraps the matched route so the AppShell chrome
+              (sidebar + topbar + skip link) stays visible while the
+              lazy-loaded chunk fetches. The fallback mimics the page's
+              own shape (eyebrow + h1 + content card) so the swap from
+              skeleton to real content doesn't shift the layout. */}
+          <Suspense fallback={<RouteFallback />} key={location.pathname}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
 
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
-
-      {/* Project detail modal sheet */}
       <Sheet open={!!modalProjectId} onOpenChange={(v) => !v && closeProject()}>
-        <SheetContent side="right" className="w-full overflow-y-auto p-4 sm:max-w-3xl">
+        <SheetContent
+          side="right"
+          className="w-full overflow-y-auto p-4 sm:max-w-3xl 2xl:max-w-4xl 3xl:max-w-5xl"
+        >
           {modalProjectId && <ProjectDetail projectId={modalProjectId} isModal />}
         </SheetContent>
       </Sheet>
@@ -444,7 +471,7 @@ function NavBadge({ count, tone = 'default', active }) {
   const tones = {
     default: active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
     amber: 'bg-amber-100 text-amber-700',
-    pink: 'bg-pink-100 text-pink-700',
+    pink: 'bg-fuchsia-100 text-fuchsia-700',
   }
   return (
     <span className={cn('ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-semibold', tones[tone])}>
@@ -460,14 +487,12 @@ function SidebarNavItem({ item, collapsed, onNavigate }) {
   if (collapsed) {
     if (soon) {
       return (
-        <button
-          type="button"
-          onClick={() => toast.message(`${label} yakında eklenecek.`)}
+        <div
           aria-label={label}
-          className="relative flex h-9 w-full items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative flex h-9 w-full items-center justify-center rounded-md text-muted-foreground/60"
         >
           <Icon className="h-5 w-5" />
-        </button>
+        </div>
       )
     }
 
@@ -496,17 +521,13 @@ function SidebarNavItem({ item, collapsed, onNavigate }) {
 
   if (soon) {
     return (
-      <button
-        type="button"
-        onClick={() => toast.message(`${label} yakında eklenecek.`)}
-        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground/50 transition-colors hover:bg-muted hover:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
+      <div className="flex w-full cursor-default items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground/50">
         <Icon className="h-5 w-5" />
         <span className="flex-1 text-left">{label}</span>
         <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground/60">
           yakında
         </span>
-      </button>
+      </div>
     )
   }
 
@@ -738,6 +759,36 @@ function NotificationBell({ projects, user, orders, onOpenProject }) {
   const [log, setLog] = useState(() => loadNotifLog(user?.id))
   const [menuOpen, setMenuOpen] = useState(false)
 
+  // Designer "unread assignments" — projects assigned to this designer that
+  // haven't been acknowledged via the bell card yet. Drives the auto-open
+  // effect and the rose-tinted panel at the top of the dropdown.
+  const unreadAssignments = useMemo(() => {
+    if (!user || user.role !== 'designer' || !Array.isArray(projects)) return []
+    const seen = loadSeen(user.id)
+    return projects
+      .filter((p) => (p.assignees ?? []).some((a) => a.id === user.id))
+      .filter((p) => !seen.has(p.id))
+  }, [projects, user])
+
+  // One-shot auto-open for the designer backlog. Tracks the last key we
+  // surfaced so polling / store ticks don't re-open the dropdown on every
+  // refresh. User-scoped: logging in as a different user resets the ref.
+  const lastBellOpenRef = useRef({ userId: null, key: '' })
+  useEffect(() => {
+    if (!user || user.role !== 'designer') return
+    if (lastBellOpenRef.current.userId !== user.id) {
+      lastBellOpenRef.current = { userId: user.id, key: '' }
+    }
+    const nextKey = unreadAssignments.map((p) => p.id).sort().join(',')
+    if (unreadAssignments.length === 0) {
+      lastBellOpenRef.current.key = nextKey
+      return
+    }
+    if (lastBellOpenRef.current.key === nextKey) return
+    lastBellOpenRef.current.key = nextKey
+    setMenuOpen(true)
+  }, [unreadAssignments, user])
+
   // Whenever the derived item list changes, prepend any genuinely new IDs to
   // the top of the persistent log. Existing entries are never removed so old
   // notifications stay visible even after the project moves to another stage.
@@ -772,6 +823,44 @@ function NotificationBell({ projects, user, orders, onOpenProject }) {
     })
   }
 
+  // Drop the badge for the bell-log entries that mirror the dismissed
+  // assignments so the red unread counter reflects the designer's "Tamam".
+  function markAssignedReadInLog(projectIds) {
+    if (!projectIds.length) return
+    const idSet = new Set(projectIds)
+    setLog((prev) => {
+      const next = prev.map((n) =>
+        n.projectId && idSet.has(n.projectId) && String(n.id).endsWith('-assigned')
+          ? { ...n, isRead: true }
+          : n,
+      )
+      saveNotifLog(user?.id, next)
+      return next
+    })
+  }
+
+  function dismissAssignmentBacklog() {
+    if (!user || !unreadAssignments.length) return
+    const ids = unreadAssignments.map((p) => p.id)
+    addSeen(user.id, ids)
+    markAssignedReadInLog(ids)
+    // Avoid re-opening on the next store tick by recording the dismissed key.
+    lastBellOpenRef.current.key = ids.slice().sort().join(',')
+    setMenuOpen(false)
+  }
+
+  function openMyProjectsFromBell() {
+    if (!user || !unreadAssignments.length) return
+    const ids = unreadAssignments.map((p) => p.id)
+    addSeen(user.id, ids)
+    markAssignedReadInLog(ids)
+    lastBellOpenRef.current.key = ids.slice().sort().join(',')
+    // Close the dropdown first, then navigate on the next tick so Radix's
+    // pointer-events lock is gone before the route changes.
+    setMenuOpen(false)
+    setTimeout(() => navigate('/my-projects'), 0)
+  }
+
   // Close dropdown FIRST, then open the Sheet on the next tick.
   // Both are Radix overlays that lock pointer-events on <body>; overlapping
   // them leaves the page unclickable until a refresh.
@@ -788,8 +877,16 @@ function NotificationBell({ projects, user, orders, onOpenProject }) {
   return (
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Bildirimler" className="relative">
-          <Bell className="h-4 w-4" />
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Bildirimler"
+          className={cn(
+            'relative',
+            unreadAssignments.length > 0 && !menuOpen && 'bell-pulse',
+          )}
+        >
+          <BellRing className="h-4 w-4" />
           {unreadCount > 0 && (
             <span className="absolute right-1 top-1 grid h-4 min-w-[1rem] place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-background">
               {unreadCount > 9 ? '9+' : unreadCount}
@@ -810,10 +907,17 @@ function NotificationBell({ projects, user, orders, onOpenProject }) {
             </button>
           )}
         </div>
+        {unreadAssignments.length > 0 && (
+          <AssignAlertCard
+            items={unreadAssignments}
+            onDismiss={dismissAssignmentBacklog}
+            onOpenAll={openMyProjectsFromBell}
+          />
+        )}
         <DropdownMenuSeparator className="my-0" />
         {log.length === 0 ? (
           <div className="px-3 py-8 text-center">
-            <Bell className="mx-auto mb-2 h-5 w-5 text-muted-foreground/40" />
+            <BellRing className="mx-auto mb-2 h-5 w-5 text-muted-foreground/40" />
             <p className="text-xs text-muted-foreground">Henüz bildirim yok</p>
           </div>
         ) : (
@@ -845,21 +949,56 @@ function NotificationBell({ projects, user, orders, onOpenProject }) {
   )
 }
 
-function ThemeToggle() {
-  const { theme, toggleTheme } = useTheme()
-  const isDark = theme === 'dark'
+const MAX_ALERT_TITLES = 3
+
+/**
+ * Inline card at the top of the bell dropdown for designers with unread
+ * project assignments. Replaces the old floating sonner toast so the
+ * acknowledgement lives inside the bell itself. The bell auto-opens on
+ * login when this card has content (see NotificationBell auto-open effect).
+ */
+function AssignAlertCard({ items, onDismiss, onOpenAll }) {
+  if (!items || !items.length) return null
+  const titles = items.slice(0, MAX_ALERT_TITLES).map((p) => p.title)
+  const overflow = items.length - titles.length
+  const titleList = titles.join(', ') + (overflow > 0 ? ` ve ${overflow} daha` : '')
+
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={toggleTheme}
-      aria-label={isDark ? 'Açık temaya geç' : 'Koyu temaya geç'}
-      title={isDark ? 'Açık tema' : 'Koyu tema'}
+    <div
+      data-testid="unread-assignments-card"
+      className="border-b border-rose-200/40 bg-rose-50 px-3 py-3"
     >
-      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-    </Button>
+      <div className="flex items-start gap-3">
+        <BellRing className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-foreground">
+            {items.length} okunmamış proje atamanız var
+          </div>
+          <div className="mt-1 truncate text-xs text-muted-foreground">{titleList}</div>
+        </div>
+      </div>
+      <div className="mt-2.5 flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="default"
+          onClick={onOpenAll}
+          className="h-7 px-2.5 text-xs"
+        >
+          Projeleri Gör
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onDismiss}
+          className="h-7 px-2.5 text-xs"
+        >
+          Tamam
+        </Button>
+      </div>
+    </div>
   )
 }
+
 
 function UserMenu({ user, onLogout }) {
   return (

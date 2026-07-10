@@ -1,10 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId, useRef } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 const YZ_LOGO_WHITE = '/yz_whitelogo.svg'
 const YZ_LOGO_BLACK = '/yz_blacklogo.svg'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth.js'
+import { Button } from '../components/ui/button.jsx'
+import { Card, CardContent } from '../components/ui/card.jsx'
+import { Input } from '../components/ui/input.jsx'
+import { Label } from '../components/ui/label.jsx'
+import { cn } from '../lib/utils.js'
 
 /* ─── demo data ──────────────────────────────────────────────────────── */
 const DEMO_USERS = [
@@ -29,12 +34,14 @@ function SplashScreen({ onDone }) {
   if (reduce) return null
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'linear-gradient(135deg,#e84040 0%,#f05252 40%,#e03030 70%,#c92b2b 100%)' }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-primary"
+      role="presentation"
       exit={{ opacity: 0, transition: { duration: 0.6, ease: [0.4, 0, 0.2, 1] } }}
     >
       <motion.img
         src={YZ_LOGO_WHITE} alt="Yükselen Zeka"
+        width={96} height={96}
+        loading="eager" decoding="async"
         style={{ height: 96, width: 'auto' }}
         initial={{ opacity: 0, scale: 0.7, filter: 'blur(10px)' }}
         animate={{ opacity: 1, scale: 1,   filter: 'blur(0px)'  }}

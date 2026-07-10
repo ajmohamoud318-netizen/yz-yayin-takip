@@ -14,7 +14,9 @@ const TR_MONTHS_SHORT = [
   'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
 ]
 
-const LEGEND_KEYS = ['orange', 'purple', 'green', 'blue', 'pink', 'yellow']
+// The seven status color keys, in legend order.
+// Order = pipeline order (Yeni → Devam → Demo → Özalit → Üretime Hazır → Üretimde → Satışta)
+const LEGEND_KEYS = ['orange', 'purple', 'green', 'blue', 'teal', 'pink', 'yellow']
 
 // Estimated lead time (months) used to draw a bar that ends at target_month.
 const LEAD_MONTHS = { TR: 3, CIN: 4 }
@@ -107,12 +109,12 @@ export default function YearPlan() {
         onWheel={onWheel}
       >
         <header className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Yıllık Plan</h1>
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Yıllık Plan</h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
               {year} · {bars.length} proje zaman çizelgesinde
             </p>
-            <p className="mt-0.5 text-xs text-muted-foreground/70">
+            <p className="mt-0.5 hidden text-xs text-muted-foreground/70 sm:block">
               Yıl değiştirmek için sağa / sola kaydırın
             </p>
           </div>
@@ -120,7 +122,7 @@ export default function YearPlan() {
             <Button variant="outline" size="icon" onClick={() => setYear((y) => y - 1)} aria-label="Önceki yıl">
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="min-w-[4rem] text-center text-sm font-semibold tabular-nums">{year}</span>
+            <span key={`y-${year}`} className="yp-year-swap min-w-[4rem] text-center text-sm font-semibold tabular-nums">{year}</span>
             <Button variant="outline" size="icon" onClick={() => setYear((y) => y + 1)} aria-label="Sonraki yıl">
               <ChevronRight className="h-4 w-4" />
             </Button>
@@ -134,8 +136,12 @@ export default function YearPlan() {
 
         {/* Legend */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
-          {LEGEND_KEYS.map((k) => (
-            <span key={k} className="inline-flex items-center gap-1.5">
+          {LEGEND_KEYS.map((k, i) => (
+            <span
+              key={k}
+              className="yp-legend-pop inline-flex items-center gap-1.5"
+              style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}
+            >
               <span className={cn('h-2 w-2 rounded-full', STATUS_META[k].dot)} />
               {STATUS_META[k].label}
             </span>
@@ -152,11 +158,14 @@ export default function YearPlan() {
         ) : (
           <Card className="overflow-hidden">
             <div ref={scrollRef} className="scrollbar-thin overflow-x-auto">
-              <div className="relative min-w-[860px]">
-                {/* Current-month band (spans full height behind rows) */}
+              {/* key={year} remounts the gantt on year change so the bar-draw
+                  animation fires every time the user navigates years. */}
+              <div key={year} className="relative min-w-[860px]">
+                {/* Current-month band — clip-path reveal + quiet pulse */}
                 {isThisYear && (
                   <div
-                    className="pointer-events-none absolute inset-y-0 z-0 bg-primary/[0.06]"
+                    aria-hidden="true"
+                    className="yp-month-band pointer-events-none absolute inset-y-0 z-0"
                     style={{
                       left: `calc(100% * ${currentMonth} / 12)`,
                       width: `calc(100% / 12)`,
@@ -183,13 +192,20 @@ export default function YearPlan() {
 
                 {/* Rows */}
                 <div className="relative z-10">
-                  {bars.map(({ p, start, end }) => {
+                  {bars.map(({ p, start, end }, rowIdx) => {
                     const key = statusKeyForProject(p)
                     const meta = STATUS_META[key]
                     const leftPct = (start / 12) * 100
                     const widthPct = ((end - start + 1) / 12) * 100
+                    // Stagger: cap at 10 rows, 50ms each = 500ms total — matches
+                    // the animate.md budget. 11th+ rows land together at 500ms.
+                    const staggerIdx = Math.min(rowIdx, 10)
                     return (
-                      <div key={p.id} className="flex items-center border-b last:border-0 hover:bg-muted/20">
+                      <div
+                        key={p.id}
+                        className="yp-row-enter flex items-center border-b last:border-0 hover:bg-muted/20"
+                        style={{ animationDelay: `${staggerIdx * 50}ms` }}
+                      >
                         <div className="relative h-14 flex-1">
                           {/* gridlines */}
                           <div className="absolute inset-0 flex">
@@ -197,15 +213,21 @@ export default function YearPlan() {
                               <div key={m} className="flex-1 border-l border-border/40" />
                             ))}
                           </div>
-                          {/* bar */}
+                          {/* bar — draws in via clip-path (left → right), no width animation */}
                           <button
                             type="button"
                             onClick={() => openProject(p.id)}
                             title={`${p.title} · ${STAGE_LABELS[p.stage]} · ${TYPE_LABELS[p.type]} · ${p.assigned_name} · %${p.progress}`}
-                            style={{ left: `calc(${leftPct}% + 4px)`, width: `calc(${widthPct}% - 8px)` }}
+                            style={{
+                              left: `calc(${leftPct}% + 4px)`,
+                              width: `calc(${widthPct}% - 8px)`,
+                              animationDelay: `${staggerIdx * 50 + 80}ms`, /* bar starts after row fades in */
+                            }}
                             className={cn(
-                              'group absolute top-1/2 flex h-9 -translate-y-1/2 flex-col justify-center overflow-hidden rounded-md px-1.5 shadow-sm',
-                              'transition-[transform,box-shadow] duration-150 ease-out hover:shadow-md hover:brightness-105',
+                              'yp-bar-draw group absolute top-1/2 flex h-9 -translate-y-1/2 flex-col justify-center overflow-hidden rounded-md px-1.5 shadow-sm',
+                              // No transform on hover — keep the bar exactly where it sits.
+                              // The hover affordance is shadow + brightness, both cheap to render.
+                              'transition-[box-shadow,filter] duration-200 ease-out hover:shadow-md hover:brightness-105',
                               'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
                               'motion-reduce:transition-none',
                               meta.dot,
@@ -226,11 +248,18 @@ export default function YearPlan() {
                                 %{p.progress}
                               </span>
                             </div>
-                            {/* progress bar */}
+                            {/* progress bar — animates width via the same clip-path technique.
+                                Without the wrapper, the bar's own width would jump. */}
                             <div className="absolute inset-x-1.5 bottom-1 h-1 overflow-hidden rounded-full bg-black/20">
                               <div
-                                className={cn('h-full rounded-full', key === 'yellow' || key === 'pink' ? 'bg-[#5A3017]' : 'bg-white')}
-                                style={{ width: `${p.progress}%` }}
+                                className={cn(
+                                  'h-full rounded-full yp-bar-draw',
+                                  key === 'yellow' || key === 'pink' ? 'bg-[#5A3017]' : 'bg-white',
+                                )}
+                                style={{
+                                  width: `${p.progress}%`,
+                                  animationDelay: `${staggerIdx * 50 + 280}ms`, /* progress bar fills AFTER the bar shape draws */
+                                }}
                               />
                             </div>
                           </button>

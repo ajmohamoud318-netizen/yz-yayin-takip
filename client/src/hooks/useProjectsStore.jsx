@@ -20,12 +20,6 @@ export function ProjectsProvider({ children }) {
     }
   }, [])
 
-  useEffect(() => {
-    refetch()
-    const t = setInterval(refetch, 30_000)
-    return () => clearInterval(t)
-  }, [refetch])
-
   const updateOne = useCallback((updated) => {
     if (!updated?.id) return
     setProjects((prev) =>
@@ -37,6 +31,19 @@ export function ProjectsProvider({ children }) {
     if (!created?.id) return
     setProjects((prev) => (prev.some((p) => p.id === created.id) ? prev : [...prev, created]))
   }, [])
+
+  useEffect(() => {
+    refetch()
+    const t = setInterval(refetch, 30_000)
+    // Subscribe to cross-aggregate mutations (order reassignment, handover
+    // confirm, etc.) so the bell red-dots and project cards update without
+    // waiting for the next 30 s tick.
+    const unsubscribe = api.subscribeProjects?.(updateOne)
+    return () => {
+      clearInterval(t)
+      unsubscribe?.()
+    }
+  }, [refetch, updateOne])
 
   return createElement(
     ProjectsContext.Provider,

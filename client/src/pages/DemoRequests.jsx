@@ -86,9 +86,6 @@ export default function DemoRequests() {
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Demo</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Projeler için demo isteyin veya dosyalardan bağımsız demo oluşturun.
-            </p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={refetch}>
@@ -381,7 +378,7 @@ function CreateDemoDialog({ open, onOpenChange, onCreated }) {
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-4 w-4 text-primary" />

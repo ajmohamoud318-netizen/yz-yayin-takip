@@ -31,12 +31,17 @@ export default function StageBar({ type, stage, compact = false }) {
   }
 
   return (
-    <ol className="flex items-center">
+    // Each stage gets a min-width so its label (e.g. "Üretime Hazır", 13 chars)
+    // never overflows its column or gets clipped by the container edge. Combined
+    // with `overflow-x-auto` on the parent in ProjectDetail.jsx this lets the
+    // 8-stage TR pipeline scroll gracefully on narrow viewports instead of
+    // cutting the first / last labels.
+    <ol className="flex items-center min-w-max">
       {stages.map((s, i) => {
         const done = i < currentIndex
         const current = i === currentIndex
         return (
-          <li key={s} className="flex items-center">
+          <li key={s} className="flex min-w-[68px] shrink-0 items-center justify-center">
             <div className="flex flex-col items-center">
               <span
                 className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold transition-[background-color,color,box-shadow] duration-300 ease-out motion-reduce:transition-none ${
@@ -59,7 +64,8 @@ export default function StageBar({ type, stage, compact = false }) {
             </div>
             {i < stages.length - 1 && (
               <span
-                className={`mx-1 h-0.5 w-6 transition-colors duration-500 ease-out motion-reduce:transition-none ${
+                aria-hidden="true"
+                className={`mx-2 h-0.5 w-8 transition-colors duration-500 ease-out motion-reduce:transition-none ${
                   i < currentIndex ? 'bg-brand-500' : 'bg-muted'
                 }`}
               />

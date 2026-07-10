@@ -112,11 +112,8 @@ export default function SiparisListesi() {
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Sipariş Talebi</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Satışta olan ürünleri görüntüleyin ve sipariş talebi oluşturun.
-            </p>
           </div>
-          <Button onClick={() => openOrderFor(null)}>
+          <Button onClick={() => openOrderFor(null)} className="w-full sm:w-auto">
             <Plus className="h-4 w-4" />
             Sipariş Oluştur
           </Button>
@@ -674,7 +671,7 @@ function OrderRequestDialog({ products, user, open, initialProductId, onOpenChan
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md sm:max-w-md max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-l-0">
 
         {/* ── STEP 1: Upload / drag-drop ─────────────────────────────────── */}
         {step === 'upload' && (

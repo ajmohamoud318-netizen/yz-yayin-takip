@@ -43,8 +43,8 @@ function SheetRow({ label, value }) {
 function SpecSheet({ comp }) {
   const fields = (comp.fields ?? []).filter((f) => f.v)
   return (
-    <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-[0_1px_2px_rgba(120,40,80,0.04),0_10px_28px_-18px_rgba(176,52,108,0.22)]">
-      <div className="flex items-center gap-2.5 border-b bg-gradient-to-r from-primary/[0.07] via-primary/[0.03] to-transparent px-4 py-3">
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
+      <div className="flex items-center gap-2.5 border-b bg-primary/[0.04] px-4 py-3">
         <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
           <Box className="h-3.5 w-3.5" />
         </span>
@@ -73,12 +73,14 @@ function EditableSheetRow({ label, value, onLabel, onValue, onRemove }) {
         value={label}
         onChange={(e) => onLabel(e.target.value)}
         placeholder="ALAN"
+        aria-label="Alan adı"
         className={cn(cellInput, 'text-[11px] font-semibold uppercase tracking-wide text-muted-foreground')}
       />
       <input
         value={value}
         onChange={(e) => onValue(e.target.value)}
         placeholder="Değer"
+        aria-label="Alan değeri"
         className={cn(cellInput, 'font-medium text-foreground')}
       />
       <button
@@ -101,8 +103,8 @@ function EditableSpecSheet({ comp, onChange }) {
   const removeField = (i) => onChange({ ...comp, fields: fields.filter((_, idx) => idx !== i) })
 
   return (
-    <div className="overflow-hidden rounded-xl border border-primary/40 bg-card shadow-[0_1px_2px_rgba(120,40,80,0.04)] ring-1 ring-primary/10">
-      <div className="flex items-center gap-2.5 border-b bg-gradient-to-r from-primary/[0.09] via-primary/[0.04] to-transparent px-4 py-2.5">
+    <div className="overflow-hidden rounded-xl border border-primary/40 bg-card shadow-sm ring-1 ring-primary/10">
+      <div className="flex items-center gap-2.5 border-b bg-primary/[0.05] px-4 py-2.5">
         <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
           <Box className="h-3.5 w-3.5" />
         </span>
@@ -162,7 +164,7 @@ function NewProductDialog({ open, onClose, projects, onCreate }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4 animate-in fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/40 px-4 animate-in fade-in" onClick={onClose}>
       <div
         className="w-full max-w-md overflow-hidden rounded-2xl border bg-card shadow-2xl animate-in fade-in slide-in-from-bottom-2"
         onClick={(e) => e.stopPropagation()}
@@ -249,10 +251,10 @@ function ProductCard({ project, comps, open, onToggle, canEdit, editing, draft, 
   return (
     <div
       className={cn(
-        'group rounded-2xl border bg-card transition-all duration-200 shadow-[0_1px_2px_rgba(120,40,80,0.05)]',
+        'group rounded-2xl border bg-card transition-all duration-200 shadow-sm',
         editing
           ? 'border-primary/40 ring-1 ring-primary/15'
-          : 'hover:-translate-y-px hover:border-primary/30 hover:shadow-[0_16px_36px_-18px_rgba(176,52,108,0.28)]',
+          : 'hover:-translate-y-px hover:border-primary/30 hover:shadow-md',
       )}
     >
       <button
@@ -481,7 +483,7 @@ export default function UrunBilgileri() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
+    <div className="mx-auto max-w-5xl 2xl:max-w-screen-xl 3xl:max-w-[80rem] space-y-8 2xl:space-y-10">
       {/* Editorial header */}
       <header className="flex flex-col gap-5 border-b border-dashed pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">

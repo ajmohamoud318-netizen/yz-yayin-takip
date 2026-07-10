@@ -16,7 +16,7 @@ import DemoFormDialog from '@/components/DemoFormDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
-import { cn, formatMonthYear } from '@/lib/utils'
+import { cn, formatTargetDate } from '@/lib/utils'
 
 /**
  * Approval queue — demo/ozalit tabs for the design pipeline, plus a sipariş
@@ -81,9 +81,6 @@ export default function Approvals({ tab = 'demo' }) {
         <div className="space-y-5">
           <header>
             <h1 className="text-2xl font-semibold tracking-tight">Sipariş Teslimi</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Tasarımcı onayından geçen siparişleri alın ve matbaa adına teslim edin.
-            </p>
           </header>
 
           {ordersLoading ? (
@@ -157,7 +154,7 @@ export default function Approvals({ tab = 'demo' }) {
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold">{p.title}</p>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {p.assigned_name} · {formatMonthYear(p.target_month)}
+                    {p.assigned_name} · {formatTargetDate(p.target_month)}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
@@ -167,42 +164,39 @@ export default function Approvals({ tab = 'demo' }) {
               <div className="rounded-md border bg-muted/30 p-2.5 text-xs">
                 <span className="font-medium">Aşama:</span> {STAGE_LABELS[p.stage]}
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="flex-1"
-                  onClick={() => openProject(p.id)}
-                >
-                  Detay
-                </Button>
+              {/* Action row — stacks below sm so each button gets the full
+                  width on mobile, then sits in a row on tablet+. The primary
+                  action (Onayla / Onaya Gönder) is rendered first so thumb
+                  reach lands on it. */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 {isPrinter ? (
-                  <Button
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => {
-                      if (sub === 'demo') setDemoForm({ project: p, mode: 'advance' })
-                      else setOzalitForm({ project: p, mode: 'advance' })
-                    }}
-                  >
-                    <Send className="h-4 w-4" />
-                    Onaya Gönder
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      className="w-full sm:flex-1"
+                      onClick={() => {
+                        if (sub === 'demo') setDemoForm({ project: p, mode: 'advance' })
+                        else setOzalitForm({ project: p, mode: 'advance' })
+                      }}
+                    >
+                      <Send className="h-4 w-4" />
+                      Onaya Gönder
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="w-full sm:flex-1"
+                      onClick={() => openProject(p.id)}
+                    >
+                      Detay
+                    </Button>
+                  </>
                 ) : (
                   <>
                     <Button
                       size="sm"
-                      variant="destructive"
-                      className="flex-1"
-                      onClick={() => setDialog({ project: p, mode: 'reject' })}
-                    >
-                      <ThumbsDown className="h-4 w-4" />
-                      Reddet
-                    </Button>
-                    <Button
-                      size="sm"
                       variant="success"
-                      className="flex-1"
+                      className="w-full sm:flex-1"
                       onClick={() => {
                         if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
                         else setDialog({ project: p, mode: 'approve' })
@@ -210,6 +204,23 @@ export default function Approvals({ tab = 'demo' }) {
                     >
                       <ThumbsUp className="h-4 w-4" />
                       Onayla
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="w-full sm:flex-1"
+                      onClick={() => setDialog({ project: p, mode: 'reject' })}
+                    >
+                      <ThumbsDown className="h-4 w-4" />
+                      Reddet
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="w-full sm:w-auto"
+                      onClick={() => openProject(p.id)}
+                    >
+                      Detay
                     </Button>
                   </>
                 )}
@@ -226,11 +237,6 @@ export default function Approvals({ tab = 'demo' }) {
       <div className="space-y-5">
         <header>
           <h1 className="text-2xl font-semibold tracking-tight">Onaylar</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {isPrinter
-              ? 'Demo ve Ozalit teslimlerini alıp lider onayına gönderin.'
-              : 'Matbaadan gelen demo ve Ozalit onaylarını tek ekranda değerlendirin.'}
-          </p>
         </header>
 
         <Tabs value={activeTab} onValueChange={(v) => navigate(`/approvals/${v}`)}>

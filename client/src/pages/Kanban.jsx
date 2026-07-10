@@ -39,14 +39,11 @@ export default function Kanban() {
 
   return (
     <>
-      <div className="space-y-5">
+      <div className="mx-auto max-w-7xl 2xl:max-w-screen-2xl 3xl:max-w-[88rem] space-y-5 2xl:space-y-7">
         <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
           <div>
             <p className="label-eyebrow">İş Akışı</p>
             <h1 className="mt-1 text-3xl">Pano</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Tüm projeleri aşamaya göre yan yana görüntüleyin.
-            </p>
           </div>
           <div className="flex items-center gap-1.5">
             <FilterChip active={typeFilter === 'all'} onClick={() => setTypeFilter('all')}>
@@ -62,9 +59,11 @@ export default function Kanban() {
         </header>
 
         {loading ? (
-          <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+          /* Skeletons match the column-scroll container below so the loading
+             state doesn't flash as a stacked grid on mobile. */
+          <div className="scrollbar-thin -mx-4 flex gap-3 overflow-x-auto px-4 pb-2">
             {pipeline.map((s) => (
-              <Skeleton key={s} className="h-64 rounded-xl" />
+              <Skeleton key={s} className="h-64 w-72 shrink-0 rounded-xl sm:w-64" />
             ))}
           </div>
         ) : (
@@ -88,7 +87,7 @@ export default function Kanban() {
 function KanbanColumn({ stage, color, items, onOpen }) {
   return (
     <section
-      className="flex w-72 shrink-0 flex-col overflow-hidden rounded-xl border bg-muted/30"
+      className="flex w-72 2xl:w-80 shrink-0 flex-col overflow-hidden rounded-xl border bg-muted/30"
       style={{ borderTop: `3px solid ${color}` }}
     >
       <header
