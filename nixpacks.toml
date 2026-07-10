@@ -18,7 +18,8 @@ cmds = ["cd client && npm run build"]
 # in a dependency.
 cmd = "node serve.cjs"
 
-# Dokploy exposes the listening port via $PORT (default 3000 if unset).
+# Dokploy exposes the listening port via the PORT env var (default 3000 if
+# unset by the runtime).
 [env]
 PORT = "3000"
 HOST = "0.0.0.0"
