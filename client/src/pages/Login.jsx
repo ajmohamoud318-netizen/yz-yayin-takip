@@ -19,6 +19,7 @@ const DEMO_USERS = [
   { email: 'nur@yukselenzeka.com',                name: 'Nur Ekincioğlu',    role: 'Tasarımcı',    initials: 'NE' },
   { email: 'sumeyye.arslanturk@yukselenzeka.com', name: 'Sümeyye Arslantürk',role: 'Tasarımcı',    initials: 'SA' },
   { email: 'oktay@yukselenzeka.com',              name: 'Oktay Şahin',        role: 'Matbaa',       initials: 'OŞ' },
+  { email: 'atilla.kilickan@yukselenzeka.com',    name: 'Atilla Kılıçkan',    role: 'Matbaa',       initials: 'AK' },
   { email: 'esra@yukselenzeka.com',               name: 'Esra Kılıç',     role: 'Satış Ekibi',  initials: 'EK' },
 ]
 const DEMO_PASSWORD = '123456'

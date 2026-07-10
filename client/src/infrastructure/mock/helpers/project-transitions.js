@@ -52,12 +52,16 @@ function canRequestOzalit(actor) {
  * Branches, in order:
  *   1. Ozalit revision resubmit — designer finished a redesign after a previous
  *      ozalit rejection → jump straight to ozalit_teslim.
- *   2. Ozalit Teslim dual-step:
+ *   2. Demo Teslim dual-step (TR + ÇİN):
+ *      - designer "Demo İste"           → tasarım → demo_teslim
+ *      - printer "Demo'yu Teslim Et"    → demo_teslim → demo_onay (with stamps)
+ *   3. Ozalit Teslim dual-step:
  *      - non-printer "Ozalit İste"  → stays at ozalit_teslim, sets request flag
  *      - printer "Teslim Et"        → ozalit_teslim → ozalit_onay
- *   3. Generic forward advance through the pipeline, with two guards:
+ *   4. Generic forward advance through the pipeline, with three guards:
  *      - satista can only be reached via the handover confirmation flow
- *      - ozalit+ stages require progress === 100
+ *      - demo+ stages require progress === 100
+ *      - the leader does not advance past demo_teslim (she approves)
  */
 export function computeAdvance(project, actor) {
   const now = new Date().toISOString()
@@ -87,7 +91,16 @@ export function computeAdvance(project, actor) {
     }
   }
 
-  // 2) Ozalit Teslim dual-step
+  // 2a) Demo Teslim dual-step (TR)
+  if (project.stage === 'demo_teslim') {
+    return computeDemoTeslimAdvance(project, actor, now, appendHistory, 'demo_onay')
+  }
+  // 2b) ÇİN — symmetric, lands on cin_demo_onay
+  if (project.stage === 'cin_demo_teslim') {
+    return computeDemoTeslimAdvance(project, actor, now, appendHistory, 'cin_demo_onay')
+  }
+
+  // 3) Ozalit Teslim dual-step
   if (project.stage === 'ozalit_teslim') {
     return computeOzalitTeslimAdvance(project, actor, now, appendHistory)
   }
@@ -120,6 +133,48 @@ export function computeAdvance(project, actor) {
       from_stage: project.stage,
       to_stage: next,
       done_by_name: actorName,
+    }),
+  }
+}
+
+/**
+ * Demo Teslim dual-step. Symmetric to computeOzalitTeslimAdvance:
+ *   - designer / team leader "Demo İste" → still happens at tasarım (handled
+ *     by the generic advance branch above), so this helper only sees the
+ *     delivery side: project is already at demo_teslim.
+ *   - printer "Demo'yu Teslim Et" → demo_teslim → demo_onay with delivery
+ *     stamps recorded on the project so the leader's queue can show *who*
+ *     delivered it, not just that it reached her desk.
+ *
+ * Stamps written: `demo_delivered_by` (user id), `demo_delivered_by_name`
+ * (display name), `demo_delivered_at` (ISO timestamp). These mirror the
+ * per-form `teslimEdenKisi` / `teslimTarihi` fields so the project record
+ * and the demo form stay in sync.
+ */
+function computeDemoTeslimAdvance(project, actor, now, appendHistory, approvalStage) {
+  if (actor?.role !== 'printer') {
+    badRequest('Demo teslimini yalnızca matbaa yapabilir.')
+  }
+  assertCanEnterProduction(approvalStage, project.progress)
+  return {
+    project: {
+      ...project,
+      stage: approvalStage,
+      demo_delivered_by: actor?.id ?? null,
+      demo_delivered_by_name: actor?.name ?? 'Bilinmeyen',
+      demo_delivered_at: now,
+      // Clear any stale reject banners so the leader sees a clean review.
+      reject_target: null,
+      last_reject_reason: null,
+      last_reject_type: null,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'advance',
+      from_stage: project.stage,
+      to_stage: approvalStage,
+      done_by_name: actor?.name ?? 'Bilinmeyen',
+      note: 'Demo teslim edildi — onaya gönderildi',
     }),
   }
 }

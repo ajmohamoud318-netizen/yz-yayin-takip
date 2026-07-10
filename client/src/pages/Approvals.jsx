@@ -180,7 +180,7 @@ export default function Approvals({ tab = 'demo' }) {
                       }}
                     >
                       <Send className="h-4 w-4" />
-                      Onaya Gönder
+                      {sub === 'demo' ? "Demo'yu Teslim Et" : 'Ozaliti Teslim Et'}
                     </Button>
                     <Button
                       size="sm"
@@ -236,7 +236,7 @@ export default function Approvals({ tab = 'demo' }) {
     <>
       <div className="space-y-5">
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight">Onaylar</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{isPrinter ? 'Matbaa Teslimleri' : 'Onaylar'}</h1>
         </header>
 
         <Tabs value={activeTab} onValueChange={(v) => navigate(`/approvals/${v}`)}>

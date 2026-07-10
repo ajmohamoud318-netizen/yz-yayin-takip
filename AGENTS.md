@@ -14,7 +14,7 @@ The app has **4 roles** — `satis` (Satış Ekibi) was added on top of the orig
 |---|---|---|---|
 | `team_leader` | Takım Lideri | Ayşenur Kanak | Dashboard (`/`) |
 | `designer` | Tasarımcı | Aylin Ulu, Feyza Küçükkurt, Nur Ekincioğlu, Sümeyye Arslantürk | My Projects (`/my-projects`) |
-| `printer` | Matbaa | Oktay Şahin | Onaylar (`/approvals/demo`) |
+| `printer` | Matbaa | Oktay Şahin, Atilla Kılıçkan | Onaylar (`/approvals/demo`) |
 | `satis` | Satış Ekibi | Esra Kılıç | Sipariş Talebi (`/siparis-talebi`) |
 
 > `HomeRedirect` in `App.jsx` specifically sends `satis` users from `/` → `/siparis-talebi`.

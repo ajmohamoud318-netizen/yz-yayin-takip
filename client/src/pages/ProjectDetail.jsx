@@ -426,6 +426,13 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                         setDialog('advance')
                         return
                       }
+                      // Demo submission requires a finished design. Guard early
+                      // so the user gets a friendly message rather than a 400
+                      // from the server.
+                      if (project.stage === 'tasarim' && (project.progress ?? 0) < 100) {
+                        toast.error('Tasarım %100 tamamlanmadan Demo istenemez.')
+                        return
+                      }
                       // Demo stages open the demo form: the designer requests it
                       // at Tasarım, and the matbaa forwards it at Demo Teslim —
                       // both go through the same form (read-only for the matbaa),
@@ -1066,7 +1073,8 @@ function availableActions({ project, user }) {
 /** Contextual label for the "advance" action button. */
 function advanceActionLabel(project, userRole) {
   if (userRole === 'printer') {
-    if (project.stage === 'demo_teslim' || project.stage === 'ozalit_teslim') return 'Teslim Et'
+    if (project.stage === 'demo_teslim') return "Demo'yu Teslim Et"
+    if (project.stage === 'ozalit_teslim') return 'Ozaliti Teslim Et'
     if (project.stage === 'uretime_hazir') return 'Üretime Al'
   }
   switch (project.stage) {

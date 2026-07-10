@@ -46,22 +46,21 @@ describe('getNextStage', () => {
 })
 
 describe('assertCanEnterProduction (100% gate)', () => {
-  it('lets the demo stages open at partial progress', () => {
-    // Demo can be requested mid-design (no throw).
-    expect(() => assertCanEnterProduction('demo_teslim', 50)).not.toThrow()
-    expect(() => assertCanEnterProduction('cin_demo_teslim', 0)).not.toThrow()
-  })
-  it('blocks Ozalit onward at < 100%', () => {
+  it('blocks every post-design stage at < 100% — demo onward is locked', () => {
     for (const stage of STAGES_REQUIRING_FULL_PROGRESS) {
       expect(() => assertCanEnterProduction(stage, 99)).toThrow(/%100 tamamlanmadan/)
     }
   })
-  it('allows Ozalit onward at exactly 100%', () => {
+  it('lets tasarım‑stage transitions stay open at partial progress', () => {
+    expect(() => assertCanEnterProduction('tasarim', 0)).not.toThrow()
+  })
+  it('allows every post-design stage at exactly 100%', () => {
     for (const stage of STAGES_REQUIRING_FULL_PROGRESS) {
       expect(() => assertCanEnterProduction(stage, 100)).not.toThrow()
     }
   })
   it('treats undefined progress as 0', () => {
+    expect(() => assertCanEnterProduction('demo_teslim', undefined)).toThrow()
     expect(() => assertCanEnterProduction('ozalit_teslim', undefined)).toThrow()
   })
 })

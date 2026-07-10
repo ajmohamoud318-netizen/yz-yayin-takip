@@ -22,6 +22,7 @@ YZ Yayın Takip replaces analog/Excel workflows with a unified dashboard where t
 - **Ayşenur (team_leader)** — creates projects, assigns designers, approves/rejects at every stage, manages team members, and owns key steps of the order (sipariş) workflow
 - **Designer (designer)** — works on assigned projects, checks off subtasks, submits demos; also confirms order requests routed to them
 - **Oktay (printer / "Matbaa")** — approves Demo and Özalit stages for TR projects, marks production-ready items, raises handover (teslim) requests, and handles the matbaa steps of the order workflow
+- **Atilla (printer / "Matbaa")** — second Matbaa user, same responsibilities as Oktay
 - **Esra (satis / Sales)** — raises order (sipariş) requests for projects that have reached Satışta, and confirms handover ("Alındı") which moves a project to Satışta
 ---
 ## 🗂️ Project Types

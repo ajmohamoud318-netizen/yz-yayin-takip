@@ -49,6 +49,14 @@ export const SEED_USERS =
     is_active: true,
   },
   {
+    id: 'u-atilla',
+    name: 'Atilla Kılıçkan',
+    email: 'atilla.kilickan@yukselenzeka.com',
+    password: '123456',
+    role: 'printer',
+    is_active: true,
+  },
+  {
     id: 'u-esra',
     name: 'Esra Kılıç',
     email: 'esra@yukselenzeka.com',

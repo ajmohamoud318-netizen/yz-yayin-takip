@@ -35,7 +35,7 @@ const OLD_FIELD_LABELS = {
   kagitDahilBirimFiyat: 'KAĞIT DAHİL BİRİM FİYAT',
   basimYeri:            'BASIM YERİ',
 }
-const KNOWN_FIELDS = new Set(['isinAdi','demoIstemTarihi','demoIsteyenKisi','onaylayanKisi','matbaaYetkilisi'])
+const KNOWN_FIELDS = new Set(['isinAdi','demoIstemTarihi','demoIsteyenKisi','teslimEdenKisi','teslimTarihi','onaylayanKisi','matbaaYetkilisi'])
 
 function parseSaved(raw) {
   if (!raw) return null
@@ -78,7 +78,14 @@ function emptyForm(project, user) {
   return {
     isinAdi: project?.title ?? '',
     demoIstemTarihi: today,
-    demoIsteyenKisi: (project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || '',
+    demoIsteyenKisi:
+      // The demo requester is always the signed-in user who clicks the action —
+      // not editable. Falls back to the project's first assignee only if the
+      // dialog is opened outside a session (rare; for safety).
+      (user?.name ?? '') ||
+      (project?.assignees ?? []).map((a) => a.name).join(', ') ||
+      project?.assigned_name ||
+      '',
     onaylayanKisi: teamLeaderName,
     matbaaYetkilisi: user?.role === 'printer' ? (user?.name ?? '') : '',
   }
@@ -101,14 +108,28 @@ function buildPrintHtml({ form, customRows, project, attemptNo, kind }) {
     rows.push(
       ['OZALİT İSTEM TARİHİ', form.ozalitIstemTarihi],
       ['OZALİT İSTEYEN KİŞİ', form.ozalitIsteyenKisi],
-      ['ONAYLAYAN KİŞİ', form.onaylayanKisi],
     )
+    // The matbaa (printer) delivery stamp, if it has happened, becomes a
+    // distinct pair of rows on the printout.
+    if (form.teslimTarihi || form.teslimEdenKisi) {
+      rows.push(
+        ['TESLİM TARİHİ', form.teslimTarihi],
+        ['TESLİM EDEN KİŞİ', form.teslimEdenKisi],
+      )
+    }
+    rows.push(['ONAYLAYAN KİŞİ', form.onaylayanKisi])
   } else {
     rows.push(
       ['DEMO İSTEM TARİHİ', form.demoIstemTarihi],
       ['DEMO İSTEYEN KİŞİ', form.demoIsteyenKisi],
-      ['ONAYLAYAN KİŞİ', form.onaylayanKisi],
     )
+    if (form.teslimTarihi || form.teslimEdenKisi) {
+      rows.push(
+        ['TESLİM TARİHİ', form.teslimTarihi],
+        ['TESLİM EDEN KİŞİ', form.teslimEdenKisi],
+      )
+    }
+    rows.push(['ONAYLAYAN KİŞİ', form.onaylayanKisi])
   }
 
   const tableRows = rows.map(([label, val]) => `
@@ -274,6 +295,20 @@ export default function DemoFormDialog({ open, onOpenChange, project, mode = 'ad
   // same as the ozalit form. History snapshots are read-only for everyone.
   const readOnly = mode === 'history' || user?.role === 'printer'
 
+  // Yazdır is only available to the designer once the demo has been submitted —
+  // i.e. while composing (mode === 'advance') the button is hidden, and other
+  // roles never see it. Stages after Tasarım mark "demo already submitted".
+  const POST_DEMO_STAGES = new Set([
+    'demo_teslim', 'cin_demo_teslim',
+    'demo_onay',   'cin_demo_onay',
+    'ozalit_teslim','ozalit_onay',
+    'uretime_hazir','uretimde','gumruk','satista',
+  ])
+  const designerPrintable =
+    user?.role === 'designer' &&
+    project?.stage &&
+    POST_DEMO_STAGES.has(project.stage)
+
   // Catalog of all components defined for this project (from Ürün Bilgileri).
   const catalogComponents = useMemo(
     () => getComponentsForProject(project?.id).map((c) => ({
@@ -294,7 +329,23 @@ export default function DemoFormDialog({ open, onOpenChange, project, mode = 'ad
       setSelectedComponents(snap?.selectedComponents ?? [])
     } else {
       const data = loadSaved(project.id)
-      setForm({ ...emptyForm(project, user), ...(data?.form ?? {}) })
+      const fresh = emptyForm(project, user)
+      if (readOnly) {
+        // Read-only viewers (printer, history) must see the values that were
+        // actually saved at submission time — otherwise the form would show
+        // today's date, the matbaa's own name as "demo isteyen", and the
+        // leader as "onaylayan" even before approval. Layer the saved form
+        // back on top so İŞİN ADI, DEMO İSTEM TARİHİ, DEMO İSTEYEN KİŞİ and
+        // ONAYLAYAN KİŞİ all reflect what the designer stamped.
+        setForm({ ...fresh, ...(data?.form ?? {}) })
+      } else {
+        // Active editing: start from fresh, then keep only the printer-signed
+        // field (matbaaYetkilisi). The system-driven fields auto-recompute.
+        setForm({
+          ...fresh,
+          ...(data?.form?.matbaaYetkilisi ? { matbaaYetkilisi: data.form.matbaaYetkilisi } : {}),
+        })
+      }
       const savedRows = data?.customRows ?? []
       const hasAdet = savedRows.some((r) => r.label?.toUpperCase().startsWith('ADET'))
       setCustomRows(hasAdet ? savedRows : [...buildAdetRows(project.id), ...savedRows])
@@ -313,19 +364,14 @@ export default function DemoFormDialog({ open, onOpenChange, project, mode = 'ad
       if (exists) return prev.filter((c) => c.id !== compId)
       const fromCatalog = catalogComponents.find((c) => c.id === compId)
       if (!fromCatalog) return prev
-      // Auto-set İŞİN ADI to the first selected component's name
-      if (prev.length === 0) {
-        setForm((f) => ({ ...f, isinAdi: fromCatalog.component }))
-      }
+      // İŞİN ADI is locked to the project title — never overwritten here.
       return [...prev, fromCatalog]
     })
   }
   function selectAllComponents() {
     if (readOnly) return
     setSelectedComponents(catalogComponents)
-    if (catalogComponents[0]) {
-      setForm((f) => ({ ...f, isinAdi: catalogComponents[0].component }))
-    }
+    // İŞİN ADI stays as the project title regardless of selection.
   }
   function clearComponents() {
     if (readOnly) return
@@ -352,8 +398,17 @@ export default function DemoFormDialog({ open, onOpenChange, project, mode = 'ad
     if (!project) return
     setBusy(true)
     try {
-      saveForm(project.id, form, customRows, selectedComponents)
-      saveSnapshot(project.id, attemptNo, form, customRows, selectedComponents)
+      // When the printer (matbaa) is the one advancing, stamp the
+      // "teslim eden kişi" + "teslim tarihi" now. The original designer
+      // stamp on demoIsteyenKisi / demoIstemTarihi is preserved from the
+      // first save.
+      let payload = form
+      if (user?.role === 'printer') {
+        const today = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+        payload = { ...form, teslimEdenKisi: user?.name ?? '', teslimTarihi: today }
+      }
+      saveForm(project.id, payload, customRows, selectedComponents)
+      saveSnapshot(project.id, attemptNo, payload, customRows, selectedComponents)
       const updated = await api.advanceProject(project.id)
       updateOne(updated)
       toast.success('Demo matbaaya gönderildi.')
@@ -472,7 +527,11 @@ export default function DemoFormDialog({ open, onOpenChange, project, mode = 'ad
 
           {/* İŞİN ADI + user-added rows */}
           <div className="border-b px-4 py-1">
-            <Row label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly={readOnly} />
+            {/*
+              İŞİN ADI is always the project title — designers can override
+              the value with custom rows but cannot edit the title field.
+            */}
+            <Row label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly />
             {customRows.map((r) => (
               <CustomRow
                 key={r.id}
@@ -500,10 +559,23 @@ export default function DemoFormDialog({ open, onOpenChange, project, mode = 'ad
             </div>
           )}
 
-          {/* Auto-filled bottom fields */}
+          {/*
+            Auto-filled bottom fields.
+            These are system-driven (today / signed-in user / assigned approver)
+            and must never be editable by the designer.
+          */}
           <div className="px-4 py-1">
-            <Row label="DEMO İSTEM TARİHİ" name="demoIstemTarihi" value={form.demoIstemTarihi}    onChange={handleChange} readOnly={readOnly} />
-            <Row label="DEMO İSTEYEN KİŞİ" name="demoIsteyenKisi" value={form.demoIsteyenKisi}    onChange={handleChange} readOnly={readOnly} />
+            {user?.role === 'printer' ? (
+              <>
+                <Row label="TESLİM TARİHİ"    name="teslimTarihi"   value={form.teslimTarihi   ?? form.demoIstemTarihi ?? ''} onChange={handleChange} readOnly />
+                <Row label="TESLİM EDEN KİŞİ" name="teslimEdenKisi" value={form.teslimEdenKisi ?? form.demoIsteyenKisi ?? ''} onChange={handleChange} readOnly />
+              </>
+            ) : (
+              <>
+                <Row label="DEMO İSTEM TARİHİ" name="demoIstemTarihi" value={form.demoIstemTarihi} onChange={handleChange} readOnly />
+                <Row label="DEMO İSTEYEN KİŞİ" name="demoIsteyenKisi" value={form.demoIsteyenKisi} onChange={handleChange} readOnly />
+              </>
+            )}
             {form.matbaaYetkilisi && <Row label="MATBAA YETKİLİSİ" name="matbaaYetkilisi" value={form.matbaaYetkilisi} onChange={handleChange} readOnly />}
             <Row label="ONAYLAYAN KİŞİ"    name="onaylayanKisi"   value={form.onaylayanKisi ?? ''} onChange={handleChange} readOnly />
           </div>
@@ -521,10 +593,12 @@ export default function DemoFormDialog({ open, onOpenChange, project, mode = 'ad
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             {readOnly ? 'Kapat' : 'İptal'}
           </Button>
-          <Button type="button" variant="outline" onClick={handlePrint}>
-            <Printer className="h-4 w-4" />
-            Yazdır
-          </Button>
+          {designerPrintable && (
+            <Button type="button" variant="outline" onClick={handlePrint}>
+              <Printer className="h-4 w-4" />
+              Yazdır
+            </Button>
+          )}
           {mode === 'view' && (
             <Button onClick={handleSave}>Kaydet</Button>
           )}
@@ -534,8 +608,8 @@ export default function DemoFormDialog({ open, onOpenChange, project, mode = 'ad
               {busy
                 ? 'Gönderiliyor…'
                 : user?.role === 'printer'
-                  ? 'Teslim Et'
-                  : 'Demo İste (Matbaaya Gönder)'}
+                  ? "Demo'yu Teslim Et"
+                  : 'Demo İste'}
             </Button>
           )}
         </DialogFooter>

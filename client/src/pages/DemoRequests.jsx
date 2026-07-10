@@ -188,7 +188,7 @@ export default function DemoRequests() {
                           <span className="w-9 text-right text-xs font-semibold text-foreground">{p.progress}%</span>
                         </div>
 
-                        {canDemo && p.stage === 'tasarim' && (
+                        {canDemo && p.stage === 'tasarim' && p.progress === 100 && (
                           <Button
                             size="sm"
                             variant="outline"

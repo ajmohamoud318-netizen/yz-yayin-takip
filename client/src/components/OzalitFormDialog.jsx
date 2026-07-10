@@ -33,7 +33,7 @@ const OLD_FIELD_LABELS = {
   kagitDahilBirimFiyat: 'KAĞIT DAHİL BİRİM FİYAT',
   basimYeri:            'BASIM YERİ',
 }
-const KNOWN_FIELDS = new Set(['isinAdi','ozalitIstemTarihi','ozalitIsteyenKisi','onaylayanKisi','matbaaYetkilisi'])
+const KNOWN_FIELDS = new Set(['isinAdi','ozalitIstemTarihi','ozalitIsteyenKisi','teslimEdenKisi','teslimTarihi','onaylayanKisi','matbaaYetkilisi'])
 
 function parseSaved(raw) {
   if (!raw) return null
@@ -76,7 +76,14 @@ function emptyForm(project, user) {
   return {
     isinAdi: project?.title ?? '',
     ozalitIstemTarihi: today,
-    ozalitIsteyenKisi: (project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || '',
+    ozalitIsteyenKisi:
+      // The ozalit requester is always the signed-in user who clicks the action —
+      // not editable. Falls back to the project's first assignee only if the
+      // dialog is opened outside a session (rare; for safety).
+      (user?.name ?? '') ||
+      (project?.assignees ?? []).map((a) => a.name).join(', ') ||
+      project?.assigned_name ||
+      '',
     onaylayanKisi: teamLeaderName,
     matbaaYetkilisi: user?.role === 'printer' ? (user?.name ?? '') : '',
   }
@@ -99,14 +106,26 @@ function buildPrintHtml({ form, customRows, project, attemptNo, kind }) {
     rows.push(
       ['OZALİT İSTEM TARİHİ', form.ozalitIstemTarihi],
       ['OZALİT İSTEYEN KİŞİ', form.ozalitIsteyenKisi],
-      ['ONAYLAYAN KİŞİ', form.onaylayanKisi],
     )
+    if (form.teslimTarihi || form.teslimEdenKisi) {
+      rows.push(
+        ['TESLİM TARİHİ', form.teslimTarihi],
+        ['TESLİM EDEN KİŞİ', form.teslimEdenKisi],
+      )
+    }
+    rows.push(['ONAYLAYAN KİŞİ', form.onaylayanKisi])
   } else {
     rows.push(
       ['DEMO İSTEM TARİHİ', form.demoIstemTarihi],
       ['DEMO İSTEYEN KİŞİ', form.demoIsteyenKisi],
-      ['ONAYLAYAN KİŞİ', form.onaylayanKisi],
     )
+    if (form.teslimTarihi || form.teslimEdenKisi) {
+      rows.push(
+        ['TESLİM TARİHİ', form.teslimTarihi],
+        ['TESLİM EDEN KİŞİ', form.teslimEdenKisi],
+      )
+    }
+    rows.push(['ONAYLAYAN KİŞİ', form.onaylayanKisi])
   }
 
   const tableRows = rows.map(([label, val]) => `
@@ -351,8 +370,16 @@ export default function OzalitFormDialog({ open, onOpenChange, project, mode = '
     if (!project) return
     setBusy(true)
     try {
-      saveForm(project.id, form, customRows, selectedComponents)
-      saveSnapshot(project.id, attemptNo, form, customRows, selectedComponents)
+      // Printer (matbaa) delivery stamps the "teslim eden kişi" + "teslim
+      // tarihi" now. The original designer stamp on ozalitIsteyenKisi /
+      // ozalitIstemTarihi is preserved from the first save.
+      let payload = form
+      if (user?.role === 'printer') {
+        const today = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+        payload = { ...form, teslimEdenKisi: user?.name ?? '', teslimTarihi: today }
+      }
+      saveForm(project.id, payload, customRows, selectedComponents)
+      saveSnapshot(project.id, attemptNo, payload, customRows, selectedComponents)
       const updated = await api.advanceProject(project.id)
       updateOne(updated)
       toast.success('Ozalit onaya gönderildi.')
@@ -514,8 +541,17 @@ export default function OzalitFormDialog({ open, onOpenChange, project, mode = '
           )}
 
           <div className="px-4 py-1">
-            <Row label="OZALİT İSTEM TARİHİ" name="ozalitIstemTarihi" value={form.ozalitIstemTarihi}    onChange={handleChange} readOnly={readOnly} />
-            <Row label="OZALİT İSTEYEN KİŞİ" name="ozalitIsteyenKisi" value={form.ozalitIsteyenKisi}    onChange={handleChange} readOnly={readOnly} />
+            {user?.role === 'printer' ? (
+              <>
+                <Row label="TESLİM TARİHİ"    name="teslimTarihi"   value={form.teslimTarihi   ?? form.ozalitIstemTarihi ?? ''} onChange={handleChange} readOnly={readOnly} />
+                <Row label="TESLİM EDEN KİŞİ" name="teslimEdenKisi" value={form.teslimEdenKisi ?? form.ozalitIsteyenKisi ?? ''} onChange={handleChange} readOnly />
+              </>
+            ) : (
+              <>
+                <Row label="OZALİT İSTEM TARİHİ" name="ozalitIstemTarihi" value={form.ozalitIstemTarihi} onChange={handleChange} readOnly={readOnly} />
+                <Row label="OZALİT İSTEYEN KİŞİ" name="ozalitIsteyenKisi" value={form.ozalitIsteyenKisi} onChange={handleChange} readOnly />
+              </>
+            )}
             {form.matbaaYetkilisi && <Row label="MATBAA YETKİLİSİ" name="matbaaYetkilisi" value={form.matbaaYetkilisi} onChange={handleChange} readOnly />}
             <Row label="ONAYLAYAN KİŞİ"        name="onaylayanKisi"    value={form.onaylayanKisi ?? ''} onChange={handleChange} readOnly />
           </div>
@@ -546,7 +582,7 @@ export default function OzalitFormDialog({ open, onOpenChange, project, mode = '
               {busy
                 ? 'Gönderiliyor…'
                 : user?.role === 'printer'
-                  ? 'Teslim Et'
+                  ? 'Ozaliti Teslim Et'
                   : 'Matbaaya Gönder'}
             </Button>
           )}

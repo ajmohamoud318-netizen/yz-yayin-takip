@@ -66,12 +66,16 @@ export function getNextStage(project) {
 }
 
 /**
- * Stages a project may only enter once its design is 100% complete. The demo
- * stages stay open at partial progress (the designer can request a demo early),
- * but everything from Ozalit onward — the print proof and all production stages
- * — requires a finished design.
+ * Stages a project may only enter once its design is 100% complete. Everything
+ * from the demo stages onward — demo review, approval, the print proof and
+ * all production stages — requires a finished design. Designers no longer
+ * submit partial designs for review; a demo is the polish check before print.
  */
 export const STAGES_REQUIRING_FULL_PROGRESS = new Set([
+  'demo_teslim',
+  'cin_demo_teslim',
+  'demo_onay',
+  'cin_demo_onay',
   'ozalit_teslim',
   'ozalit_onay',
   'uretime_hazir',
@@ -81,14 +85,14 @@ export const STAGES_REQUIRING_FULL_PROGRESS = new Set([
 ])
 
 /**
- * Business rule: a project cannot reach Ozalit or production until its design is
- * 100% complete.
+ * Business rule: a project cannot reach Demo (or any later stage) until its
+ * design is 100% complete.
  * @param {string} nextStage
  * @param {number} progress
  */
 export function assertCanEnterProduction(nextStage, progress) {
   if (STAGES_REQUIRING_FULL_PROGRESS.has(nextStage) && (progress ?? 0) < 100) {
-    const err = new Error('Proje %100 tamamlanmadan Ozalit ve üretim aşamasına geçemez.')
+    const err = new Error('Proje %100 tamamlanmadan Demo, Ozalit ve üretim aşamasına geçemez.')
     err.status = 400
     throw err
   }
