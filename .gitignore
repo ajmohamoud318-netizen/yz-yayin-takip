@@ -51,3 +51,9 @@ coverage/
 
 # Uploads (if/when added)
 uploads/
+
+# Dokploy local config (if anyone runs Dokploy from this checkout)
+.dokploy/
+
+# Vite build output (just in case)
+client/dist/

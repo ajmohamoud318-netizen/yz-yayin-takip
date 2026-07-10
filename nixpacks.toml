@@ -1,0 +1,24 @@
+# Nixpacks config for Dokploy.
+# The actual app lives in /client — the repo root only carries tooling and docs.
+# Pin Node to match what Vite 5 + React 18 require.
+[phases.setup]
+nixPkgs = ["nodejs_18", "npm-9_x"]
+
+[phases.install]
+# Install only the client's dependencies.
+cmds = ["cd client && npm ci --no-audit --no-fund"]
+
+[phases.build]
+# Production build of the Vite SPA. Output goes to client/dist.
+cmds = ["cd client && npm run build"]
+
+[start]
+# Serve the built static SPA. We use a tiny in-repo Node HTTP shim
+# (./serve.cjs) so we get proper cache headers + SPA fallback without pulling
+# in a dependency.
+cmd = "node serve.cjs"
+
+# Dokploy exposes the listening port via $PORT (default 3000 if unset).
+[env]
+PORT = "3000"
+HOST = "0.0.0.0"

@@ -519,6 +519,20 @@ A persistent per-user log (capped at 50, stored in `localStorage` under `yz_noti
 - Handover eligibility: `assertHandoverEligible(project)` throws 400 if the project is not at `uretimde` (TR) / `gumruk` (ÇİN)
 - Mock/Infra seam: `infrastructure/config.js` exposes `USE_MOCK`; flipping it to `false` switches repositories from `mock/*` to `http/*` without changing the application or presentation layer.
 ---
+## 🚀 Deploy (Dokploy + Nixpacks)
+
+The app is a Vite SPA that lives in `client/`. Dokploy auto-detected the repo
+but couldn't find a `start` script because the **root `package.json`** has no
+scripts. We fix that with a `nixpacks.toml` + a tiny static server.
+
+- **Build root:** repo root (`/`) — `nixpacks.toml` runs `npm ci` and `npm run build` inside `client/`
+- **Output:** `client/dist/`
+- **Start:** `node serve.cjs` (zero-dep Node http server with SPA fallback + cache headers)
+- **Port:** `3000` (Dokploy sets `PORT`; we honour it)
+- **Env vars:** see `.env.example` (commit-safe; real values go in Dokploy's env UI)
+
+---
+
 ## 🚀 Production Checklist
 - [ ] OAuth app registered in Google Cloud Console (client ID + secret in .env)
 - [ ] Session cookie: httpOnly, sameSite=strict, secure=true in production
