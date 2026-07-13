@@ -1,0 +1,68 @@
+# Local dev stack for YZ Yayın Takip.
+#
+# Brings up:
+#   • postgres  – the database the Fastify server (server/) writes to.
+#                 Persisted in the named volume `pgdata`.
+#   • server    – the Fastify API. Built from /server, binds on :4000.
+#                 Auto-runs migrations + seed on boot when SEED_ON_BOOT=1.
+#   • client    – the Vite dev server, on :5173. Proxies /api → server.
+#
+# Usage:
+#   docker compose up --build
+#
+# The .env file (root) is read by the server container (DATABASE_URL,
+# etc.). The client uses Vite's own .env loading at the project root.
+#
+# In production we deploy the client as a static SPA (see nixpacks.toml)
+# and the server separately on Dokploy — this compose is for dev parity.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: yz_yayin_takip
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'postgres']
+      interval: 5s
+      retries: 10
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/yz_yayin_takip
+      PG_POOL_MAX: '10'
+      PORT: '4000'
+      HOST: '0.0.0.0'
+      MIGRATE_ON_BOOT: 'true'
+      SEED_ON_BOOT: 'true'
+      TRUST_HEADER_AUTH: 'true'
+      CORS_ORIGINS: 'http://localhost:5173'
+    ports:
+      - '4000:4000'
+
+  client:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm ci --no-audit --no-fund && npm run dev -- --host"
+    volumes:
+      - ./client:/app
+    ports:
+      - '5173:5173'
+    depends_on:
+      - server
+
+volumes:
+  pgdata:
+    name: yz_pgdata

@@ -10,10 +10,12 @@
 ## One-paragraph summary
 
 YZ Yayın Takip is an internal book-publishing pipeline tracker for Yükselen
-Zeka. Frontend-only MVP, React + Vite, in-memory mock data layer
-(localStorage), Clean Architecture. The backend (Node + Fastify + PostgreSQL
-+ Redis + Google OAuth) is planned and designed in `AGENTS.md`; the
-frontend's `infrastructure/http` layer is already stubbed for it.
+Zeka. Frontend React + Vite SPA + Fastify + Postgres backend. The SPA still
+ships with an in-memory mock data layer (localStorage) for fast local dev +
+tests; flipping `VITE_USE_MOCK=false` switches the composition root to the
+real HTTP repositories (server in `server/`, schema in
+`server/db/migrations/`). Auth in this pass is a trusted `X-User-Id` header —
+real OAuth is the next pass.
 ---
 ## 🏢 What This Is
 YZ Yayın Takip replaces analog/Excel workflows with a unified dashboard where the team leader (Ayşenur) can see every book project, who is working on what, and what stage it's in — in real time. It also tracks reprint/production **orders (sipariş)** raised by the Sales team and the physical **handover (teslim)** of produced materials.

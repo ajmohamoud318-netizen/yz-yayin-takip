@@ -521,30 +521,42 @@ A persistent per-user log (capped at 50, stored in `localStorage` under `yz_noti
 ---
 ## 🚀 Deploy (Dokploy + Nixpacks)
 
-The app is a Vite SPA that lives in `client/`. Dokploy auto-detected the repo
-but couldn't find a `start` script because the **root `package.json`** has no
-scripts. We fix that with a `nixpacks.toml` + a tiny static server.
+The app runs as **two services**: a Fastify API (Postgres-backed) and a static
+Vite SPA. The repo root is a workspace (`client/` + `server/`) so each deploys
+with its own Nixpacks config and `start` command.
 
-- **Build root:** repo root (`/`) — `nixpacks.toml` runs `npm ci` and `npm run build` inside `client/`
-- **Output:** `client/dist/`
-- **Start:** `node serve.cjs` (zero-dep Node http server with SPA fallback + cache headers)
-- **Port:** `3000` (Dokploy sets `PORT`; we honour it)
-- **Env vars:** see `.env.example` (commit-safe; real values go in Dokploy's env UI)
+- **`client/` SPA**: built from `client/` root (`cd client && npm run build`),
+  served by `serve.cjs` (in-repo zero-dep Node http server with SPA fallback +
+  cache headers). Exposes `/api/health` reverse-proxy upstream in production.
+- **`server/` API**: built from `server/` root (`npm start` runs
+  `node src/index.js`). On boot it auto-applies pending migrations and
+  optionally seeds when `SEED_ON_BOOT=true`. Hangs on `PORT` (default 4000).
+- **Dokploy pairing**: deploy twice — once for the static SPA, once for the
+  API — and point the SPA's `VITE_API_BASE_URL` at the API URL. The SPA
+  always talks to its own `/api` prefix; Vite proxies to `localhost:4000`
+  in dev.
+- **Env vars**: see `.env.example` for both surfaces.
 
 ---
 
 ## 🚀 Production Checklist
+- [x] Postgres schema + migrations (runner in `server/src/services/migrate.js`)
+- [x] Fastify server (`server/src/index.js`) — X-User-Id trusted header auth
+- [x] HTTP repositories behind the same ports the mock uses (`client/src/infrastructure/http/repositories/`)
+- [x] Transport switch (`USE_MOCK` env override `VITE_USE_MOCK`)
+- [x] Local dev parity (`docker-compose.yml`)
+- [x] Migration runner (idempotent, plain SQL files)
+- [x] Seed with the same data the SPA was built around
 - [ ] OAuth app registered in Google Cloud Console (client ID + secret in .env)
 - [ ] Session cookie: httpOnly, sameSite=strict, secure=true in production
 - [ ] Redis session TTL set to 7 days; auto-refresh on activity
-- [ ] Role middleware on every protected Fastify route
+- [ ] Role middleware on every protected Fastify route (currently header + ad-hoc checks)
 - [ ] Fastify JSON schema validation on all POST/PATCH inputs
 - [ ] Rate limiting via Redis on auth + sensitive routes
-- [ ] Invitation flow: add email to allowlist in DB → user signs in via Google
+- [ ] Invitation flow: add email to allowlist in DB → user signs in via OAuth
 - [ ] File uploads: type + size validated
 - [ ] `.env` never committed
 - [ ] CORS locked to production domain
-- [ ] DB connection pool max 10
+- [ ] DB connection pool max 10 — currently configurable via `PG_POOL_MAX`
 - [ ] Redis connection with retry + reconnect strategy
-- [ ] HTTP-only repository implementations (currently mock) — see `client/ARCHITECTURE.md` → "Switching to the real backend"
-- [ ] Backend (Fastify + PostgreSQL + Redis) — greenfield per `client/ARCHITECTURE.md` migration status
+- [ ] Stage / approval flows double-checked against `client/src/infrastructure/mock/helpers/project-transitions.js`

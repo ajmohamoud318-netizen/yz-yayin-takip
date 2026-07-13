@@ -1,0 +1,24 @@
+{
+  "name": "yz-yayin-takip-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Fastify backend for YZ Yayın Takip. PostgreSQL-backed; in this pass auth is a trusted X-User-Id header.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "migrate": "node src/services/migrate.js up",
+    "migrate:status": "node src/services/migrate.js status",
+    "seed": "node src/services/seed.js",
+    "test": "node --test src/__tests__/**/*.test.js"
+  },
+  "dependencies": {
+    "fastify": "^5.2.1",
+    "pg": "^8.13.1",
+    "bcryptjs": "^2.4.3",
+    "nanoid": "^5.0.9"
+  }
+}

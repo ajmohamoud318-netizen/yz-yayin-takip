@@ -1,25 +1,32 @@
-# Nixpacks config for Dokploy.
-# The actual app lives in /client — the repo root only carries tooling and docs.
-# Pin Node to match what Vite 5 + React 18 require.
+# Nixpacks config for the static SPA (Dokploy app #1).
+#
+# Builds the Vite SPA from `client/` and serves `client/dist/` via the
+# zero-dep `serve.cjs` shim. The repo is a monorepo (`client/` + `server/`)
+# — this file focuses on the SPA only. The Fastify API is a separate Dokploy
+# app rooted at `server/` (see `server/nixpacks.toml`).
+#
+# Nixpacks runs phases from the app root (the directory containing this
+# file), so paths are repo-root relative, not `client/`.
+
 [phases.setup]
-nixPkgs = ["nodejs_18", "npm-9_x"]
+nixPkgs = ["nodejs_20", "npm-9_x"]
 
 [phases.install]
-# Install only the client's dependencies.
-cmds = ["cd client && npm ci --no-audit --no-fund"]
+# Install everything so the workspace wiring is in place. The SPA only
+# actually needs `client/node_modules`, but `npm ci` at the root sets up
+# the npm workspace symlinks that make `client`'s imports resolve.
+cmds = ["npm ci --no-audit --no-fund"]
 
 [phases.build]
-# Production build of the Vite SPA. Output goes to client/dist.
-cmds = ["cd client && npm run build"]
+# Vite builds to client/dist. Output is served by `serve.cjs` at runtime.
+cmds = ["npm run build"]
 
 [start]
-# Serve the built static SPA. We use a tiny in-repo Node HTTP shim
-# (./serve.cjs) so we get proper cache headers + SPA fallback without pulling
-# in a dependency.
+# The shim at serve.cjs serves static files with the right cache headers
+# and falls back to index.html for client-side routes.
 cmd = "node serve.cjs"
 
-# Dokploy exposes the listening port via the PORT env var (default 3000 if
-# unset by the runtime).
+# Dokploy exposes the listening port via the PORT env var (default 3000).
 [env]
 PORT = "3000"
 HOST = "0.0.0.0"
