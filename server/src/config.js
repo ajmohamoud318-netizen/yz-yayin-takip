@@ -57,4 +57,10 @@ export const config = {
     (process.env.NODE_ENV === 'production'
       ? 'https://yt.mucitkarinca.com'
       : 'http://localhost:5173'),
+
+  // Redis connection string. In Dokploy this is the internal URL of the
+  // managed Redis service (e.g. redis://default:<pw>@yz-redis:6379). In
+  // local dev it falls back to localhost. Leave blank to disable Redis
+  // features (server still boots; cache/session helpers become no-ops).
+  redisUrl: process.env.REDIS_URL?.trim() ?? 'redis://localhost:6379',
 }
