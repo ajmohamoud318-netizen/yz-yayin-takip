@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Mail, MoreHorizontal, Search, UserPlus } from 'lucide-react'
+import { Copy, Mail, MoreHorizontal, Search, UserPlus, Wand2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import api, { ROLE_LABELS } from '@/api'
@@ -136,6 +136,7 @@ export default function Team() {
   )
 }
 
+
 function UserCard({ user, canManage, onToggle }) {
   return (
     <Card>
@@ -195,6 +196,24 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('designer')
   const [saving, setSaving] = useState(false)
+  const [lastInvite, setLastInvite] = useState(null)
+
+  // Reset the "email failed" fallback panel when the dialog reopens.
+  useEffect(() => {
+    if (open) return
+    // Keep `lastInvite` so the leader can copy it; clear when they close
+    // the dialog for real (next open).
+    const t = setTimeout(() => setLastInvite(null), 300)
+    return () => clearTimeout(t)
+  }, [open])
+
+  function copyLink() {
+    if (!lastInvite?.url) return
+    navigator.clipboard.writeText(lastInvite.url).then(
+      () => toast.success('Davet linki kopyalandı.'),
+      () => toast.error('Link kopyalanamadı.'),
+    )
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -205,12 +224,23 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
     setSaving(true)
     try {
       const created = await api.inviteUser({ name: name.trim(), email: email.trim(), role })
-      toast.success('Davet gönderildi.')
+      // The server returns the invitation URL + whether the email was sent.
+      // If SMTP failed, surface the link so the leader can forward it manually.
+      if (created?.invitation?.url && created.invitation.emailSent === false) {
+        setLastInvite({
+          name: created.name,
+          email: created.email,
+          role,
+          url: created.invitation.url,
+        })
+        toast.warning('E-posta gönderilemedi. Davet linkini elle paylaşabilirsiniz.')
+      } else {
+        toast.success('Davet e-postası gönderildi.')
+      }
       onInvited?.(created)
       setName('')
       setEmail('')
       setRole('designer')
-      onOpenChange(false)
     } catch (err) {
       toast.error(err.message || 'Davet gönderilemedi.')
     } finally {
@@ -267,6 +297,31 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
             </Button>
           </DialogFooter>
         </form>
+
+        {lastInvite?.url && (
+          <div className="mt-4 space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
+            <div className="flex items-center gap-2 text-amber-800">
+              <Wand2 className="h-4 w-4" />
+              <span className="font-medium">E-posta gönderilemedi</span>
+            </div>
+            <p className="text-xs text-amber-700">
+              Sunucu SMTP ayarları eksik olabilir. Bu linki {lastInvite.name} ile
+              (<span className="font-mono">{lastInvite.email}</span>) paylaşabilirsiniz:
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="block flex-1 truncate rounded border bg-white px-2 py-1.5 text-xs">
+                {lastInvite.url}
+              </code>
+              <Button type="button" size="sm" variant="outline" onClick={copyLink}>
+                <Copy className="h-4 w-4" />
+                Kopyala
+              </Button>
+            </div>
+            <p className="text-[11px] text-amber-700">
+              Link 7 gün geçerlidir.
+            </p>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )

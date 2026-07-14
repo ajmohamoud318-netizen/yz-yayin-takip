@@ -57,7 +57,13 @@ export function createApi() {
   return {
     // Auth
     login: (email, password) => authRepo.login(email, password),
+    loginAsUser: async (userId) => {
+      const res = await authRepo.loginAsUser(userId)
+      return res
+    },
     logout: () => authRepo.logout(),
+    previewInvite: (token) => authRepo.previewInvite(token),
+    acceptInvite: (token, password) => authRepo.acceptInvite(token, password),
 
     // Users
     listUsers: () => userRepo.listUsers(),

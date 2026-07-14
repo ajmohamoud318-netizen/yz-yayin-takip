@@ -11,6 +11,7 @@ import { HttpError } from './domain/errors.js'
 import { up as migrateUp } from './services/migrate.js'
 import { seed as seedFn } from './services/seed.js'
 import { closePool } from './db/pool.js'
+import { registerAuthDecorators } from './middleware/auth.js'
 
 /**
  * Server entry point.
@@ -51,6 +52,11 @@ export async function buildServer() {
   // Domain-aware error handler. Anything we throw as `HttpError` lands here
   // with the right status. Domain helpers in the client use `new Error()`
   // + `err.status = N` (no HttpError), so we accept either shape.
+
+  // Auth + role decorators (fastify.requireAuth, fastify.requireRole(...roles))
+  // — must be registered before any route module so it can use them.
+  registerAuthDecorators(fastify)
+
   fastify.setErrorHandler((err, request, reply) => {
     if (err instanceof HttpError) {
       reply.code(err.status)

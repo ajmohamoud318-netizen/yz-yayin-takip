@@ -1,8 +1,9 @@
 import bcrypt from 'bcryptjs'
-import { nanoid } from 'nanoid'
 import { attachUser, requireRole } from '../middleware/auth.js'
 import { badRequest, conflict, forbidden, notFound } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
+import { createInvitation } from '../services/invitations.js'
+import { sendMail, renderInviteEmail } from '../services/mail.js'
 
 /**
  * Users API.
@@ -29,27 +30,52 @@ export async function userRoutes(fastify) {
     if (!['designer', 'printer', 'satis'].includes(role)) {
       badRequest('Geçersiz rol.')
     }
-    const existing = await getPool().query('SELECT id FROM users WHERE email = $1', [email.toLowerCase().trim()])
+    const normalisedEmail = email.trim().toLowerCase()
+    const existing = await getPool().query(
+      'SELECT id FROM users WHERE email = $1',
+      [normalisedEmail],
+    )
     if (existing.rowCount > 0) conflict('Bu e-posta zaten kayıtlı.')
-    // Initial password = demo string. The user is expected to set their own
-    // password via the /accept-invite link (out-of-scope UI for this pass).
-    const passwordHash = bcrypt.hashSync('123456', 8)
+
+    // Create the user WITHOUT a password. They'll set it via the invite
+    // link. `invited_at` records when the invite was sent; `joined_at`
+    // gets stamped later when they accept.
     const { rows } = await getPool().query(
-      `INSERT INTO users (name, email, password, role, is_active, invited_at)
-       VALUES ($1,$2,$3,$4,TRUE,NOW())
+      `INSERT INTO users (name, email, role, is_active, invited_at)
+       VALUES ($1,$2,$3,TRUE,NOW())
        RETURNING id, name, email, role, is_active, invited_at, joined_at, created_at`,
-      [name.trim(), email.trim().toLowerCase(), passwordHash, role],
+      [name.trim(), normalisedEmail, role],
     )
     const user = rows[0]
-    // Issue an invitation record so the accept-invite route can verify a
-    // token in a future pass. Token is just nanoid for now — no email yet.
-    const token = nanoid(24)
-    await getPool().query(
-      `INSERT INTO invitations (user_id, token, expires_at)
-       VALUES ($1,$2, NOW() + INTERVAL '7 days')`,
-      [user.id, token],
-    )
-    return user
+
+    // Mint an invitation token + URL.
+    const invitation = await createInvitation({ userId: user.id })
+
+    // Try to send the email. Never block the invite on a mail outage —
+    // surface the URL to the caller so they can forward it manually.
+    const { subject, text, html } = renderInviteEmail({
+      name: user.name,
+      role: user.role,
+      inviteUrl: invitation.url,
+      invitedBy: request.user?.name,
+    })
+    const mailResult = await sendMail({
+      to: user.email,
+      subject,
+      text,
+      html,
+    })
+
+    return {
+      ...user,
+      invitation: {
+        url: invitation.url,
+        token: invitation.token,
+        expiresAt: invitation.expiresAt,
+        emailSent: mailResult.ok,
+        emailError: mailResult.ok ? null : mailResult.error,
+      },
+    }
   })
 
   fastify.patch('/users/:id/deactivate', async (request) => {

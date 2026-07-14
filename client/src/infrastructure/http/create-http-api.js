@@ -66,7 +66,20 @@ export function createHttpApi() {
       if (res?.token) setAuthToken(res.token)
       return res
     }),
+    loginAsUser: (userId) => authRepo.loginAsUser(userId).then((res) => {
+      if (res?.token) setAuthToken(res.token)
+      return res
+    }),
+    listDevUsers: () => userRepo.listUsers(),
     logout: () => authRepo.logout().then(() => { setAuthToken(null) }),
+    previewInvite: (token) => authRepo.previewInvite(token),
+    acceptInvite: (token, password) => authRepo.acceptInvite(token, password)
+      .then((res) => {
+        // Auto-login on accept-invite so the user lands on the app
+        // without having to re-enter credentials.
+        if (res?.token) setAuthToken(res.token)
+        return res
+      }),
 
     // Users (need a warm cache before the dashboard loads)
     bootstrapUsers: () => userRepo.listUsers(),

@@ -113,31 +113,35 @@ function hashSql(sql) {
   return h.toString(16)
 }
 
-// CLI entry
-const cmd = process.argv[2] ?? 'up'
-;(async () => {
-  try {
-    if (cmd === 'status') {
-      const rows = await status()
-      for (const r of rows) {
-        const tag = r.applied ? '✓' : '·'
+// CLI entry — only run when this file is the script entry point. When
+// imported from index.js (boot path), the IIFE must NOT execute: it
+// would call closePool() and starve every later query in the process.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const cmd = process.argv[2] ?? 'up'
+  ;(async () => {
+    try {
+      if (cmd === 'status') {
+        const rows = await status()
+        for (const r of rows) {
+          const tag = r.applied ? '✓' : '·'
+          // eslint-disable-next-line no-console
+          console.log(`${tag} ${r.id}  ${r.file}`)
+        }
+      } else if (cmd === 'up') {
+        await up()
+      } else if (cmd === 'down') {
+        await down()
+      } else {
         // eslint-disable-next-line no-console
-        console.log(`${tag} ${r.id}  ${r.file}`)
+        console.error(`Unknown command: ${cmd} (use 'up', 'down', or 'status')`)
+        process.exitCode = 2
       }
-    } else if (cmd === 'up') {
-      await up()
-    } else if (cmd === 'down') {
-      await down()
-    } else {
+    } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`Unknown command: ${cmd} (use 'up', 'down', or 'status')`)
-      process.exitCode = 2
+      console.error('[migrate] failed:', err.message)
+      process.exitCode = 1
+    } finally {
+      await closePool()
     }
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('[migrate] failed:', err.message)
-    process.exitCode = 1
-  } finally {
-    await closePool()
-  }
-})()
+  })()
+}

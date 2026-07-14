@@ -37,4 +37,24 @@ export const config = {
   // user (this pass). When false, real OAuth/cookie session validation kicks
   // in (next pass, not built yet).
   trustHeaderAuth: boolEnv('TRUST_HEADER_AUTH', true),
+
+  // SMTP for invitation emails + (future) stage notifications. If SMTP_HOST
+  // is unset, the server falls back to a console transport so local dev
+  // still works without a mail server.
+  smtp: {
+    host: process.env.SMTP_HOST ?? '',
+    port: intEnv('SMTP_PORT', 587),
+    user: process.env.SMTP_USER ?? '',
+    pass: process.env.SMTP_PASS ?? '',
+    from: process.env.SMTP_FROM ?? 'YZ Yayın Takip <noreply@yukselenzeka.com>',
+    secure: boolEnv('SMTP_SECURE', false),
+  },
+
+  // Public URL the invitation email links to (the SPA). In dev we default
+  // to localhost; in Dokploy set this to https://yt.mucitkarinca.com.
+  inviteBaseUrl:
+    process.env.INVITE_BASE_URL ??
+    (process.env.NODE_ENV === 'production'
+      ? 'https://yt.mucitkarinca.com'
+      : 'http://localhost:5173'),
 }

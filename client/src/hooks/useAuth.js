@@ -46,6 +46,25 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  // Dev-only "log in as" — uses the backend's /auth/dev-login endpoint
+  // so the SPA can drive the real backend without going through bcrypt.
+  const loginAsUser = useCallback(async (userId) => {
+    setLoading(true)
+    try {
+      const { token, user: u } = await api.loginAsUser(userId)
+      setAuthToken(token)
+      setUser(u)
+      try {
+        localStorage.setItem(AUTH_KEY, JSON.stringify({ token, user: u }))
+      } catch {
+        /* ignore storage errors */
+      }
+      return u
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   const logout = useCallback(async () => {
     await api.logout()
     setAuthToken(null)
@@ -57,7 +76,7 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const value = { user, loading, login, logout, isAuthenticated: !!user }
+  const value = { user, loading, login, loginAsUser, logout, isAuthenticated: !!user }
 
   // JSX is avoided here so the file can stay .js; createElement keeps it simple.
   return createElement(AuthContext.Provider, { value }, children)

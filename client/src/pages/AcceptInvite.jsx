@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowRight, BookOpen, Check, KeyRound } from 'lucide-react'
+import { ArrowRight, BookOpen, Check, KeyRound, Mail, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -8,11 +8,30 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
+import api from '@/api.js'
+import { setAuthToken } from '@/infrastructure/http/client.js'
+import { USE_MOCK } from '@/infrastructure/config.js'
+
+const ROLE_LABEL = {
+  team_leader: 'Takım Lideri',
+  designer: 'Tasarımcı',
+  printer: 'Matbaa',
+  satis: 'Satış Ekibi',
+}
+
 /**
  * Stand-alone page reached from an email invitation link.
- * For now (mock mode) it just validates the password length and bounces
- * to the login page — once the backend is wired, it will call
- * POST /api/auth/accept-invite with the token from the URL.
+ *
+ * Flow:
+ *   1. Read `?token=...` from the URL.
+ *   2. Call `api.previewInvite(token)` to render the invitee's name +
+ *      role at the top of the form.
+ *   3. On submit, call `api.acceptInvite(token, password)` which sets
+ *      the password server-side and returns a session token. We stash
+ *      the token and bounce to the dashboard — no second login step.
+ *
+ * If there's no token in the URL we render the legacy demo form so
+ * existing quick-test flows keep working.
  */
 export default function AcceptInvite() {
   const [params] = useSearchParams()
@@ -22,11 +41,30 @@ export default function AcceptInvite() {
   const [confirm, setConfirm] = useState('')
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [preview, setPreview] = useState(null)
+  const [previewError, setPreviewError] = useState(null)
 
-  function handleSubmit(e) {
+  useEffect(() => {
+    if (!token || USE_MOCK) return
+    let cancelled = false
+    api.previewInvite(token)
+      .then((data) => { if (!cancelled) setPreview(data) })
+      .catch((err) => {
+        if (cancelled) return
+        setPreviewError(err?.message || 'Davet linki geçersiz veya süresi dolmuş.')
+      })
+    return () => { cancelled = true }
+  }, [token])
+
+  async function handleSubmit(e) {
     e.preventDefault()
-    if (password.length < 5) {
-      setError('Şifre en az 5 karakter olmalı.')
+    if (!token) {
+      setError('Davet linki eksik. Lütfen e-postanızdaki linke tıklayın.')
+      return
+    }
+    if (password.length < 8) {
+      setError('Şifre en az 8 karakter olmalı.')
       return
     }
     if (password !== confirm) {
@@ -34,9 +72,18 @@ export default function AcceptInvite() {
       return
     }
     setError('')
-    setDone(true)
-    toast.success('Şifreniz belirlendi. Giriş yapabilirsiniz.')
-    setTimeout(() => navigate('/login', { replace: true }), 1500)
+    setSubmitting(true)
+    try {
+      const res = await api.acceptInvite(token, password)
+      if (res?.token) setAuthToken(res.token)
+      setDone(true)
+      toast.success('Şifreniz belirlendi. Hoş geldiniz!')
+      setTimeout(() => navigate('/', { replace: true }), 1200)
+    } catch (err) {
+      setError(err?.message || 'Şifre belirlenemedi. Lütfen tekrar deneyin.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -48,19 +95,34 @@ export default function AcceptInvite() {
           </span>
           <CardTitle className="text-xl">Davet Kabul</CardTitle>
           <CardDescription>
-            {token
-              ? `Davet token'ı algılandı. Hesabınızı aktifleştirmek için bir şifre belirleyin.`
-              : 'Demo mod: davet linki olmadan da şifre belirleyebilirsiniz.'}
+            {preview?.name
+              ? `${preview.name} için şifre belirleyin (${ROLE_LABEL[preview.role] ?? preview.role}).`
+              : token
+                ? 'Hesabınızı aktifleştirmek için bir şifre belirleyin.'
+                : 'Demo mod: davet linki olmadan da şifre belirleyebilirsiniz.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {done ? (
+          {previewError ? (
+            <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-center">
+              <span className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-destructive/10 text-destructive">
+                <AlertTriangle className="h-5 w-5" />
+              </span>
+              <p className="text-sm font-medium text-destructive">{previewError}</p>
+              <p className="text-xs text-muted-foreground">
+                Yeni bir davet için takım liderinizle iletişime geçin.
+              </p>
+              <Button asChild variant="outline" size="sm" className="w-full">
+                <Link to="/login">Giriş sayfasına dön</Link>
+              </Button>
+            </div>
+          ) : done ? (
             <div className="space-y-3 rounded-lg border bg-emerald-50 p-4 text-center">
               <span className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-emerald-100 text-emerald-700">
                 <Check className="h-5 w-5" />
               </span>
               <p className="text-sm font-medium text-emerald-700">Şifre belirlendi!</p>
-              <p className="text-xs text-muted-foreground">Giriş sayfasına yönlendiriliyorsunuz…</p>
+              <p className="text-xs text-muted-foreground">Uygulamaya yönlendiriliyorsunuz…</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -69,29 +131,38 @@ export default function AcceptInvite() {
                   {error}
                 </div>
               )}
+              {preview?.email && (
+                <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                  <Mail className="h-4 w-4" />
+                  <span>{preview.email}</span>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="pw">Yeni Şifre</Label>
                 <Input
                   id="pw"
                   type="password"
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
+                <p className="text-xs text-muted-foreground">En az 8 karakter.</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pw2">Şifre (Tekrar)</Label>
                 <Input
                   id="pw2"
                   type="password"
+                  autoComplete="new-password"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                   required
                 />
               </div>
-              <Button type="submit" className="w-full" size="lg">
+              <Button type="submit" className="w-full" size="lg" disabled={submitting}>
                 <KeyRound className="h-4 w-4" />
-                Şifreyi Belirle
+                {submitting ? 'Belirleniyor…' : 'Şifreyi Belirle'}
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </form>

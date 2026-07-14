@@ -17,3 +17,4 @@ export const unauthorized = (msg = 'Yetkisiz erişim') => { throw new HttpError(
 export const forbidden = (msg = 'Bu işlem için yetkiniz yok') => { throw new HttpError(403, msg, 'forbidden') }
 export const notFound = (msg = 'Bulunamadı') => { throw new HttpError(404, msg, 'not_found') }
 export const conflict = (msg) => { throw new HttpError(409, msg, 'conflict') }
+export const gone = (msg = 'Artık geçerli değil') => { throw new HttpError(410, msg, 'gone') }
