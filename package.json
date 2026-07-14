@@ -14,8 +14,5 @@
     "migrate": "npm --workspace server run migrate",
     "seed": "npm --workspace server run seed",
     "test:server": "npm --workspace server run test"
-  },
-  "dependencies": {
-    "fastify": "^5.8.5"
   }
 }
