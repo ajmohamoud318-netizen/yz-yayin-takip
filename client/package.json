@@ -48,5 +48,9 @@
     "tailwindcss-animate": "^1.0.7",
     "vite": "^5.3.1",
     "vitest": "^2.1.9"
+  },
+  "//": "Pinned rollup native binary so Vite builds in Nixpacks (avoids npm/cli#4828).",
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.21.0"
   }
 }
