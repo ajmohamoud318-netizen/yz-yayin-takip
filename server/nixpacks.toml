@@ -12,11 +12,12 @@
 nixPkgs = ["nodejs_20", "npm-9_x"]
 
 [phases.install]
-# Install the workspace so server/node_modules is populated. We cd into
-# the repo root first because server/ is a workspace member — npm needs
-# the parent's workspaces array to hoist deps correctly.
+# Dokploy copies ONLY the server/ folder into the build context, so there
+# is no parent repo root to cd into. Install standalone from server/ using
+# the committed server/package-lock.json (generated in isolation from
+# server/package.json — it is NOT the monorepo workspace lockfile).
 cmds = [
-  "cd .. && npm ci --no-audit --no-fund",
+  "npm ci --no-audit --no-fund",
 ]
 
 [phases.build]
