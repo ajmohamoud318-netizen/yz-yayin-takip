@@ -109,6 +109,17 @@ async function main() {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
+  // Make every boot failure visible to `docker logs`, even if a stray
+  // promise rejects after main() has already returned.
+  process.on('unhandledRejection', (reason) => {
+    // eslint-disable-next-line no-console
+    console.error('[server] unhandledRejection:', reason)
+  })
+  process.on('uncaughtException', (err) => {
+    // eslint-disable-next-line no-console
+    console.error('[server] uncaughtException:', err)
+    process.exit(1)
+  })
   main().catch((err) => {
     // eslint-disable-next-line no-console
     console.error('[server] boot failed:', err)
