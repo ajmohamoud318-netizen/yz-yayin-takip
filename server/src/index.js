@@ -9,7 +9,6 @@ import { handoverRoutes } from './routes/handovers.js'
 import { config } from './config.js'
 import { HttpError } from './domain/errors.js'
 import { up as migrateUp } from './services/migrate.js'
-import { seed as seedFn } from './services/seed.js'
 import { closePool } from './db/pool.js'
 import { registerAuthDecorators } from './middleware/auth.js'
 
@@ -92,7 +91,17 @@ async function main() {
     await migrateUp()
   }
   if (config.seedOnBoot) {
-    await seedFn()
+    // Lazy import: the seed runner depends on db/seed/* which the
+    // production runtime image doesn't ship. Loading it only here (and
+    // only when SEED_ON_BOOT=true) keeps the hot boot path free of
+    // the missing-file crash the static `import` used to cause.
+    try {
+      const { seed: seedFn } = await import('./services/seed.js')
+      await seedFn()
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[server] seed runner failed (non-fatal):', err.message)
+    }
   }
   const app = await buildServer()
   await app.listen({ host: config.host, port: config.port })
