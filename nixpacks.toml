@@ -1,5 +1,11 @@
 # Nixpacks config for the static SPA (Dokploy app #1).
 #
+# When a `client/Dockerfile` is committed, Dokploy uses it directly and
+# ignores this file. We keep both so that:
+#   - Dokploy uses `client/Dockerfile` (deterministic, fixes rollup/npm-ci
+#     caching issues; see client/Dockerfile header).
+#   - Railway and other Nixpacks-only hosts still work via this file.
+#
 # Builds the Vite SPA from `client/` and serves `client/dist/` via the
 # zero-dep `serve.cjs` shim. The repo is a monorepo (`client/` + `server/`)
 # — this file focuses on the SPA only. The Fastify API is a separate Dokploy
@@ -12,11 +18,15 @@
 nixPkgs = ["nodejs_20", "npm-9_x"]
 
 [phases.install]
-# Install everything so the workspace wiring is in place. The SPA only
-# actually needs `client/node_modules`, but `npm ci` at the root sets up
-# the npm workspace symlinks that make `client`'s imports resolve.
-cmds = ["npm ci --no-audit --no-fund"]
-
+# Install devDependencies explicitly. Nixpacks defaults to NODE_ENV=production
+# during build, which makes `npm ci` skip devDeps — and rollup is a devDep,
+# which is what makes `vite build` crash with
+# `Cannot find module @rollup/rollup-linux-x64-gnu`. Using `npm install` (not
+# `npm ci`) is also intentional: npm's optional-dep handling (npm/cli#4828)
+# can drop platform-specific rollup binaries on `npm ci` in workspaces. The
+# committed package-lock.json already lists every rollup platform, so
+# installs stay deterministic.
+cmds = ["npm install --no-audit --no-fund --include=dev"]
 [phases.build]
 # Vite builds to client/dist. Output is served by `serve.cjs` at runtime.
 cmds = ["npm run build"]

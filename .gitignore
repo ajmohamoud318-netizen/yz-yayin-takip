@@ -57,3 +57,6 @@ uploads/
 
 # Vite build output (just in case)
 client/dist/
+
+# Vite temp config timestamp files
+*.timestamp-*.mjs
