@@ -9,10 +9,49 @@
  */
 
 import { getPool, closePool } from '../db/pool.js'
-import { SEED_USERS, DEMO_PASSWORD_HASH } from '../../db/seed/users.js'
-import { SEED_PROJECTS, SEED_ORDER_REQUESTS, SEED_TITLES } from '../../db/seed/projects.js'
+
+/**
+ * Lazy seed imports.
+ *
+ * The seed data lives in `db/seed/*` and is intentionally NOT copied
+ * into the runtime image (it's large and unused in prod). Trying to
+ * import those modules at the top of this file makes Node crash at
+ * boot — even when `SEED_ON_BOOT=false` and `seed()` is never called —
+ * because ESM resolves static `import` statements before any code in
+ * the importing module runs.
+ *
+ * Lazy-loading inside `seed()` keeps the boot path lean and makes the
+ * missing seed files a real CLI-side error rather than a crash loop.
+ */
+async function loadSeed() {
+  const [usersMod, projMod] = await Promise.all([
+    import('../../db/seed/users.js').catch((err) => {
+      console.warn('[seed] users seed missing in runtime image:', err.message)
+      return null
+    }),
+    import('../../db/seed/projects.js').catch((err) => {
+      console.warn('[seed] projects seed missing in runtime image:', err.message)
+      return null
+    }),
+  ])
+  return {
+    SEED_USERS: usersMod?.SEED_USERS ?? [],
+    DEMO_PASSWORD_HASH: usersMod?.DEMO_PASSWORD_HASH ?? null,
+    SEED_PROJECTS: projMod?.SEED_PROJECTS ?? [],
+    SEED_ORDER_REQUESTS: projMod?.SEED_ORDER_REQUESTS ?? [],
+  }
+}
 
 export async function seed() {
+  let bundle
+  try {
+    bundle = await loadSeed()
+  } catch (err) {
+    console.error('[seed] could not load seed files:', err.message)
+    return
+  }
+  const { SEED_USERS, DEMO_PASSWORD_HASH, SEED_PROJECTS, SEED_ORDER_REQUESTS } =
+    bundle
   const pool = getPool()
   for (const u of SEED_USERS) {
     await pool.query(
