@@ -1,23 +1,25 @@
 /**
  * Server-side transition module.
  *
- * For this pass we deliberately delegate to the *client*'s
- * `project-transitions.js` — its pure helpers already encode every
- * rule the UI relies on (Ozalt dual-sign-off, demo gates, satellite
- * flags, etc.) and are covered by the client's Vitest suite. The
- * server only adapts the result to a Postgres-friendly { project,
- * history } pair with a bumped version stamp.
+ * Delegates to the server's own `domain/transitions.js` — a deliberate
+ * mirror of `client/src/infrastructure/mock/helpers/project-transitions.js`
+ * (see the top comment in that file for the sync rule). We can't import
+ * the client file directly because the deployed image ships `server/`
+ * only, so a relative import into the client tree would resolve to a
+ * path that doesn't exist on disk and the container would crash on
+ * boot with ERR_MODULE_NOT_FOUND.
  *
- * If the client helpers ever change, the server automatically picks
- * them up — which is the whole point: one source of truth for the
- * project state machine, two surfaces (browser, server).
+ * Each wrapper below returns { project, history } ready for `withTx`,
+ * identical in shape to the client helpers, so the route handlers and
+ * repository layer don't need to know they're talking to a different
+ * copy.
  */
 
 import {
   computeAdvance,
   computeApproval,
   computeRejection,
-} from '../../../client/src/infrastructure/mock/helpers/project-transitions.js'
+} from '../domain/transitions.js'
 
 /**
  * Compute the next project state for a `POST /projects/:id/advance`

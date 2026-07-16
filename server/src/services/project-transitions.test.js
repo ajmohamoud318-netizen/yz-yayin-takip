@@ -1,15 +1,14 @@
 /**
  * Server-side transition tests.
  *
- * The server delegates to the client's `project-transitions.js`, so
- * the deep branch coverage already lives in
- * `client/src/infrastructure/mock/helpers/project-transitions.test.js`.
- *
- * What this file covers: that the adapters in
- * `server/src/services/project-transitions.js` correctly bind the
- * shape Fastify routes hand in (user with `role` and `name`) and
- * don't drop fields on the way out. A single happy-path + a 409
- * stub is enough.
+ * The server delegates to `server/src/domain/transitions.js`, which is
+ * a deliberate mirror of
+ * `client/src/infrastructure/mock/helpers/project-transitions.js`. The
+ * deep branch coverage lives in the client's Vitest suite; this file
+ * checks the thin adapter layer in
+ * `server/src/services/project-transitions.js` — that it correctly
+ * binds the shape Fastify routes hand in (user with `role` + `name`)
+ * and doesn't drop fields on the way out.
  */
 
 import { describe, it } from 'node:test'
