@@ -2,7 +2,7 @@ import { useState, useEffect, useId, useRef } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 const YZ_LOGO_WHITE = '/yz_whitelogo.svg'
 const YZ_LOGO_BLACK = '/yz_blacklogo.svg'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth.js'
 import { USE_MOCK } from '../infrastructure/config.js'
@@ -184,9 +184,12 @@ export default function Login() {
                   <input type="checkbox" className="h-4 w-4 rounded border-gray-300 accent-red-500" />
                   30 gün hatırla
                 </label>
-                <button type="button" className="text-sm font-medium text-red-500 hover:text-red-600 transition-colors">
+                <Link
+                  to="/forgot-password"
+                  className="text-sm font-medium text-red-500 hover:text-red-600 transition-colors"
+                >
                   Şifremi unuttum?
-                </button>
+                </Link>
               </div>
 
               {/* Submit */}

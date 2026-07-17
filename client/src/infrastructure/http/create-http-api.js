@@ -80,6 +80,14 @@ export function createHttpApi() {
         if (res?.token) setAuthToken(res.token)
         return res
       }),
+    forgotPassword: (email) => authRepo.forgotPassword(email),
+    resetPassword: (token, password) => authRepo.resetPassword(token, password)
+      .then((res) => {
+        // Same auto-login as accept-invite — successful reset signs the
+        // user in immediately.
+        if (res?.token) setAuthToken(res.token)
+        return res
+      }),
 
     // Users (need a warm cache before the dashboard loads)
     bootstrapUsers: () => userRepo.listUsers(),

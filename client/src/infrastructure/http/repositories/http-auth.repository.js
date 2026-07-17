@@ -53,5 +53,27 @@ export function createHttpAuthRepository() {
       })
       return data
     },
+    /**
+     * Ask the server to email a password-reset link. Always resolves;
+     * the server returns 200 even when the email is unknown so we don't
+     * leak which addresses are in the system.
+     */
+    async forgotPassword(email) {
+      const { data } = await httpClient.post('/auth/forgot-password', {
+        email,
+      })
+      return data
+    },
+    /**
+     * Set a new password via a reset token. Returns { token, user } so
+     * the SPA can log the user straight in.
+     */
+    async resetPassword(token, password) {
+      const { data } = await httpClient.post('/auth/reset-password', {
+        token,
+        password,
+      })
+      return data
+    },
   }
 }

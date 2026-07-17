@@ -16,6 +16,8 @@ const Team                = lazy(() => import('./pages/Team.jsx'))
 const Kanban              = lazy(() => import('./pages/Kanban.jsx'))
 const Approvals           = lazy(() => import('./pages/Approvals.jsx'))
 const AcceptInvite        = lazy(() => import('./pages/AcceptInvite.jsx'))
+const ForgotPassword      = lazy(() => import('./pages/ForgotPassword.jsx'))
+const ResetPassword       = lazy(() => import('./pages/ResetPassword.jsx'))
 const MyProjects          = lazy(() => import('./pages/MyProjects.jsx'))
 const Documents           = lazy(() => import('./pages/Documents.jsx'))
 const BaskiListesi        = lazy(() => import('./pages/BaskiListesi.jsx'))
@@ -65,6 +67,8 @@ export default function App() {
 
           <Route path="/login" element={<Login />} />
           <Route path="/accept-invite" element={<AcceptInvite />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           <Route
             element={

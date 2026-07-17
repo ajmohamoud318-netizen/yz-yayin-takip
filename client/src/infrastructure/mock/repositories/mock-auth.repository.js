@@ -86,5 +86,45 @@ export function createMockAuthRepository() {
         },
       )
     },
+
+    /**
+     * Mock-mode forgot-password: always resolves with { ok: true } so
+     * the UX mirrors the real server. Useful for previewing the page
+     * without spinning up the backend.
+     */
+    forgotPassword(email) {
+      return mockOrHttp(
+        () => Promise.resolve({ ok: true }),
+        async () => {
+          const { data } = await httpClient.post('/auth/forgot-password', { email })
+          return data
+        },
+      )
+    },
+
+    /**
+     * Mock-mode reset-password: just logs the user in as the first
+     * active mock user. Real verification / bcrypt happens in HTTP mode.
+     */
+    resetPassword(token, password) {
+      return mockOrHttp(
+        () => {
+          if (!password || password.length < 8) {
+            return Promise.reject(new Error('Şifre en az 8 karakter olmalı.'))
+          }
+          const user = mockUsers.find((u) => u.is_active) ?? mockUsers[0]
+          if (!user) return Promise.reject(new Error('Sıfırlama bağlantısı geçersiz.'))
+          const { password: _pw, ...safe } = user
+          return { token: `mock-${user.id}`, user: safe }
+        },
+        async () => {
+          const { data } = await httpClient.post('/auth/reset-password', {
+            token,
+            password,
+          })
+          return data
+        },
+      )
+    },
   }
 }

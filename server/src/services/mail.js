@@ -148,6 +148,59 @@ export function renderInviteEmail({ name, role, inviteUrl, invitedBy }) {
   return { subject, text, html }
 }
 
+/**
+ * Render the password-reset email body. Same plain (unbranded) format
+ * as the invite so the system feels consistent.
+ */
+export function renderResetEmail({ name, resetUrl }) {
+  const firstName = String(name).split(/\s+/)[0] || name
+  const subject = 'Şifreni sıfırla — Yükselen Zeka Yayın'
+
+  const text = [
+    `Merhaba ${firstName},`,
+    '',
+    'Yükselen Zeka Yayın Takip hesabın için şifre sıfırlama talebi aldık.',
+    '',
+    'Şifreni sıfırlamak için aşağıdaki bağlantıya tıkla:',
+    '',
+    resetUrl,
+    '',
+    'Bu bağlantı 1 saat geçerlidir. Sıfırlama işlemini sen başlatmadıysan bu e-postayı görmezden gelebilirsin — şifren değişmez.',
+    '',
+    'Sevgiyle,',
+    'Yükselen Zeka Yayın Takip Ekibi',
+  ].join('\n')
+
+  const html = `
+<!doctype html>
+<html lang="tr">
+  <head><meta charset="utf-8"></head>
+  <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#222222;font-size:14px;line-height:1.55;">
+    <span style="display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">
+      Yükselen Zeka Yayın Takip hesabın için şifre sıfırlama talebi aldık. Bağlantı için e-postayı açın.
+    </span>
+    <div style="max-width:560px;margin:0 auto;padding:24px 20px;">
+      <p>Merhaba ${escapeHtml(firstName)},</p>
+
+      <p>Yükselen Zeka Yayın Takip hesabın için şifre sıfırlama talebi aldık.</p>
+
+      <p>Şifreni sıfırlamak için aşağıdaki bağlantıya tıkla:</p>
+
+      <p><a href="${resetUrl}" style="color:#1155cc;text-decoration:underline;word-break:break-all;">${escapeHtml(resetUrl)}</a></p>
+
+      <p style="color:#888888;font-size:12px;">
+        Bu bağlantı 1 saat geçerlidir. Sıfırlama işlemini sen başlatmadıysan bu e-postayı görmezden gelebilirsin — şifren değişmez.
+      </p>
+
+      <p>Sevgiyle,<br>
+         <strong>Yükselen Zeka Yayın Takip Ekibi</strong></p>
+    </div>
+  </body>
+</html>
+  `
+  return { subject, text, html }
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',

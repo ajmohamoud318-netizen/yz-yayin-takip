@@ -1,26 +1,40 @@
 import bcrypt from 'bcryptjs'
 import { attachUser } from '../middleware/auth.js'
+import { rateLimit } from '../middleware/rate-limit.js'
 import { badRequest, forbidden, unauthorized } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
 import {
   consumeInvitation,
   verifyInvitation,
 } from '../services/invitations.js'
+import {
+  consumePasswordReset,
+  createPasswordReset,
+  verifyPasswordReset,
+} from '../services/password-resets.js'
+import { sendMail, renderResetEmail } from '../services/mail.js'
 
 /**
  * Auth API.
  *
  * Real Google OAuth is intentionally not yet wired (per the roadmap in
  * AGENTS.md). Instead we expose:
- *   POST /api/auth/login           — body { email, password }
- *   POST /api/auth/logout          — no-op for header auth.
- *   GET  /api/auth/me              — returns the attached user.
- *   GET  /api/auth/invite-preview  — body { token }, returns the invitee
- *                                    without consuming the token (so the
- *                                    "set password" page can render name).
- *   POST /api/auth/accept-invite   — body { token, password }, sets the
- *                                    password, marks the invitation used,
- *                                    returns { token, user }.
+ *   POST /api/auth/login             — body { email, password }
+ *   POST /api/auth/logout            — no-op for header auth.
+ *   GET  /api/auth/me                — returns the attached user.
+ *   GET  /api/auth/invite-preview    — body { token }, returns the invitee
+ *                                      without consuming the token (so the
+ *                                      "set password" page can render name).
+ *   POST /api/auth/accept-invite     — body { token, password }, sets the
+ *                                      password, marks the invitation used,
+ *                                      returns { token, user }.
+ *   POST /api/auth/forgot-password   — body { email }, always returns 200,
+ *                                      sends a reset email if the address
+ *                                      matches an active user. Rate-limited
+ *                                      to 5 requests/minute per IP.
+ *   POST /api/auth/reset-password    — body { token, password }, consumes
+ *                                      the reset token and sets a new
+ *                                      bcrypt password.
  *
  * This keeps the mock-auth UX in the SPA working with the new server
  * end-to-end. Next pass, replace /login + /me with the OAuth handshake.
@@ -93,6 +107,79 @@ export async function authRoutes(fastify) {
     )
     const user = rows[0]
     await consumeInvitation(inv.invitationId)
+    return { token: user.id, user }
+  })
+
+  /**
+   * Forgot-password — always returns 200 even when the email doesn't
+   * exist, so attackers can't enumerate accounts by probing the API.
+   * If the email is real we mint a 1-hour token + send a reset link.
+   *
+   * Rate-limited to 5 requests per minute per IP — without this an
+   * attacker could burn through Resend quota by POSTing random
+   * addresses. The limit is per-IP not per-email because the spam
+   * vector is automated, not human.
+   */
+  fastify.post(
+    '/auth/forgot-password',
+    {
+      preHandler: rateLimit({
+        key: (req) => req.ip,
+        limit: 5,
+        windowMs: 60_000,
+      }),
+    },
+    async (request) => {
+      const { email } = request.body ?? {}
+      if (!email || typeof email !== 'string') {
+        return { ok: true }
+      }
+      const normalisedEmail = email.trim().toLowerCase()
+      const { rows } = await getPool().query(
+        `SELECT id, name, email, is_active FROM users WHERE email = $1 LIMIT 1`,
+        [normalisedEmail],
+      )
+      const user = rows[0]
+      if (user && user.is_active !== false) {
+        const reset = await createPasswordReset({ userId: user.id })
+        const { subject, text, html } = renderResetEmail({
+          name: user.name,
+          resetUrl: reset.url,
+        })
+        // Same never-throws contract as the invite email — a transient
+        // SMTP outage should not block the forgot-password flow. We log
+        // it; the user will see "no email arrived" and try again.
+        await sendMail({ to: user.email, subject, text, html })
+      }
+      return { ok: true }
+    },
+  )
+
+  /**
+   * Reset-password — consumes the token, sets a new bcrypt password.
+   * Returns { token, user } so the SPA can log the user straight in
+   * without a second round-trip.
+   */
+  fastify.post('/auth/reset-password', async (request) => {
+    const { token, password } = request.body ?? {}
+    if (!password || typeof password !== 'string') {
+      badRequest('Yeni şifre zorunlu.')
+    }
+    if (password.length < 8) {
+      badRequest('Şifre en az 8 karakter olmalı.')
+    }
+    const reset = await verifyPasswordReset(token)
+    const hash = bcrypt.hashSync(password, 10)
+    const { rows } = await getPool().query(
+      `UPDATE users
+          SET password = $1,
+              updated_at = NOW()
+        WHERE id = $2
+        RETURNING id, name, email, role, is_active`,
+      [hash, reset.user.id],
+    )
+    const user = rows[0]
+    await consumePasswordReset(reset.resetId)
     return { token: user.id, user }
   })
 
