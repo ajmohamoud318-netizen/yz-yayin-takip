@@ -33,10 +33,42 @@ export async function userRoutes(fastify) {
     }
     const normalisedEmail = email.trim().toLowerCase()
     const existing = await getPool().query(
-      'SELECT id FROM users WHERE email = $1',
+      `SELECT id, is_active FROM users WHERE email = $1`,
       [normalisedEmail],
     )
-    if (existing.rowCount > 0) conflict('Bu e-posta zaten kayıtlı.')
+    if (existing.rowCount > 0) {
+      // Allow re-inviting a previously deactivated user — reactivate them
+      // and mint a fresh invitation token. Active users still 409.
+      if (!existing.rows[0].is_active) {
+        const reactivated = await getPool().query(
+          `UPDATE users SET is_active = TRUE, invited_at = NOW(), name = $2, role = $3
+           WHERE id = $1
+           RETURNING id, name, email, role, is_active, invited_at, joined_at, created_at`,
+          [existing.rows[0].id, name.trim(), role],
+        )
+        const user = reactivated.rows[0]
+        const invitation = await createInvitation({ userId: user.id })
+        const { subject, text, html } = renderInviteEmail({
+          name: user.name,
+          role: user.role,
+          inviteUrl: invitation.url,
+          invitedBy: request.user?.name,
+        })
+        const mailResult = await sendMail({ to: user.email, subject, text, html })
+        return {
+          ...user,
+          invitation: {
+            url: invitation.url,
+            token: invitation.token,
+            expiresAt: invitation.expiresAt,
+            emailSent: mailResult.ok,
+            emailError: mailResult.ok ? null : mailResult.error,
+            reactivated: true,
+          },
+        }
+      }
+      conflict('Bu e-posta zaten kayıtlı.')
+    }
 
     // Create the user WITHOUT a password. They'll set it via the invite
     // link. `invited_at` records when the invite was sent; `joined_at`
