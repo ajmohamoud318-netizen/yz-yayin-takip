@@ -5,9 +5,17 @@ import { USE_MOCK } from '../config.js'
 // In production, the SPA is served by `serve.cjs` and `/api` would 404, so we
 // read the absolute backend URL from VITE_API_BASE_URL (set per-environment
 // in Dokploy) and fall back to a same-origin `/api` for local dev.
-const baseURL = import.meta.env?.VITE_API_BASE_URL
-  ? `${import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '')}/api`
-  : '/api'
+//
+// The build-time default below is the Dokploy-managed sslip.io host that
+// Traefik wires to the backend container — used whenever VITE_API_BASE_URL
+// is unset or empty. Individual environments can still override it through
+// Dokploy's Build-time Arguments.
+const DEFAULT_API_BASE_URL = 'https://yayin-takip-backend-4dvoqr-53441c-46-62-170-64.sslip.io'
+
+const apiBaseFromEnv = import.meta.env?.VITE_API_BASE_URL?.trim()
+const baseURL = apiBaseFromEnv
+  ? `${apiBaseFromEnv.replace(/\/$/, '')}/api`
+  : `${DEFAULT_API_BASE_URL}/api`
 
 const client = axios.create({
   baseURL,
