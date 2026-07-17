@@ -72,10 +72,9 @@ export async function sendMail({ to, subject, text, html }) {
  * recipient's mail client shows something nice even if it doesn't render
  * HTML.
  *
- * The HTML design mirrors the SPA's brand palette (rose-primary
- * `#a5274d`, paper-canvas `#faf6ef`) and Fraunces display type so the
- * email feels like a natural extension of the product rather than a
- * generic transactional message.
+ * Plain email design: no gradients, no decorative cards, no brand
+ * glyphs — just the message and a clear link. Renders the same in every
+ * client, focuses on the content.
  */
 export function renderInviteEmail({ name, role, inviteUrl, invitedBy }) {
   const roleLabel = {
@@ -94,150 +93,55 @@ export function renderInviteEmail({ name, role, inviteUrl, invitedBy }) {
   const text = [
     `Merhaba ${firstName},`,
     '',
-    `${inviter}, seni Yükselen Zeka Yayın ekibine katılmaya davet etti. 💜`,
+    `${inviter}, seni Yükselen Zeka Yayın ekibine katılmaya davet etti.`,
     '',
     'Bazen en güzel yolculuklar, tek bir adımla başlar.',
     '',
     'Hayal etmekten vazgeçme.',
     'Üretmekten vazgeçme.',
-    'Çünkü birlikte çok daha güçlüyüz. ✨',
+    'Çünkü birlikte çok daha güçlüyüz.',
     '',
-    'Aşağıdaki butona tıklayarak daveti kabul edebilir ve ekibe katılabilirsin.',
-    '',
-    `✨ Daveti Kabul Et`,
-    `   ${inviteUrl}`,
-    '',
-    'Buton çalışmazsa bu bağlantıyı kullanabilirsin:',
+    'Aşağıdaki bağlantıya tıklayarak daveti kabul edebilir ve ekibe katılabilirsin:',
     '',
     inviteUrl,
     '',
     'Sevgiyle,',
     'Yükselen Zeka Yayın Takip Ekibi',
     '',
-    '—',
     'Bu daveti beklemiyorsan bu e-postayı güvenle görmezden gelebilirsin.',
-    'Yükselen Zeka Yayın ekibi',
   ].join('\n')
 
-  // HTML version — branded, with a warm gradient header, the copy the
-  // team_leader requested (verbatim), a single primary CTA, and a
-  // Fraunces signature. Inline CSS only (most clients strip <style>).
+  // Plain HTML version — same content, single underlined link, no
+  // images, no gradients, no brand cards. Renders identically in
+  // Gmail, Outlook, Apple Mail, mobile.
   const html = `
 <!doctype html>
 <html lang="tr">
-  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-  <body style="margin:0;padding:0;background:#faf6ef;font-family:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#2b2018;-webkit-font-smoothing:antialiased;">
-    <span style="display:none;visibility:none;mso-hide:all;font-size:1px;color:#faf6ef;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">
+  <head><meta charset="utf-8"></head>
+  <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#222222;font-size:14px;line-height:1.55;">
+    <span style="display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">
       ${escapeHtml(inviter)} seni Yükselen Zeka Yayın ekibine katılmaya davet etti. Davet bağlantısı için e-postayı açın.
     </span>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#faf6ef;padding:32px 16px;">
-      <tr>
-        <td align="center">
-          <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px;max-width:100%;">
+    <div style="max-width:560px;margin:0 auto;padding:24px 20px;">
+      <p>Merhaba ${escapeHtml(firstName)},</p>
 
-            <!-- Brand mark -->
-            <tr>
-              <td align="left" style="padding:0 8px 16px;">
-                <span style="display:inline-block;font-family:'Fraunces',Georgia,serif;font-size:14px;letter-spacing:.18em;text-transform:uppercase;color:#a5274d;font-weight:600;">
-                  Yükselen&nbsp;Zeka · Yayın Takip
-                </span>
-              </td>
-            </tr>
+      <p>${escapeHtml(inviter)}, seni <strong>Yükselen Zeka Yayın ekibi</strong>ne katılmaya davet etti.</p>
 
-            <!-- Hero card with warm gradient + paper feel -->
-            <tr>
-              <td style="background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e6dccd;box-shadow:0 1px 0 #00000008, 0 12px 32px -16px #a5274d22;">
+      <p>Bazen en güzel yolculuklar, tek bir adımla başlar.</p>
 
-                <div style="background:linear-gradient(135deg,#a5274d 0%,#7a1c39 60%,#2b2018 100%);padding:40px 32px 36px;color:#fdf2f5;">
-                  <div style="display:inline-block;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:6px 12px;font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;backdrop-filter:blur(4px);">
-                    Yükselen Zeka Yayın
-                  </div>
-                  <h1 style="margin:18px 0 0;font-family:'Fraunces',Georgia,serif;font-size:30px;line-height:1.2;letter-spacing:-.01em;font-weight:600;color:#ffffff;">
-                    Hoş geldin, ${escapeHtml(firstName)}.
-                  </h1>
-                </div>
+      <p>Hayal etmekten vazgeçme.<br>
+         Üretmekten vazgeçme.<br>
+         Çünkü birlikte çok daha güçlüyüz.</p>
 
-                <!-- Body — exact copy the team leader approved -->
-                <div style="padding:32px 32px 8px;">
+      <p>Aşağıdaki bağlantıya tıklayarak daveti kabul edebilir ve ekibe katılabilirsin:</p>
 
-                  <p style="margin:0 0 18px;font-size:16px;line-height:1.6;color:#2b2018;">
-                    Merhaba <strong style="color:#a5274d;">${escapeHtml(firstName)}</strong>,
-                  </p>
+      <p><a href="${inviteUrl}" style="color:#1155cc;text-decoration:underline;word-break:break-all;">${escapeHtml(inviteUrl)}</a></p>
 
-                  <p style="margin:0 0 24px;font-size:16px;line-height:1.7;color:#2b2018;">
-                    <strong style="color:#2b2018;">${escapeHtml(inviter)}</strong>, seni
-                    <strong style="color:#a5274d;">Yükselen Zeka Yayın ekibi</strong>ne katılmaya davet etti. 💜
-                  </p>
+      <p>Sevgiyle,<br>
+         <strong>Yükselen Zeka Yayın Takip Ekibi</strong></p>
 
-                  <p style="margin:0 0 12px;font-size:16px;line-height:1.6;color:#2b2018;font-style:italic;font-family:'Fraunces',Georgia,serif;">
-                    Bazen en güzel yolculuklar, tek bir adımla başlar.
-                  </p>
-
-                  <p style="margin:0 0 4px;font-size:16px;line-height:1.7;color:#2b2018;">
-                    Hayal etmekten vazgeçme.
-                  </p>
-                  <p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#2b2018;">
-                    Üretmekten vazgeçme.
-                  </p>
-                  <p style="margin:0 0 24px;font-size:16px;line-height:1.7;color:#2b2018;">
-                    Çünkü birlikte çok daha güçlüyüz. ✨
-                  </p>
-
-                  <!-- Primary CTA -->
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 4px;">
-                    <tr>
-                      <td align="center" style="padding:8px 0 4px;">
-                        <a href="${inviteUrl}"
-                           target="_blank"
-                           style="display:inline-block;background:linear-gradient(135deg,#a5274d,#7a1c39);color:#ffffff;text-decoration:none;font-weight:600;font-size:16px;padding:18px 40px;border-radius:14px;letter-spacing:.01em;box-shadow:0 8px 20px -8px #a5274d99, 0 0 0 1px #2b201822 inset;">
-                          ✨ Daveti Kabul Et
-                        </a>
-                      </td>
-                    </tr>
-                  </table>
-                </div>
-
-                <!-- Fallback link -->
-                <div style="padding:16px 32px 24px;">
-                  <div style="background:#faf6ef;border:1px dashed #e6dccd;border-radius:10px;padding:14px 16px;">
-                    <p style="margin:0 0 6px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#7a6a58;font-weight:600;">
-                      Buton çalışmazsa bu bağlantıyı kullanabilirsin
-                    </p>
-                    <p style="margin:0;font-size:12px;line-height:1.55;color:#2b2018;word-break:break-all;font-family:'Geist Mono',ui-monospace,monospace;">
-                      ${escapeHtml(inviteUrl)}
-                    </p>
-                  </div>
-                </div>
-
-                <!-- Signature -->
-                <div style="padding:8px 32px 32px;border-top:1px solid #f0e8da;">
-                  <p style="margin:16px 0 4px;font-size:14px;color:#2b2018;">
-                    Sevgiyle,
-                  </p>
-                  <p style="margin:0;font-family:'Fraunces',Georgia,serif;font-size:20px;color:#a5274d;font-style:italic;">
-                    Yükselen Zeka Yayın Takip Ekibi
-                  </p>
-                </div>
-              </td>
-            </tr>
-
-            <!-- Sub-footer -->
-            <tr>
-              <td align="center" style="padding:18px 8px 0;">
-                <p style="margin:0 0 6px;font-size:11px;line-height:1.5;color:#7a6a58;">
-                  Bu davet ${escapeHtml(inviter)} tarafından gönderildi.
-                  Beklemediğin bir e-posta ise lütfen <a href="mailto:noreply@yt.mucitkarinca.com" style="color:#a5274d;text-decoration:underline;">bize bildir</a>.
-                </p>
-                <p style="margin:0;font-size:11px;line-height:1.5;color:#7a6a58;">
-                  Yükselen Zeka Yayın ekibi
-                </p>
-              </td>
-            </tr>
-
-          </table>
-        </td>
-      </tr>
-    </table>
+      <p style="color:#888888;font-size:12px;">Bu daveti beklemiyorsan bu e-postayı güvenle görmezden gelebilirsin.</p>
+    </div>
   </body>
 </html>
   `
