@@ -1,8 +1,16 @@
 import axios from 'axios'
 import { USE_MOCK } from '../config.js'
 
+// In dev, Vite's proxy (see vite.config.js) rewrites /api → http://localhost:4000.
+// In production, the SPA is served by `serve.cjs` and `/api` would 404, so we
+// read the absolute backend URL from VITE_API_BASE_URL (set per-environment
+// in Dokploy) and fall back to a same-origin `/api` for local dev.
+const baseURL = import.meta.env?.VITE_API_BASE_URL
+  ? `${import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '')}/api`
+  : '/api'
+
 const client = axios.create({
-  baseURL: '/api',
+  baseURL,
   withCredentials: false,
 })
 
