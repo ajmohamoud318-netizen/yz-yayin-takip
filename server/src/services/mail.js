@@ -71,6 +71,11 @@ export async function sendMail({ to, subject, text, html }) {
  * Render the invitation email body. Plain text + matching HTML so the
  * recipient's mail client shows something nice even if it doesn't render
  * HTML.
+ *
+ * The HTML design mirrors the SPA's brand palette (rose-primary
+ * `#a5274d`, paper-canvas `#faf6ef`) and Fraunces display type so the
+ * email feels like a natural extension of the product rather than a
+ * generic transactional message.
  */
 export function renderInviteEmail({ name, role, inviteUrl, invitedBy }) {
   const roleLabel = {
@@ -80,36 +85,173 @@ export function renderInviteEmail({ name, role, inviteUrl, invitedBy }) {
     team_leader: 'Takım Lideri',
   }[role] ?? role
 
-  const subject = `${invitedBy ?? 'YZ Yayın Takip'} sizi ekibe davet etti`
+  // Per-role description of what the invitee can do once onboarded.
+  // Tailored copy makes the email feel like a personal welcome, not a
+  // password reset link.
+  const roleBlurb = {
+    designer: 'Tasarım aşamalarını, demo ve ozalit süreçlerini takip edecek; atanmış projelerdeki alt görevleri güncelleyeceksin.',
+    printer:  'Demo ve ozalit onaylarını yönetecek; üretime hazır projeleri Üretime Hazır / Üretimde aşamalarına taşıyacaksın.',
+    satis:    'Yeni baskı siparişlerini açacak, matbaa teslim onaylarını yönetecek ve ürün kataloğuna erişeceksin.',
+    team_leader: 'Tüm projelerin sahibi olacaksın: yeni proje açacak, tasarımcı atayacak, tüm onayları yönetecek ve ekibi davet edeceksin.',
+  }[role] ?? 'YZ Yayın Takip panosuna erişeceksin.'
+
+  const inviter = invitedBy ?? 'YZ Yayın Takip ekibi'
+  const firstName = String(name).split(/\s+/)[0] || name
+
+  const subject = `${inviter} sizi YZ Yayın Takip'a davet etti`
+
+  // Plain-text version — readable in any client.
   const text = [
-    `Merhaba ${name},`,
+    `Merhaba ${firstName},`,
     '',
-    `${invitedBy ?? 'YZ Yayın Takip'} sizi ${roleLabel} olarak ekibe davet etti.`,
-    'Hesabınızı aktifleştirmek ve şifrenizi belirlemek için aşağıdaki linke tıklayın:',
+    `${inviter} sizi YZ Yayın Takip ekibine ${roleLabel} olarak katılmaya davet etti.`,
+    '',
+    `Bu davetle birlikte:`,
+    `  • ${roleBlurb}`,
+    `  • Ayşenur'un açtığı projelere, demo ve ozalit onaylarına erişebileceksin.`,
+    `  • ${roleLabel} rolüne özel bir panon olacak.`,
+    '',
+    'Hesabını aktifleştirmek ve şifreni belirlemek için aşağıdaki bağlantıya tıkla:',
     '',
     inviteUrl,
     '',
-    'Bu link 7 gün geçerlidir. Link çalışmıyorsa adresi tarayıcınıza yapıştırın.',
+    'Bu bağlantı 7 gün geçerlidir. Bir sorun olursa bize doğrudan bu e-postaya yanıt yazabilirsin.',
     '',
-    '— YZ Yayın Takip',
+    'Birlikte güzel işler çıkaracağız, görüşmek üzere!',
+    '',
+    `${inviter}`,
+    `YZ Yayın Takip ekibi`,
   ].join('\n')
 
+  // HTML version — branded, with a warm gradient header, a "what you'll
+  // see" panel, and a large primary CTA. Inline CSS only (most clients
+  // strip <style>).
   const html = `
-    <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px;">
-      <h2 style="color: #dc2626; margin: 0 0 16px;">YZ Yayın Takip</h2>
-      <p>Merhaba <strong>${escapeHtml(name)}</strong>,</p>
-      <p><strong>${escapeHtml(invitedBy ?? 'YZ Yayın Takip')}</strong> sizi <strong>${escapeHtml(roleLabel)}</strong> olarak ekibe davet etti.</p>
-      <p>Hesabınızı aktifleştirmek ve şifrenizi belirlemek için aşağıdaki butona tıklayın:</p>
-      <p style="margin: 24px 0;">
-        <a href="${inviteUrl}"
-           style="background: #dc2626; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: 600;">
-          Şifre Belirle
-        </a>
-      </p>
-      <p style="color: #666; font-size: 14px;">Bu link 7 gün geçerlidir.</p>
-      <p style="color: #666; font-size: 12px;">Buton çalışmıyorsa bu linki tarayıcınıza yapıştırın:<br>
-        <span style="color: #999; word-break: break-all;">${inviteUrl}</span></p>
-    </div>
+<!doctype html>
+<html lang="tr">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+  <body style="margin:0;padding:0;background:#faf6ef;font-family:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#2b2018;-webkit-font-smoothing:antialiased;">
+    <span style="display:none;visibility:none;mso-hide:all;font-size:1px;color:#faf6ef;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">
+      ${inviter} sizi YZ Yayın Takip ekibine ${escapeHtml(roleLabel)} olarak katılmaya davet etti. Davet bağlantısı için e-postayı açın.
+    </span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#faf6ef;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px;max-width:100%;">
+
+            <!-- Brand mark -->
+            <tr>
+              <td align="left" style="padding:0 8px 16px;">
+                <span style="display:inline-block;font-family:'Fraunces',Georgia,serif;font-size:14px;letter-spacing:.18em;text-transform:uppercase;color:#a5274d;font-weight:600;">
+                  Yükselen&nbsp;Zeka · Yayın Takip
+                </span>
+              </td>
+            </tr>
+
+            <!-- Hero card with warm gradient + paper feel -->
+            <tr>
+              <td style="background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e6dccd;box-shadow:0 1px 0 #00000008, 0 12px 32px -16px #a5274d22;">
+                <div style="background:linear-gradient(135deg,#a5274d 0%,#7a1c39 60%,#2b2018 100%);padding:36px 32px;color:#fdf2f5;">
+                  <div style="display:inline-block;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:6px 12px;font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;backdrop-filter:blur(4px);">
+                    Davet · ${escapeHtml(roleLabel)}
+                  </div>
+                  <h1 style="margin:18px 0 0;font-family:'Fraunces',Georgia,serif;font-size:30px;line-height:1.15;letter-spacing:-.01em;font-weight:600;color:#ffffff;">
+                    Hoş geldin, ${escapeHtml(firstName)}.
+                  </h1>
+                  <p style="margin:10px 0 0;font-size:15px;line-height:1.55;color:#fdf2f5d9;max-width:440px;">
+                    <strong style="color:#ffffff;">${escapeHtml(inviter)}</strong> seni <strong style="color:#ffffff;">${escapeHtml(roleLabel)}</strong> olarak YZ Yayın Takip'a katılmaya davet etti. Birlikte daha düzenli ve hızlı yayın süreçleri için çalışacağız.
+                  </p>
+                </div>
+
+                <!-- Body -->
+                <div style="padding:28px 32px 8px;">
+                  <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#2b2018;">
+                    Bu davet kabul edildiğinde şunlara erişebileceksin:
+                  </p>
+
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;">
+                    <tr>
+                      <td style="padding:14px 16px;background:#fdf2f5;border:1px solid #f5d4dd;border-radius:12px;">
+                        <div style="font-size:14px;line-height:1.55;color:#2b2018;">
+                          <div style="display:flex;align-items:flex-start;margin-bottom:8px;">
+                            <span style="display:inline-block;width:22px;height:22px;border-radius:50%;background:#a5274d;color:#fff;font-size:11px;font-weight:700;text-align:center;line-height:22px;margin-right:10px;flex:0 0 22px;">1</span>
+                            <span><strong style="color:#a5274d;">${escapeHtml(roleLabel)} panon.</strong> ${escapeHtml(roleBlurb)}</span>
+                          </div>
+                          <div style="display:flex;align-items:flex-start;margin-bottom:8px;">
+                            <span style="display:inline-block;width:22px;height:22px;border-radius:50%;background:#a5274d;color:#fff;font-size:11px;font-weight:700;text-align:center;line-height:22px;margin-right:10px;flex:0 0 22px;">2</span>
+                            <span>Sana atanan projelerdeki <strong>tasarım, demo, ozalit ve üretim</strong> aşamalarını tek yerden takip edebileceksin.</span>
+                          </div>
+                          <div style="display:flex;align-items:flex-start;">
+                            <span style="display:inline-block;width:22px;height:22px;border-radius:50%;background:#a5274d;color:#fff;font-size:11px;font-weight:700;text-align:center;line-height:22px;margin-right:10px;flex:0 0 22px;">3</span>
+                            <span>Bildirimler, yorumlar ve haftalık planlar doğrudan <strong>${escapeHtml(inviter)}</strong>'dan sana gelecek.</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </table>
+
+                  <!-- Primary CTA -->
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td align="center" style="padding:8px 0 4px;">
+                        <a href="${inviteUrl}"
+                           target="_blank"
+                           style="display:inline-block;background:linear-gradient(135deg,#a5274d,#7a1c39);color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:16px 36px;border-radius:12px;letter-spacing:.01em;box-shadow:0 6px 18px -8px #a5274d88, 0 0 0 1px #2b201822 inset;">
+                          Şifre Belirle &amp; Ekibe Katıl →
+                        </a>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td align="center" style="padding:6px 0 24px;font-size:12px;color:#7a6a58;">
+                        Bağlantı 7 gün geçerlidir · sadece sana özeldir
+                      </td>
+                    </tr>
+                  </table>
+                </div>
+
+                <!-- Footer / fallback link -->
+                <div style="padding:0 32px 28px;">
+                  <div style="background:#faf6ef;border:1px dashed #e6dccd;border-radius:10px;padding:14px 16px;">
+                    <p style="margin:0 0 6px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#7a6a58;font-weight:600;">
+                      Buton çalışmıyorsa
+                    </p>
+                    <p style="margin:0;font-size:12px;line-height:1.55;color:#2b2018;word-break:break-all;font-family:'Geist Mono',ui-monospace,monospace;">
+                      ${escapeHtml(inviteUrl)}
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Signature -->
+                <div style="padding:4px 32px 32px;border-top:1px solid #f0e8da;">
+                  <p style="margin:16px 0 4px;font-size:14px;color:#2b2018;">
+                    Birlikte güzel işler çıkaracağız — görüşmek üzere.
+                  </p>
+                  <p style="margin:0;font-family:'Fraunces',Georgia,serif;font-size:18px;color:#a5274d;font-style:italic;">
+                    ${escapeHtml(inviter)}
+                  </p>
+                  <p style="margin:2px 0 0;font-size:12px;color:#7a6a58;">
+                    YZ Yayın Takip · Yükselen Zeka
+                  </p>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Sub-footer -->
+            <tr>
+              <td align="center" style="padding:18px 8px 0;">
+                <p style="margin:0;font-size:11px;line-height:1.5;color:#7a6a58;">
+                  Bu davet ${escapeHtml(inviter)} tarafından gönderildi.
+                  Beklemediğin bir e-posta ise lütfen <a href="mailto:noreply@yt.mucitkarinca.com" style="color:#a5274d;text-decoration:underline;">bize bildir</a>.
+                </p>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
   `
   return { subject, text, html }
 }
