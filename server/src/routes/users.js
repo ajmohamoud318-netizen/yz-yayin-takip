@@ -29,7 +29,7 @@ export async function userRoutes(fastify) {
     requireRole(request, 'team_leader')
     const { name, email, role } = request.body ?? {}
     if (!name || !email) badRequest('Ad ve e-posta zorunlu.')
-    if (!['designer', 'printer', 'satis'].includes(role)) {
+    if (!['designer', 'printer', 'satis', 'team_leader'].includes(role)) {
       badRequest('Geçersiz rol.')
     }
     const normalisedEmail = email.trim().toLowerCase()
