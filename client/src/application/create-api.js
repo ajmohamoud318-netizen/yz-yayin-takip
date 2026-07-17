@@ -66,6 +66,8 @@ export function createApi() {
     acceptInvite: (token, password) => authRepo.acceptInvite(token, password),
     forgotPassword: (email) => authRepo.forgotPassword(email),
     resetPassword: (token, password) => authRepo.resetPassword(token, password),
+    changePassword: (currentPassword, newPassword) =>
+      authRepo.changePassword(currentPassword, newPassword),
 
     // Users
     listUsers: () => userRepo.listUsers(),

@@ -126,5 +126,28 @@ export function createMockAuthRepository() {
         },
       )
     },
+
+    /**
+     * Mock-mode change-password: a no-op (mock passwords aren't
+     * actually checked) but mirrors the HTTP contract so dev mode
+     * works without the backend.
+     */
+    changePassword(currentPassword, newPassword) {
+      return mockOrHttp(
+        () => {
+          if (!newPassword || newPassword.length < 8) {
+            return Promise.reject(new Error('Yeni şifre en az 8 karakter olmalı.'))
+          }
+          return { ok: true }
+        },
+        async () => {
+          const { data } = await httpClient.patch('/auth/change-password', {
+            currentPassword,
+            newPassword,
+          })
+          return data
+        },
+      )
+    },
   }
 }

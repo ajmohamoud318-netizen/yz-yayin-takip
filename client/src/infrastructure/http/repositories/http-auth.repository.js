@@ -75,5 +75,16 @@ export function createHttpAuthRepository() {
       })
       return data
     },
+    /**
+     * Rotate the caller's own password. Requires the current password
+     * as proof (skipped only when the account has never set one).
+     */
+    async changePassword(currentPassword, newPassword) {
+      const { data } = await httpClient.patch('/auth/change-password', {
+        currentPassword,
+        newPassword,
+      })
+      return data
+    },
   }
 }

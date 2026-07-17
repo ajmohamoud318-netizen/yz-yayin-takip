@@ -35,6 +35,11 @@ import { sendMail, renderResetEmail } from '../services/mail.js'
  *   POST /api/auth/reset-password    — body { token, password }, consumes
  *                                      the reset token and sets a new
  *                                      bcrypt password.
+ *   PATCH /api/auth/change-password  — body { currentPassword, newPassword },
+ *                                      rotates the caller's own password.
+ *                                      Requires the current password unless
+ *                                      the account has none yet (first-time
+ *                                      set after an invite).
  *
  * This keeps the mock-auth UX in the SPA working with the new server
  * end-to-end. Next pass, replace /login + /me with the OAuth handshake.
@@ -181,6 +186,50 @@ export async function authRoutes(fastify) {
     const user = rows[0]
     await consumePasswordReset(reset.resetId)
     return { token: user.id, user }
+  })
+
+  /**
+   * Change-password for the currently-authenticated user. Requires
+   * the current password as proof. Returns 204 on success.
+   *
+   * Used by the Settings page so anyone can rotate their own password
+   * without going through the forgot-password email loop.
+   */
+  fastify.patch('/auth/change-password', async (request) => {
+    await attachUser(request)
+    const { currentPassword, newPassword } = request.body ?? {}
+    if (!currentPassword || typeof currentPassword !== 'string') {
+      badRequest('Mevcut şifre zorunlu.')
+    }
+    if (!newPassword || typeof newPassword !== 'string') {
+      badRequest('Yeni şifre zorunlu.')
+    }
+    if (newPassword.length < 8) {
+      badRequest('Yeni şifre en az 8 karakter olmalı.')
+    }
+    if (newPassword === currentPassword) {
+      badRequest('Yeni şifre mevcut şifreden farklı olmalı.')
+    }
+
+    const { rows } = await getPool().query(
+      `SELECT id, password, is_active FROM users WHERE id = $1 LIMIT 1`,
+      [request.user.id],
+    )
+    const row = rows[0]
+    if (!row) forbidden('Kullanıcı bulunamadı.')
+    if (row.is_active === false) forbidden('Bu hesap devre dışı bırakılmış.')
+    // If the user has never set a password (invited but never accepted),
+    // skip the current-password check — they're setting it for the first
+    // time. requireOld is implicit because no other password exists.
+    if (row.password && !bcrypt.compareSync(currentPassword, row.password)) {
+      unauthorized('Mevcut şifre yanlış.')
+    }
+    const hash = bcrypt.hashSync(newPassword, 10)
+    await getPool().query(
+      `UPDATE users SET password = $1, updated_at = NOW() WHERE id = $2`,
+      [hash, request.user.id],
+    )
+    return { ok: true }
   })
 
   // Dev-only "log in as" endpoint. Lets the SPA drive the backend end to
