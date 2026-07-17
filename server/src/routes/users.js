@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs'
+import { nanoid } from 'nanoid'
 import { attachUser, requireRole } from '../middleware/auth.js'
 import { badRequest, conflict, forbidden, notFound } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
@@ -40,11 +41,17 @@ export async function userRoutes(fastify) {
     // Create the user WITHOUT a password. They'll set it via the invite
     // link. `invited_at` records when the invite was sent; `joined_at`
     // gets stamped later when they accept.
+    //
+    // The `users` table uses TEXT primary keys (so seeded human-readable
+    // ids like 'u-ayse' work), with no default. We mint a `u-<nanoid>` for
+    // invited accounts — short, unique, and consistent with the seed
+    // prefix used by the demo data migration.
+    const userId = `u-${nanoid(16)}`
     const { rows } = await getPool().query(
-      `INSERT INTO users (name, email, role, is_active, invited_at)
-       VALUES ($1,$2,$3,TRUE,NOW())
+      `INSERT INTO users (id, name, email, role, is_active, invited_at)
+       VALUES ($1,$2,$3,$4,TRUE,NOW())
        RETURNING id, name, email, role, is_active, invited_at, joined_at, created_at`,
-      [name.trim(), normalisedEmail, role],
+      [userId, name.trim(), normalisedEmail, role],
     )
     const user = rows[0]
 
