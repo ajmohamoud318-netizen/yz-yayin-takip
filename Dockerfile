@@ -16,6 +16,15 @@ WORKDIR /app
 # needs it) — keep it unset during install so the build has everything.
 ENV NODE_ENV=development
 
+# Vite only inlines env vars that are explicitly exposed at build time.
+# Dokploy passes these as build-time args (see "Build-time Arguments" in the
+# service config). Without these ARGs, the bundle is built with the empty/
+# default value of VITE_API_BASE_URL and the SPA can never reach the API.
+ARG VITE_API_BASE_URL
+ARG VITE_USE_MOCK
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_USE_MOCK=${VITE_USE_MOCK}
+
 # Root manifests + workspace manifests first for better layer caching.
 COPY package.json package-lock.json* ./
 COPY client/package.json ./client/package.json
