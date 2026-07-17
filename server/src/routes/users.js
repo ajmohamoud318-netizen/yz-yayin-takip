@@ -13,6 +13,7 @@ import { sendMail, renderInviteEmail } from '../services/mail.js'
  *  POST   /api/users/invite
  *  PATCH  /api/users/:id/deactivate
  *  PATCH  /api/users/:id/reactivate
+ *  DELETE /api/users/:id
  */
 export async function userRoutes(fastify) {
   fastify.get('/users', async (request) => {
@@ -142,5 +143,22 @@ export async function userRoutes(fastify) {
     )
     if (!rows[0]) notFound('Kullanıcı bulunamadı.')
     return rows[0]
+  })
+
+  // Hard delete. Cascades to invitations; subtasks / projects that
+  // reference the user become orphan assignee pointers (NULL via FK).
+  // team_leader only, and you can't delete yourself.
+  fastify.delete('/users/:id', async (request, reply) => {
+    await attachUser(request)
+    requireRole(request, 'team_leader')
+    const { id } = request.params
+    if (id === request.user.id) forbidden('Kendinizi silemezsiniz.')
+    const { rows } = await getPool().query(
+      `DELETE FROM users WHERE id = $1 RETURNING id`,
+      [id],
+    )
+    if (!rows[0]) return notFound('Kullanıcı bulunamadı.')
+    reply.code(204)
+    return null
   })
 }

@@ -44,5 +44,10 @@ export function createHttpUserRepository() {
       raw = raw.map((u) => (u.id === data.id ? data : u))
       return data
     },
+    async deleteUser(id) {
+      await httpClient.delete(`/users/${id}`)
+      cache.delete(id)
+      raw = raw.filter((u) => u.id !== id)
+    },
   }
 }

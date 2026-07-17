@@ -74,5 +74,21 @@ export function createMockUserRepository() {
         },
       )
     },
+
+    deleteUser(id) {
+      return mockOrHttp(
+        () => {
+          const idx = mockUsers.findIndex((u) => u.id === id)
+          if (idx === -1) notFound('Kullanıcı bulunamadı.')
+          mockUsers.splice(idx, 1)
+          saveState()
+          return null
+        },
+        async () => {
+          await httpClient.delete(`/users/${id}`)
+          return null
+        },
+      )
+    },
   }
 }

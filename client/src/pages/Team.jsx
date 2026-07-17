@@ -67,6 +67,20 @@ export default function Team() {
     }
   }
 
+  async function deleteUser(u) {
+    const confirmed = window.confirm(
+      `${u.name} (${u.email}) kalıcı olarak silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musun?`,
+    )
+    if (!confirmed) return
+    try {
+      await api.deleteUser(u.id)
+      setUsers((prev) => prev.filter((x) => x.id !== u.id))
+      toast.success('Kullanıcı silindi.')
+    } catch (err) {
+      toast.error(err.message || 'Silme başarısız.')
+    }
+  }
+
   return (
     <>
       <div className="space-y-6">
@@ -118,7 +132,7 @@ export default function Team() {
         ) : (
           <div className="stagger-children grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((u) => (
-              <UserCard key={u.id} user={u} canManage={isLeader && u.id !== user.id} onToggle={toggleActive} />
+              <UserCard key={u.id} user={u} canManage={isLeader && u.id !== user.id} onToggle={toggleActive} onDelete={deleteUser} />
             ))}
             {filtered.length === 0 && (
               <Card className="sm:col-span-2 lg:col-span-3">
@@ -137,7 +151,7 @@ export default function Team() {
 }
 
 
-function UserCard({ user, canManage, onToggle }) {
+function UserCard({ user, canManage, onToggle, onDelete }) {
   return (
     <Card>
       <CardContent className="flex items-start gap-3 p-4">
@@ -174,6 +188,12 @@ function UserCard({ user, canManage, onToggle }) {
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => onToggle(user)}>
                 {user.is_active ? 'Devre dışı bırak' : 'Aktifleştir'}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-rose-600 focus:text-rose-600"
+                onClick={() => onDelete(user)}
+              >
+                Hesabı sil
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
