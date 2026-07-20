@@ -1164,7 +1164,7 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
   const resourceItems = [
     { to: '/team', label: 'Ekip', icon: UsersRound, roles: ['team_leader'] },
     { to: '/documents', label: 'Dökümanlar', icon: Files, roles: ['team_leader', 'designer', 'printer'] },
-    { to: '/urun-bilgileri', label: 'Ürün Bilgileri', icon: Boxes, roles: ['team_leader'] },
+    { to: '/urun-bilgileri', label: 'Ürün Bilgileri', icon: Boxes, roles: ['team_leader', 'designer'] },
   ].filter((i) => !i.roles || i.roles.includes(role))
 
   // ── Grup 4: Acil işler (kişiye göre) ─────────────────────────

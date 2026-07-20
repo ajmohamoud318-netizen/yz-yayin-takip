@@ -73,6 +73,8 @@ export function createApi() {
     listUsers: () => userRepo.listUsers(),
     inviteUser: (payload) => userRepo.inviteUser(payload),
     setUserActive: (id, isActive) => userRepo.setUserActive(id, isActive),
+    setUserCapability: (id, capability, value) =>
+      userRepo.setUserCapability(id, capability, value),
 
     // Projects
     listProjects: () => projectRepo.listProjects(),

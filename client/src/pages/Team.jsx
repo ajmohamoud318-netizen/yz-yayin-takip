@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,6 +65,22 @@ export default function Team() {
       toast.success(updated.is_active ? 'Kullanıcı aktifleştirildi.' : 'Kullanıcı devre dışı bırakıldı.')
     } catch (err) {
       toast.error(err.message || 'İşlem başarısız.')
+    }
+  }
+
+  async function toggleCapability(u, capability, value) {
+    try {
+      const updated = await api.setUserCapability(u.id, capability, value)
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? updated : x)))
+      toast.success(
+        capability === 'can_approve_ozalit'
+          ? value
+            ? 'Demo + Özalit onay yetkisi verildi.'
+            : 'Demo + Özalit onay yetkisi kaldırıldı.'
+          : 'Yetki güncellendi.',
+      )
+    } catch (err) {
+      toast.error(err.message || 'Yetki güncellenemedi.')
     }
   }
 
@@ -132,7 +149,14 @@ export default function Team() {
         ) : (
           <div className="stagger-children grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((u) => (
-              <UserCard key={u.id} user={u} canManage={isLeader && u.id !== user.id} onToggle={toggleActive} onDelete={deleteUser} />
+              <UserCard
+                key={u.id}
+                user={u}
+                canManage={isLeader && u.id !== user.id}
+                onToggle={toggleActive}
+                onDelete={deleteUser}
+                onCapabilityChange={toggleCapability}
+              />
             ))}
             {filtered.length === 0 && (
               <Card className="sm:col-span-2 lg:col-span-3">
@@ -151,7 +175,8 @@ export default function Team() {
 }
 
 
-function UserCard({ user, canManage, onToggle, onDelete }) {
+function UserCard({ user, canManage, onToggle, onDelete, onCapabilityChange }) {
+  const isDesigner = user.role === 'designer'
   return (
     <Card>
       <CardContent className="flex items-start gap-3 p-4">
@@ -177,6 +202,21 @@ function UserCard({ user, canManage, onToggle, onDelete }) {
               <span className="text-[11px] text-amber-600">Davet bekliyor</span>
             )}
           </div>
+          {isDesigner && (
+            <div className="mt-3 flex items-center justify-between rounded-md border bg-muted/40 px-2.5 py-1.5">
+              <span className="text-[11px] text-muted-foreground">
+                Demo + Özalit onay yetkisi
+              </span>
+              <Switch
+                aria-label={`${user.name} için Demo + Özalit onay yetkisi`}
+                checked={user.can_approve_ozalit === true}
+                disabled={!canManage}
+                onCheckedChange={(v) =>
+                  onCapabilityChange?.(user, 'can_approve_ozalit', v)
+                }
+              />
+            </div>
+          )}
         </div>
         {canManage && (
           <DropdownMenu>
@@ -199,22 +239,9 @@ function UserCard({ user, canManage, onToggle, onDelete }) {
           </DropdownMenu>
         )}
       </CardContent>
-    </Card>
-  )
-}
-
-function roleBadgeClass(role) {
-  if (role === 'team_leader') return 'border-primary/30 bg-primary/10 text-primary'
-  if (role === 'designer') return 'border-purple-200 bg-purple-50 text-purple-700'
-  if (role === 'printer') return 'border-amber-200 bg-amber-50 text-amber-700'
-  if (role === 'satis') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
-  return ''
-}
-
-function InviteDialog({ open, onOpenChange, onInvited }) {
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState('designer')
+  // Special-designer capability. Only meaningful when role === 'designer';
+  // the server also enforces this (silently coerced to false otherwise).
+  const [canApproveOzalit, setCanApproveOzalit] = useState(false)
   const [saving, setSaving] = useState(false)
   const [lastInvite, setLastInvite] = useState(null)
 
@@ -226,6 +253,11 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
     const t = setTimeout(() => setLastInvite(null), 300)
     return () => clearTimeout(t)
   }, [open])
+
+  // Drop the capability when the role is no longer designer.
+  useEffect(() => {
+    if (role !== 'designer') setCanApproveOzalit(false)
+  }, [role])
 
   function copyLink() {
     if (!lastInvite?.url) return
@@ -243,7 +275,12 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
     }
     setSaving(true)
     try {
-      const created = await api.inviteUser({ name: name.trim(), email: email.trim(), role })
+      const created = await api.inviteUser({
+        name: name.trim(),
+        email: email.trim(),
+        role,
+        canApproveOzalit,
+      })
       // The server returns the invitation URL + whether the email was sent.
       // If SMTP failed, surface the link so the leader can forward it manually.
       if (created?.invitation?.url && created.invitation.emailSent === false) {
@@ -261,6 +298,7 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
       setName('')
       setEmail('')
       setRole('designer')
+      setCanApproveOzalit(false)
     } catch (err) {
       toast.error(err.message || 'Davet gönderilemedi.')
     } finally {
@@ -292,6 +330,37 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Rol</Label>
+            <Select value={role} onValueChange={setRole}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="designer">{ROLE_LABELS.designer}</SelectItem>
+                <SelectItem value="printer">{ROLE_LABELS.printer}</SelectItem>
+                <SelectItem value="satis">{ROLE_LABELS.satis}</SelectItem>
+                <SelectItem value="team_leader">{ROLE_LABELS.team_leader}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {role === 'designer' && (
+            <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2">
+              <div>
+                <p className="text-sm font-medium">Demo + Özalit onay yetkisi</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Bu tasarımcı Demo ve Özalit aşamalarında onay/red yapabilir.
+                </p>
+              </div>
+              <Switch
+                aria-label="Demo + Özalit onay yetkisi"
+                checked={canApproveOzalit}
+                onCheckedChange={setCanApproveOzalit}
+              />
+            </div>
+          )}quired
             />
           </div>
           <div className="space-y-1.5">

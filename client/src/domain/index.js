@@ -16,6 +16,10 @@ export {
   handoverStageFor,
   canRequestHandover,
   assertHandoverEligible,
+  isOzalitApprover,
+  isDemoApprover,
+  canRejectAtStage,
+  canEditProductInfo,
 } from './services/pipeline.js'
 export { subtaskProgress } from './services/progress.js'
 export { statusKeyForProject, groupKeyForProject } from './services/project-status.js'

@@ -3,6 +3,7 @@ import { Package, Search, BookOpen, ChevronDown, Pencil, Plus, X, Check, Box, Co
 import { toast } from 'sonner'
 import { useProjects } from '@/hooks/useProjects'
 import { useAuth } from '@/hooks/useAuth'
+import { canEditProductInfo } from '@/domain'
 import { TYPE_LABELS } from '@/api'
 import { cn } from '@/lib/utils'
 import PRODUCT_INFO from '@/data/productInfo'
@@ -378,7 +379,10 @@ function ProductCard({ project, comps, open, onToggle, canEdit, editing, draft, 
 export default function UrunBilgileri() {
   const { projects, loading } = useProjects()
   const { user } = useAuth()
-  const canEdit = user?.role === 'team_leader'
+  // Edit rights: team_leader OR a designer with the `can_approve_ozalit`
+  // flag (a.k.a. "special designer"). The flag, not project assignment, is
+  // what unlocks edit access — see domain/services/pipeline.js.
+  const canEdit = canEditProductInfo(user)
 
   const [search, setSearch] = useState('')
   const [openIds, setOpenIds] = useState(() => new Set())

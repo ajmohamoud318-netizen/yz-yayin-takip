@@ -16,6 +16,7 @@ import DemoFormDialog from '@/components/DemoFormDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
+import { canRejectAtStage, isDemoApprover, isOzalitApprover } from '@/domain'
 import { cn, formatTargetDate } from '@/lib/utils'
 
 /**
@@ -38,6 +39,15 @@ export default function Approvals({ tab = 'demo' }) {
   const [viewOrder, setViewOrder] = useState(null)
 
   const isPrinter = user?.role === 'printer'
+  // The new "special designer" capability flags a `designer` who can act
+  // on demo + ozalit approvals (and rejections). At Ozalit their approval
+  // is the step-2 half of the leader-then-designer AND-rule.
+  const isSpecialDesigner =
+    user?.role === 'designer' && user?.can_approve_ozalit === true
+  const isLeader = user?.role === 'team_leader'
+  // Anyone (other than the printer) who can act on Demo / Ozalit.
+  const canActOnDemo = isLeader || isSpecialDesigner
+  const canActOnOzalit = isLeader || isSpecialDesigner
 
   useEffect(() => {
     if (!isPrinter || tab !== 'siparis') return
@@ -164,6 +174,37 @@ export default function Approvals({ tab = 'demo' }) {
               <div className="rounded-md border bg-muted/30 p-2.5 text-xs">
                 <span className="font-medium">Aşama:</span> {STAGE_LABELS[p.stage]}
               </div>
+              {/* At ozalit_onay, surface the AND-rule so both approvers can
+                  see whose turn it is. */}
+              {sub === 'ozalit' && p.stage === 'ozalit_onay' && (
+                <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5',
+                      p.ozalit_leader_approved
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-amber-200 bg-amber-50 text-amber-700',
+                    )}
+                  >
+                    {p.ozalit_leader_approved ? '✓' : '○'} Lider
+                  </span>
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5',
+                      p.ozalit_designer_approvals?.length > 0
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-amber-200 bg-amber-50 text-amber-700',
+                    )}
+                  >
+                    {p.ozalit_designer_approvals?.length > 0 ? '✓' : '○'} Tasarımcı
+                  </span>
+                  {p.ozalit_leader_approved_by && (
+                    <span className="text-muted-foreground">
+                      ({p.ozalit_leader_approved_by})
+                    </span>
+                  )}
+                </div>
+              )}
               {/* Action row — stacks below sm so each button gets the full
                   width on mobile, then sits in a row on tablet+. The primary
                   action (Onayla / Onaya Gönder) is rendered first so thumb
@@ -191,39 +232,52 @@ export default function Approvals({ tab = 'demo' }) {
                       Detay
                     </Button>
                   </>
-                ) : (
+                ) : (isLeader || isSpecialDesigner) ? (
                   <>
-                    <Button
-                      size="sm"
-                      variant="success"
-                      className="w-full sm:flex-1"
-                      onClick={() => {
-                        if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
-                        else setDialog({ project: p, mode: 'approve' })
-                      }}
-                    >
-                      <ThumbsUp className="h-4 w-4" />
-                      Onayla
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      className="w-full sm:flex-1"
-                      onClick={() => setDialog({ project: p, mode: 'reject' })}
-                    >
-                      <ThumbsDown className="h-4 w-4" />
-                      Reddet
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="w-full sm:w-auto"
-                      onClick={() => openProject(p.id)}
-                    >
-                      Detay
-                    </Button>
+                    {sub === 'ozalit' && p.ozalit_leader_approved && !isLeader && !isSpecialDesigner ? null : (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="success"
+                          className="w-full sm:flex-1"
+                          onClick={() => {
+                            if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
+                            else setDialog({ project: p, mode: 'approve' })
+                          }}
+                        >
+                          <ThumbsUp className="h-4 w-4" />
+                          {sub === 'ozalit'
+                            ? (isLeader
+                              ? '1. Onay (Lider)'
+                              : (p.ozalit_leader_approved ? '2. Onay (Tasarımcı)' : 'Önce lider onayı'))
+                            : 'Onayla'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="w-full sm:flex-1"
+                          onClick={() => setDialog({ project: p, mode: 'reject' })}
+                        >
+                          <ThumbsDown className="h-4 w-4" />
+                          Reddet
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="w-full sm:w-auto"
+                          onClick={() => openProject(p.id)}
+                        >
+                          Detay
+                        </Button>
+                      </>
+                    )}
+                    {sub === 'ozalit' && !p.ozalit_leader_approved && isSpecialDesigner && (
+                      <p className="text-[11px] text-muted-foreground sm:flex-1">
+                        Önce ekip lideri onaylamalı.
+                      </p>
+                    )}
                   </>
-                )}
+                ) : null}
               </div>
             </CardContent>
           </Card>

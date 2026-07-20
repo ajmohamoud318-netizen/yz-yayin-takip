@@ -32,11 +32,13 @@ export function createMockUserRepository() {
       )
     },
 
-    inviteUser({ name, email, role }) {
+    inviteUser({ name, email, role, canApproveOzalit = false }) {
       return mockOrHttp(
         () => {
           const existing = mockUsers.find((u) => u.email.toLowerCase() === email.toLowerCase().trim())
           if (existing) conflict('Bu e-posta zaten kayıtlı.')
+          // Only designers can carry the special-designer flag.
+          const wantsFlag = role === 'designer' && canApproveOzalit === true
           const created = {
             id: uid('u-'),
             name: name.trim(),
@@ -44,6 +46,7 @@ export function createMockUserRepository() {
             password: '123456',
             role,
             is_active: true,
+            can_approve_ozalit: wantsFlag,
             invited_at: new Date().toISOString(),
             joined_at: null,
           }
@@ -52,7 +55,33 @@ export function createMockUserRepository() {
           return stripPassword(created)
         },
         async () => {
-          const { data } = await httpClient.post('/users/invite', { name, email, role })
+          const { data } = await httpClient.post('/users/invite', {
+            name, email, role, canApproveOzalit,
+          })
+          return data
+        },
+      )
+    },
+
+    setUserCapability(id, capability, value) {
+      return mockOrHttp(
+        () => {
+          const idx = mockUsers.findIndex((u) => u.id === id)
+          if (idx === -1) notFound('Kullanıcı bulunamadı.')
+          if (capability !== 'can_approve_ozalit') {
+            throw new Error(`Bilinmeyen yetki: ${capability}`)
+          }
+          if (mockUsers[idx].role !== 'designer') {
+            conflict('Bu yetki yalnızca tasarımcılar için geçerlidir.')
+          }
+          mockUsers[idx] = { ...mockUsers[idx], can_approve_ozalit: !!value }
+          saveState()
+          return stripPassword(mockUsers[idx])
+        },
+        async () => {
+          const { data } = await httpClient.patch(`/users/${id}/capabilities`, {
+            canApproveOzalit: !!value,
+          })
           return data
         },
       )

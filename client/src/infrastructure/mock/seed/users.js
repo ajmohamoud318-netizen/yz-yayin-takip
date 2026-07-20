@@ -15,6 +15,7 @@ export const SEED_USERS =
     password: '123456',
     role: 'designer',
     is_active: true,
+    can_approve_ozalit: true, // "special designer" — Demo + Özalit yetkisi
   },
   {
     id: 'u-feyza',

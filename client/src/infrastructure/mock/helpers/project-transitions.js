@@ -40,6 +40,43 @@ function canRequestOzalit(actor) {
   return actor?.role === 'team_leader' || actor?.role === 'designer'
 }
 
+/**
+ * Stage-aware approval gate. Mirrors the server's `canApproveAt`:
+ *   team_leader          → any stage
+ *   printer              → demo_onay | cin_demo_onay (delivery-confirmation)
+ *   designer + flag      → demo_onay | cin_demo_onay | ozalit_onay (step 2)
+ *   plain designer       → only step-2 ozalit_onay IF assigned to the project
+ *                          (handled separately inside computeOzalitOnayApproval)
+ */
+export function canApproveAt(stage, actor) {
+  if (!actor) return false
+  if (actor.role === 'team_leader') return true
+  if (stage === 'demo_onay' || stage === 'cin_demo_onay') {
+    return actor.role === 'printer' || (actor.role === 'designer' && actor.canApproveOzalit === true)
+  }
+  if (stage === 'ozalit_onay') {
+    // Step 1 is leader-only (handled separately). Step 2 dispatches inside
+    // computeOzalitOnayApproval on assignment vs flag.
+    return actor.role === 'designer' && actor.canApproveOzalit === true
+  }
+  return false
+}
+
+/**
+ * Stage-aware rejection gate. Mirrors the server's `canRejectAt`:
+ *   team_leader          → any stage
+ *   designer + flag      → demo_onay | cin_demo_onay | ozalit_onay
+ *   everyone else        → forbidden
+ */
+export function canRejectAt(stage, actor) {
+  if (!actor) return false
+  if (actor.role === 'team_leader') return true
+  if (actor.role === 'designer' && actor.canApproveOzalit === true) {
+    return stage === 'demo_onay' || stage === 'cin_demo_onay' || stage === 'ozalit_onay'
+  }
+  return false
+}
+
 /* ============================================================================
  *  advance(project, actor) → next project state
  * ========================================================================== */
@@ -249,6 +286,27 @@ export function computeApproval(project, actor) {
     return computeOzalitOnayApproval(project, actor, now, actorName)
   }
 
+  // Demo approval: leader OR printer OR designer-with-flag can advance it.
+  if (project.stage === 'demo_onay' || project.stage === 'cin_demo_onay') {
+    if (!canApproveAt(project.stage, actor)) {
+      badRequest('Demo onayını yalnızca ekip lideri, matbaa veya özel tasarımcı yapabilir.')
+    }
+    const pipeline = pipelineFor(project)
+    const stageIdx = pipeline.indexOf(project.stage)
+    const next = pipeline[stageIdx + 1]
+    if (!next) return { project, history: null }
+    assertCanEnterProduction(next, project.progress)
+    return {
+      project: { ...project, stage: next, updated_at: now },
+      history: makeEntry(project, {
+        action: 'approve',
+        from_stage: project.stage,
+        to_stage: next,
+        done_by_name: actorName,
+      }),
+    }
+  }
+
   // Generic approval: advance to the next pipeline stage.
   const pipeline = pipelineFor(project)
   const i = pipeline.indexOf(project.stage)
@@ -292,52 +350,41 @@ function computeOzalitOnayApproval(project, actor, now, actorName) {
     }
   }
 
-  // Subsequent approvals — every assigned designer must sign.
+  // Subsequent approvals — every assigned designer, OR any designer with
+  // the flag (the "special designer"). One approval is enough to advance.
   const assigneeIds = (project.assignees ?? []).map((a) => a.id)
-  const isAssignedDesigner = role === 'designer' && assigneeIds.includes(actor.id)
-  if (!isAssignedDesigner) {
-    badRequest('Ekip lideri onayladı — sıradaki onay atanmış tasarımcı(lar)dan gelmelidir.')
+  const isAssignedDesigner = role === 'designer' && assigneeIds.includes(actor?.id)
+  const isSpecialDesigner = role === 'designer' && actor?.canApproveOzalit === true
+  if (!isAssignedDesigner && !isSpecialDesigner) {
+    badRequest('Ekip lideri onayladı — sıradaki onay atanmış tasarımcı(lar)dan veya özel tasarımcıdan gelmelidir.')
   }
   const approvedSet = new Set(project.ozalit_designer_approvals ?? [])
-  if (approvedSet.has(actor.id)) {
+  if (approvedSet.has(actor?.id)) {
     badRequest('Bu ozaliti zaten onayladınız.')
   }
-  approvedSet.add(actor.id)
+  approvedSet.add(actor?.id)
   const approvals = [...approvedSet]
-  const allApproved = assigneeIds.length > 0 && assigneeIds.every((did) => approvedSet.has(did))
 
-  if (allApproved) {
-    assertCanEnterProduction('uretime_hazir', project.progress)
-    return {
-      project: {
-        ...project,
-        stage: 'uretime_hazir',
-        ozalit_leader_approved: false,
-        ozalit_leader_approved_by: null,
-        ozalit_leader_approved_at: null,
-        ozalit_designer_approvals: [],
-        updated_at: now,
-      },
-      history: makeEntry(project, {
-        action: 'approve',
-        from_stage: 'ozalit_onay',
-        to_stage: 'uretime_hazir',
-        done_by_name: actorName,
-        note: 'Ozalit — tüm tasarımcılar onayladı, üretime alındı',
-      }),
-    }
-  }
-
-  // Some designers still pending — record and stay put.
-  const remaining = assigneeIds.length - approvals.length
+  // The special designer counts as a single approval. Assigned designers
+  // each count individually — but any one of them (assigned OR special) is
+  // enough to advance, because the leader has already approved in step 1.
+  assertCanEnterProduction('uretime_hazir', project.progress)
   return {
-    project: { ...project, ozalit_designer_approvals: approvals, updated_at: now },
+    project: {
+      ...project,
+      stage: 'uretime_hazir',
+      ozalit_leader_approved: false,
+      ozalit_leader_approved_by: null,
+      ozalit_leader_approved_at: null,
+      ozalit_designer_approvals: [],
+      updated_at: now,
+    },
     history: makeEntry(project, {
       action: 'approve',
       from_stage: 'ozalit_onay',
-      to_stage: 'ozalit_onay',
+      to_stage: 'uretime_hazir',
       done_by_name: actorName,
-      note: `Ozalit — ${actor?.name ?? 'tasarımcı'} onayladı, ${remaining} tasarımcı onayı bekleniyor`,
+      note: 'Ozalit — tasarımcı tarafı onayladı, üretime alındı',
     }),
   }
 }
@@ -353,7 +400,17 @@ function computeOzalitOnayApproval(project, actor, now, actorName) {
  *   • 'matbaa'   → back to the teslim step; design untouched (matbaa re-delivers)
  *
  * The teslim stage is derived from the project's pipeline so it can never
- * point at a stage that doesn't exist for its type. ÇİN projects have no
+ * point at a stage that doesn't exist for its type. ÇİN projects have no, actor = null }) {
+  // Role guard: leader-only outside Demo + Ozalit; designer-with-flag is
+  // also allowed at those two stages.
+  if (!canRejectAt(project.stage, actor)) {
+    badRequest(
+      project.stage === 'ozalit_onay'
+        ? 'Ozalit reddini yalnızca ekip lideri veya özel tasarımcı yapabilir.'
+        : 'Reddi yalnızca ekip lideri (veya bu aşamada yetkili özel tasarımcı) yapabilir.',
+    )
+  }
+
  * matbaa re-delivery step, so a matbaa reject on ÇİN collapses to a normal
  * designer reject → Tasarım.
  *

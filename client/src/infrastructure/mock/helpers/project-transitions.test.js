@@ -220,7 +220,11 @@ describe('computeApproval — Ozalit dual sign-off', () => {
     expect(history.to_stage).toBe('uretime_hazir')
   })
 
-  it('multi-designer: stays put until ALL designers sign, then advances', () => {
+  it('multi-designer: the FIRST designer-side approval advances the project', () => {
+    // Updated for the AND-of-two rule: leader approved (step 1) + at least
+    // ONE of { assigned designer, designer-with-flag } (step 2). A single
+    // assigned-designer's approval is enough to advance — there's no longer
+    // a "wait for ALL assignees" step.
     let p = makeProject({
       stage: 'ozalit_onay',
       ozalit_leader_approved: true,
@@ -229,17 +233,25 @@ describe('computeApproval — Ozalit dual sign-off', () => {
         { id: designerB.id, name: designerB.name },
       ],
     })
-    // First designer signs — project should stay put, partial approval recorded.
     const r1 = computeApproval(p, designerA)
-    expect(r1.project.stage).toBe('ozalit_onay')
-    expect(r1.project.ozalit_designer_approvals).toEqual([designerA.id])
-    expect(r1.history.note).toMatch(/1 tasarımcı onayı bekleniyor/)
+    expect(r1.project.stage).toBe('uretime_hazir')
+    expect(r1.project.ozalit_leader_approved).toBe(false)
+    expect(r1.project.ozalit_designer_approvals).toEqual([])
+  })
 
-    // Second designer signs — should advance to production.
-    p = r1.project
-    const r2 = computeApproval(p, designerB)
-    expect(r2.project.stage).toBe('uretime_hazir')
-    expect(r2.project.ozalit_leader_approved).toBe(false)
+  it('multi-designer with a special designer: leader + special designer is enough', () => {
+    // The "special designer" (a `designer` with `canApproveOzalit: true`)
+    // counts as a single approval regardless of project assignment.
+    let p = makeProject({
+      stage: 'ozalit_onay',
+      ozalit_leader_approved: true,
+      assignees: [
+        { id: designerA.id, name: designerA.name },
+        { id: designerB.id, name: designerB.name },
+      ],
+    })
+    const r = computeApproval(p, { ...designerA, canApproveOzalit: true })
+    expect(r.project.stage).toBe('uretime_hazir')
   })
 })
 

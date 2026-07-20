@@ -3,11 +3,12 @@ import { SEED_USERS } from './seed/users.js'
 import { SEED_PROJECTS } from './seed/projects.js'
 import { SEED_ORDER_REQUESTS } from './seed/order-requests.js'
 
-// Bumped to v8 so the new demo/ozalit form fields (teslimEdenKisi,
-// teslimTarihi) and role-aware labels are present from the first render of
-// any seeded demo/ozalit form. Older v7 state is left untouched — users can
-// clear it manually if they want a clean seed.
-const LS_KEY = 'yz_mock_state_v8'
+// Bumped to v9 so the new `can_approve_ozalit` capability flag on
+// designers, plus the per-row toggle for the team-leader invite UI, are
+// present from the first render. Aylin Ulu (`u-elif`) is seeded with the
+// flag enabled so reviewers can exercise the AND-rule without first
+// inviting a new user.
+const LS_KEY = 'yz_mock_state_v9'
 
 export const mockUsers = [...SEED_USERS]
 export const mockProjects = [...SEED_PROJECTS]
