@@ -57,7 +57,10 @@ export async function saveAvatar(userId, ext, buffer) {
     try { await fs.unlink(pathFor(userId, e)) } catch { /* missing is fine */ }
   }
   await fs.writeFile(pathFor(userId, ext), buffer)
-  return `/api/users/me/avatar/file`
+  // Embed a *resolved* UUID path so the SPA can load the file with a
+  // static <img src>. The owner-only `/users/me/avatar/file` alias exists
+  // too but uses the X-User-Id header — <img> can't carry custom headers.
+  return `/api/users/${encodeURIComponent(userId)}/avatar/file`
 }
 
 /** Remove the avatar file for a user, if any. */

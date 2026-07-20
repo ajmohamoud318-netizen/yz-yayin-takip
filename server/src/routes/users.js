@@ -230,10 +230,29 @@ export async function userRoutes(fastify) {
     return { ok: true }
   })
 
-  // Public file stream. No auth — <img src> can't carry X-User-Id.
-  // Returns 404 if no avatar is on file for the requested user.
+  // Public file stream for an arbitrary user. No auth — <img src> can't
+  // carry X-User-Id. Returns 404 if no avatar is on file.
   fastify.get('/users/:id/avatar/file', async (request, reply) => {
     const { id } = request.params
+    const { rows } = await getPool().query(
+      `SELECT avatar_url FROM users WHERE id = $1 LIMIT 1`,
+      [id],
+    )
+    if (!rows[0]?.avatar_url) return notFound('Avatar bulunamadı.')
+    const file = await readAvatar(id, rows[0].avatar_url)
+    if (!file) return notFound('Avatar dosyası eksik.')
+    reply
+      .header('Content-Type', file.mime)
+      .header('Cache-Control', 'private, max-age=300')
+      .send(file.buffer)
+  })
+
+  // Owner-only alias for the authenticated caller's avatar. Mirrors the
+  // /users/:id route but resolves the id from the X-User-Id trust header.
+  // Useful when a page holds a stale relative URL like `/api/users/me/avatar/file`.
+  fastify.get('/users/me/avatar/file', async (request, reply) => {
+    await attachUser(request)
+    const id = request.user.id
     const { rows } = await getPool().query(
       `SELECT avatar_url FROM users WHERE id = $1 LIMIT 1`,
       [id],

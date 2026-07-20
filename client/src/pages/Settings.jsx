@@ -5,6 +5,8 @@ import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
 
+const AVATAR_FIXED_RE = /\/api\/users\/me\/avatar\/file/
+
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,10 +23,16 @@ import { cn } from '@/lib/utils'
  * - Data-URLs (mock mode) pass through.
  * - Relative `/api/...` URLs get the backend origin prepended so the
  *   request hits the Fastify host, not the SPA host.
+ * - Legacy `/api/users/me/avatar/file` (owner route that requires a
+ *   custom header <img> can't carry) is rewritten to the public UUID path
+ *   using the currently signed-in user's id.
  */
-function avatarSrc(url) {
+function avatarSrc(url, currentUserId) {
   if (!url) return url
   if (/^(https?:|data:)/i.test(url)) return url
+  if (AVATAR_FIXED_RE.test(url) && currentUserId) {
+    return `${API_ORIGIN}/api/users/${encodeURIComponent(currentUserId)}/avatar/file`
+  }
   if (url.startsWith('/')) return `${API_ORIGIN}${url}`
   return `${API_ORIGIN}/${url}`
 }
@@ -152,7 +160,7 @@ export default function Settings() {
                 <Avatar className="h-14 w-14 ring-2 ring-background shadow-sm transition-opacity group-hover:opacity-90">
                   {user?.avatar_url ? (
                     <img
-                      src={avatarSrc(user.avatar_url)}
+                      src={avatarSrc(user.avatar_url, user?.id)}
                       alt={user?.name ? `${user.name} profil fotoğrafı` : 'Profil fotoğrafı'}
                       className="h-full w-full rounded-full object-cover"
                     />
