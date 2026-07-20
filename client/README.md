@@ -15,7 +15,7 @@ npm run dev      # http://localhost:5173
 
 | E-posta                     | Rol           |
 |-----------------------------|---------------|
-| aysenur@yukselenzeka.com    | Takım Lideri  |
+| aysenur.kanak@yukselenzeka.com | Takım Lideri  |
 | elif@yukselenzeka.com       | Tasarımcı     |
 | oktay@yukselenzeka.com      | Matbaa        |
 

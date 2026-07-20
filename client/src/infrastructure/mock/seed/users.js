@@ -3,7 +3,7 @@ export const SEED_USERS =
   {
     id: 'u-ayse',
     name: 'Ayşenur Kanak',
-    email: 'aysenur@yukselenzeka.com',
+    email: 'aysenur.kanak@yukselenzeka.com',
     password: '123456',
     role: 'team_leader',
     is_active: true,

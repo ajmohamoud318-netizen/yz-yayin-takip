@@ -21,7 +21,7 @@ const ROLE_LABEL = {
 
 /* ─── demo data ──────────────────────────────────────────────────────── */
 const DEMO_USERS = [
-  { email: 'aysenur@yukselenzeka.com',            name: 'Ayşenur Kanak',     role: 'Takım Lideri', initials: 'AY' },
+  { email: 'aysenur.kanak@yukselenzeka.com',      name: 'Ayşenur Kanak',     role: 'Takım Lideri', initials: 'AY' },
   { email: 'aylin@yukselenzeka.com',              name: 'Aylin Ulu',          role: 'Tasarımcı',    initials: 'AU' },
   { email: 'feyza@yukselenzeka.com',              name: 'Feyza Küçükkurt',   role: 'Tasarımcı',    initials: 'FK' },
   { email: 'nur@yukselenzeka.com',                name: 'Nur Ekincioğlu',    role: 'Tasarımcı',    initials: 'NE' },

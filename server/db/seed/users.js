@@ -15,7 +15,7 @@ import { slugUuid } from './slug-uuid.js'
 const DEMO_PASSWORD_BCRYPT = bcrypt.hashSync('123456', 8)
 
 export const SEED_USERS = [
-  { id: slugUuid('u-ayse'),      name: 'Ayşenur Kanak',         email: 'aysenur@yukselenzeka.com',                      role: 'team_leader' },
+  { id: slugUuid('u-ayse'),      name: 'Ayşenur Kanak',         email: 'aysenur.kanak@yukselenzeka.com',                role: 'team_leader' },
   { id: slugUuid('u-elif'),      name: 'Aylin Ulu',             email: 'aylin@yukselenzeka.com',                        role: 'designer' },
   { id: slugUuid('u-feyza'),     name: 'Feyza Küçükkurt',       email: 'feyza@yukselenzeka.com',                        role: 'designer' },
   { id: slugUuid('u-nur'),       name: 'Nur Ekincioğlu',        email: 'nur@yukselenzeka.com',                          role: 'designer' },
