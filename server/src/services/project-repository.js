@@ -7,6 +7,7 @@
  */
 
 import { getPool } from '../db/pool.js'
+import { nanoid } from 'nanoid'
 
 const PROJECT_COLUMNS = `
   id, title, type, stage, assigned_to, created_by, target_month,
@@ -97,13 +98,20 @@ export async function insertHistory(client, entry) {
 }
 
 export async function insertProject(client, fields) {
+  // The projects table has `id TEXT PRIMARY KEY` with no default — we
+  // mint a `p-<nanoid>` here so the INSERT doesn't violate the not-null
+  // constraint. The prefix keeps it visually distinct from user (u-…)
+  // and order/handover ids, and nanoid(16) gives plenty of entropy for
+  // a small-to-medium team.
+  const projectId = fields.id ?? `p-${nanoid(16)}`
   const { rows } = await client.query(
     `INSERT INTO projects
-       (title, type, stage, assigned_to, created_by, target_month,
+       (id, title, type, stage, assigned_to, created_by, target_month,
         pass_number, pass_kind, progress, created_at, updated_at)
-     VALUES ($1,$2,'tasarim',$3,$4,$5,1,$6,0, NOW(), NOW())
+     VALUES ($1,$2,$3,'tasarim',$4,$5,$6,1,$7,0, NOW(), NOW())
      RETURNING ${PROJECT_COLUMNS}`,
     [
+      projectId,
       fields.title,
       fields.type,
       fields.assigned_to ?? null,

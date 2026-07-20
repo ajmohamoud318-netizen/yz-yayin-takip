@@ -196,7 +196,9 @@ const projectsCreate = {
       },
       pass_kind: {
         type: 'string',
-        enum: ['first_edition', 'reprint', 'revize'],
+        // Must match the client's PASS_KIND values and the DB CHECK
+        // (migrations 002/008): 'redesign', not 'revize'.
+        enum: ['first_edition', 'reprint', 'redesign'],
       },
       assigned_to: { type: ['string', 'null'], maxLength: 64 },
       subtasks: {

@@ -47,7 +47,35 @@ import { sendMail, renderResetEmail } from '../services/mail.js'
  */
 
 export async function authRoutes(fastify) {
-  fastify.post('/auth/login', { schema: schemas.authLogin }, async (request) => {
+  /**
+   * Login is the single most attacked endpoint on any app. We limit
+   * by both IP and email so that:
+   *   • one IP can't burn through 1000s of attempts against one email
+   *   • a botnet rotating IPs still hits the per-email bucket
+   *
+   * 10 attempts per 5 minutes per bucket — generous enough that a
+   * legitimate user with typos won't get locked out, tight enough to
+   * make brute-force impractical. JSON-schema validation on the
+   * body (schemas.authLogin) enforces required email + password +
+   * minimum lengths, so the handler can trust the shape that arrives.
+   */
+  fastify.post(
+    '/auth/login',
+    {
+      schema: schemas.authLogin,
+      preHandler: rateLimit({
+        keys: [
+          (req) => `auth-login:ip:${req.ip}`,
+          (req) => req.body?.email
+            ? `auth-login:email:${String(req.body.email).toLowerCase().trim()}`
+            : null,
+        ],
+        limit: 10,
+        windowMs: 5 * 60_000,
+        message: 'Çok fazla giriş denemesi. Lütfen 5 dakika sonra tekrar deneyin.',
+      }),
+    },
+    async (request) => {
     const { email, password } = request.body
     const { rows } = await getPool().query(
       `SELECT id, name, email, password, role, is_active, avatar_url, avatar_updated_at
@@ -64,7 +92,8 @@ export async function authRoutes(fastify) {
     // Drop the password column, keep avatar_url. Stored value is already
     // a relative path so the SPA can rewrite against the live backend host.
     return { token: user.id, user: safe }
-  })
+    },
+  )
 
   fastify.post('/auth/logout', async () => ({ ok: true }))
 
@@ -93,7 +122,31 @@ export async function authRoutes(fastify) {
    * Consume an invitation token and set the user's password.
    * Returns { token, user } so the client can sign the user straight in.
    */
-  fastify.post('/auth/accept-invite', { schema: schemas.authAcceptInvite }, async (request) => {
+  /**
+   * Accept-invite consumes a token from the email link. Per-IP limit
+   * stops a flood of malformed-token probes (the DB lookup is the
+   * expensive bit); per-token limit defeats brute-forcing the 64-char
+   * invite token from a single IP. 20 per 15min on each bucket.
+   * Schema validation enforces token + password presence + 8-char
+   * minimum so the handler can trust the body shape.
+   */
+  fastify.post(
+    '/auth/accept-invite',
+    {
+      schema: schemas.authAcceptInvite,
+      preHandler: rateLimit({
+        keys: [
+          (req) => `auth-accept:ip:${req.ip}`,
+          (req) => req.body?.token
+            ? `auth-accept:token:${req.body.token}`
+            : null,
+        ],
+        limit: 20,
+        windowMs: 15 * 60_000,
+        message: 'Çok fazla deneme. Lütfen 15 dakika sonra tekrar deneyin.',
+      }),
+    },
+    async (request) => {
     const { token, password } = request.body
     const inv = await verifyInvitation(token)
     const hash = bcrypt.hashSync(password, 10)
@@ -109,7 +162,8 @@ export async function authRoutes(fastify) {
     const user = rows[0]
     await consumeInvitation(inv.invitationId)
     return { token: user.id, user }
-  })
+    },
+  )
 
   /**
    * Forgot-password — always returns 200 even when the email doesn't
@@ -126,9 +180,10 @@ export async function authRoutes(fastify) {
     {
       schema: schemas.authForgotPassword,
       preHandler: rateLimit({
-        key: (req) => req.ip,
+        keys: [(req) => `auth-forgot:ip:${req.ip}`],
         limit: 5,
         windowMs: 60_000,
+        message: 'Çok fazla şifre sıfırlama isteği. Lütfen bir dakika bekleyin.',
       }),
     },
     async (request) => {
@@ -159,7 +214,30 @@ export async function authRoutes(fastify) {
    * Returns { token, user } so the SPA can log the user straight in
    * without a second round-trip.
    */
-  fastify.post('/auth/reset-password', { schema: schemas.authResetPassword }, async (request) => {
+  /**
+   * Reset-password consumes a one-shot token. Same protection as
+   * accept-invite: per-IP + per-token bucket so a leaked/burning set
+   * of tokens can't be probed at scale. Schema validation enforces
+   * token + password presence + 8-char minimum so the handler can
+   * trust the body shape.
+   */
+  fastify.post(
+    '/auth/reset-password',
+    {
+      schema: schemas.authResetPassword,
+      preHandler: rateLimit({
+        keys: [
+          (req) => `auth-reset:ip:${req.ip}`,
+          (req) => req.body?.token
+            ? `auth-reset:token:${req.body.token}`
+            : null,
+        ],
+        limit: 20,
+        windowMs: 15 * 60_000,
+        message: 'Çok fazla deneme. Lütfen 15 dakika sonra tekrar deneyin.',
+      }),
+    },
+    async (request) => {
     const { token, password } = request.body
     const reset = await verifyPasswordReset(token)
     const hash = bcrypt.hashSync(password, 10)
@@ -174,7 +252,8 @@ export async function authRoutes(fastify) {
     const user = rows[0]
     await consumePasswordReset(reset.resetId)
     return { token: user.id, user }
-  })
+    },
+  )
 
   /**
    * Change-password for the currently-authenticated user. Requires

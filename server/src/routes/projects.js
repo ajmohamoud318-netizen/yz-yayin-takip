@@ -52,10 +52,11 @@ export async function projectRoutes(fastify) {
   fastify.post('/projects', { schema: schemas.projectsCreate }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
-    const { title, type, target_month, subtasks = [], pass_kind } = request.body
+    const { title, type, target_month, subtasks = [], pass_kind, assigned_to } = request.body
     const result = await withTx(async (client) => {
       const project = await insertProject(client, {
-        title, type, target_month, pass_kind, created_by: request.user.id,
+        title, type, target_month, pass_kind, assigned_to,
+        created_by: request.user.id,
       })
       const subRows = []
       for (const s of subtasks) {
