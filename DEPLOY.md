@@ -60,11 +60,19 @@ Create **two** services from the same GitHub repo.
 
 **Environment:**
 ```
-VITE_API_BASE_URL=https://api.yt.mucitkarinca.com
+VITE_API_BASE_URL=https://yayin-takip-backend-4dvoqr-53441c-46-62-170-64.sslip.io
 ```
 
 > Anything prefixed `VITE_` is baked into the JS bundle at build time —
 > don't put secrets here.
+>
+> ⚠️ **TEMPORARY OVERRIDE (active as of 2026-07-20).** The canonical URL
+> `https://api.yt.mucitkarinca.com` currently fails TLS at the Cloudflare
+> edge (`SSL alert 40 / handshake_failure`) — the `api.*` hostname has no
+> cert/origin wiring. Until that is repaired, the SPA points at the
+> Dokploy-provided sslip.io hostname so project creation works end-to-end.
+> When Cloudflare is fixed for `api.*`, change `VITE_API_BASE_URL` back to
+> `https://api.yt.mucitkarinca.com` and redeploy.
 
 ### 2. API — `yz-api`
 
