@@ -10,9 +10,24 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import api, { ROLE_LABELS } from '@/api'
+import api, { ROLE_LABELS, API_ORIGIN } from '@/api'
 import { initials } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+
+/**
+ * Turn a stored avatar URL into one the <img> tag can render.
+ *
+ * - Already-absolute URLs pass through.
+ * - Data-URLs (mock mode) pass through.
+ * - Relative `/api/...` URLs get the backend origin prepended so the
+ *   request hits the Fastify host, not the SPA host.
+ */
+function avatarSrc(url) {
+  if (!url) return url
+  if (/^(https?:|data:)/i.test(url)) return url
+  if (url.startsWith('/')) return `${API_ORIGIN}${url}`
+  return `${API_ORIGIN}/${url}`
+}
 
 export default function Settings() {
   const { user, logout, updateUser } = useAuth()
@@ -137,7 +152,7 @@ export default function Settings() {
                 <Avatar className="h-14 w-14 ring-2 ring-background shadow-sm transition-opacity group-hover:opacity-90">
                   {user?.avatar_url ? (
                     <img
-                      src={user.avatar_url}
+                      src={avatarSrc(user.avatar_url)}
                       alt={user?.name ? `${user.name} profil fotoğrafı` : 'Profil fotoğrafı'}
                       className="h-full w-full rounded-full object-cover"
                     />

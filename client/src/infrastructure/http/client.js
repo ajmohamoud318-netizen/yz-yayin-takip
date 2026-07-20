@@ -20,6 +20,13 @@ const baseURL = envBase && isLocalhostOverride
   ? `${envBase.replace(/\/$/, '')}/api`
   : `${DEFAULT_API_BASE_URL}/api`
 
+/**
+ * Absolute origin of the backend, suitable for absolute <img src> URLs.
+ * Strips the trailing `/api` so callers can prepend their own path
+ * segments. Defaults to the same Dokploy-managed host as baseURL.
+ */
+export const API_ORIGIN = baseURL.replace(/\/api\/?$/, '')
+
 const client = axios.create({
   baseURL,
   withCredentials: false,

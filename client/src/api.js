@@ -12,7 +12,7 @@
  * pages, hooks, and use cases run unchanged.
  */
 export * from './domain/index.js'
-export { setAuthToken } from './infrastructure/http/client.js'
+export { setAuthToken, API_ORIGIN } from './infrastructure/http/client.js'
 export { resetMockState } from './infrastructure/mock/store.js'
 export { USE_MOCK } from './infrastructure/config.js'
 
