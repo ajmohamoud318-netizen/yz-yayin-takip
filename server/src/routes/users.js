@@ -5,6 +5,7 @@ import { badRequest, conflict, forbidden, notFound } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
 import { createInvitation } from '../services/invitations.js'
 import { sendMail, renderInviteEmail } from '../services/mail.js'
+import { config } from '../config.js'
 import {
   MAX_AVATAR_BYTES,
   deleteAvatar,
@@ -207,12 +208,15 @@ export async function userRoutes(fastify) {
 
     const ext = extForMime(file.mimetype)
     const url = await saveAvatar(request.user.id, ext, buffer)
+    // Return an absolute URL so <img src> on the SPA host resolves to the
+    // backend (the SPA itself has no /api/* reverse proxy).
+    const absoluteUrl = `${config.apiPublicUrl.replace(/\/$/, '')}${url}`
     await getPool().query(
       `UPDATE users SET avatar_url = $2, avatar_updated_at = NOW(), updated_at = NOW()
        WHERE id = $1 RETURNING avatar_url`,
-      [request.user.id, url],
+      [request.user.id, absoluteUrl],
     )
-    return { avatarUrl: url }
+    return { avatarUrl: absoluteUrl }
   })
 
   fastify.delete('/users/me/avatar', async (request) => {

@@ -58,6 +58,15 @@ export const config = {
       ? 'https://yt.mucitkarinca.com'
       : 'http://localhost:5173'),
 
+  // Public absolute URL of THIS Fastify backend. Used to mint absolute
+  // URLs for assets the SPA can't proxy (avatars served from /api/users/
+  // :id/avatar/file must reach the backend host, not the SPA host).
+  apiPublicUrl:
+    process.env.API_PUBLIC_URL ??
+    (process.env.NODE_ENV === 'production'
+      ? 'https://api.yt.mucitkarinca.com'
+      : 'http://localhost:4000'),
+
   // Redis connection string. In Dokploy this is the internal URL of the
   // managed Redis service (e.g. redis://default:<pw>@yz-redis:6379). In
   // local dev it falls back to localhost. Leave blank to disable Redis
