@@ -1,7 +1,10 @@
 import { httpClient } from '../../http/client.js'
-import { mockUsers } from '../store.js'
+import { mockUsers, saveState } from '../store.js'
 import { mockOrHttp, mockOrHttpFast } from '../helpers/mock-handler.js'
 import { unauthorized, forbidden } from '../helpers/errors.js'
+
+const ALLOWED_AVATAR_MIME = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024
 
 export function createMockAuthRepository() {
   return {
@@ -145,6 +148,68 @@ export function createMockAuthRepository() {
             currentPassword,
             newPassword,
           })
+          return data
+        },
+      )
+    },
+
+    /**
+     * Mock-mode avatar upload: stash the file as a data URL on the
+     * current mock user so refresh / reload still shows the photo.
+     * Real disk storage lives on the Fastify server.
+     */
+    uploadAvatar(file) {
+      return mockOrHttp(
+        () => new Promise((resolve, reject) => {
+          if (!file) return reject(new Error('Dosya bulunamadı.'))
+          if (!ALLOWED_AVATAR_MIME.has(file.type)) {
+            return reject(new Error('Desteklenen formatlar: JPEG, PNG, WebP.'))
+          }
+          if (file.size > MAX_AVATAR_BYTES) {
+            return reject(new Error('Dosya 2 MB sınırını aşıyor.'))
+          }
+          // Pull the logged-in user id from the in-memory mock token.
+          const auth = localStorage.getItem('yz_mock_token')
+          if (!auth) return reject(new Error('Giriş yapmanız gerekiyor.'))
+          const userId = auth.startsWith('mock-') ? auth.slice(5) : auth
+          const user = mockUsers.find((u) => u.id === userId)
+          if (!user) return reject(new Error('Kullanıcı bulunamadı.'))
+          const reader = new FileReader()
+          reader.onload = () => {
+            user.avatar_url = reader.result
+            user.avatar_updated_at = new Date().toISOString()
+            saveState()
+            resolve({ avatarUrl: reader.result })
+          }
+          reader.onerror = () => reject(new Error('Dosya okunamadı.'))
+          reader.readAsDataURL(file)
+        }),
+        async () => {
+          const fd = new FormData()
+          fd.append('file', file)
+          const { data } = await httpClient.put('/users/me/avatar', fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          })
+          return data
+        },
+      )
+    },
+
+    deleteAvatar() {
+      return mockOrHttp(
+        () => {
+          const auth = localStorage.getItem('yz_mock_token')
+          if (!auth) return Promise.reject(new Error('Giriş yapmanız gerekiyor.'))
+          const userId = auth.startsWith('mock-') ? auth.slice(5) : auth
+          const user = mockUsers.find((u) => u.id === userId)
+          if (!user) return Promise.reject(new Error('Kullanıcı bulunamadı.'))
+          user.avatar_url = null
+          user.avatar_updated_at = null
+          saveState()
+          return Promise.resolve({ ok: true })
+        },
+        async () => {
+          const { data } = await httpClient.delete('/users/me/avatar')
           return data
         },
       )

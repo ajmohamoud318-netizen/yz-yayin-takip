@@ -76,7 +76,29 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const value = { user, loading, login, loginAsUser, logout, isAuthenticated: !!user }
+  /**
+   * Patch the cached auth user (and its localStorage mirror) so the
+   * rest of the app re-renders without a hard reload. Used by Settings
+   * after an avatar upload / delete so the new photo shows up
+   * everywhere in the same session.
+   */
+  const updateUser = useCallback((patch) => {
+    setUser((prev) => {
+      if (!prev) return prev
+      const next = typeof patch === 'function' ? patch(prev) : { ...prev, ...patch }
+      try {
+        const saved = loadAuth()
+        if (saved?.token) {
+          localStorage.setItem(AUTH_KEY, JSON.stringify({ token: saved.token, user: next }))
+        }
+      } catch {
+        /* ignore storage errors */
+      }
+      return next
+    })
+  }, [])
+
+  const value = { user, loading, login, loginAsUser, logout, updateUser, isAuthenticated: !!user }
 
   // JSX is avoided here so the file can stay .js; createElement keeps it simple.
   return createElement(AuthContext.Provider, { value }, children)

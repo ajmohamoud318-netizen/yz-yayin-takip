@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Check, Eye, EyeOff, KeyRound, LogOut, User } from 'lucide-react'
+import { Camera, Check, Eye, EyeOff, KeyRound, LoaderCircle, LogOut, Mail, ShieldCheck, User } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
@@ -15,9 +15,52 @@ import { initials } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
 export default function Settings() {
-  const { user, logout } = useAuth()
+  const { user, logout, updateUser } = useAuth()
 
   const navigate = useNavigate()
+  const fileInputRef = useRef(null)
+
+  // Avatar upload state
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [removingAvatar, setRemovingAvatar] = useState(false)
+
+  async function handleAvatarChange(e) {
+    const file = e.target.files?.[0]
+    // Always reset the input so re-picking the same file fires onChange.
+    e.target.value = ''
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.error('Desteklenen formatlar: JPEG, PNG, WebP.')
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Dosya 2 MB sınırını aşıyor.')
+      return
+    }
+    setUploadingAvatar(true)
+    try {
+      const { avatarUrl } = await api.uploadAvatar(file)
+      updateUser({ avatar_url: avatarUrl, avatar_updated_at: new Date().toISOString() })
+      toast.success('Profil fotoğrafın güncellendi.')
+    } catch (err) {
+      toast.error(err?.message || 'Fotoğraf yüklenemedi.')
+    } finally {
+      setUploadingAvatar(false)
+    }
+  }
+
+  async function handleRemoveAvatar() {
+    setRemovingAvatar(true)
+    try {
+      await api.deleteAvatar()
+      updateUser({ avatar_url: null, avatar_updated_at: null })
+      toast.success('Profil fotoğrafı kaldırıldı.')
+    } catch (err) {
+      toast.error(err?.message || 'Fotoğraf kaldırılamadı.')
+    } finally {
+      setRemovingAvatar(false)
+    }
+  }
 
   // Change-password form state
   const [currentPassword, setCurrentPassword] = useState('')
@@ -83,17 +126,78 @@ export default function Settings() {
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-4">
-            <Avatar className="h-14 w-14">
-              <AvatarFallback className="text-lg">{initials(user?.name)}</AvatarFallback>
-            </Avatar>
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingAvatar}
+                aria-label="Profil fotoğrafını değiştir"
+                className="group relative block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+              >
+                <Avatar className="h-14 w-14 ring-2 ring-background shadow-sm transition-opacity group-hover:opacity-90">
+                  {user?.avatar_url ? (
+                    <img
+                      src={user.avatar_url}
+                      alt={user?.name ? `${user.name} profil fotoğrafı` : 'Profil fotoğrafı'}
+                      className="h-full w-full rounded-full object-cover"
+                    />
+                  ) : (
+                    <AvatarFallback className="bg-primary/10 text-lg font-semibold text-primary">
+                      {initials(user?.name)}
+                    </AvatarFallback>
+                  )}
+                </Avatar>
+                <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-black/35 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                  {uploadingAvatar ? (
+                    <LoaderCircle className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Camera className="h-5 w-5" />
+                  )}
+                </span>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={handleAvatarChange}
+              />
+            </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-base font-semibold">{user?.name}</p>
               <p className="truncate text-sm text-muted-foreground">{user?.email}</p>
-              <span className="mt-1 inline-block rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              <span className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                <ShieldCheck className="h-3 w-3" />
                 {ROLE_LABELS[user?.role] ?? user?.role}
               </span>
             </div>
           </div>
+
+          {(user?.avatar_url || uploadingAvatar) && (
+            <div className="mt-4 flex items-center justify-end gap-2 border-t border-border/60 pt-4">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingAvatar || removingAvatar}
+              >
+                <Camera className="h-4 w-4" />
+                Fotoğrafı değiştir
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:bg-destructive/5 hover:text-destructive"
+                onClick={handleRemoveAvatar}
+                disabled={removingAvatar || uploadingAvatar}
+              >
+                {removingAvatar ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                Kaldır
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

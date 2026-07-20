@@ -30,7 +30,8 @@ import { getPool } from '../db/pool.js'
 export async function loadUserById(id) {
   if (!id) return null
   const { rows } = await getPool().query(
-    'SELECT id, name, email, role, is_active, can_approve_ozalit FROM users WHERE id = $1 LIMIT 1',
+    `SELECT id, name, email, role, is_active, can_approve_ozalit, avatar_url, avatar_updated_at
+     FROM users WHERE id = $1 LIMIT 1`,
     [id],
   )
   return rows[0] ?? null

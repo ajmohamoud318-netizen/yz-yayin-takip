@@ -6,7 +6,6 @@ import { useNavigate, Link } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth.js'
 import { USE_MOCK } from '../infrastructure/config.js'
-import api from '../api.js'
 import { Button } from '../components/ui/button.jsx'
 import { Card, CardContent } from '../components/ui/card.jsx'
 import { Input } from '../components/ui/input.jsx'
@@ -64,7 +63,7 @@ function SplashScreen({ onDone }) {
 
 /* ─── Login ──────────────────────────────────────────────────────────── */
 export default function Login() {
-  const { login, loginAsUser, loading } = useAuth()
+  const { login, loading } = useAuth()
   const navigate = useNavigate()
 
   const [showSplash, setShowSplash] = useState(false)
@@ -73,31 +72,6 @@ export default function Login() {
   const [showPw, setShowPw]         = useState(false)
   const [error, setError]           = useState('')
   const [exiting, setExiting]       = useState(false)
-
-  // Dev-user picker (HTTP backend only). Pulls the real user list from
-  // /api/users so the panel stays in sync with whatever's seeded.
-  const [devUsers, setDevUsers] = useState([])
-  const [devLoading, setDevLoading] = useState(false)
-  useEffect(() => {
-    if (USE_MOCK) return
-    let cancelled = false
-    setDevLoading(true)
-    api.listUsers()
-      .then((rows) => { if (!cancelled) setDevUsers(rows ?? []) })
-      .catch(() => { if (!cancelled) setDevUsers([]) })
-      .finally(() => { if (!cancelled) setDevLoading(false) })
-    return () => { cancelled = true }
-  }, [])
-
-  async function pickDevUser(u) {
-    setError('')
-    try {
-      await loginAsUser(u.id)
-      setExiting(true)
-    } catch (err) {
-      setError(err.message || 'Giriş yapılamadı. Lütfen tekrar deneyin.')
-    }
-  }
 
   async function submit(mail, pass) {
     setError('')
@@ -202,9 +176,9 @@ export default function Login() {
               </motion.button>
             </form>
 
-            {/* Quick login */}
-            <div className="mt-6">
-              {USE_MOCK ? (
+            {/* Quick login (mock mode only) */}
+            {USE_MOCK && (
+              <div className="mt-6">
                 <div className="grid grid-cols-2 gap-2">
                   {DEMO_USERS.map(u => (
                     <button
@@ -221,10 +195,8 @@ export default function Login() {
                     </button>
                   ))}
                 </div>
-              ) : (
-                <DevUserPicker users={devUsers} loading={devLoading || loading} onPick={pickDevUser} />
-              )}
-            </div>
+              </div>
+            )}
 
           </div>
         </motion.div>
@@ -239,55 +211,5 @@ function Spinner() {
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
     </svg>
-  )
-}
-
-/* ─── DevUserPicker ──────────────────────────────────────────────────── */
-function DevUserPicker({ users, loading, onPick }) {
-  if (loading) {
-    return (
-      <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-3 py-4 text-center text-xs text-gray-500">
-        Kullanıcılar yükleniyor…
-      </div>
-    )
-  }
-  if (!users?.length) {
-    return (
-      <div className="rounded-xl border border-dashed border-red-200 bg-red-50 px-3 py-4 text-center text-xs text-red-700">
-        Backend&apos;ten kullanıcı listesi alınamadı. <code>psql</code> ile
-        <code className="ml-1">users</code> tablosunu kontrol edin.
-      </div>
-    )
-  }
-  return (
-    <div className="space-y-2">
-      <p className="text-[11px] uppercase tracking-wide text-gray-400">
-        Dev — kullanıcı olarak giriş
-      </p>
-      <div className="grid grid-cols-2 gap-2">
-        {users.map((u) => {
-          const initials = (u.name || u.email || '?')
-            .split(/\s+/)
-            .map((p) => p[0])
-            .slice(0, 2)
-            .join('')
-            .toUpperCase()
-          return (
-            <button
-              key={u.id} type="button" onClick={() => onPick(u)}
-              className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-left hover:border-red-200 hover:bg-red-50 transition-colors"
-            >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
-                {initials}
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-xs font-medium text-gray-800">{u.name}</span>
-                <span className="block truncate text-xs text-gray-400">{ROLE_LABEL[u.role] || u.role}</span>
-              </span>
-            </button>
-          )
-        })}
-      </div>
-    </div>
   )
 }

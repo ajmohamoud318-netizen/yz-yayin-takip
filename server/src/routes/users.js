@@ -5,6 +5,14 @@ import { badRequest, conflict, forbidden, notFound } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
 import { createInvitation } from '../services/invitations.js'
 import { sendMail, renderInviteEmail } from '../services/mail.js'
+import {
+  MAX_AVATAR_BYTES,
+  deleteAvatar,
+  extForMime,
+  isAllowedMime,
+  readAvatar,
+  saveAvatar,
+} from '../services/avatars.js'
 
 /**
  * Users API.
@@ -13,17 +21,13 @@ import { sendMail, renderInviteEmail } from '../services/mail.js'
  *  POST   /api/users/invite
  *  PATCH  /api/users/:id/deactivate
  *  PATCH  /api/users/:id/reactivate
- *  PATCH  /api/users/:id/capabilities   — set `can_approve_ozalit`
  *  DELETE /api/users/:id
  */
 export async function userRoutes(fastify) {
-  const USER_COLUMNS =
-    'id, name, email, role, is_active, can_approve_ozalit, invited_at, joined_at, created_at'
-
   fastify.get('/users', async (request) => {
     await attachUser(request)
     const { rows } = await getPool().query(
-      `SELECT ${USER_COLUMNS} FROM users ORDER BY created_at`,
+      'SELECT id, name, email, role, is_active, invited_at, joined_at, created_at FROM users ORDER BY created_at',
     )
     return rows
   })
@@ -31,15 +35,11 @@ export async function userRoutes(fastify) {
   fastify.post('/users/invite', async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
-    const { name, email, role, canApproveOzalit } = request.body ?? {}
+    const { name, email, role } = request.body ?? {}
     if (!name || !email) badRequest('Ad ve e-posta zorunlu.')
     if (!['designer', 'printer', 'satis', 'team_leader'].includes(role)) {
       badRequest('Geçersiz rol.')
     }
-    // The "special designer" capability only makes sense on the designer
-    // role. Silently coerce to false otherwise so the form can stay
-    // unchecked-by-default without surprising the user with a 400.
-    const wantsFlag = role === 'designer' && canApproveOzalit === true
     const normalisedEmail = email.trim().toLowerCase()
     const existing = await getPool().query(
       `SELECT id, is_active FROM users WHERE email = $1`,
@@ -50,11 +50,10 @@ export async function userRoutes(fastify) {
       // and mint a fresh invitation token. Active users still 409.
       if (!existing.rows[0].is_active) {
         const reactivated = await getPool().query(
-          `UPDATE users SET is_active = TRUE, invited_at = NOW(), name = $2, role = $3,
-                  can_approve_ozalit = $4
+          `UPDATE users SET is_active = TRUE, invited_at = NOW(), name = $2, role = $3
            WHERE id = $1
-           RETURNING ${USER_COLUMNS}`,
-          [existing.rows[0].id, name.trim(), role, wantsFlag],
+           RETURNING id, name, email, role, is_active, invited_at, joined_at, created_at`,
+          [existing.rows[0].id, name.trim(), role],
         )
         const user = reactivated.rows[0]
         const invitation = await createInvitation({ userId: user.id })
@@ -90,10 +89,10 @@ export async function userRoutes(fastify) {
     // prefix used by the demo data migration.
     const userId = `u-${nanoid(16)}`
     const { rows } = await getPool().query(
-      `INSERT INTO users (id, name, email, role, is_active, can_approve_ozalit, invited_at)
-       VALUES ($1,$2,$3,$4,TRUE,$5,NOW())
-       RETURNING ${USER_COLUMNS}`,
-      [userId, name.trim(), normalisedEmail, role, wantsFlag],
+      `INSERT INTO users (id, name, email, role, is_active, invited_at)
+       VALUES ($1,$2,$3,$4,TRUE,NOW())
+       RETURNING id, name, email, role, is_active, invited_at, joined_at, created_at`,
+      [userId, name.trim(), normalisedEmail, role],
     )
     const user = rows[0]
 
@@ -127,36 +126,6 @@ export async function userRoutes(fastify) {
     }
   })
 
-  // Per-row toggle for the team-leader invite UI. Only the canApproveOzalit
-  // capability is exposed here — anything else lives on the user invite /
-  // deactivate endpoints.
-  fastify.patch('/users/:id/capabilities', async (request) => {
-    await attachUser(request)
-    requireRole(request, 'team_leader')
-    const { id } = request.params
-    const { canApproveOzalit } = request.body ?? {}
-    if (typeof canApproveOzalit !== 'boolean') {
-      badRequest('canApproveOzalit boolean olmalı.')
-    }
-
-    // Pull current row so we can enforce "only on designers".
-    const { rows: current } = await getPool().query(
-      `SELECT role FROM users WHERE id = $1`,
-      [id],
-    )
-    if (!current[0]) notFound('Kullanıcı bulunamadı.')
-    if (current[0].role !== 'designer') {
-      badRequest('Bu yetki yalnızca tasarımcılar için geçerlidir.')
-    }
-
-    const { rows } = await getPool().query(
-      `UPDATE users SET can_approve_ozalit = $2, updated_at = NOW() WHERE id = $1
-       RETURNING ${USER_COLUMNS}`,
-      [id, canApproveOzalit],
-    )
-    return rows[0]
-  })
-
   fastify.patch('/users/:id/deactivate', async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
@@ -164,7 +133,7 @@ export async function userRoutes(fastify) {
     if (id === request.user.id) forbidden('Kendinizi devre dışı bırakamazsınız.')
     const { rows } = await getPool().query(
       `UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE id = $1
-       RETURNING ${USER_COLUMNS}`,
+       RETURNING id, name, email, role, is_active`,
       [id],
     )
     if (!rows[0]) notFound('Kullanıcı bulunamadı.')
@@ -177,7 +146,7 @@ export async function userRoutes(fastify) {
     const { id } = request.params
     const { rows } = await getPool().query(
       `UPDATE users SET is_active = TRUE, updated_at = NOW() WHERE id = $1
-       RETURNING ${USER_COLUMNS}`,
+       RETURNING id, name, email, role, is_active`,
       [id],
     )
     if (!rows[0]) notFound('Kullanıcı bulunamadı.')
@@ -199,5 +168,78 @@ export async function userRoutes(fastify) {
     if (!rows[0]) return notFound('Kullanıcı bulunamadı.')
     reply.code(204)
     return null
+  })
+
+  // ─── Avatar upload / fetch / delete ─────────────────────────────
+  //
+  // Upload + delete are scoped to the *authenticated* user — there's
+  // intentionally no `/users/:id/avatar` so one user can never overwrite
+  // another. The file endpoint is public-ish (browsers load <img src>
+  // without sending X-User-Id), so we don't 401 on missing auth there —
+  // we just 404 if no avatar is on file.
+  //
+  // Body limit for this route is enforced per-upload via
+  // `MAX_AVATAR_BYTES`; Fastify's global bodyLimit is the upper bound for
+  // a defensive second check.
+
+  fastify.put('/users/me/avatar', async (request) => {
+    await attachUser(request)
+    const file = await request.file()
+    if (!file) badRequest('Dosya bulunamadı.')
+    if (!isAllowedMime(file.mimetype)) {
+      badRequest('Desteklenen formatlar: JPEG, PNG, WebP.')
+    }
+
+    // Buffer up to MAX_AVATAR_BYTES; reject larger uploads with a clear
+    // 413. We deliberately don't trust `file.file.truncated` alone —
+    // Fastify already enforces the global `bodyLimit` on the route's
+    // multipart stream, so this is a belt-and-braces size check.
+    const chunks = []
+    let total = 0
+    for await (const chunk of file.file) {
+      total += chunk.length
+      if (total > MAX_AVATAR_BYTES) {
+        badRequest('Dosya 2 MB sınırını aşıyor.')
+      }
+      chunks.push(chunk)
+    }
+    const buffer = Buffer.concat(chunks, total)
+
+    const ext = extForMime(file.mimetype)
+    const url = await saveAvatar(request.user.id, ext, buffer)
+    await getPool().query(
+      `UPDATE users SET avatar_url = $2, avatar_updated_at = NOW(), updated_at = NOW()
+       WHERE id = $1 RETURNING avatar_url`,
+      [request.user.id, url],
+    )
+    return { avatarUrl: url }
+  })
+
+  fastify.delete('/users/me/avatar', async (request) => {
+    await attachUser(request)
+    await deleteAvatar(request.user.id)
+    await getPool().query(
+      `UPDATE users SET avatar_url = NULL, avatar_updated_at = NULL, updated_at = NOW()
+       WHERE id = $1`,
+      [request.user.id],
+    )
+    return { ok: true }
+  })
+
+  // Public file stream. No auth — <img src> can't carry X-User-Id.
+  // Returns 404 if no avatar is on file for the requested user.
+  fastify.get('/users/:id/avatar/file', async (request, reply) => {
+    const { id } = request.params
+    const { rows } = await getPool().query(
+      `SELECT avatar_url FROM users WHERE id = $1 LIMIT 1`,
+      [id],
+    )
+    if (!rows[0]?.avatar_url) return notFound('Avatar bulunamadı.')
+    const file = await readAvatar(id, rows[0].avatar_url)
+    if (!file) return notFound('Avatar dosyası eksik.')
+    reply
+      .header('Content-Type', file.mime)
+      .header('Cache-Control', 'private, max-age=300')
+      .send(file.buffer)
   })
 }
