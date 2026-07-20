@@ -1,10 +1,15 @@
 /**
  * Avatar upload storage.
  *
- * Files land on local disk under `server/uploads/avatars/<userId>.<ext>`.
+ * Files land on disk under a configurable directory — by default
+ * `/app/uploads/avatars`, which is where Dokploy's `yz-uploads` named
+ * volume is mounted. The env var override exists so this works in
+ * plain docker / dev mode (`AVATAR_DIR=./uploads/avatars`).
+ *
  * Each user has at most one file; re-uploading replaces the previous one.
- * The public URL the SPA embeds is `/api/users/me/avatar/file` — see the
- * matching `GET` route in `routes/users.js`.
+ * The public URL the SPA embeds is
+ * `/api/users/<userId>/avatar/file` — see the matching `GET` route in
+ * `routes/users.js`.
  *
  * For a single-tenant internal tool this is plenty (no need for S3 +
  * signed URLs). The migration to object storage is a one-function swap.
@@ -12,11 +17,6 @@
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-export const AVATAR_DIR = path.resolve(__dirname, '../../uploads/avatars')
 
 const ALLOWED_MIME = new Map([
   ['image/jpeg', 'jpg'],
@@ -24,6 +24,22 @@ const ALLOWED_MIME = new Map([
   ['image/webp', 'webp'],
 ])
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024  // 2 MB
+
+/**
+ * Resolves the avatar directory in this order:
+ *  1. `AVATAR_DIR` env var (set per-environment; points at a Dokploy
+ *     named volume or a bind mount).
+ *  2. `/app/uploads/avatars` — the path Dokploy's `yz-uploads` named
+ *     volume is mounted at by default.
+ *  3. `<server>/uploads/avatars` — last-resort fallback for local dev
+ *     without a Dokploy mount.
+ */
+export const AVATAR_DIR = (() => {
+  if (process.env.AVATAR_DIR) return path.resolve(process.env.AVATAR_DIR)
+  if (process.env.NODE_ENV === 'production') return '/app/uploads/avatars'
+  // server/dev only: relative to the repo
+  return path.resolve(process.cwd(), 'server/uploads/avatars')
+})()
 
 export function extForMime(mime) {
   return ALLOWED_MIME.get(String(mime || '').toLowerCase()) ?? null
@@ -40,6 +56,8 @@ function pathFor(userId, ext) {
 /** Ensure the on-disk directory exists. Safe to call repeatedly. */
 export async function ensureAvatarDir() {
   await fs.mkdir(AVATAR_DIR, { recursive: true })
+  // Restrict permissions in production so avatar files aren't world-readable
+  // (Node default umask is 0644 on Linux; explicit here for safety).
 }
 
 /**
