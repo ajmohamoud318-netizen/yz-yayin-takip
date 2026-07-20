@@ -88,7 +88,21 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
 
   // A project can't reach Ozalit or production until its design is 100% complete.
   const blocksUretim =
-    mode === 'approve' &&mış tasarımcı(lar) veya özel tasarımcı da onayladığında "Üretime Hazır" aşamasına geçer. Onaylıyor musunuz?'
+    mode === 'approve' &&
+    approveDest &&
+    STAGES_REQUIRING_FULL_PROGRESS.has(approveDest.stage) &&
+    (project?.progress ?? 0) < 100
+
+  const titles = {
+    approve: isOzalitLeaderStep ? 'Ozalit onayı' : approveDest?.label ?? 'Aşamayı onayla',
+    reject: 'Reddet ve geri gönder',
+    advance: advanceLabel,
+  }
+  const isOzalitReject = project?.stage === 'ozalit_onay'
+  const teslimLabel = isOzalitReject ? 'Ozalit Teslim' : 'Demo Teslim'
+  const descriptions = {
+    approve: isOzalitLeaderStep
+      ? 'Ekip lideri onayınız kaydedilecek. Proje, atanmış tasarımcı(lar) veya özel tasarımcı da onayladığında "Üretime Hazır" aşamasına geçer. Onaylıyor musunuz?'
       : isOzalitDesignerStep
         ? approveDest
           ? `Onayınız ile proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylamaya emin misiniz?`
@@ -109,20 +123,6 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
     mode === 'approve' && isOzalitLeaderStep && !isLeader
   const ozalitStep2BlockedForDesigners =
     mode === 'approve' && isOzalitDesignerStep && !isLeader && !isSpecialDesigner
-  const isOzalitReject = project?.stage === 'ozalit_onay'
-  const teslimLabel = isOzalitReject ? 'Ozalit Teslim' : 'Demo Teslim'
-  const descriptions = {
-    approve: isOzalitLeaderStep
-      ? 'Ekip lideri onayınız kaydedilecek. Proje, atanan tasarımcı(lar) da onayladığında "Üretime Hazır" aşamasına geçer. Onaylıyor musunuz?'
-      : approveDest
-        ? `Onaylandığında proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylamaya emin misiniz?`
-        : 'Bu proje bir sonraki aşamaya ilerleyecek. Onaylamaya emin misiniz?',
-    reject:
-      rejectTarget === 'matbaa'
-        ? `Proje "${teslimLabel}" aşamasına döner; matbaa yeniden teslim eder. Tasarım değişmez. Bir red sebebi yazın.`
-        : 'Proje tasarım aşamasına döner; seçtiğiniz alt görevler revize edilir. Bir red sebebi yazın.',
-    advance: 'Bu projeyi sonraki aşamaya elle ilerleteceksiniz. Devam edilsin mi?',
-  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -260,9 +260,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
 
           {mode === 'reject' && (
             <div className="space-y-1.5">
-              <LozalitStep1Blocked ||
-                ozalitStep2BlockedForDesigners ||
-                abel htmlFor="reason">Red Sebebi *</Label>
+              <Label htmlFor="reason">Red Sebebi *</Label>
               <Textarea
                 id="reason"
                 value={reason}
@@ -283,6 +281,8 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
               disabled={
                 busy ||
                 blocksUretim ||
+                ozalitStep1Blocked ||
+                ozalitStep2BlockedForDesigners ||
                 (mode === 'reject' &&
                   (!reason.trim() ||
                     (rejectTarget === 'designer' &&

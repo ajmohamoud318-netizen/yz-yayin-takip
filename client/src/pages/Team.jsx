@@ -239,6 +239,14 @@ function UserCard({ user, canManage, onToggle, onDelete, onCapabilityChange }) {
           </DropdownMenu>
         )}
       </CardContent>
+    </Card>
+  )
+}
+
+function InviteDialog({ open, onOpenChange, onInvited }) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState('designer')
   // Special-designer capability. Only meaningful when role === 'designer';
   // the server also enforces this (silently coerced to false otherwise).
   const [canApproveOzalit, setCanApproveOzalit] = useState(false)
@@ -360,23 +368,7 @@ function UserCard({ user, canManage, onToggle, onDelete, onCapabilityChange }) {
                 onCheckedChange={setCanApproveOzalit}
               />
             </div>
-          )}quired
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Rol</Label>
-            <Select value={role} onValueChange={setRole}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="designer">{ROLE_LABELS.designer}</SelectItem>
-                <SelectItem value="printer">{ROLE_LABELS.printer}</SelectItem>
-                <SelectItem value="satis">{ROLE_LABELS.satis}</SelectItem>
-                <SelectItem value="team_leader">{ROLE_LABELS.team_leader}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          )}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               İptal
