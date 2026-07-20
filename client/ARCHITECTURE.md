@@ -20,14 +20,13 @@ YZ Yayın Takip follows [Clean Architecture](https://blog.cleancoder.com/uncle-b
 │  create-api.js · use-cases/ · mappers/ · ports/             │
 └───────────────────────────┬─────────────────────────────────┘
                             │
-          ┌─────────────────┴─────────────────┐
-          ▼                                   ▼
-┌─────────────────────┐           ┌─────────────────────┐
-│  Domain (inner)     │           │  Infrastructure     │
-│  domain/            │           │  infrastructure/    │
-│  Pure rules & types │◄──────────│  mock/ · http/        │
-│  Zero framework deps│  implements│  Axios, localStorage │
-└─────────────────────┘           └─────────────────────┘
+                            ▼
+┌─────────────────────┐   ┌──────────────────────────────────┐
+│  Domain (inner)     │   │  Infrastructure                  │
+│  domain/            │   │  infrastructure/                 │
+│  Pure rules & types │◄──│    http/   (Axios + repos)       │
+│  Zero framework deps│   │    shared/ (errors, uid)         │
+└─────────────────────┘   └──────────────────────────────────┘
 ```
 
 ## Folder map
@@ -38,14 +37,11 @@ YZ Yayın Takip follows [Clean Architecture](https://blog.cleancoder.com/uncle-b
 | `domain/services/` | Domain | `subtaskProgress`, `statusKeyForProject`, pipeline rules |
 | `application/ports/` | Application | Repository interfaces (JSDoc) |
 | `application/mappers/` | Application | `createProjectMapper` — payload/detail transforms |
-| `application/use-cases/` | Application | Cross-aggregate orchestration (e.g. `advance-order-request`) |
-| `application/create-api.js` | Application | Wires repos + use cases into the `api` object |
-| `infrastructure/config.js` | Infrastructure | `USE_MOCK` flag |
+| `application/use-cases/` | Application | Cross-aggregate orchestration (orders, handovers) |
+| `application/create-api.js` | Application | Wires HTTP repos + use cases into the `api` object |
 | `infrastructure/http/client.js` | Infrastructure | Axios instance + auth header |
-| `infrastructure/mock/store.js` | Infrastructure | In-memory state + localStorage |
-| `infrastructure/mock/seed/` | Infrastructure | Demo seed data |
-| `infrastructure/mock/repositories/` | Infrastructure | Per-aggregate mock (+ HTTP fallback) repos |
-| `infrastructure/mock/helpers/` | Infrastructure | `mockOrHttp`, errors, form hydration |
+| `infrastructure/http/repositories/` | Infrastructure | One HTTP repo per aggregate (auth, users, projects, …) |
+| `infrastructure/shared/` | Infrastructure | `errors.js`, `uid.js` — used by repos and use cases |
 | `api.js` | Facade | Single import point for the UI |
 | `pages/`, `components/`, `hooks/` | Presentation | React UI |
 
@@ -53,50 +49,38 @@ YZ Yayın Takip follows [Clean Architecture](https://blog.cleancoder.com/uncle-b
 
 | Repository | Methods |
 |------------|---------|
-| `mock-auth.repository` | `login`, `logout` |
-| `mock-user.repository` | `listUsers`, `inviteUser`, `setUserActive`, `findById` |
-| `mock-project.repository` | CRUD, stage transitions, `recordOrderHistory` |
-| `mock-subtask.repository` | toggle, pages, updates, save list |
-| `mock-demo.repository` | `listDemos`, `createDemo` |
-| `mock-order.repository` | `list`, `create`, `update`, store helpers |
+| `http-auth.repository` | login, logout, invite preview/accept, forgot/reset, avatar |
+| `http-user.repository` | list, invite, activate/deactivate, capabilities, delete |
+| `http-project.repository` | CRUD, advance/approve/reject, `recordOrderHistory` |
+| `http-subtask.repository` | toggle, pages, updates, save list |
+| `http-demo.repository` | `listDemos`, `createDemo` |
+| `http-order.repository` | list, create, update, store helpers |
+| `http-handover.repository` | list, create, confirm |
 
 ## Use cases
 
 | Use case | Why separate from repo |
 |----------|------------------------|
-| `advance-order-request` | Updates order **and** linked project history/stage |
+| `advance-order-request` | HTTP wrapper around `/order-requests/:id/advance` |
+| `reject-order-request` | HTTP wrapper around `/order-requests/:id/reject` |
+| `create-order-request` | HTTP wrapper around `POST /order-requests` |
+| `create-handover` / `confirm-handover` | HTTP wrappers for the teslim flow |
+
+The cross-aggregate state-machine guards (assignee validation, progress
+gate, role ownership) live server-side in `server/src/domain/transitions.js`.
 
 ## Dependency rule
 
 - **Domain** imports nothing from other layers.
-- **Application** imports domain; use cases receive repos via constructor injection.
-- **Infrastructure** implements repositories; knows about Axios and localStorage.
+- **Application** imports domain; use cases wire repos + the HTTP client.
+- **Infrastructure** implements repositories; knows about Axios.
 - **Presentation** imports `api.js` only.
-
-## Switching to the real backend
-
-1. Set `USE_MOCK = false` in `infrastructure/config.js`.
-2. Add `infrastructure/http/*-repository.js` (HTTP-only, no mock branch).
-3. Branch in `application/create-api.js` to wire HTTP repos instead of mock repos.
-4. Drop mock `localStorage` auth in `useAuth.js` when httpOnly cookies land.
-
-## Migration status
-
-- [x] Domain constants and pure services extracted
-- [x] Mock store + seed data separated
-- [x] HTTP client isolated
-- [x] Per-aggregate mock repositories
-- [x] Project mapper in application layer
-- [x] Cross-aggregate use case (`advance-order-request`)
-- [x] Composition root (`create-api.js`)
-- [ ] HTTP-only repositories (when backend ships)
-- [ ] More use cases for complex project flows
-- [ ] Backend (Fastify + PostgreSQL + Redis) per `CLAUDE.md`
 
 ## Adding a feature (example: new approval step)
 
-1. Add stage constant in `domain/constants/stages.js`.
-2. Add transition rule in `domain/services/pipeline.js`.
-3. Add method to `mock-project.repository.js` (+ HTTP fallback).
+1. Add the stage constant in `domain/constants/stages.js`.
+2. Add the transition rule in `domain/services/pipeline.js`.
+3. Add the endpoint on the server (`server/src/routes/projects.js`) +
+   corresponding repo method (`http-project.repository.js`).
 4. Expose via `application/create-api.js`.
 5. Call through `api.js` from a hook or page.

@@ -1,66 +1,38 @@
-import { hydrateMockForms } from '../infrastructure/mock/helpers/hydrate-forms.js'
-import { createMockAuthRepository } from '../infrastructure/mock/repositories/mock-auth.repository.js'
-import { createMockUserRepository } from '../infrastructure/mock/repositories/mock-user.repository.js'
-import { createMockProjectRepository } from '../infrastructure/mock/repositories/mock-project.repository.js'
-import { createMockSubtaskRepository } from '../infrastructure/mock/repositories/mock-subtask.repository.js'
-import { createMockDemoRepository } from '../infrastructure/mock/repositories/mock-demo.repository.js'
-import { createMockOrderRepository } from '../infrastructure/mock/repositories/mock-order.repository.js'
-import { createMockHandoverRepository } from '../infrastructure/mock/repositories/mock-handover.repository.js'
+/**
+ * Composition root — wires HTTP repositories + cross-aggregate use
+ * cases into the `api` surface consumed by React hooks and pages.
+ *
+ * The HTTP repositories (`infrastructure/http/repositories/*`) are the
+ * single source of truth for backend interaction. Cross-aggregate use
+ * cases (orders, handovers) live here so they can compose repos
+ * without the presentation layer having to know about them.
+ */
+import { createHttpAuthRepository } from '../infrastructure/http/repositories/http-auth.repository.js'
+import { createHttpUserRepository } from '../infrastructure/http/repositories/http-user.repository.js'
+import { createHttpProjectRepository } from '../infrastructure/http/repositories/http-project.repository.js'
+import { createHttpSubtaskRepository } from '../infrastructure/http/repositories/http-subtask.repository.js'
+import { createHttpDemoRepository } from '../infrastructure/http/repositories/http-demo.repository.js'
+import { createHttpOrderRepository } from '../infrastructure/http/repositories/http-order.repository.js'
+import { createHttpHandoverRepository } from '../infrastructure/http/repositories/http-handover.repository.js'
 import { makeAdvanceOrderRequest } from './use-cases/orders/advance-order-request.js'
 import { makeCreateOrderRequest } from './use-cases/orders/create-order-request.js'
 import { makeRejectOrderRequest } from './use-cases/orders/reject-order-request.js'
 import { makeCreateHandover } from './use-cases/handovers/create-handover.js'
 import { makeConfirmHandover } from './use-cases/handovers/confirm-handover.js'
 
-let hydrated = false
-
-/**
- * Composition root — wires repositories and use cases into the API
- * surface consumed by React hooks and pages.
- */
 export function createApi() {
-  if (!hydrated) {
-    hydrateMockForms()
-    hydrated = true
-  }
-
-  const authRepo = createMockAuthRepository()
-  const userRepo = createMockUserRepository()
-  const projectRepo = createMockProjectRepository(userRepo)
-  const subtaskRepo = createMockSubtaskRepository()
-  const demoRepo = createMockDemoRepository()
-  const orderRepo = createMockOrderRepository(userRepo)
-  const handoverRepo = createMockHandoverRepository()
-
-  // Freeze imported seed history into the store once, so it becomes canonical
-  // append-only data instead of being re-fabricated on every render.
-  projectRepo.backfillHistories()
-
-  // Bridge: keep the shared project store in lockstep with mutations the use
-  // cases perform on the project aggregate (reassignment, handover
-  // confirmation, pass reopen). Pages read from useProjectsStore() — without
-  // this push, they'd only see the change after the 30 s refetch tick.
-  const projectStoreListeners = new Set()
-  function bridgeProjects(project) {
-    if (!project?.id) return
-    for (const fn of projectStoreListeners) {
-      try { fn(project) } catch { /* swallow subscriber errors */ }
-    }
-  }
-
-  const advanceOrderRequest = makeAdvanceOrderRequest({ orderRepo, projectRepo, userRepo })
-  const createOrderRequest = makeCreateOrderRequest({ orderRepo, projectRepo })
-  const rejectOrderRequest = makeRejectOrderRequest({ orderRepo, projectRepo })
-  const createHandover = makeCreateHandover({ handoverRepo, projectRepo, onProjectChanged: bridgeProjects })
-  const confirmHandover = makeConfirmHandover({ handoverRepo, projectRepo, onProjectChanged: bridgeProjects })
+  const authRepo = createHttpAuthRepository()
+  const userRepo = createHttpUserRepository()
+  const projectRepo = createHttpProjectRepository(userRepo)
+  const subtaskRepo = createHttpSubtaskRepository()
+  const demoRepo = createHttpDemoRepository()
+  const orderRepo = createHttpOrderRepository()
+  const handoverRepo = createHttpHandoverRepository()
 
   return {
     // Auth
     login: (email, password) => authRepo.login(email, password),
-    loginAsUser: async (userId) => {
-      const res = await authRepo.loginAsUser(userId)
-      return res
-    },
+    loginAsUser: (userId) => authRepo.loginAsUser(userId),
     logout: () => authRepo.logout(),
     previewInvite: (token) => authRepo.previewInvite(token),
     acceptInvite: (token, password) => authRepo.acceptInvite(token, password),
@@ -77,8 +49,7 @@ export function createApi() {
     setUserActive: (id, isActive) => userRepo.setUserActive(id, isActive),
     setUserCapability: (id, capability, value) =>
       userRepo.setUserCapability(id, capability, value),
-    // Hard delete — backend is responsible for the role/own-self guard;
-    // clients can't delete the leader who's currently signed in.
+    // Hard delete — backend enforces team_leader-only + no-self-delete.
     deleteUser: (id) => userRepo.deleteUser(id),
 
     // Projects
@@ -107,22 +78,14 @@ export function createApi() {
 
     // Orders
     listOrderRequests: () => orderRepo.listOrderRequests(),
-    createOrderRequest,
+    createOrderRequest: makeCreateOrderRequest(),
     updateOrderRequest: (id, status) => orderRepo.updateOrderRequest(id, status),
-    advanceOrderRequest,
-    rejectOrderRequest,
+    advanceOrderRequest: makeAdvanceOrderRequest(),
+    rejectOrderRequest: makeRejectOrderRequest(),
 
     // Handovers (Matbaa → Sales "teslim")
     listHandovers: () => handoverRepo.listHandovers(),
-    createHandover,
-    confirmHandover,
-
-    // Live-sync hook: subscribe to project mutations performed by the cross-
-    // aggregate use cases (orders, handovers) so the shared store updates
-    // immediately rather than waiting for the next 30 s refetch.
-    subscribeProjects(fn) {
-      projectStoreListeners.add(fn)
-      return () => projectStoreListeners.delete(fn)
-    },
+    createHandover: makeCreateHandover(),
+    confirmHandover: makeConfirmHandover(),
   }
 }

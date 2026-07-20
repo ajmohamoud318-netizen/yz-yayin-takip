@@ -1,4 +1,6 @@
-// Collision-safe id generator for the mock layer.
+// Collision-safe id generator for client-side history entries the server
+// doesn't assign ids for (order history rows, optimistic-concurrency
+// caches, etc.).
 //
 // Bare `Date.now()` collides when two records are created within the same
 // millisecond — easy to hit with rapid actions (e.g. approving/rejecting or

@@ -5,8 +5,8 @@
  *   - 'pages'  : a page-count subtask (Sayfa Sayısı) tracked with pages_done
  *                vs total_pages; only "done" once pages_done >= total_pages.
  *   - 'revize' : a virtual subtask that surfaces a `needs_revize` flag during
- *                a revision cycle. The mock layer synthesises these on top of
- *                the underlying normal subtask — they are not real work items.
+ *                a revision cycle. Synthesised on top of the underlying
+ *                normal subtask — they are not real work items.
  */
 
 export const SUBTASK_KIND = Object.freeze({

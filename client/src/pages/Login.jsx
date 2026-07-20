@@ -1,72 +1,15 @@
-import { useState, useEffect, useId, useRef } from 'react'
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
-const YZ_LOGO_WHITE = '/yz_whitelogo.svg'
+import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 const YZ_LOGO_BLACK = '/yz_blacklogo.svg'
 import { useNavigate, Link } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth.js'
-import { USE_MOCK } from '../infrastructure/config.js'
-import { Button } from '../components/ui/button.jsx'
-import { Card, CardContent } from '../components/ui/card.jsx'
-import { Input } from '../components/ui/input.jsx'
-import { Label } from '../components/ui/label.jsx'
-import { cn } from '../lib/utils.js'
-
-const ROLE_LABEL = {
-  team_leader: 'Takım Lideri',
-  designer: 'Tasarımcı',
-  printer: 'Matbaa',
-  satis: 'Satış Ekibi',
-}
-
-/* ─── demo data ──────────────────────────────────────────────────────── */
-const DEMO_USERS = [
-  { email: 'aysenur.kanak@yukselenzeka.com',      name: 'Ayşenur Kanak',     role: 'Takım Lideri', initials: 'AY' },
-  { email: 'aylin@yukselenzeka.com',              name: 'Aylin Ulu',          role: 'Tasarımcı',    initials: 'AU' },
-  { email: 'feyza@yukselenzeka.com',              name: 'Feyza Küçükkurt',   role: 'Tasarımcı',    initials: 'FK' },
-  { email: 'nur@yukselenzeka.com',                name: 'Nur Ekincioğlu',    role: 'Tasarımcı',    initials: 'NE' },
-  { email: 'sumeyye.arslanturk@yukselenzeka.com', name: 'Sümeyye Arslantürk',role: 'Tasarımcı',    initials: 'SA' },
-  { email: 'oktay@yukselenzeka.com',              name: 'Oktay Şahin',        role: 'Matbaa',       initials: 'OŞ' },
-  { email: 'atilla.kilickan@yukselenzeka.com',    name: 'Atilla Kılıçkan',    role: 'Matbaa',       initials: 'AK' },
-  { email: 'esra@yukselenzeka.com',               name: 'Esra Kılıç',     role: 'Satış Ekibi',  initials: 'EK' },
-]
-const DEMO_PASSWORD = '123456'
-
-/* ─── Splash ─────────────────────────────────────────────────────────── */
-function SplashScreen({ onDone }) {
-  const reduce = useReducedMotion()
-  useEffect(() => {
-    if (reduce) { onDone(); return }
-    const t = setTimeout(onDone, 2000)
-    return () => clearTimeout(t)
-  }, [onDone, reduce])
-  if (reduce) return null
-  return (
-    <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-primary"
-      role="presentation"
-      exit={{ opacity: 0, transition: { duration: 0.6, ease: [0.4, 0, 0.2, 1] } }}
-    >
-      <motion.img
-        src={YZ_LOGO_WHITE} alt="Yükselen Zeka"
-        width={96} height={96}
-        loading="eager" decoding="async"
-        style={{ height: 96, width: 'auto' }}
-        initial={{ opacity: 0, scale: 0.7, filter: 'blur(10px)' }}
-        animate={{ opacity: 1, scale: 1,   filter: 'blur(0px)'  }}
-        transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
-      />
-    </motion.div>
-  )
-}
-
 
 /* ─── Login ──────────────────────────────────────────────────────────── */
 export default function Login() {
   const { login, loading } = useAuth()
   const navigate = useNavigate()
 
-  const [showSplash, setShowSplash] = useState(false)
   const [email, setEmail]           = useState('')
   const [password, setPassword]     = useState('')
   const [showPw, setShowPw]         = useState(false)
@@ -81,14 +24,9 @@ export default function Login() {
   }
 
   function handleSubmit(e) { e.preventDefault(); submit(email, password) }
-  function pick(u) { setEmail(u.email); setPassword(DEMO_PASSWORD); setError(''); submit(u.email, DEMO_PASSWORD) }
 
   return (
     <>
-      <AnimatePresence>
-        {showSplash && <SplashScreen key="splash" onDone={() => setShowSplash(false)} />}
-      </AnimatePresence>
-
       <motion.div
         className="flex min-h-full flex-col items-center justify-center bg-white px-8 py-12"
         animate={exiting
@@ -175,28 +113,6 @@ export default function Login() {
                 {loading ? <Spinner /> : 'Giriş Yap'}
               </motion.button>
             </form>
-
-            {/* Quick login (mock mode only) */}
-            {USE_MOCK && (
-              <div className="mt-6">
-                <div className="grid grid-cols-2 gap-2">
-                  {DEMO_USERS.map(u => (
-                    <button
-                      key={u.email} type="button" onClick={() => pick(u)}
-                      className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-left hover:border-red-200 hover:bg-red-50 transition-colors"
-                    >
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
-                        {u.initials}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-xs font-medium text-gray-800">{u.name}</span>
-                        <span className="block truncate text-xs text-gray-400">{u.role}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
           </div>
         </motion.div>

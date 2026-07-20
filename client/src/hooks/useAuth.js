@@ -1,11 +1,10 @@
 import { createContext, useContext, useState, useCallback, useEffect, createElement } from 'react'
 import api, { setAuthToken } from '../api.js'
-import { USE_MOCK } from '../infrastructure/config.js'
 
 /**
- * Auth state for the whole app. While the backend is mocked, the session is
- * persisted to localStorage so a page refresh keeps the user signed in.
- * (When the real httpOnly-cookie backend lands, this can drop back to memory.)
+ * Auth state for the whole app. The session is persisted to
+ * localStorage so a page refresh keeps the user signed in. When the
+ * real httpOnly-cookie backend lands, this can drop back to memory.
  */
 const AuthContext = createContext(null)
 const AUTH_KEY = 'yz_auth_v1'
@@ -25,19 +24,9 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(false)
 
   // Restore the auth header on first load if a session was saved.
-  //
-  // Defensive guard: if the SPA was booted in mock mode previously, the
-  // cached token has the form `mock-<id>` which the real Fastify backend
-  // rejects as "Unknown user" — leaving the UI silently signed-in-but-
-  // unable-to-talk. Drop those tokens here so the user is forced to log
-  // in once against the live backend and gets a real `u-…` token back.
   useEffect(() => {
     const saved = loadAuth()
     if (!saved?.token) return
-    if (!USE_MOCK && saved.token.startsWith('mock-')) {
-      try { localStorage.removeItem(AUTH_KEY) } catch { /* ignore */ }
-      return
-    }
     setAuthToken(saved.token)
   }, [])
 
@@ -58,8 +47,6 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  // Dev-only "log in as" — uses the backend's /auth/dev-login endpoint
-  // so the SPA can drive the real backend without going through bcrypt.
   const loginAsUser = useCallback(async (userId) => {
     setLoading(true)
     try {

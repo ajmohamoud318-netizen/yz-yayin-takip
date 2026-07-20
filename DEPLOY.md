@@ -61,10 +61,8 @@ Create **two** services from the same GitHub repo.
 **Environment:**
 ```
 VITE_API_BASE_URL=https://api.yt.mucitkarinca.com
-VITE_USE_MOCK=false
 ```
 
-> `VITE_USE_MOCK` must be `false` for the SPA to talk to the real backend.
 > Anything prefixed `VITE_` is baked into the JS bundle at build time —
 > don't put secrets here.
 

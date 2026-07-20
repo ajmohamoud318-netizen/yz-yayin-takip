@@ -1,34 +1,33 @@
-# YZ Yayın Takip — Frontend (UI)
+# YZ Yayın Takip — Frontend (SPA)
 
-İlk aşama: yalnızca arayüz. Backend henüz yok; Login ve Panel ekranları
-`src/api.js` içindeki **mock** veri katmanı ile çalışır.
+React + Vite SPA talking to the Fastify backend (see `../server/`). No
+in-browser data layer — every action goes through the API.
 
 ## Çalıştırma
 
 ```bash
 cd client
 npm install
-npm run dev      # http://localhost:5173
+npm run dev      # http://localhost:5173  (Vite proxies /api → :4000)
 ```
 
-## Demo hesapları (şifre: `123456`)
+Start the backend in another terminal:
 
-| E-posta                     | Rol           |
-|-----------------------------|---------------|
-| aysenur.kanak@yukselenzeka.com | Takım Lideri  |
-| elif@yukselenzeka.com       | Tasarımcı     |
-| oktay@yukselenzeka.com      | Matbaa        |
+```bash
+docker compose up --build      # postgres + api on :4000
+```
 
-## Şu an hazır olan ekranlar
+## Demo hesapları
 
-- **Login** (`src/pages/Login.jsx`) — Türkçe arayüz, mock kimlik doğrulama, hata durumları.
-- **Dashboard / Panel** (`src/pages/Dashboard.jsx`) — aylık zaman çizelgesi, proje kartları
-  (aşama, atanan tasarımcı, ilerleme %), CLAUDE.md durum renkleri, Yeni/Devam Eden gruplama ve filtreler.
+Demo users are seeded by the backend on first boot (`server/db/seed/users.js`).
+Default password is `123456` for every seeded account.
 
-## Backend'e geçiş
+## Ekranlar
 
-`src/api.js` içindeki `USE_MOCK = false` yapıldığında aynı fonksiyonlar
-CLAUDE.md'de tanımlı `/api/*` uçlarına gider — UI değişmeden.
+- **Login** (`src/pages/Login.jsx`) — email + password against `/api/auth/login`.
+- **Dashboard / Panel** (`src/pages/Dashboard.jsx`) — aylık zaman çizelgesi,
+  proje kartları (aşama, atanan tasarımcı, ilerleme %), CLAUDE.md durum
+  renkleri, Yeni/Devam Eden gruplama ve filtreler.
 
 > Dosya yapısı CLAUDE.md'deki yapıya birebir uygundur.
 > İş kuralları CLAUDE.md'de tanımlıdır; burada hiçbir varsayım yapılmamıştır.

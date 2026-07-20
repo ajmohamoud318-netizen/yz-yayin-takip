@@ -17,7 +17,7 @@ const AVATAR_HOST_FIX = [
  *
  * - Already-absolute URLs get rewritten if they point at a stale host;
  *   otherwise they pass through.
- * - Data-URLs (mock mode) pass through.
+ * - Data-URLs (inline avatars) pass through.
  * - Relative `/api/...` URLs get the backend origin prepended so the
  *   request hits the Fastify host, not the SPA host.
  * - Legacy `/api/users/me/avatar/file` (owner route that requires a

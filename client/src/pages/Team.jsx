@@ -353,7 +353,7 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
             <UserPlus className="h-4 w-4" /> Takıma Üye Davet Et
           </DialogTitle>
           <DialogDescription>
-            Davet linki e-posta ile gönderilecek (mock modda sadece listeye eklenir).
+            Davet linki e-posta ile gönderilecek.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">

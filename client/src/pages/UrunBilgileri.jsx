@@ -10,7 +10,7 @@ import PRODUCT_INFO from '@/data/productInfo'
 
 const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
 
-/* ---- persistence (mock layer; survives refresh per browser) ---- */
+/* ---- local override persistence (per browser) ---- */
 const LS_KEY = 'yz_product_info_overrides_v1'
 const deepCopy = (x) => JSON.parse(JSON.stringify(x))
 function loadOverrides() {

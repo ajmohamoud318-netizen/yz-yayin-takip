@@ -1,13 +1,12 @@
 import { httpClient } from '../client.js'
 import { PASS_KIND } from '../../../domain/index.js'
-import { notFound, badRequest } from '../../mock/helpers/errors.js'
+import { notFound, badRequest } from '../../shared/errors.js'
 import { createProjectMapper } from '../../../application/mappers/project-mapper.js'
 
 /**
- * HTTP project repo. Mirrors the mock repo's surface so the api
- * composition root is identical regardless of transport. The repo also
- * keeps a tiny in-memory `subscribers` set + cache so cross-aggregate
- * use cases (orders/handovers) can subscribe and findProjectById works.
+ * HTTP project repo. Keeps a tiny in-memory `subscribers` set + cache
+ * so cross-aggregate use cases (orders/handovers) can subscribe and
+ * `findProjectById` works between list refreshes.
  */
 export function createHttpProjectRepository(userRepo) {
   const cache = new Map()

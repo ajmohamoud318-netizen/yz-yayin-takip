@@ -76,7 +76,7 @@ function normalizeProjectPayload(payload, existing = null) {
 
 /**
  * Builds the full detail shape ProjectDetail expects (subtasks, assignees,
- * history) from a flat mock project. If the project already carries these
+ * history) from a flat project record. If the project already carries these
  * arrays (e.g. after a subtask toggle), they are reused.
  */
 /**
@@ -326,7 +326,8 @@ function buildProjectDetail(p) {
   const subtasksTotal = subtasks.length
 
   // Build a full project timeline from stage + attempt counters.
-  // Real history is stored server-side; in mock we reconstruct it deterministically.
+  // Real history is stored server-side; we reconstruct it deterministically
+  // when the server hasn't returned one (defensive — should always carry).
   const history = p.history ?? generateHistory(p, assignees, subtasksDone, subtasksTotal)
 
   // Pass model defaults (Pass 2 loop). Seed projects predate these fields.

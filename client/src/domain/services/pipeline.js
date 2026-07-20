@@ -118,8 +118,9 @@ export function assertCanEnterProduction(nextStage, progress) {
  *                        owner: team_leader  OR  designer with flag
  *                        rule: assignment to a project does NOT grant this
  *
- * The flag column lives on `users` (server: `can_approve_ozalit`); the mock
- * layer keeps the camelCase alias `canApproveOzalit` on the user object.
+ * The flag column lives on `users` (server: `can_approve_ozalit`); the
+ * client also reads the camelCase alias `canApproveOzalit` off the user
+ * object the API returns.
  */
 
 /**
