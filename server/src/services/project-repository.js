@@ -12,6 +12,8 @@ const PROJECT_COLUMNS = `
   id, title, type, stage, assigned_to, created_by, target_month,
   demo_attempt, ozalit_attempt, pass_number, pass_kind,
   last_reject_reason, progress, version,
+  ozalit_leader_approved, ozalit_leader_approved_by, ozalit_leader_approved_at,
+  ozalit_designer_approvals,
   created_at, updated_at
 `
 
@@ -130,6 +132,12 @@ function rowToProject(r) {
     last_reject_reason: r.last_reject_reason,
     progress: r.progress,
     version: r.version,
+    ozalit_leader_approved: r.ozalit_leader_approved,
+    ozalit_leader_approved_by: r.ozalit_leader_approved_by,
+    ozalit_leader_approved_at: r.ozalit_leader_approved_at instanceof Date
+      ? r.ozalit_leader_approved_at.toISOString()
+      : r.ozalit_leader_approved_at,
+    ozalit_designer_approvals: r.ozalit_designer_approvals ?? [],
     created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
     updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at,
   }

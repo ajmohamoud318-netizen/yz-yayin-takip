@@ -127,9 +127,22 @@ export async function projectRoutes(fastify) {
       const { project: next, history } = applyApproval(project, {
         user: request.user, stage, note: request.body?.note ?? '',
       })
-      const updated = await patchProject(client, project.id, {
-        stage: next.stage, version: next.version,
-      })
+      // Persist all state-mutating fields from the transition (stage,
+      // optimistic-lock version, AND-rule flags for ozalit_onay).
+      const fields = { stage: next.stage, version: next.version }
+      if (Object.prototype.hasOwnProperty.call(next, 'ozalit_leader_approved')) {
+        fields.ozalit_leader_approved = next.ozalit_leader_approved
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'ozalit_leader_approved_by')) {
+        fields.ozalit_leader_approved_by = next.ozalit_leader_approved_by
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'ozalit_leader_approved_at')) {
+        fields.ozalit_leader_approved_at = next.ozalit_leader_approved_at
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'ozalit_designer_approvals')) {
+        fields.ozalit_designer_approvals = JSON.stringify(next.ozalit_designer_approvals)
+      }
+      const updated = await patchProject(client, project.id, fields)
       if (history) await insertHistory(client, { ...history, done_by: request.user.id })
       return updated
     })

@@ -13,13 +13,17 @@ import { sendMail, renderInviteEmail } from '../services/mail.js'
  *  POST   /api/users/invite
  *  PATCH  /api/users/:id/deactivate
  *  PATCH  /api/users/:id/reactivate
+ *  PATCH  /api/users/:id/capabilities   — set `can_approve_ozalit`
  *  DELETE /api/users/:id
  */
 export async function userRoutes(fastify) {
+  const USER_COLUMNS =
+    'id, name, email, role, is_active, can_approve_ozalit, invited_at, joined_at, created_at'
+
   fastify.get('/users', async (request) => {
     await attachUser(request)
     const { rows } = await getPool().query(
-      'SELECT id, name, email, role, is_active, invited_at, joined_at, created_at FROM users ORDER BY created_at',
+      `SELECT ${USER_COLUMNS} FROM users ORDER BY created_at`,
     )
     return rows
   })
@@ -27,11 +31,15 @@ export async function userRoutes(fastify) {
   fastify.post('/users/invite', async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
-    const { name, email, role } = request.body ?? {}
+    const { name, email, role, canApproveOzalit } = request.body ?? {}
     if (!name || !email) badRequest('Ad ve e-posta zorunlu.')
     if (!['designer', 'printer', 'satis', 'team_leader'].includes(role)) {
       badRequest('Geçersiz rol.')
     }
+    // The "special designer" capability only makes sense on the designer
+    // role. Silently coerce to false otherwise so the form can stay
+    // unchecked-by-default without surprising the user with a 400.
+    const wantsFlag = role === 'designer' && canApproveOzalit === true
     const normalisedEmail = email.trim().toLowerCase()
     const existing = await getPool().query(
       `SELECT id, is_active FROM users WHERE email = $1`,
@@ -42,10 +50,11 @@ export async function userRoutes(fastify) {
       // and mint a fresh invitation token. Active users still 409.
       if (!existing.rows[0].is_active) {
         const reactivated = await getPool().query(
-          `UPDATE users SET is_active = TRUE, invited_at = NOW(), name = $2, role = $3
+          `UPDATE users SET is_active = TRUE, invited_at = NOW(), name = $2, role = $3,
+                  can_approve_ozalit = $4
            WHERE id = $1
-           RETURNING id, name, email, role, is_active, invited_at, joined_at, created_at`,
-          [existing.rows[0].id, name.trim(), role],
+           RETURNING ${USER_COLUMNS}`,
+          [existing.rows[0].id, name.trim(), role, wantsFlag],
         )
         const user = reactivated.rows[0]
         const invitation = await createInvitation({ userId: user.id })
@@ -81,10 +90,10 @@ export async function userRoutes(fastify) {
     // prefix used by the demo data migration.
     const userId = `u-${nanoid(16)}`
     const { rows } = await getPool().query(
-      `INSERT INTO users (id, name, email, role, is_active, invited_at)
-       VALUES ($1,$2,$3,$4,TRUE,NOW())
-       RETURNING id, name, email, role, is_active, invited_at, joined_at, created_at`,
-      [userId, name.trim(), normalisedEmail, role],
+      `INSERT INTO users (id, name, email, role, is_active, can_approve_ozalit, invited_at)
+       VALUES ($1,$2,$3,$4,TRUE,$5,NOW())
+       RETURNING ${USER_COLUMNS}`,
+      [userId, name.trim(), normalisedEmail, role, wantsFlag],
     )
     const user = rows[0]
 
@@ -118,6 +127,36 @@ export async function userRoutes(fastify) {
     }
   })
 
+  // Per-row toggle for the team-leader invite UI. Only the canApproveOzalit
+  // capability is exposed here — anything else lives on the user invite /
+  // deactivate endpoints.
+  fastify.patch('/users/:id/capabilities', async (request) => {
+    await attachUser(request)
+    requireRole(request, 'team_leader')
+    const { id } = request.params
+    const { canApproveOzalit } = request.body ?? {}
+    if (typeof canApproveOzalit !== 'boolean') {
+      badRequest('canApproveOzalit boolean olmalı.')
+    }
+
+    // Pull current row so we can enforce "only on designers".
+    const { rows: current } = await getPool().query(
+      `SELECT role FROM users WHERE id = $1`,
+      [id],
+    )
+    if (!current[0]) notFound('Kullanıcı bulunamadı.')
+    if (current[0].role !== 'designer') {
+      badRequest('Bu yetki yalnızca tasarımcılar için geçerlidir.')
+    }
+
+    const { rows } = await getPool().query(
+      `UPDATE users SET can_approve_ozalit = $2, updated_at = NOW() WHERE id = $1
+       RETURNING ${USER_COLUMNS}`,
+      [id, canApproveOzalit],
+    )
+    return rows[0]
+  })
+
   fastify.patch('/users/:id/deactivate', async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
@@ -125,7 +164,7 @@ export async function userRoutes(fastify) {
     if (id === request.user.id) forbidden('Kendinizi devre dışı bırakamazsınız.')
     const { rows } = await getPool().query(
       `UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE id = $1
-       RETURNING id, name, email, role, is_active`,
+       RETURNING ${USER_COLUMNS}`,
       [id],
     )
     if (!rows[0]) notFound('Kullanıcı bulunamadı.')
@@ -138,7 +177,7 @@ export async function userRoutes(fastify) {
     const { id } = request.params
     const { rows } = await getPool().query(
       `UPDATE users SET is_active = TRUE, updated_at = NOW() WHERE id = $1
-       RETURNING id, name, email, role, is_active`,
+       RETURNING ${USER_COLUMNS}`,
       [id],
     )
     if (!rows[0]) notFound('Kullanıcı bulunamadı.')
