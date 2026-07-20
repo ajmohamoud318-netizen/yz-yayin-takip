@@ -3,6 +3,7 @@ import { attachUser } from '../middleware/auth.js'
 import { rateLimit } from '../middleware/rate-limit.js'
 import { badRequest, forbidden, unauthorized } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
+import { schemas } from '../schemas/index.js'
 import {
   consumeInvitation,
   verifyInvitation,
@@ -46,9 +47,8 @@ import { sendMail, renderResetEmail } from '../services/mail.js'
  */
 
 export async function authRoutes(fastify) {
-  fastify.post('/auth/login', async (request) => {
-    const { email, password } = request.body ?? {}
-    if (!email || !password) unauthorized('E-posta ve şifre zorunlu.')
+  fastify.post('/auth/login', { schema: schemas.authLogin }, async (request) => {
+    const { email, password } = request.body
     const { rows } = await getPool().query(
       `SELECT id, name, email, password, role, is_active, avatar_url, avatar_updated_at
        FROM users WHERE email = $1 LIMIT 1`,
@@ -78,8 +78,8 @@ export async function authRoutes(fastify) {
    * the invitee's name + email without burning the token. Throws 404 / 410
    * for unknown or expired tokens so the UI can show the right message.
    */
-  fastify.get('/auth/invite-preview', async (request) => {
-    const { token } = request.query ?? {}
+  fastify.get('/auth/invite-preview', { schema: schemas.authInvitePreview }, async (request) => {
+    const { token } = request.query
     const inv = await verifyInvitation(token)
     return {
       name: inv.user.name,
@@ -93,15 +93,8 @@ export async function authRoutes(fastify) {
    * Consume an invitation token and set the user's password.
    * Returns { token, user } so the client can sign the user straight in.
    */
-  fastify.post('/auth/accept-invite', async (request) => {
-    const { token, password } = request.body ?? {}
-    if (!token) badRequest('Davet token\'ı zorunlu.')
-    if (!password || typeof password !== 'string') {
-      badRequest('Şifre zorunlu.')
-    }
-    if (password.length < 8) {
-      badRequest('Şifre en az 8 karakter olmalı.')
-    }
+  fastify.post('/auth/accept-invite', { schema: schemas.authAcceptInvite }, async (request) => {
+    const { token, password } = request.body
     const inv = await verifyInvitation(token)
     const hash = bcrypt.hashSync(password, 10)
     const { rows } = await getPool().query(
@@ -131,6 +124,7 @@ export async function authRoutes(fastify) {
   fastify.post(
     '/auth/forgot-password',
     {
+      schema: schemas.authForgotPassword,
       preHandler: rateLimit({
         key: (req) => req.ip,
         limit: 5,
@@ -138,10 +132,7 @@ export async function authRoutes(fastify) {
       }),
     },
     async (request) => {
-      const { email } = request.body ?? {}
-      if (!email || typeof email !== 'string') {
-        return { ok: true }
-      }
+      const { email } = request.body
       const normalisedEmail = email.trim().toLowerCase()
       const { rows } = await getPool().query(
         `SELECT id, name, email, is_active FROM users WHERE email = $1 LIMIT 1`,
@@ -168,14 +159,8 @@ export async function authRoutes(fastify) {
    * Returns { token, user } so the SPA can log the user straight in
    * without a second round-trip.
    */
-  fastify.post('/auth/reset-password', async (request) => {
-    const { token, password } = request.body ?? {}
-    if (!password || typeof password !== 'string') {
-      badRequest('Yeni şifre zorunlu.')
-    }
-    if (password.length < 8) {
-      badRequest('Şifre en az 8 karakter olmalı.')
-    }
+  fastify.post('/auth/reset-password', { schema: schemas.authResetPassword }, async (request) => {
+    const { token, password } = request.body
     const reset = await verifyPasswordReset(token)
     const hash = bcrypt.hashSync(password, 10)
     const { rows } = await getPool().query(
@@ -198,18 +183,9 @@ export async function authRoutes(fastify) {
    * Used by the Settings page so anyone can rotate their own password
    * without going through the forgot-password email loop.
    */
-  fastify.patch('/auth/change-password', async (request) => {
+  fastify.patch('/auth/change-password', { schema: schemas.authChangePassword }, async (request) => {
     await attachUser(request)
-    const { currentPassword, newPassword } = request.body ?? {}
-    if (!currentPassword || typeof currentPassword !== 'string') {
-      badRequest('Mevcut şifre zorunlu.')
-    }
-    if (!newPassword || typeof newPassword !== 'string') {
-      badRequest('Yeni şifre zorunlu.')
-    }
-    if (newPassword.length < 8) {
-      badRequest('Yeni şifre en az 8 karakter olmalı.')
-    }
+    const { currentPassword, newPassword } = request.body
     if (newPassword === currentPassword) {
       badRequest('Yeni şifre mevcut şifreden farklı olmalı.')
     }
@@ -238,12 +214,11 @@ export async function authRoutes(fastify) {
   // Dev-only "log in as" endpoint. Lets the SPA drive the backend end to
   // end without going through email + password (the seed rows don't carry
   // a bcrypt hash yet). Disabled in production via NODE_ENV.
-  fastify.post('/auth/dev-login', async (request) => {
+  fastify.post('/auth/dev-login', { schema: schemas.authDevLogin }, async (request) => {
     if (process.env.NODE_ENV === 'production') {
       unauthorized('Dev login disabled in production')
     }
-    const { user_id: userId } = request.body ?? {}
-    if (!userId) unauthorized('user_id zorunlu.')
+    const { user_id: userId } = request.body
     const user = await loadUserById(userId)
     if (!user) unauthorized('Unknown user')
     if (user.is_active === false) forbidden('Hesabınız devre dışı bırakılmış.')
