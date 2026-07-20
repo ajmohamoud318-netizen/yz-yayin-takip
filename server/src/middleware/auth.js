@@ -34,22 +34,12 @@ export async function loadUserById(id) {
      FROM users WHERE id = $1 LIMIT 1`,
     [id],
   )
-  if (!rows[0]) return null
-  // Older records (and any direct INSERTs) may store `/api/users/me/avatar/file`
-  // as a relative path — the <img src> on the SPA host can't resolve that.
-  // Re-write to an absolute URL so every consumer (auth/me, assignee
-  // avatars, anywhere we hand back a user record) gets a working URL.
-  rows[0].avatar_url = absolutizeAvatarUrl(rows[0].avatar_url)
-  return rows[0]
-}
-
-/** Normalize a stored avatar URL: relative paths become absolute. */
-function absolutizeAvatarUrl(url) {
-  if (!url) return url
-  if (/^https?:\/\//i.test(url)) return url
-  const base = config.apiPublicUrl.replace(/\/$/, '')
-  if (url.startsWith('/')) return `${base}${url}`
-  return `${base}/${url}`
+  // rows[0].avatar_url is intentionally left as-is — always relative.
+  // The SPA normalizes it against whatever host it was configured to
+  // talk to (VITE_API_BASE_URL). Baked-in absolute URLs go stale when
+  // the upstream cert/host rotates (which is exactly the auth-pivot
+  // bug we hit during the api.yt.mucitkarinca.com Cloudflare rollout).
+  return rows[0] ?? null
 }
 
 export async function attachUser(request) {
