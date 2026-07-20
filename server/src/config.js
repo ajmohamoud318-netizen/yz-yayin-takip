@@ -61,6 +61,9 @@ export const config = {
   // Public absolute URL of THIS Fastify backend. Used to mint absolute
   // URLs for assets the SPA can't proxy (avatars served from /api/users/
   // :id/avatar/file must reach the backend host, not the SPA host).
+  //
+  // The canonical hostname is api.yt.mucitkarinca.com — Cloudflare-fronted
+  // (per scripts/cloudflare-dns-setup.mjs), origin is 46.62.170.64.
   apiPublicUrl:
     process.env.API_PUBLIC_URL ??
     (process.env.NODE_ENV === 'production'

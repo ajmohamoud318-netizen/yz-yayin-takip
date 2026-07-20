@@ -6,6 +6,12 @@ import { toast } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 
 const AVATAR_FIXED_RE = /\/api\/users\/me\/avatar\/file/
+// Earlier server builds wrote the legacy Dokploy sslip URL as a placeholder
+// while the Cloudflare origin was being set up. Normalize any stale URL to
+// the live API_ORIGIN so cached users see a working image after reload.
+const AVATAR_HOST_FIX = [
+  'https://yayin-takip-backend-4dvoqr-53441c-46-62-170-64.sslip.io',
+].filter((host) => host !== API_ORIGIN)
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -29,7 +35,17 @@ import { cn } from '@/lib/utils'
  */
 function avatarSrc(url, currentUserId) {
   if (!url) return url
-  if (/^(https?:|data:)/i.test(url)) return url
+  // Absolute URLs from older backend builds may point at a host with no
+  // valid cert (e.g. api.yt.mucitkarinca.com) or at a stale Dokploy
+  // sslip.io alias. Rewrite to the live API_ORIGIN transparently.
+  if (/^https?:\/\//i.test(url)) {
+    for (const stale of AVATAR_HOST_FIX) {
+      if (url.startsWith(`${stale}/`)) return `${API_ORIGIN}${url.slice(stale.length)}`
+    }
+    return url
+  }
+  // data: URLs (mock mode) pass through.
+  if (/^data:/i.test(url)) return url
   if (AVATAR_FIXED_RE.test(url) && currentUserId) {
     return `${API_ORIGIN}/api/users/${encodeURIComponent(currentUserId)}/avatar/file`
   }

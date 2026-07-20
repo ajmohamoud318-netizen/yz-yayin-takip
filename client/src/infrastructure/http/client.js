@@ -6,17 +6,18 @@ import { USE_MOCK } from '../config.js'
 // read the absolute backend URL from VITE_API_BASE_URL (set per-environment
 // in Dokploy) and fall back to a same-origin `/api` for local dev.
 //
-// The default below is the Dokploy-managed sslip.io host that Traefik wires
-// to the backend container. It wins unless VITE_API_BASE_URL is explicitly
-// set AND resolves. This guards against the case where Dokploy's Build-time
-// Arguments still contain a stale/unreachable host (e.g. while a wildcard
-// cert for api.yt.mucitkarinca.com is being issued by Let's Encrypt).
-const DEFAULT_API_BASE_URL = 'https://yayin-takip-backend-4dvoqr-53441c-46-62-170-64.sslip.io'
+// The default below is the canonical Cloudflare-fronted host
+// (api.yt.mucitkarinca.com). The Dokploy sslip.io alias is kept as a
+// last-resort fallback so a stale Dokploy sslip rotation doesn't
+// immediately break <img src> requests for avatar files.
+const DEFAULT_API_BASE_URL = 'https://api.yt.mucitkarinca.com'
 
 const envBase = import.meta.env?.VITE_API_BASE_URL?.trim()
 const isLocalhostOverride =
   envBase && /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?$/i.test(envBase)
-const baseURL = envBase && isLocalhostOverride
+// Env-override wins when Dokploy (or local dev) sets VITE_API_BASE_URL.
+// Otherwise we default to the canonical Cloudflare-fronted hostname.
+const baseURL = envBase
   ? `${envBase.replace(/\/$/, '')}/api`
   : `${DEFAULT_API_BASE_URL}/api`
 
