@@ -10,12 +10,10 @@
 ## One-paragraph summary
 
 YZ Yayın Takip is an internal book-publishing pipeline tracker for Yükselen
-Zeka. Frontend React + Vite SPA + Fastify + Postgres backend. The SPA still
-ships with an in-memory mock data layer (localStorage) for fast local dev +
-tests; flipping `VITE_USE_MOCK=false` switches the composition root to the
-real HTTP repositories (server in `server/`, schema in
-`server/db/migrations/`). Auth in this pass is a trusted `X-User-Id` header —
-real OAuth is the next pass.
+Zeka. Frontend React + Vite SPA + Fastify + Postgres backend. The SPA talks
+to the API directly via Axios (`client/src/infrastructure/http/`) — there is
+no mock layer or in-browser data store. Auth in this pass is a trusted
+`X-User-Id` header; real OAuth+cookie sessions arrive next pass.
 ---
 ## 🏢 What This Is
 YZ Yayın Takip replaces analog/Excel workflows with a unified dashboard where the team leader (Ayşenur) can see every book project, who is working on what, and what stage it's in — in real time. It also tracks reprint/production **orders (sipariş)** raised by the Sales team and the physical **handover (teslim)** of produced materials.
@@ -119,7 +117,10 @@ Rejection: team_leader can reject at `matbaa_onay`, looping back to `tasarimci_o
 - Deactivated users lose access immediately but their project history is preserved
 - Roles: `team_leader` | `designer` | `printer` | `satis`
 - Role display labels (`client/src/domain/constants/labels.js`): Takım Lideri, Tasarımcı, Matbaa, Satış Ekibi
-> Note: the invitation email / set-password flow is part of the planned backend. The current frontend uses seed users with mock auth.
+> Note: the invitation email / set-password flow is implemented by the Fastify
+> backend in `server/src/routes/auth.js`. The SPA renders the link in
+> `pages/AcceptInvite.jsx`; users are seeded on first boot via
+> `server/db/seed/users.js`.
 ---
 ## 📋 Project Subtasks
 When creating a project, Ayşenur selects which subtasks apply: Kapak, Kutu, Ses, Video / Animasyon, Yazılım, İçerik / Görsel, Sayfa Sayısı (numeric). Each subtask can be checked off by the designer. Progress % = completed subtasks / total subtasks × 100 (recalculated in `client/src/domain/services/progress.js`).
@@ -134,31 +135,35 @@ When creating a project, Ayşenur selects which subtasks apply: Kapak, Kutu, Ses
 
 Route guards live in `client/src/App.jsx` (`RoleGuard`); navigation per role in `client/src/components/AppShell.jsx`.
 ---
-## 🏗️ Current Architecture (Frontend-Only)
+## 🏗️ Current Architecture
 ```
-[React + Vite SPA]
-   └── client/src/
-        ├── pages/            # route screens
-        ├── components/       # UI (shadcn/ui) + dialogs
-        ├── hooks/            # useAuth, useProjects, stores
-        ├── domain/           # constants + pure business rules (stages, orders, pipeline, progress)
-        ├── application/      # use-cases (orders, handovers) + create-api + ports
-        └── infrastructure/
-             ├── mock/        # in-memory store, seed data, mock repositories  ← ACTIVE
-             ├── http/        # httpClient (Axios) — wired for the future backend
-             └── config.js    # USE_MOCK = true  ← flip to false when backend exists
+[React + Vite SPA] ──▶ [Fastify REST API] ──▶ [PostgreSQL]
+        │                       │                       │
+        │                ┌──────┼──────┐           [Redis]
+        │            [Email]  [Notifications]   (planned: sessions, cache, pub-sub)
+        └── (in dev: /api proxy → http://localhost:4000)
 ```
-- **No `server/` directory exists yet.** All data is in-memory (`client/src/infrastructure/mock/store.js`) seeded from `client/src/infrastructure/mock/seed/`.
-- Auth is mocked (seed users, plaintext demo passwords) — **not production auth**.
-- Business logic is cleanly separated (hexagonal-style): `domain` (pure) → `application` (use-cases) → `infrastructure` (mock or http). Each use-case already has both a mock branch and an HTTP branch via `mockOrHttp`, so swapping in the real backend is mostly flipping `USE_MOCK` and implementing the endpoints.
+- **Frontend (`client/`)** — React + Vite SPA. Talks to the backend via
+  Axios (`client/src/infrastructure/http/`). Business logic lives in
+  `client/src/domain/` (pure) and `client/src/application/` (use-cases +
+  composition root). Auth is currently a trusted `X-User-Id` header; real
+  httpOnly cookie sessions are the next pass.
+- **Backend (`server/`)** — Fastify + Postgres 16 + `bcryptjs` +
+  Nodemailer. See `DEPLOY.md` for the Dokploy deploy story.
+- **No mock layer exists** in this pass — all data flows through the real
+  Fastify server. `client/src/infrastructure/shared/` holds the cross-aggregate
+  error helpers (`badRequest`, `notFound`, …) used by both repositories and
+  use cases.
 
 **Tech stack (current):**
-| Layer        | Choice               |
-|--------------|----------------------|
-| Frontend     | React + Vite         |
-| UI / Icons   | shadcn/ui + Tailwind |
-| Data         | In-memory mock layer |
-| HTTP (ready) | Axios (`client/src/infrastructure/http/client.js`) |
+| Layer        | Choice                          |
+|--------------|---------------------------------|
+| Frontend     | React + Vite                    |
+| UI / Icons   | shadcn/ui + Tailwind            |
+| HTTP         | Axios (`client/src/infrastructure/http/client.js`) |
+| Backend      | Fastify + Node 20               |
+| Database     | PostgreSQL 16                   |
+| Email        | Nodemailer → Resend SMTP        |
 ---
 ## 📐 Conventions
 - Frontend: functional components + hooks only; shadcn/ui for all UI primitives

@@ -172,10 +172,6 @@ The designer can check each one off (and add per-subtask updates / page progress
         │                            │                          │
         │                    ┌───────┼────────┐            [Redis]
         │                [OAuth]  [Email]  [Notifications]  (sessions, cache, pub-sub)
-        │
-        └── (today) uses an in-browser mock layer (localStorage) implementing
-            the same repository interfaces — flip USE_MOCK=false to switch
-            to the real backend.
 ```
 
 **Tech Stack:**
@@ -184,7 +180,7 @@ The designer can check each one off (and add per-subtask updates / page progress
 | Frontend     | React + Vite            | Fast, component-based, easy to extend        |
 | UI / Icons   | shadcn/ui + Tailwind    | Prebuilt accessible components, utility-first |
 | State hooks  | Context + custom hooks  | `useProjectsStore`, `useProjectModal`, etc.  |
-| Architecture | Clean Architecture      | Domain ← Application → Presentation; mock/infra behind ports |
+| Architecture | Clean Architecture      | Domain ← Application → Presentation; HTTP repos behind ports |
 | Backend      | Node.js + Fastify       | Faster than Express, built-in schema validation |
 | Database     | PostgreSQL              | Relational, ACID, great for pipelines        |
 | Cache / RT   | Redis                   | Session store, notification pub-sub, caching |

@@ -20,7 +20,8 @@ describe('subtaskProgress', () => {
   })
   it('treats is_done as the only signal (pages subtasks handled elsewhere)', () => {
     // The function intentionally ignores pages_done; pages subtasks mark
-    // is_done themselves once their page count is reached (mock layer).
+    // is_done themselves once their page count is reached (see
+    // `http-subtask.repository`).
     const subs = [
       { kind: 'pages', pages_done: 5, is_done: false },
       { kind: 'pages', pages_done: 10, is_done: true },

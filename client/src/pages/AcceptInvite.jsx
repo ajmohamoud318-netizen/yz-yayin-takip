@@ -10,7 +10,6 @@ import { Label } from '@/components/ui/label'
 
 import api from '@/api.js'
 import { setAuthToken } from '@/infrastructure/http/client.js'
-import { USE_MOCK } from '@/infrastructure/config.js'
 
 const ROLE_LABEL = {
   team_leader: 'Takım Lideri',
@@ -30,8 +29,8 @@ const ROLE_LABEL = {
  *      the password server-side and returns a session token. We stash
  *      the token and bounce to the dashboard — no second login step.
  *
- * If there's no token in the URL we render the legacy demo form so
- * existing quick-test flows keep working.
+ * If there's no token in the URL the form is still rendered but submit
+ * will reject — the invitee must arrive from the email link.
  */
 export default function AcceptInvite() {
   const [params] = useSearchParams()
@@ -46,7 +45,7 @@ export default function AcceptInvite() {
   const [previewError, setPreviewError] = useState(null)
 
   useEffect(() => {
-    if (!token || USE_MOCK) return
+    if (!token) return
     let cancelled = false
     api.previewInvite(token)
       .then((data) => { if (!cancelled) setPreview(data) })
@@ -99,7 +98,7 @@ export default function AcceptInvite() {
               ? `${preview.name} için şifre belirleyin (${ROLE_LABEL[preview.role] ?? preview.role}).`
               : token
                 ? 'Hesabınızı aktifleştirmek için bir şifre belirleyin.'
-                : 'Demo mod: davet linki olmadan da şifre belirleyebilirsiniz.'}
+                : 'Davet linki bulunamadı. Lütfen e-postanızdaki davet bağlantısını kullanın.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
