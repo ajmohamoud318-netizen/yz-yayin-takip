@@ -85,7 +85,7 @@ API_BASE_URL=https://api.yt.mucitkarinca.com
 DATABASE_URL=postgres://postgres:<password>@yz-postgres:5432/yz_yayin_takip
 MIGRATE_ON_BOOT=true
 SEED_ON_BOOT=false
-TRUST_HEADER_AUTH=true
+SESSION_SECRET=<openssl rand -hex 32>
 CORS_ORIGINS=https://yt.mucitkarinca.com
 SMTP_HOST=smtp.resend.com
 SMTP_PORT=587
@@ -163,6 +163,9 @@ After a successful build, hit these URLs:
    credentials live only in Dokploy's Environment tab.
 5. **Resend domain verification is mandatory** before `SMTP_FROM` will
    deliver. Add the DKIM/SPF records they provide at your registrar.
+6. **`SESSION_SECRET` is required in production** — the server refuses
+   to boot without it. Generate with `openssl rand -hex 32` and paste
+   the result into Dokploy's Environment tab for the API service.
 
 ---
 

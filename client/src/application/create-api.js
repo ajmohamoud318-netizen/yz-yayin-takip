@@ -56,12 +56,13 @@ export function createApi() {
 
   return {
     // Auth
-    login: (email, password) => authRepo.login(email, password),
+    login: (email) => authRepo.login(email),
     loginAsUser: async (userId) => {
       const res = await authRepo.loginAsUser(userId)
       return res
     },
     logout: () => authRepo.logout(),
+    me: () => authRepo.me(),
     previewInvite: (token) => authRepo.previewInvite(token),
     acceptInvite: (token, password) => authRepo.acceptInvite(token, password),
     forgotPassword: (email) => authRepo.forgotPassword(email),

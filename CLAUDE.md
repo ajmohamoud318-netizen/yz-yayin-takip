@@ -175,15 +175,22 @@ Route guards live in `client/src/App.jsx` (`RoleGuard`); navigation per role in 
 
 **Planned stack:** Node.js + Fastify · PostgreSQL · Redis (sessions/cache/pub-sub) · Google OAuth · Nodemailer (invites + notifications) · Railway/Render hosting.
 
-**Planned API (subject to change — must also cover the order & handover workflows the frontend already implements):**
+**Actual API (magic-link auth):**
 ```
-Auth:      GET /api/auth/google, /callback · POST /api/auth/logout · GET /api/auth/me
+Auth:      POST /api/auth/magic · GET /api/auth/magic/callback
+           POST /api/auth/logout (destroys Redis session + clears cookie)
+           GET  /api/auth/me (returns the attached user from the yz_sid cookie)
+           GET  /api/auth/invite-preview · POST /api/auth/accept-invite
+           POST /api/auth/forgot-password · POST /api/auth/reset-password
+           PATCH /api/auth/change-password
+           POST /api/auth/dev-login (NODE_ENV !== 'production' only)
 Projects:  GET /api/projects · GET /api/projects/:id · POST/PATCH/DELETE (team_leader)
 Stages:    POST /api/projects/:id/advance | /approve | /reject
 Subtasks:  PATCH /api/subtasks/:id
 Users:     GET /api/users · POST /api/users/invite · PATCH /:id/deactivate | /reactivate
-Orders:    (sipariş) create / advance / reject  — mirrors client use-cases
-Handovers: (teslim) create / confirm            — mirrors client use-cases
+           PATCH /api/users/:id/capabilities · DELETE /api/users/:id
+Orders:    POST /api/order-requests · PATCH /:id/advance | /:id/reject
+Handovers: POST /api/handovers · PATCH /:id/confirm
 ```
 
 **Planned DB schema (base — will also need `orders`, `order_history`, and `handovers` tables):**
@@ -204,4 +211,4 @@ Handovers: (teslim) create / confirm            — mirrors client use-cases
 -- orders / order_history / handovers: TBD to match domain/constants/orders.js
 ```
 
-**Production checklist (for when backend work starts):** register Google OAuth app · httpOnly/sameSite=strict/secure cookies · Redis session TTL 7d w/ refresh · role middleware on every route · Fastify JSON-schema validation on all POST/PATCH · Redis rate limiting on auth · invite-via-allowlist flow · file upload type/size validation · `.env` never committed · CORS locked to prod domain · DB pool max 10 · Redis retry/reconnect.
+**Production checklist:** httpOnly/sameSite=lax/secure cookies ✅ · Redis session TTL 7d w/ sliding refresh ✅ · role middleware on every route ✅ · Fastify JSON-schema validation on all POST/PATCH ✅ · in-process rate limiting on auth ✅ · invite-via-allowlist flow ✅ · file upload type/size validation · `.env` never committed ✅ · CORS locked to prod domain · DB pool max 10 · Redis retry/reconnect ✅ · `SESSION_SECRET` rotation · rotate session secret on a schedule and on suspected compromise.
