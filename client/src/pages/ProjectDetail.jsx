@@ -29,6 +29,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import UserAvatar from '@/components/UserAvatar.jsx'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -712,9 +713,7 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                 )}
                 {(project.assignees ?? []).map((a) => (
                   <div key={a.id} className="flex items-center gap-3">
-                    <Avatar className="h-9 w-9">
-                      <AvatarFallback className="text-xs">{initials(a.name)}</AvatarFallback>
-                    </Avatar>
+                    <UserAvatar user={a} size="lg" />
                     <div>
                       <p className="text-sm font-semibold">{a.name}</p>
                       <p className="text-xs text-muted-foreground">Tasarımcı</p>

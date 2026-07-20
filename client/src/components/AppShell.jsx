@@ -37,6 +37,7 @@ import ProjectDetail from '@/pages/ProjectDetail'
 import RouteFallback from '@/components/RouteFallback'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import UserAvatar from '@/components/UserAvatar.jsx'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -588,9 +589,7 @@ function SidebarFooter({ user, onLogout, collapsed }) {
   if (collapsed) {
     return (
       <div className="flex shrink-0 flex-col items-center gap-1 border-t p-2">
-        <Avatar className="h-8 w-8">
-          <AvatarFallback>{initials(user?.name)}</AvatarFallback>
-        </Avatar>
+        <UserAvatar user={user} size="md" />
         <Button
           variant="ghost"
           size="icon"
@@ -606,9 +605,7 @@ function SidebarFooter({ user, onLogout, collapsed }) {
   return (
     <div className="shrink-0 border-t p-2">
       <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-muted">
-        <Avatar className="h-8 w-8">
-          <AvatarFallback>{initials(user?.name)}</AvatarFallback>
-        </Avatar>
+        <UserAvatar user={user} size="md" />
         <div className="min-w-0 flex-1 leading-tight">
           <p className="truncate text-sm font-medium">{user?.name}</p>
           <p className="truncate text-[11px] text-muted-foreground">{ROLE_LABELS[user?.role]}</p>
@@ -1005,9 +1002,7 @@ function UserMenu({ user, onLogout }) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-1.5 px-1.5">
-          <Avatar className="h-7 w-7">
-            <AvatarFallback className="text-[11px]">{initials(user?.name)}</AvatarFallback>
-          </Avatar>
+          <UserAvatar user={user} size="sm" />
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>

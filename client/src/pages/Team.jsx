@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 
 import api, { ROLE_LABELS } from '@/api'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import UserAvatar from '@/components/UserAvatar.jsx'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -180,9 +181,7 @@ function UserCard({ user, canManage, onToggle, onDelete, onCapabilityChange }) {
   return (
     <Card>
       <CardContent className="flex items-start gap-3 p-4">
-        <Avatar className="h-10 w-10">
-          <AvatarFallback>{initials(user.name)}</AvatarFallback>
-        </Avatar>
+        <UserAvatar user={user} size="xl" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate text-sm font-semibold">{user.name}</p>

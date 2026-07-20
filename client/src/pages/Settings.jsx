@@ -4,54 +4,16 @@ import { Camera, Check, Eye, EyeOff, KeyRound, LoaderCircle, LogOut, Mail, Penci
 import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
-
-const AVATAR_FIXED_RE = /\/api\/users\/me\/avatar\/file/
-// Earlier server builds wrote the legacy Dokploy sslip URL as a placeholder
-// while the Cloudflare origin was being set up. Normalize any stale URL to
-// the live API_ORIGIN so cached users see a working image after reload.
-const AVATAR_HOST_FIX = [
-  'https://yayin-takip-backend-4dvoqr-53441c-46-62-170-64.sslip.io',
-].filter((host) => host !== API_ORIGIN)
+import UserAvatar, { avatarSrc } from '@/components/UserAvatar.jsx'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import api, { ROLE_LABELS, API_ORIGIN } from '@/api'
+import api, { ROLE_LABELS } from '@/api'
 import { initials } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-
-/**
- * Turn a stored avatar URL into one the <img> tag can render.
- *
- * - Already-absolute URLs pass through.
- * - Data-URLs (mock mode) pass through.
- * - Relative `/api/...` URLs get the backend origin prepended so the
- *   request hits the Fastify host, not the SPA host.
- * - Legacy `/api/users/me/avatar/file` (owner route that requires a
- *   custom header <img> can't carry) is rewritten to the public UUID path
- *   using the currently signed-in user's id.
- */
-function avatarSrc(url, currentUserId) {
-  if (!url) return url
-  // Absolute URLs from older backend builds may point at a host with no
-  // valid cert (e.g. api.yt.mucitkarinca.com) or at a stale Dokploy
-  // sslip.io alias. Rewrite to the live API_ORIGIN transparently.
-  if (/^https?:\/\//i.test(url)) {
-    for (const stale of AVATAR_HOST_FIX) {
-      if (url.startsWith(`${stale}/`)) return `${API_ORIGIN}${url.slice(stale.length)}`
-    }
-    return url
-  }
-  // data: URLs (mock mode) pass through.
-  if (/^data:/i.test(url)) return url
-  if (AVATAR_FIXED_RE.test(url) && currentUserId) {
-    return `${API_ORIGIN}/api/users/${encodeURIComponent(currentUserId)}/avatar/file`
-  }
-  if (url.startsWith('/')) return `${API_ORIGIN}${url}`
-  return `${API_ORIGIN}/${url}`
-}
 
 export default function Settings() {
   const { user, logout, updateUser } = useAuth()
@@ -173,19 +135,7 @@ export default function Settings() {
                 aria-label="Profil fotoğrafını düzenle"
                 className="group relative block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
               >
-                <Avatar className="h-14 w-14 ring-2 ring-background shadow-sm transition-opacity group-hover:opacity-90">
-                  {user?.avatar_url ? (
-                    <img
-                      src={avatarSrc(user.avatar_url, user?.id)}
-                      alt={user?.name ? `${user.name} profil fotoğrafı` : 'Profil fotoğrafı'}
-                      className="h-full w-full rounded-full object-cover"
-                    />
-                  ) : (
-                    <AvatarFallback className="bg-primary/10 text-lg font-semibold text-primary">
-                      {initials(user?.name)}
-                    </AvatarFallback>
-                  )}
-                </Avatar>
+                <UserAvatar user={user} size="2xl" />
                 <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-black/35 text-white opacity-0 transition-opacity group-hover:opacity-100">
                   {uploadingAvatar ? (
                     <LoaderCircle className="h-5 w-5 animate-spin" />

@@ -50,7 +50,8 @@ export async function authRoutes(fastify) {
     const { email, password } = request.body ?? {}
     if (!email || !password) unauthorized('E-posta ve şifre zorunlu.')
     const { rows } = await getPool().query(
-      'SELECT id, name, email, password, role, is_active FROM users WHERE email = $1 LIMIT 1',
+      `SELECT id, name, email, password, role, is_active, avatar_url, avatar_updated_at
+       FROM users WHERE email = $1 LIMIT 1`,
       [String(email).toLowerCase().trim()],
     )
     const user = rows[0]
@@ -60,6 +61,8 @@ export async function authRoutes(fastify) {
     const ok = bcrypt.compareSync(String(password), user.password)
     if (!ok) unauthorized('E-posta veya şifre hatalı.')
     const { password: _pw, ...safe } = user
+    // Drop the password column, keep avatar_url. Stored value is already
+    // a relative path so the SPA can rewrite against the live backend host.
     return { token: user.id, user: safe }
   })
 
