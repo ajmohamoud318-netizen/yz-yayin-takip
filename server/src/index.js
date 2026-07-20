@@ -1,4 +1,5 @@
 import Fastify from 'fastify'
+import multipart from '@fastify/multipart'
 import { authRoutes } from './routes/auth.js'
 import { userRoutes } from './routes/users.js'
 import { projectRoutes } from './routes/projects.js'
@@ -39,13 +40,29 @@ export async function buildServer() {
       reply.header('Access-Control-Allow-Origin', origin)
       reply.header('Vary', 'Origin')
       reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS')
-      reply.header('Access-Control-Allow-Headers', 'Content-Type, X-User-Id')
+      reply.header(
+        'Access-Control-Allow-Headers',
+        'Content-Type, X-User-Id, Authorization',
+      )
       reply.header('Access-Control-Max-Age', '86400')
     }
     if (request.method === 'OPTIONS') {
       reply.code(204)
       return reply.send()
     }
+  })
+
+  // Multipart body parser (avatar uploads). Must be registered before
+  // any route module that calls `request.file()`.
+  //
+  // The global `bodyLimit` on the Fastify instance (8 MB) is the upper
+  // bound; the avatar route enforces a tighter 2 MB cap during read
+  // so an oversized upload fails fast with a clear 400.
+  await fastify.register(multipart, {
+    limits: {
+      fileSize: 2 * 1024 * 1024,
+      files: 1,
+    },
   })
 
   // Domain-aware error handler. Anything we throw as `HttpError` lands here
