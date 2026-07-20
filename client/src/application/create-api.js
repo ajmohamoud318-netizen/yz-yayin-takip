@@ -75,6 +75,11 @@ export function createApi() {
     listUsers: () => userRepo.listUsers(),
     inviteUser: (payload) => userRepo.inviteUser(payload),
     setUserActive: (id, isActive) => userRepo.setUserActive(id, isActive),
+    setUserCapability: (id, capability, value) =>
+      userRepo.setUserCapability(id, capability, value),
+    // Hard delete — backend is responsible for the role/own-self guard;
+    // clients can't delete the leader who's currently signed in.
+    deleteUser: (id) => userRepo.deleteUser(id),
 
     // Projects
     listProjects: () => projectRepo.listProjects(),

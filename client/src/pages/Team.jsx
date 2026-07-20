@@ -34,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { useAuth } from '@/hooks/useAuth'
 import { cn, initials } from '@/lib/utils'
 
@@ -44,6 +45,10 @@ export default function Team() {
   const [query, setQuery] = useState('')
   const [role, setRole] = useState('all')
   const [inviteOpen, setInviteOpen] = useState(false)
+  // Two-step delete: UserCard opens the dialog via `pendingDelete`; the
+  // shared `ConfirmDialog` asks once before we actually call the API.
+  const [pendingDelete, setPendingDelete] = useState(null)
+  const [deleting, setDeleting] = useState(false)
 
   const isLeader = user?.role === 'team_leader'
 
@@ -85,17 +90,23 @@ export default function Team() {
     }
   }
 
-  async function deleteUser(u) {
-    const confirmed = window.confirm(
-      `${u.name} (${u.email}) kalıcı olarak silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musun?`,
-    )
-    if (!confirmed) return
+  function requestDelete(u) {
+    setPendingDelete(u)
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return
+    const target = pendingDelete
+    setDeleting(true)
     try {
-      await api.deleteUser(u.id)
-      setUsers((prev) => prev.filter((x) => x.id !== u.id))
-      toast.success('Kullanıcı silindi.')
+      await api.deleteUser(target.id)
+      setUsers((prev) => prev.filter((x) => x.id !== target.id))
+      toast.success(`${target.name} silindi.`)
+      setPendingDelete(null)
     } catch (err) {
       toast.error(err.message || 'Silme başarısız.')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -155,7 +166,7 @@ export default function Team() {
                 user={u}
                 canManage={isLeader && u.id !== user.id}
                 onToggle={toggleActive}
-                onDelete={deleteUser}
+                onRequestDelete={requestDelete}
                 onCapabilityChange={toggleCapability}
               />
             ))}
@@ -170,13 +181,34 @@ export default function Team() {
         )}
       </div>
 
-      <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} onInvited={(u) => setUsers((p) => [...p, u])} />
+      <InviteDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        onInvited={(u) => setUsers((p) => [...p, u])}
+      />
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(v) => !v && setPendingDelete(null)}
+        title="Kullanıcıyı sil"
+        description={
+          pendingDelete
+            ? `${pendingDelete.name} (${pendingDelete.email}) kalıcı olarak silinecek. Bu işlem geri alınamaz.`
+            : ''
+        }
+        confirmLabel="Kalıcı olarak sil"
+        cancelLabel="Vazgeç"
+        variant="destructive"
+        busy={deleting}
+        busyLabel="Siliniyor…"
+        onConfirm={confirmDelete}
+      />
     </>
   )
 }
 
 
-function UserCard({ user, canManage, onToggle, onDelete, onCapabilityChange }) {
+function UserCard({ user, canManage, onToggle, onRequestDelete, onCapabilityChange }) {
   const isDesigner = user.role === 'designer'
   return (
     <Card>
@@ -230,7 +262,7 @@ function UserCard({ user, canManage, onToggle, onDelete, onCapabilityChange }) {
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="text-rose-600 focus:text-rose-600"
-                onClick={() => onDelete(user)}
+                onClick={() => onRequestDelete(user)}
               >
                 Hesabı sil
               </DropdownMenuItem>

@@ -21,13 +21,17 @@ import {
  *  POST   /api/users/invite
  *  PATCH  /api/users/:id/deactivate
  *  PATCH  /api/users/:id/reactivate
+ *  PATCH  /api/users/:id/capabilities   { canApproveOzalit: boolean }
  *  DELETE /api/users/:id
  */
 export async function userRoutes(fastify) {
   fastify.get('/users', async (request) => {
     await attachUser(request)
     const { rows } = await getPool().query(
-      'SELECT id, name, email, role, is_active, invited_at, joined_at, created_at FROM users ORDER BY created_at',
+      `SELECT id, name, email, role, is_active, can_approve_ozalit,
+              invited_at, joined_at, created_at
+         FROM users
+        ORDER BY created_at`,
     )
     return rows
   })
@@ -153,9 +157,35 @@ export async function userRoutes(fastify) {
     return rows[0]
   })
 
-  // Hard delete. Cascades to invitations; subtasks / projects that
-  // reference the user become orphan assignee pointers (NULL via FK).
-  // team_leader only, and you can't delete yourself.
+  // Toggle a per-user capability. Today the only exposed capability is
+  // `can_approve_ozalit` (lets a designer reject/approve at Demo + Özalit).
+  // We forward the boolean to the users.can_approve_ozalit column and
+  // coerce to FALSE for non-designers on the server so the SPA never has
+  // to second-guess role semantics.
+  fastify.patch('/users/:id/capabilities', async (request) => {
+    await attachUser(request)
+    requireRole(request, 'team_leader')
+    const { id } = request.params
+    const { canApproveOzalit } = request.body ?? {}
+    if (typeof canApproveOzalit !== 'boolean') {
+      badRequest('canApproveOzalit boolean değeri zorunlu.')
+    }
+    const target = await getPool().query('SELECT role FROM users WHERE id = $1', [id])
+    if (target.rowCount === 0) notFound('Kullanıcı bulunamadı.')
+    const newValue = target.rows[0].role === 'designer' ? canApproveOzalit : false
+    const { rows } = await getPool().query(
+      `UPDATE users SET can_approve_ozalit = $2, updated_at = NOW() WHERE id = $1
+       RETURNING id, name, email, role, is_active, can_approve_ozalit`,
+      [id, newValue],
+    )
+    return rows[0]
+  })
+
+  // Hard delete. Cascades to invitations / password_resets (FK ON DELETE
+  // CASCADE); subtasks / projects / history / orders / handovers become
+  // orphan assignee pointers (FK ON DELETE SET NULL). team_leader only,
+  // and you can't delete yourself. Avatar files on disk are removed
+  // explicitly so we don't leak storage on the persistent volume.
   fastify.delete('/users/:id', async (request, reply) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
@@ -166,6 +196,16 @@ export async function userRoutes(fastify) {
       [id],
     )
     if (!rows[0]) return notFound('Kullanıcı bulunamadı.')
+    // Best-effort avatar cleanup — never block the delete on a filesystem
+    // error. Operators can `rm` orphans on the volume later if needed.
+    try {
+      await deleteAvatar(id)
+    } catch (err) {
+      request.log.warn(
+        { err, userId: id },
+        'avatar cleanup after user delete failed; continuing',
+      )
+    }
     reply.code(204)
     return null
   })

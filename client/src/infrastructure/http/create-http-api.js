@@ -97,6 +97,10 @@ export function createHttpApi() {
     listUsers: () => userRepo.listUsers(),
     inviteUser: (payload) => userRepo.inviteUser(payload),
     setUserActive: (id, isActive) => userRepo.setUserActive(id, isActive),
+    setUserCapability: (id, capability, value) =>
+      userRepo.setUserCapability(id, capability, value),
+    // Hard delete — backend enforces team_leader-only + no-self-delete.
+    deleteUser: (id) => userRepo.deleteUser(id),
 
     // Projects
     listProjects: () => projectRepo.listProjects(),
