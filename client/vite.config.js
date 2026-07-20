@@ -19,7 +19,9 @@ export default defineConfig({
     // tunnel like cloudflared/ngrok, which presents its own hostname).
     allowedHosts: true,
     proxy: {
-      // Backend not built yet — proxy is ready for when /api goes live.
+      // Dev proxy: /api/* → Fastify server on :4000. The SPA sends
+      // cookies withCredentials=true; we leave withCredentials on
+      // (the default for Vite's proxy is to forward them).
       '/api': 'http://localhost:4000',
     },
   },
