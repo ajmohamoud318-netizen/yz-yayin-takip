@@ -10,13 +10,13 @@ import {
   Search,
   Bell, BellRing,
   Menu,
-  Sparkles,
   LayoutGrid,
   CalendarDays,
   BadgeCheck,
   Printer,
   Briefcase,
   MoreVertical,
+  Settings,
   Files,
   Boxes,
   Flame,
@@ -1024,7 +1024,7 @@ function UserMenu({ user, onLogout }) {
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link to="/settings">
-            <Sparkles className="h-4 w-4" />
+            <Settings className="h-4 w-4" />
             Ayarlar
           </Link>
         </DropdownMenuItem>
