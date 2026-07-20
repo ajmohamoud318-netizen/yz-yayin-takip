@@ -68,6 +68,8 @@ export function createApi() {
     resetPassword: (token, password) => authRepo.resetPassword(token, password),
     changePassword: (currentPassword, newPassword) =>
       authRepo.changePassword(currentPassword, newPassword),
+    uploadAvatar: (file) => authRepo.uploadAvatar(file),
+    deleteAvatar: () => authRepo.deleteAvatar(),
 
     // Users
     listUsers: () => userRepo.listUsers(),

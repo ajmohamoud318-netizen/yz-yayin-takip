@@ -86,5 +86,29 @@ export function createHttpAuthRepository() {
       })
       return data
     },
+    /**
+     * Upload / replace the caller's avatar. Sends the file as
+     * multipart/form-data to PUT /users/me/avatar; the server writes it
+     * to disk, updates `users.avatar_url` + `avatar_updated_at`, and
+     * returns `{ avatarUrl }` (the relative URL the <img> tag should
+     * fetch).
+     */
+    async uploadAvatar(file) {
+      if (!file) throw new Error('Dosya bulunamadı.')
+      const fd = new FormData()
+      fd.append('file', file)
+      const { data } = await httpClient.put('/users/me/avatar', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      return data
+    },
+    /**
+     * Remove the caller's stored avatar. Server nulls the columns and
+     * unlinks the on-disk file. Resolves with `{ ok: true }`.
+     */
+    async deleteAvatar() {
+      const { data } = await httpClient.delete('/users/me/avatar')
+      return data
+    },
   }
 }

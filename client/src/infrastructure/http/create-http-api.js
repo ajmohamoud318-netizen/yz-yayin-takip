@@ -89,6 +89,8 @@ export function createHttpApi() {
         if (res?.token) setAuthToken(res.token)
         return res
       }),
+    uploadAvatar: (file) => authRepo.uploadAvatar(file),
+    deleteAvatar: () => authRepo.deleteAvatar(),
 
     // Users (need a warm cache before the dashboard loads)
     bootstrapUsers: () => userRepo.listUsers(),

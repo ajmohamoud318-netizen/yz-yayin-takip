@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Camera, Check, Eye, EyeOff, KeyRound, LoaderCircle, LogOut, Mail, ShieldCheck, User } from 'lucide-react'
+import { Camera, Check, Eye, EyeOff, KeyRound, LoaderCircle, LogOut, Mail, Pencil, ShieldCheck, User } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
@@ -131,7 +131,7 @@ export default function Settings() {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingAvatar}
-                aria-label="Profil fotoğrafını değiştir"
+                aria-label="Profil fotoğrafını düzenle"
                 className="group relative block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
               >
                 <Avatar className="h-14 w-14 ring-2 ring-background shadow-sm transition-opacity group-hover:opacity-90">
@@ -154,6 +154,29 @@ export default function Settings() {
                     <Camera className="h-5 w-5" />
                   )}
                 </span>
+              </button>
+              {/* Always-visible "edit avatar" affordance — small floating
+                  badge anchored to the bottom-right of the avatar circle.
+                  Opens the same file picker the hover overlay does. */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingAvatar || removingAvatar}
+                aria-label="Profil fotoğrafını düzenle"
+                title="Profil fotoğrafını düzenle"
+                className={cn(
+                  'absolute -bottom-1 -right-1 grid h-7 w-7 place-items-center rounded-full',
+                  'border-2 border-card bg-primary text-primary-foreground shadow-sm',
+                  'transition-transform hover:scale-105 hover:bg-primary/90 active:scale-95',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                  'disabled:opacity-60 disabled:pointer-events-none',
+                )}
+              >
+                {uploadingAvatar ? (
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Pencil className="h-3.5 w-3.5" />
+                )}
               </button>
               <input
                 ref={fileInputRef}
