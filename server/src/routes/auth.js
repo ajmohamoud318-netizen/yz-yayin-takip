@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs'
-import { attachUser } from '../middleware/auth.js'
+import { attachUser, loadUserById } from '../middleware/auth.js'
 import { rateLimit } from '../middleware/rate-limit.js'
 import { badRequest, forbidden, unauthorized } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
@@ -13,60 +13,135 @@ import {
   verifyPasswordReset,
 } from '../services/password-resets.js'
 import { sendMail, renderResetEmail } from '../services/mail.js'
+import {
+  createMagicLink,
+  consumeMagicLink,
+  MAGIC_LINK_TTL_SECONDS,
+} from '../services/magic-links.js'
+import { renderMagicLinkEmail, buildMagicLinkUrl } from '../services/magic-link-email.js'
+import { buildSessionCookie, buildLogoutCookie } from '../services/cookies.js'
+import { createSession, destroySession } from '../services/sessions.js'
+import { parseSessionCookie } from '../services/cookies.js'
+import { config } from '../config.js'
+import { schemas } from '../schemas/index.js'
 
 /**
  * Auth API.
  *
- * Real Google OAuth is intentionally not yet wired (per the roadmap in
- * AGENTS.md). Instead we expose:
- *   POST /api/auth/login             — body { email, password }
- *   POST /api/auth/logout            — no-op for header auth.
- *   GET  /api/auth/me                — returns the attached user.
- *   GET  /api/auth/invite-preview    — body { token }, returns the invitee
- *                                      without consuming the token (so the
- *                                      "set password" page can render name).
+ * Magic-link sign-in (current pass):
+ *   POST /api/auth/magic             — body { email }, emails a 15-minute
+ *                                       one-time signed link.
+ *   GET  /api/auth/magic/callback    — query { token }, consumes the link,
+ *                                       creates a Redis-backed session,
+ *                                       sets the yz_sid cookie, redirects
+ *                                       to the SPA.
+ *   POST /api/auth/logout            — destroys the session and clears the
+ *                                       cookie. Idempotent.
+ *   GET  /api/auth/me                — returns the attached user (cookie).
+ *   GET  /api/auth/invite-preview    — query { token }, returns the invitee
+ *                                       without consuming it.
  *   POST /api/auth/accept-invite     — body { token, password }, sets the
- *                                      password, marks the invitation used,
- *                                      returns { token, user }.
- *   POST /api/auth/forgot-password   — body { email }, always returns 200,
- *                                      sends a reset email if the address
- *                                      matches an active user. Rate-limited
- *                                      to 5 requests/minute per IP.
+ *                                       password and signs the user in.
+ *   POST /api/auth/forgot-password   — body { email }, sends a reset email
+ *                                       if the address matches an active
+ *                                       user. Returns 200 either way.
  *   POST /api/auth/reset-password    — body { token, password }, consumes
- *                                      the reset token and sets a new
- *                                      bcrypt password.
- *   PATCH /api/auth/change-password  — body { currentPassword, newPassword },
- *                                      rotates the caller's own password.
- *                                      Requires the current password unless
- *                                      the account has none yet (first-time
- *                                      set after an invite).
- *
- * This keeps the mock-auth UX in the SPA working with the new server
- * end-to-end. Next pass, replace /login + /me with the OAuth handshake.
+ *                                       the reset token and sets a new
+ *                                       bcrypt password.
+ *   PATCH /api/auth/change-password  — body { currentPassword, newPassword }.
+ *   POST /api/auth/dev-login         — NODE_ENV !== 'production' only;
+ *                                       creates a session without email.
  */
 
 export async function authRoutes(fastify) {
-  fastify.post('/auth/login', async (request) => {
-    const { email, password } = request.body ?? {}
-    if (!email || !password) unauthorized('E-posta ve şifre zorunlu.')
-    const { rows } = await getPool().query(
-      `SELECT id, name, email, password, role, is_active, avatar_url, avatar_updated_at
-       FROM users WHERE email = $1 LIMIT 1`,
-      [String(email).toLowerCase().trim()],
-    )
-    const user = rows[0]
-    if (!user) unauthorized('E-posta veya şifre hatalı.')
-    if (user.is_active === false) forbidden('Hesabınız devre dışı bırakılmış.')
-    if (!user.password) unauthorized('Şifre tanımlı değil.')
-    const ok = bcrypt.compareSync(String(password), user.password)
-    if (!ok) unauthorized('E-posta veya şifre hatalı.')
-    const { password: _pw, ...safe } = user
-    // Drop the password column, keep avatar_url. Stored value is already
-    // a relative path so the SPA can rewrite against the live backend host.
-    return { token: user.id, user: safe }
+  /**
+   * Magic-link request — always returns 200 even when the email doesn't
+   * match a user, so attackers can't enumerate accounts. If the email
+   * matches an active user, we mint a 15-minute one-time link and send
+   * it via Resend (same pipeline as invite + reset emails).
+   *
+   * Rate-limited per-IP and per-email to defeat the two obvious abuse
+   * vectors: someone spamming a single address, or a botnet rotating
+   * IPs against a single address.
+   */
+  fastify.post(
+    '/auth/magic',
+    {
+      schema: schemas.authLogin,
+      preHandler: rateLimit({
+        keys: [
+          (req) => `auth-magic:ip:${req.ip}`,
+          (req) => req.body?.email
+            ? `auth-magic:email:${String(req.body.email).toLowerCase().trim()}`
+            : null,
+        ],
+        limit: 10,
+        windowMs: 15 * 60_000,
+        message: 'Çok fazla giriş isteği. Lütfen 15 dakika sonra tekrar deneyin.',
+      }),
+    },
+    async (request) => {
+      const { email } = request.body
+      if (!email) return { ok: true }
+      const normalisedEmail = String(email).toLowerCase().trim()
+      const { rows } = await getPool().query(
+        `SELECT id, name, email, is_active FROM users WHERE email = $1 LIMIT 1`,
+        [normalisedEmail],
+      )
+      const user = rows[0]
+      if (user && user.is_active !== false) {
+        const link = await createMagicLink({ userId: user.id })
+        const magicUrl = buildMagicLinkUrl(link.token, config.inviteBaseUrl)
+        const { subject, text, html } = renderMagicLinkEmail({
+          name: user.name,
+          magicUrl,
+          ttlMinutes: Math.floor(link.ttlSeconds / 60),
+        })
+        // Same never-throws contract as invite / reset — a transient
+        // SMTP outage shouldn't block the flow. The user will see "no
+        // email arrived" and try again.
+        await sendMail({ to: user.email, subject, text, html })
+      }
+      return { ok: true }
+    },
+  )
+
+  /**
+   * Magic-link callback — the user clicked the email link. Validate the
+   * token, consume it (single-use), create a session, set the cookie,
+   * redirect to the SPA.
+   *
+   * The SPA then polls GET /api/auth/me to confirm the session and
+   * route the user to the dashboard.
+   */
+  fastify.get(
+    '/auth/magic/callback',
+    { schema: schemas.authMagicCallback },
+    async (request, reply) => {
+    const { token, next } = request.query
+    if (!token) badRequest('Geçersiz bağlantı.')
+    const userId = await consumeMagicLink(token)
+    if (!userId) badRequest('Bu bağlantı geçersiz veya süresi dolmuş.')
+    const session = await createSession(userId)
+    reply.header('Set-Cookie', buildSessionCookie(session.sid, session.expiresAt))
+    // Redirect back to the SPA. The `next` param lets the client send
+    // the user to the page they originally tried to reach.
+    const dest = (typeof next === 'string' && next.startsWith('/'))
+      ? `${config.inviteBaseUrl.replace(/\/$/, '')}${next}`
+      : `${config.inviteBaseUrl.replace(/\/$/, '')}/`
+    reply.redirect(dest, 302)
   })
 
-  fastify.post('/auth/logout', async () => ({ ok: true }))
+  /**
+   * Logout — destroy the session row and clear the cookie. Idempotent
+   * (no-op if there's no session).
+   */
+  fastify.post('/auth/logout', async (request, reply) => {
+    const cookie = parseSessionCookie(request.headers.cookie)
+    if (cookie) await destroySession(cookie.sid)
+    reply.header('Set-Cookie', buildLogoutCookie())
+    return { ok: true }
+  })
 
   fastify.get('/auth/me', async (request) => {
     await attachUser(request)
@@ -91,17 +166,15 @@ export async function authRoutes(fastify) {
 
   /**
    * Consume an invitation token and set the user's password.
-   * Returns { token, user } so the client can sign the user straight in.
+   * Returns { user } so the client can sign the user straight in.
+   * Now signs the user in via the same session-cookie flow as the
+   * magic-link callback — accept-invite is a one-shot login.
    */
-  fastify.post('/auth/accept-invite', async (request) => {
-    const { token, password } = request.body ?? {}
-    if (!token) badRequest('Davet token\'ı zorunlu.')
-    if (!password || typeof password !== 'string') {
-      badRequest('Şifre zorunlu.')
-    }
-    if (password.length < 8) {
-      badRequest('Şifre en az 8 karakter olmalı.')
-    }
+  fastify.post(
+    '/auth/accept-invite',
+    { schema: schemas.authAcceptInvite },
+    async (request, reply) => {
+    const { token, password } = request.body
     const inv = await verifyInvitation(token)
     const hash = bcrypt.hashSync(password, 10)
     const { rows } = await getPool().query(
@@ -110,13 +183,16 @@ export async function authRoutes(fastify) {
               joined_at = COALESCE(joined_at, NOW()),
               updated_at = NOW()
         WHERE id = $2
-        RETURNING id, name, email, role, is_active`,
+        RETURNING id, name, email, role, is_active, avatar_url, avatar_updated_at`,
       [hash, inv.user.id],
     )
     const user = rows[0]
     await consumeInvitation(inv.invitationId)
-    return { token: user.id, user }
-  })
+    const session = await createSession(user.id)
+    reply.header('Set-Cookie', buildSessionCookie(session.sid, session.expiresAt))
+    return { user }
+    },
+  )
 
   /**
    * Forgot-password — always returns 200 even when the email doesn't
@@ -131,18 +207,18 @@ export async function authRoutes(fastify) {
   fastify.post(
     '/auth/forgot-password',
     {
+      schema: schemas.authForgotPassword,
       preHandler: rateLimit({
-        key: (req) => req.ip,
+        keys: [(req) => `auth-forgot:ip:${req.ip}`],
         limit: 5,
         windowMs: 60_000,
+        message: 'Çok fazla şifre sıfırlama isteği. Lütfen bir dakika bekleyin.',
       }),
     },
     async (request) => {
-      const { email } = request.body ?? {}
-      if (!email || typeof email !== 'string') {
-        return { ok: true }
-      }
-      const normalisedEmail = email.trim().toLowerCase()
+      const { email } = request.body
+      if (!email) return { ok: true }
+      const normalisedEmail = String(email).trim().toLowerCase()
       const { rows } = await getPool().query(
         `SELECT id, name, email, is_active FROM users WHERE email = $1 LIMIT 1`,
         [normalisedEmail],
@@ -164,52 +240,58 @@ export async function authRoutes(fastify) {
   )
 
   /**
-   * Reset-password — consumes the token, sets a new bcrypt password.
-   * Returns { token, user } so the SPA can log the user straight in
-   * without a second round-trip.
+   * Reset-password — consumes the token, sets a new bcrypt password,
+   * signs the user in (session cookie). Returns { user } so the SPA
+   * can navigate to the dashboard without a second login step.
    */
-  fastify.post('/auth/reset-password', async (request) => {
-    const { token, password } = request.body ?? {}
-    if (!password || typeof password !== 'string') {
-      badRequest('Yeni şifre zorunlu.')
-    }
-    if (password.length < 8) {
-      badRequest('Şifre en az 8 karakter olmalı.')
-    }
-    const reset = await verifyPasswordReset(token)
-    const hash = bcrypt.hashSync(password, 10)
-    const { rows } = await getPool().query(
-      `UPDATE users
-          SET password = $1,
-              updated_at = NOW()
-        WHERE id = $2
-        RETURNING id, name, email, role, is_active`,
-      [hash, reset.user.id],
-    )
-    const user = rows[0]
-    await consumePasswordReset(reset.resetId)
-    return { token: user.id, user }
-  })
+  fastify.post(
+    '/auth/reset-password',
+    {
+      schema: schemas.authResetPassword,
+      preHandler: rateLimit({
+        keys: [
+          (req) => `auth-reset:ip:${req.ip}`,
+          (req) => req.body?.token
+            ? `auth-reset:token:${req.body.token}`
+            : null,
+        ],
+        limit: 20,
+        windowMs: 15 * 60_000,
+        message: 'Çok fazla deneme. Lütfen 15 dakika sonra tekrar deneyin.',
+      }),
+    },
+    async (request, reply) => {
+      const { token, password } = request.body
+      const reset = await verifyPasswordReset(token)
+      const hash = bcrypt.hashSync(password, 10)
+      const { rows } = await getPool().query(
+        `UPDATE users
+            SET password = $1,
+                updated_at = NOW()
+          WHERE id = $2
+          RETURNING id, name, email, role, is_active, avatar_url, avatar_updated_at`,
+        [hash, reset.user.id],
+      )
+      const user = rows[0]
+      await consumePasswordReset(reset.resetId)
+      const session = await createSession(user.id)
+      reply.header('Set-Cookie', buildSessionCookie(session.sid, session.expiresAt))
+      return { user }
+    },
+  )
 
   /**
    * Change-password for the currently-authenticated user. Requires
-   * the current password as proof. Returns 204 on success.
-   *
-   * Used by the Settings page so anyone can rotate their own password
-   * without going through the forgot-password email loop.
+   * the current password as proof. Used by the Settings page so anyone
+   * can rotate their own password without going through the
+   * forgot-password email loop. Returns { ok: true } on success.
    */
-  fastify.patch('/auth/change-password', async (request) => {
+  fastify.patch(
+    '/auth/change-password',
+    { schema: schemas.authChangePassword },
+    async (request) => {
     await attachUser(request)
-    const { currentPassword, newPassword } = request.body ?? {}
-    if (!currentPassword || typeof currentPassword !== 'string') {
-      badRequest('Mevcut şifre zorunlu.')
-    }
-    if (!newPassword || typeof newPassword !== 'string') {
-      badRequest('Yeni şifre zorunlu.')
-    }
-    if (newPassword.length < 8) {
-      badRequest('Yeni şifre en az 8 karakter olmalı.')
-    }
+    const { currentPassword, newPassword } = request.body
     if (newPassword === currentPassword) {
       badRequest('Yeni şifre mevcut şifreden farklı olmalı.')
     }
@@ -233,20 +315,42 @@ export async function authRoutes(fastify) {
       [hash, request.user.id],
     )
     return { ok: true }
-  })
+    },
+  )
 
   // Dev-only "log in as" endpoint. Lets the SPA drive the backend end to
   // end without going through email + password (the seed rows don't carry
   // a bcrypt hash yet). Disabled in production via NODE_ENV.
-  fastify.post('/auth/dev-login', async (request) => {
-    if (process.env.NODE_ENV === 'production') {
-      unauthorized('Dev login disabled in production')
-    }
-    const { user_id: userId } = request.body ?? {}
-    if (!userId) unauthorized('user_id zorunlu.')
-    const user = await loadUserById(userId)
-    if (!user) unauthorized('Unknown user')
-    if (user.is_active === false) forbidden('Hesabınız devre dışı bırakılmış.')
-    return { token: user.id, user }
-  })
+  /**
+   * Dev-only escape hatch: log in as any user without going through
+   * email. Creates a real session + sets the cookie so the rest of
+   * the app behaves exactly like a magic-link sign-in. Gated by
+   * NODE_ENV !== 'production' — fails closed in prod.
+   */
+  fastify.post(
+    '/auth/dev-login',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['user_id'],
+          properties: { user_id: { type: 'string', minLength: 1, maxLength: 64 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (process.env.NODE_ENV === 'production') {
+        unauthorized('Dev login disabled in production')
+      }
+      const { user_id: userId } = request.body
+      const user = await loadUserById(userId)
+      if (!user) unauthorized('Unknown user')
+      if (user.is_active === false) forbidden('Hesabınız devre dışı bırakılmış.')
+      const session = await createSession(userId)
+      reply.header('Set-Cookie', buildSessionCookie(session.sid, session.expiresAt))
+      const { password: _pw, ...safe } = user
+      return { user: safe }
+    },
+  )
 }

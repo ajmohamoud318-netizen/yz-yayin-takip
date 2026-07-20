@@ -104,6 +104,15 @@ export async function buildServer() {
 }
 
 async function main() {
+  // Refuse to boot if the legacy X-User-Id flag is still set. The auth
+  // path is now exclusively cookie-based; a stale env var would let
+  // anyone impersonate any user with a curl header.
+  if (process.env.TRUST_HEADER_AUTH && process.env.TRUST_HEADER_AUTH !== 'false') {
+    throw new Error(
+      'TRUST_HEADER_AUTH is no longer supported. Remove it from your env. ' +
+      'Auth is now cookie-session-based.',
+    )
+  }
   if (config.migrateOnBoot) {
     await migrateUp()
   }

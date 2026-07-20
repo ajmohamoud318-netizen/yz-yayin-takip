@@ -9,8 +9,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 import api from '@/api.js'
-import { setAuthToken } from '@/infrastructure/http/client.js'
-import { USE_MOCK } from '@/infrastructure/config.js'
 
 const ROLE_LABEL = {
   team_leader: 'Takım Lideri',
@@ -37,6 +35,7 @@ export default function AcceptInvite() {
   const [params] = useSearchParams()
   const token = params.get('token') ?? ''
   const navigate = useNavigate()
+  const { refresh } = useAuth()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [done, setDone] = useState(false)
@@ -46,7 +45,7 @@ export default function AcceptInvite() {
   const [previewError, setPreviewError] = useState(null)
 
   useEffect(() => {
-    if (!token || USE_MOCK) return
+    if (!token) return
     let cancelled = false
     api.previewInvite(token)
       .then((data) => { if (!cancelled) setPreview(data) })
@@ -75,7 +74,10 @@ export default function AcceptInvite() {
     setSubmitting(true)
     try {
       const res = await api.acceptInvite(token, password)
-      if (res?.token) setAuthToken(res.token)
+      // Server has already Set-Cookie'd the yz_sid session via the
+      // response. Push the returned user into the auth hook so the
+      // dashboard renders without a 401 flash.
+      refresh(res?.user ?? null)
       setDone(true)
       toast.success('Şifreniz belirlendi. Hoş geldiniz!')
       setTimeout(() => navigate('/', { replace: true }), 1200)

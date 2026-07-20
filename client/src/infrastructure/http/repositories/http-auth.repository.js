@@ -3,20 +3,35 @@ import { httpClient } from '../client.js'
 /**
  * Auth repo when the real backend is wired in.
  *
- * Server returns { token, user } where `token` is the user's UUID — we
- * stash it client-side as an `X-User-Id` header. Real OAuth is the
- * next pass; this swap keeps every existing UI hook working.
+ * Server uses signed httpOnly cookies (yz_sid) backed by Redis sessions.
+ * The browser sends the cookie automatically on every request; we never
+ * touch the cookie from JS. The shape of the public methods is the same
+ * as before so the SPA's auth hook didn't have to change.
+ *
+ * Sign-in flow:
+ *   1. POST /api/auth/magic         — user enters email → server emails link
+ *   2. User clicks the link in the email → browser hits the SPA
+ *      `/auth/magic?token=...` route → which calls the magic-callback
+ *      endpoint server-side? No — the callback is `/api/auth/magic/callback`
+ *      and the server's redirect lands the user on the SPA dashboard.
+ *   3. SPA then calls GET /api/auth/me to confirm the session is live.
  */
 export function createHttpAuthRepository() {
   return {
-    async login(email, password) {
-      const { data } = await httpClient.post('/auth/login', { email, password })
+    /**
+     * Request a magic-link email. Returns immediately with `{ ok: true }`
+     * whether or not the email matched a user (server returns 200 for
+     * both cases so attackers can't enumerate accounts).
+     */
+    async login(email) {
+      const { data } = await httpClient.post('/auth/magic', { email })
       return data
     },
     /**
-     * Dev-only "log in as <user>" path. The backend exposes /auth/dev-login
-     * so the SPA can drive the real API without bcrypt-hashed seed passwords.
-     * Returns the same { token, user } shape as login().
+     * Dev-only "log in as <user>" path. The backend's /auth/dev-login
+     * endpoint mints a real session + sets the cookie without going
+     * through email. Useful when SMTP isn't configured locally.
+     * Gated by NODE_ENV !== 'production' on the server.
      */
     async loginAsUser(userId) {
       const { data } = await httpClient.post('/auth/dev-login', { user_id: userId })
@@ -31,6 +46,14 @@ export function createHttpAuthRepository() {
       return { ok: true }
     },
     /**
+     * Look up the current session's user. Throws 401 if no cookie is
+     * present. Used on app boot to restore the session after a reload.
+     */
+    async me() {
+      const { data } = await httpClient.get('/auth/me')
+      return data
+    },
+    /**
      * Look up an invitation by token so the AcceptInvite page can show the
      * invitee's name without consuming the token. Returns
      * { name, email, role, expiresAt }.
@@ -42,9 +65,9 @@ export function createHttpAuthRepository() {
       return data
     },
     /**
-     * Set the user's password via an invitation token. Returns the same
-     * { token, user } shape as login() so the caller can sign the user in
-     * straight away.
+     * Set the user's password via an invitation token. Server signs the
+     * user in immediately (sets the yz_sid cookie) and returns { user }.
+     * The caller can navigate straight to the dashboard.
      */
     async acceptInvite(token, password) {
       const { data } = await httpClient.post('/auth/accept-invite', {
@@ -65,8 +88,8 @@ export function createHttpAuthRepository() {
       return data
     },
     /**
-     * Set a new password via a reset token. Returns { token, user } so
-     * the SPA can log the user straight in.
+     * Set a new password via a reset token. Server signs the user in
+     * immediately and returns { user }.
      */
     async resetPassword(token, password) {
       const { data } = await httpClient.post('/auth/reset-password', {

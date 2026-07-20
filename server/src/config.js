@@ -33,10 +33,9 @@ export const config = {
   corsOrigins:
     process.env.CORS_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean) ??
     ['http://localhost:5173', 'http://localhost:4173'],
-  // When true, the server trusts the X-User-Id header as the authenticated
-  // user (this pass). When false, real OAuth/cookie session validation kicks
-  // in (next pass, not built yet).
-  trustHeaderAuth: boolEnv('TRUST_HEADER_AUTH', true),
+  // Session-cookie auth is now the only path. The X-User-Id trust flag
+  // is intentionally removed — if it's still set in .env from a
+  // previous deploy we fail closed at boot. See server/src/index.js.
 
   // SMTP for invitation emails + (future) stage notifications. If SMTP_HOST
   // is unset, the server falls back to a console transport so local dev
