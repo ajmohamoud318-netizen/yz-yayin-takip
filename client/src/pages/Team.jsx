@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Copy, Mail, MoreHorizontal, Search, UserPlus, Wand2 } from 'lucide-react'
+import { Copy, Mail, Search, Settings, UserPlus, Wand2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import api, { ROLE_LABELS } from '@/api'
@@ -222,7 +222,7 @@ function UserCard({ user, canManage, onToggle, onDelete, onCapabilityChange }) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreHorizontal className="h-4 w-4" />
+                <Settings className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
