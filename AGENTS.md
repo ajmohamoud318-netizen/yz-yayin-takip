@@ -33,14 +33,15 @@ Tasarım (designer checks off subtasks → progress % auto-calculated)
 Demo Teslim (designer submits demo)
     ↓
 Demo Onay
-    ✓ Oktay approves → Özalit
-    ✗ Ayşenur rejects (reason REQUIRED) → back to Tasarım (demo_attempt +1)
+    ✓ Ayşenur OR Oktay OR special-designer approves → Özalit
+    ✗ Ayşenur (or special-designer at this stage) rejects (reason REQUIRED) → back to Tasarım (demo_attempt +1)
     ↓
 Özalit Teslim
     ↓
-Özalit Onay
-    ✓ Oktay approves → Üretime Hazır
-    ✗ Ayşenur rejects (reason REQUIRED, target = matbaa|designer) → back to Tasarım (ozalit_attempt +1)
+Özalit Onay — AND-rule (two-step sign-off)
+    ✓ Step 1: Ayşenur approves (records `ozalit_leader_approved`)
+    ✓ Step 2: any assigned designer OR a special-designer approves → Üretime Hazır
+    ✗ Ayşenur or special-designer rejects (reason REQUIRED, target = matbaa|designer) → back to Tasarım (ozalit_attempt +1)
     ↓
 Üretime Hazır
     ↓
@@ -57,8 +58,8 @@ Tasarım (designer checks off subtasks)
 Çin Demo Teslim
     ↓
 Çin Demo Onay
-    ✓ Ayşenur approves → Üretime Hazır
-    ✗ Ayşenur rejects (reason REQUIRED) → back to Tasarım (demo_attempt +1)
+    ✓ Ayşenur OR Oktay OR special-designer approves → Üretime Hazır
+    ✗ Ayşenur (or special-designer at this stage) rejects (reason REQUIRED) → back to Tasarım (demo_attempt +1)
     ↓
 Üretime Hazır
     ↓
@@ -68,6 +69,23 @@ Gümrük
     ↓
 Satışta ✅
 ```
+### Special designer capability (`can_approve_ozalit`)
+A `designer` may receive an additional capability flag set by the team leader when inviting them. It's surfaced in the Team page as a per-row switch ("Demo + Özalit onay yetkisi") and on the invite form for new designers.
+
+When `can_approve_ozalit = TRUE`:
+- can **approve** at `demo_onay`, `cin_demo_onay`, and `ozalit_onay` (step 2)
+- can **reject** at the same three stages — with the same `reason` + `reject_target` rules as the leader
+- can edit **Ürün Bilgileri** (sub-tree of `domain/services/pipeline.js#canEditProductInfo`)
+- is shown in `/approvals/ozalit` and `/approvals/demo` queues (route guard loosened in `App.jsx`)
+
+Domain rules live in [client/src/domain/services/pipeline.js](client/src/domain/services/pipeline.js):
+- `isOzalitApprover(user)`     — leader OR special-designer (step 1 + step 2)
+- `isDemoApprover(user)`        — leader OR printer OR special-designer
+- `canRejectAtStage(user, s)`   — leader anywhere; special-designer at demo + ozalit
+- `canEditProductInfo(user)`    — leader OR special-designer
+
+Server-side, the same predicates are mirrored in `server/src/domain/transitions.js`. The flag persists in `users.can_approve_ozalit` (migration 011).
+
 ### Production Gate
 A project **cannot** enter Ozalit or any later stage until `progress === 100%`. Enforced by `assertCanEnterProduction` in `domain/services/pipeline.js`. `STAGES_REQUIRING_FULL_PROGRESS` = `ozalit_teslim, ozalit_onay, uretime_hazir, uretimde, gumruk, satista`.
 
@@ -75,7 +93,7 @@ A project **cannot** enter Ozalit or any later stage until `progress === 100%`. 
 - Every rejection requires a written `reason` (backend-enforced)
 - The reason is stored in `stage_history` and visible on the project history
 - The `demo_attempt` / `ozalit_attempt` counter increments on each rejection (Demo 1, Demo 2, …)
-- Only `team_leader` can reject at any stage
+- `team_leader` can reject at any stage. `designer` with the `can_approve_ozalit` flag can reject at Demo + Özalit only
 - At Özalit rejection, the leader picks the loop target: `matbaa` (Matbaa re-delivers ozalit) or `designer` (Tasarımcı reworks first)
 
 ---
