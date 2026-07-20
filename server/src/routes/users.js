@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid'
 import { attachUser, requireRole } from '../middleware/auth.js'
 import { badRequest, conflict, forbidden, notFound } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
+import { schemas } from '../schemas/index.js'
 import { createInvitation } from '../services/invitations.js'
 import { sendMail, renderInviteEmail } from '../services/mail.js'
 import {
@@ -36,14 +37,10 @@ export async function userRoutes(fastify) {
     return rows
   })
 
-  fastify.post('/users/invite', async (request) => {
+  fastify.post('/users/invite', { schema: schemas.usersInvite }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
-    const { name, email, role } = request.body ?? {}
-    if (!name || !email) badRequest('Ad ve e-posta zorunlu.')
-    if (!['designer', 'printer', 'satis', 'team_leader'].includes(role)) {
-      badRequest('Geçersiz rol.')
-    }
+    const { name, email, role } = request.body
     const normalisedEmail = email.trim().toLowerCase()
     const existing = await getPool().query(
       `SELECT id, is_active FROM users WHERE email = $1`,
@@ -130,7 +127,7 @@ export async function userRoutes(fastify) {
     }
   })
 
-  fastify.patch('/users/:id/deactivate', async (request) => {
+  fastify.patch('/users/:id/deactivate', { schema: schemas.userIdParams }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
     const { id } = request.params
@@ -144,7 +141,7 @@ export async function userRoutes(fastify) {
     return rows[0]
   })
 
-  fastify.patch('/users/:id/reactivate', async (request) => {
+  fastify.patch('/users/:id/reactivate', { schema: schemas.userIdParams }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
     const { id } = request.params
@@ -162,14 +159,11 @@ export async function userRoutes(fastify) {
   // We forward the boolean to the users.can_approve_ozalit column and
   // coerce to FALSE for non-designers on the server so the SPA never has
   // to second-guess role semantics.
-  fastify.patch('/users/:id/capabilities', async (request) => {
+  fastify.patch('/users/:id/capabilities', { schema: schemas.usersCapabilities }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
     const { id } = request.params
-    const { canApproveOzalit } = request.body ?? {}
-    if (typeof canApproveOzalit !== 'boolean') {
-      badRequest('canApproveOzalit boolean değeri zorunlu.')
-    }
+    const { canApproveOzalit } = request.body
     const target = await getPool().query('SELECT role FROM users WHERE id = $1', [id])
     if (target.rowCount === 0) notFound('Kullanıcı bulunamadı.')
     const newValue = target.rows[0].role === 'designer' ? canApproveOzalit : false
@@ -186,7 +180,7 @@ export async function userRoutes(fastify) {
   // orphan assignee pointers (FK ON DELETE SET NULL). team_leader only,
   // and you can't delete yourself. Avatar files on disk are removed
   // explicitly so we don't leak storage on the persistent volume.
-  fastify.delete('/users/:id', async (request, reply) => {
+  fastify.delete('/users/:id', { schema: schemas.userIdParams }, async (request, reply) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
     const { id } = request.params

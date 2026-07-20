@@ -6,6 +6,7 @@ import { assertHandoverEligible } from '../domain/pipeline.js'
 import {
   getProject, getProjectForUpdate, patchProject, insertHistory,
 } from '../services/project-repository.js'
+import { schemas } from '../schemas/index.js'
 
 /**
  * Teslim (handover) API: matbaa raises, satis confirms.
@@ -30,11 +31,10 @@ export async function handoverRoutes(fastify) {
     return rows
   })
 
-  fastify.post('/handovers', async (request) => {
+  fastify.post('/handovers', { schema: schemas.handoversCreate }, async (request) => {
     await attachUser(request)
     if (request.user.role !== 'printer') forbidden('Yalnızca matbaa teslim oluşturabilir.')
-    const { projectId } = request.body ?? {}
-    if (!projectId) badRequest('projectId zorunlu.')
+    const { projectId } = request.body
     const project = await getProject(projectId)
     if (!project) notFound('Proje bulunamadı.')
     assertHandoverEligible(project)
@@ -52,7 +52,7 @@ export async function handoverRoutes(fastify) {
     return rows[0]
   })
 
-  fastify.patch('/handovers/:id/confirm', async (request) => {
+  fastify.patch('/handovers/:id/confirm', { schema: schemas.handoversConfirm }, async (request) => {
     await attachUser(request)
     if (request.user.role !== 'satis') forbidden('Alındı onayını yalnızca satış verebilir.')
     const result = await withTx(async (client) => {

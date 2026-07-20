@@ -29,6 +29,11 @@ export async function buildServer() {
   const fastify = Fastify({
     logger: { level: process.env.LOG_LEVEL ?? 'info' },
     bodyLimit: 8 * 1024 * 1024,
+    // Fastify 5's default ajv config strips unknown body keys silently
+    // (removeAdditional: true). For a security pass we want unknown keys
+    // rejected with 400 instead — that way a typo in the SPA ("stage"
+    // vs "stge") shows up as a real error, not a silently-ignored field.
+    ajv: { customOptions: { removeAdditional: false, useDefaults: true, coerceTypes: false } },
   })
 
   // CORS — explicit allowlist (config.corsOrigins). Hand-rolled because the

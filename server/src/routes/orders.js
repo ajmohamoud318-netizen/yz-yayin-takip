@@ -7,6 +7,7 @@ import {
   getProject, getProjectForUpdate, patchProject, insertHistory,
 } from '../services/project-repository.js'
 import { assertCanEnterProduction, assertOrderable } from '../domain/pipeline.js'
+import { schemas } from '../schemas/index.js'
 
 /**
  * Sipariş talep workflow.
@@ -53,11 +54,10 @@ export async function orderRoutes(fastify) {
     return out
   })
 
-  fastify.post('/order-requests', async (request) => {
+  fastify.post('/order-requests', { schema: schemas.ordersCreate }, async (request) => {
     await attachUser(request)
     if (request.user.role !== 'satis') forbidden('Yalnızca satış sipariş oluşturabilir.')
-    const { projectId, payload = {}, items = [], quantity, notes } = request.body ?? {}
-    if (!projectId) badRequest('projectId zorunlu.')
+    const { projectId, payload = {}, items = [], quantity, notes } = request.body
     const project = await getProject(projectId)
     if (!project) notFound('Proje bulunamadı.')
     assertOrderable(project)
@@ -79,10 +79,10 @@ export async function orderRoutes(fastify) {
     return order
   })
 
-  fastify.patch('/order-requests/:id/advance', async (request) => {
+  fastify.patch('/order-requests/:id/advance', { schema: schemas.ordersAdvance }, async (request) => {
     await attachUser(request)
     const orderId = request.params.id
-    const { notes = '', assignees = null, expectedVersion = null } = request.body ?? {}
+    const { notes = '', assignees = null, expectedVersion = null } = request.body
     const result = await withTx(async (client) => {
       const { rows: orderRows } = await client.query(
         'SELECT * FROM order_requests WHERE id = $1 FOR UPDATE', [orderId],
@@ -165,11 +165,10 @@ export async function orderRoutes(fastify) {
     return result
   })
 
-  fastify.patch('/order-requests/:id/reject', async (request) => {
+  fastify.patch('/order-requests/:id/reject', { schema: schemas.ordersReject }, async (request) => {
     await attachUser(request)
     if (request.user.role !== 'team_leader') forbidden('Yalnızca takım lideri reddedebilir.')
-    const { reason, rejectTarget = 'matbaa' } = request.body ?? {}
-    if (!reason) badRequest('Red gerekçesi zorunlu.')
+    const { reason, rejectTarget = 'matbaa' } = request.body
     const orderId = request.params.id
     const result = await withTx(async (client) => {
       const { rows: orderRows } = await client.query(

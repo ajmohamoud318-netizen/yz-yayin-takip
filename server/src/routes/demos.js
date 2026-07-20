@@ -1,6 +1,7 @@
 import { attachUser } from '../middleware/auth.js'
 import { badRequest, notFound } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
+import { schemas } from '../schemas/index.js'
 
 /**
  * Demos API (demo + ozalit form submissions).
@@ -17,10 +18,9 @@ export async function demoRoutes(fastify) {
     return rows
   })
 
-  fastify.post('/demos', async (request) => {
+  fastify.post('/demos', { schema: schemas.demosCreate }, async (request) => {
     await attachUser(request)
-    const { project_id, kind = 'demo', payload = {} } = request.body ?? {}
-    if (!project_id) badRequest('project_id zorunlu.')
+    const { project_id, kind = 'demo', payload = {} } = request.body
     const proj = await getPool().query('SELECT id FROM projects WHERE id = $1', [project_id])
     if (proj.rowCount === 0) notFound('Proje bulunamadı.')
     const { rows } = await getPool().query(

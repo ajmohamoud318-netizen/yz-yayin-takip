@@ -4,6 +4,7 @@ import { withTx } from '../db/pool.js'
 import {
   getProject, getProjectForUpdate, patchProject, insertHistory,
 } from '../services/project-repository.js'
+import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
 import { progressFor } from '../domain/progress.js'
 
@@ -18,7 +19,7 @@ import { progressFor } from '../domain/progress.js'
  * transaction so the client cache stays valid.
  */
 export async function subtaskRoutes(fastify) {
-  fastify.patch('/subtasks/:id', async (request) => {
+  fastify.patch('/subtasks/:id', { schema: schemas.subtasksPatch }, async (request) => {
     await attachUser(request)
     const result = await withTx(async (client) => {
       const { rows: subRows } = await client.query(
@@ -28,12 +29,12 @@ export async function subtaskRoutes(fastify) {
       if (!sub) notFound('Alt görev bulunamadı.')
       const project = await getProjectForUpdate(client, sub.project_id)
       const allowed = {}
-      if (typeof request.body?.is_done === 'boolean') {
+      if (typeof request.body.is_done === 'boolean') {
         allowed.is_done = request.body.is_done
         allowed.done_at = request.body.is_done ? new Date().toISOString() : null
       }
-      if (Number.isFinite(request.body?.pages_done)) allowed.pages_done = request.body.pages_done
-      if (Number.isFinite(request.body?.stickers_done)) allowed.stickers_done = request.body.stickers_done
+      if (Number.isFinite(request.body.pages_done)) allowed.pages_done = request.body.pages_done
+      if (Number.isFinite(request.body.stickers_done)) allowed.stickers_done = request.body.stickers_done
       if (Object.keys(allowed).length === 0) badRequest('Geçerli alan yok.')
       const cols = Object.keys(allowed)
       const setSql = cols.map((c, i) => `${c} = $${i + 2}`).join(', ')
@@ -53,10 +54,9 @@ export async function subtaskRoutes(fastify) {
     return result.project
   })
 
-  fastify.post('/subtasks/:id/updates', async (request) => {
+  fastify.post('/subtasks/:id/updates', { schema: schemas.subtasksUpdates }, async (request) => {
     await attachUser(request)
-    const { note } = request.body ?? {}
-    if (!note) badRequest('Not zorunlu.')
+    const { note } = request.body
     const result = await withTx(async (client) => {
       const { rows: subRows } = await client.query(
         'SELECT id, project_id FROM subtasks WHERE id = $1', [request.params.id],
@@ -74,12 +74,12 @@ export async function subtaskRoutes(fastify) {
     return result
   })
 
-  fastify.put('/projects/:id/subtasks', async (request) => {
+  fastify.put('/projects/:id/subtasks', { schema: schemas.projectsSubtasksPut }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
     const project = await getProject(request.params.id)
     if (!project) notFound('Proje bulunamadı.')
-    const subtasks = Array.isArray(request.body?.subtasks) ? request.body.subtasks : []
+    const subtasks = request.body.subtasks
     const result = await withTx(async (client) => {
       await client.query('DELETE FROM subtasks WHERE project_id = $1', [project.id])
       const inserted = []

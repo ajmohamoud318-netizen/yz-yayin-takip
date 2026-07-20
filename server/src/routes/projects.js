@@ -6,6 +6,7 @@ import {
   listProjectSubtasks, listProjectHistory,
   patchProject, deleteProject, insertProject, insertHistory,
 } from '../services/project-repository.js'
+import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
 import {
   applyAdvance, applyApproval, applyRejection,
@@ -48,11 +49,10 @@ export async function projectRoutes(fastify) {
     }
   })
 
-  fastify.post('/projects', async (request) => {
+  fastify.post('/projects', { schema: schemas.projectsCreate }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
-    const { title, type, target_month, subtasks = [], pass_kind } = request.body ?? {}
-    if (!title || !type) badRequest('Başlık ve tip zorunlu.')
+    const { title, type, target_month, subtasks = [], pass_kind } = request.body
     const result = await withTx(async (client) => {
       const project = await insertProject(client, {
         title, type, target_month, pass_kind, created_by: request.user.id,
@@ -77,14 +77,11 @@ export async function projectRoutes(fastify) {
     return result
   })
 
-  fastify.patch('/projects/:id', async (request) => {
+  fastify.patch('/projects/:id', { schema: schemas.projectsPatch }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
-    const allowed = ['title', 'type', 'target_month', 'assigned_to']
-    const fields = {}
-    for (const key of Object.keys(request.body ?? {})) {
-      if (allowed.includes(key)) fields[key] = request.body[key]
-    }
+    // Schema already restricts to the allowed keys, so no manual filter.
+    const fields = request.body
     const result = await withTx(async (client) => {
       const updated = await patchProject(client, request.params.id, fields)
       if (!updated) notFound('Proje bulunamadı.')
@@ -93,14 +90,14 @@ export async function projectRoutes(fastify) {
     return result
   })
 
-  fastify.delete('/projects/:id', async (request) => {
+  fastify.delete('/projects/:id', { schema: schemas.projectsIdParams }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
     await deleteProject(request.params.id)
     return { ok: true }
   })
 
-  fastify.post('/projects/:id/advance', async (request) => {
+  fastify.post('/projects/:id/advance', { schema: schemas.projectsAdvance }, async (request) => {
     await attachUser(request)
     const result = await withTx(async (client) => {
       const project = await getProjectForUpdate(client, request.params.id)
@@ -117,15 +114,14 @@ export async function projectRoutes(fastify) {
     return result
   })
 
-  fastify.post('/projects/:id/approve', async (request) => {
+  fastify.post('/projects/:id/approve', { schema: schemas.projectsApprove }, async (request) => {
     await attachUser(request)
-    const stage = request.body?.stage
-    if (!stage) badRequest('stage zorunlu.')
+    const { stage, note } = request.body
     const result = await withTx(async (client) => {
       const project = await getProjectForUpdate(client, request.params.id)
       if (!project) notFound('Proje bulunamadı.')
       const { project: next, history } = applyApproval(project, {
-        user: request.user, stage, note: request.body?.note ?? '',
+        user: request.user, stage, note: note ?? '',
       })
       // Persist all state-mutating fields from the transition (stage,
       // optimistic-lock version, AND-rule flags for ozalit_onay).
@@ -149,10 +145,9 @@ export async function projectRoutes(fastify) {
     return result
   })
 
-  fastify.post('/projects/:id/reject', async (request) => {
+  fastify.post('/projects/:id/reject', { schema: schemas.projectsReject }, async (request) => {
     await attachUser(request)
-    const { stage, reason, reject_target: rejectTarget, note } = request.body ?? {}
-    if (!stage) badRequest('stage zorunlu.')
+    const { stage, reason, reject_target: rejectTarget, note } = request.body
     const result = await withTx(async (client) => {
       const project = await getProjectForUpdate(client, request.params.id)
       if (!project) notFound('Proje bulunamadı.')
