@@ -407,3 +407,11 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
     </Dialog>
   )
 }
+
+function roleBadgeClass(role) {
+  if (role === 'team_leader') return 'border-primary/30 bg-primary/10 text-primary'
+  if (role === 'designer') return 'border-purple-200 bg-purple-50 text-purple-700'
+  if (role === 'printer') return 'border-amber-200 bg-amber-50 text-amber-700'
+  if (role === 'satis') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  return ''
+}
