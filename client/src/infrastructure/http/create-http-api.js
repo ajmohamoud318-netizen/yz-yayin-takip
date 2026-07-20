@@ -83,8 +83,7 @@ export function createHttpApi() {
     forgotPassword: (email) => authRepo.forgotPassword(email),
     resetPassword: (token, password) => authRepo.resetPassword(token, password),
     changePassword: (currentPassword, newPassword) =>
-      authRepo.changePassword(currentPassword, newPassword),
-      .then((res) => {
+      authRepo.changePassword(currentPassword, newPassword).then((res) => {
         // Same auto-login as accept-invite — successful reset signs the
         // user in immediately.
         if (res?.token) setAuthToken(res.token)
