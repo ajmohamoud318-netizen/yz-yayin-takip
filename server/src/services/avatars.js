@@ -27,23 +27,18 @@ export const MAX_AVATAR_BYTES = 2 * 1024 * 1024  // 2 MB
 
 /**
  * Resolves the avatar directory in this order:
- *  1. `AVATAR_DIR` env var (set per-environment; points at a Dokploy
- *     named volume or a bind mount when you want avatars to persist
- *     across container restarts).
- *  2. `/tmp/yz-uploads/avatars` — the default for containerized runs.
- *     `/tmp` is always writable by the non-root `node` user the image
- *     is forced to run as (UID 1000) on Node 20-alpine. The previous
- *     default of `/app/uploads/avatars` lived under the WORKDIR which
- *     is owned by root and not writable by UID 1000 — avatar uploads
- *     threw EACCES there the moment no Dokploy named-volume was mounted
- *     at that exact path, surfacing as a mysterious 500 to the SPA.
- *  3. `<cwd>/server/uploads/avatars` — last-resort fallback for local dev.
- *     Kept as a safety net (and because docker-compose dev / a quick
- *     `npm run dev` outside containers still benefits from the repo-
- *     adjacent path).
- *
- * Operators who care about persistence should set AVATAR_DIR to a Dokploy
- * named-volume mount point (e.g. `/data/avatars`) — see the deploy docs.
+ *  1. `AVATAR_DIR` env var — explicit override for operators who need a
+ *     different path on disk (e.g. an audited managed disk).
+ *  2. `/tmp/yz-uploads/avatars` — the production default. `/tmp` is
+ *     always writable by the non-root `node` user the image runs as
+ *     (UID 1000) on Node 20-alpine, so no Dockerfile `USER root`
+ *     workaround is needed. `/tmp` is ephemeral inside a fresh
+ *     container, so Dokploy MUST mount a named volume at
+ *     `/tmp/yz-uploads` to make avatars survive redeploys (see
+ *     `DEPLOY.md > Persistent volumes`).
+ *  3. `<cwd>/server/uploads/avatars` — last-resort fallback for local
+ *     dev. `docker-compose.yml` mounts the `yzuploads` named volume
+ *     under `/tmp/yz-uploads`, so dev and prod share path #2.
  */
 export const AVATAR_DIR = (() => {
   if (process.env.AVATAR_DIR) return path.resolve(process.env.AVATAR_DIR)

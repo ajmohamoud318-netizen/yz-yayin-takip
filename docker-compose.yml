@@ -49,6 +49,13 @@ services:
       SEED_ON_BOOT: 'true'
       TRUST_HEADER_AUTH: 'true'
       CORS_ORIGINS: 'http://localhost:5173'
+    # Persistent storage for user-uploaded avatars. The path matches
+    # the prod default from server/src/services/avatars.js; mounting a
+    # named volume here means local avatars survive `docker compose down`
+    # without losing tests-in-progress uploads. See DEPLOY.md > Persistent
+    # volumes for the same requirement in Dokploy.
+    volumes:
+      - yzuploads:/tmp/yz-uploads
     ports:
       - '4000:4000'
 
@@ -66,3 +73,5 @@ services:
 volumes:
   pgdata:
     name: yz_pgdata
+  yzuploads:
+    name: yz_uploads
