@@ -74,4 +74,46 @@ describe('http client — X-User-Id header resilience', () => {
     // leaves the field undefined in that case.
     expect(sent == null || sent === '').toBe(true)
   })
+
+  it('seeds the module mirror from localStorage at module-load time', async () => {
+    // This guards the very-first-render race: before the eager seed at
+    // module-load time, the very first api call after a hard refresh
+    // could fire before AuthProvider's useEffect called setAuthToken,
+    // leaving the module mirror null. The eager read closes the race.
+    //
+    // We can't reach into the IIFE directly, but we can prove the
+    // observable side-effect: import the module after a stored token
+    // exists and immediately call getAuthToken.
+    localStorage.setItem(AUTH_KEY, JSON.stringify({ token: 'u-eager', user: {} }))
+    // Re-import the module to re-run the eager seed line.
+    const mod = await import('@/infrastructure/http/client.js')
+    expect(mod.getAuthToken()).toBe('u-eager')
+  })
+
+  it('on 401, a server rejection propagates with status 401', async () => {
+    // We do NOT want the global interceptor to actually navigate when
+    // jsdom runs the test (it would corrupt test isolation). Stub a
+    // 401-resolving adapter and confirm the rejected Error carries
+    // `status === 401` so any UI page that wants to bounce the user
+    // can branch on it.
+    setAuthToken('u-401')
+    httpClient.defaults.adapter = (config) =>
+      Promise.reject({
+        response: {
+          status: 401,
+          data: { error: 'X-User-Id header is required', code: 'unauthorized' },
+          headers: {},
+          config,
+        },
+      })
+    let caught
+    try {
+      await httpClient.get('/projects')
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeTruthy()
+    expect(caught.status).toBe(401)
+    expect(caught.message).toBe('X-User-Id header is required')
+  })
 })

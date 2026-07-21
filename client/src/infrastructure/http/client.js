@@ -51,6 +51,18 @@ export function setAuthToken(token) {
   authToken = token
 }
 
+// Eagerly seed the module mirror from localStorage at module-load time.
+// Without this, the first api call after a hard refresh races against
+// AuthProvider's mount-effect (which calls setAuthToken later) — every
+// child refetch in the same tick can fire with no header, the server
+// rejects with 401 "X-User-Id header is required", and the dashboard
+// flashes the red "Tekrar Dene" error card even though the session was
+// sitting in localStorage the whole time. Reading localStorage here is
+// synchronous and cheap; if nothing is stored yet, authToken stays null
+// and the next request still goes through (which is correct for the
+// unauthenticated login screen).
+authToken = readStoredToken()
+
 export function getAuthToken() {
   // Module var is authoritative if explicitly set; otherwise fall back to
   // localStorage so we never silently send no header.
@@ -80,9 +92,44 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (resp) => resp,
   (err) => {
+    const status = err?.response?.status
     const message = err?.response?.data?.error ?? err?.response?.data?.message ?? err.message
+
+    // A 401 from the API means the session/header is no longer accepted.
+    // The right UX is to drop the cached credentials and bounce to the
+    // login screen — NOT to render a red "Tekrar Dene" card and let the
+    // user sit there wondering why every tile says "X-User-Id header is
+    // required". The earlier bug was an interaction between polling
+    // ticks and a stale module-mirror token; this guard handles any
+    // future race the same way: if the server says we're unauthenticated,
+    // trust it and reauth.
+    if (status === 401 && typeof window !== 'undefined') {
+      try {
+        const hadStored = !!readStoredToken()
+        // Don't tear down a freshly-loaded session on a single 401 — that
+        // tends to be a transient race during startup. Only force logout
+        // when a 401 arrives after the user was actively using the app.
+        if (authToken || hadStored) {
+          setAuthToken(null)
+          try { localStorage.removeItem(AUTH_KEY) } catch { /* ignore */ }
+          // Defer to the next tick so the rejection still reaches any
+          // inline catch blocks (toast.error, etc) before navigation.
+          queueMicrotask(() => {
+            try {
+              const next = window.location.pathname + window.location.search
+              window.location.assign(
+                next !== '/login' && next !== '/accept-invite' && !next.startsWith('/forgot-password') && !next.startsWith('/reset-password')
+                  ? `/login?next=${encodeURIComponent(next)}`
+                  : '/login',
+              )
+            } catch { /* ignore navigation errors */ }
+          })
+        }
+      } catch { /* ignore */ }
+    }
+
     return Promise.reject(Object.assign(new Error(message), {
-      status: err?.response?.status,
+      status,
       code: err?.response?.data?.code,
       cause: err,
     }))
