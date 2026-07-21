@@ -243,9 +243,18 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
     }
   }
 
-  // True if there's at least one unsaved change
+  // True if there's at least one unsaved change.
+  // IMPORTANT: every `.some` / `.every` / `.filter` here AND below
+  // (rendering, hitFullProgress, saveSubtaskChanges) must be safe against
+  // `project.subtasks === undefined`. The list-overlay merge in useProjects.js
+  // can briefly leave `project.subtasks` undefined (the /api/projects list
+  // endpoint only returns scalar columns, never subtasks/history/assignees).
+  // The optional chain on `project?.` alone is NOT enough — `?.subtasks` only
+  // short-circuits when project itself is undefined. Use `?? []` here, and
+  // `project?.subtasks ?? []` for readability.
+  const subtasksSafe = project?.subtasks ?? []
   const hasSubtaskChanges =
-    project?.subtasks.some(
+    subtasksSafe.some(
       (s) => localDone[s.id] !== undefined && localDone[s.id] !== s.is_done,
     ) ?? false
 
@@ -253,7 +262,7 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
     if (!hasSubtaskChanges) return
     setSaving(true)
     const wasInRevision = inRevision
-    const revizeSubs = (project?.subtasks ?? []).filter((s) => s.needs_revize)
+    const revizeSubs = subtasksSafe.filter((s) => s.needs_revize)
     const revizeJustCompleted =
       wasInRevision &&
       revizeSubs.length > 0 &&
@@ -266,13 +275,13 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
       isAssigned &&
       !wasInRevision &&
       (project?.progress ?? 0) < 100 &&
-      project.subtasks.every((s) => {
+      subtasksSafe.every((s) => {
         const done = localDone[s.id] !== undefined ? localDone[s.id] : s.is_done
         if (s.kind === 'pages') return (s.pages_done ?? 0) >= (s.total_pages ?? 0)
         return done
       })
     try {
-      const changed = project.subtasks.filter(
+      const changed = subtasksSafe.filter(
         (s) => localDone[s.id] !== undefined && localDone[s.id] !== s.is_done,
       )
       for (const sub of changed) {
@@ -573,7 +582,7 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
               <CardTitle>Alt Görevler</CardTitle>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-muted-foreground">
-                  {project.subtasks.filter((s) => subtaskChecked(s)).length} / {project.subtasks.length} tamamlandı
+                  {(project.subtasks ?? []).filter((s) => subtaskChecked(s)).length} / {(project.subtasks ?? []).length} tamamlandı
                 </span>
                 {canEditSubtasks && hasSubtaskChanges && (
                   <Button size="sm" onClick={saveSubtaskChanges} disabled={saving}>
@@ -584,7 +593,7 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
               </div>
             </CardHeader>
             <CardContent className="space-y-2 pt-0">
-              {project.subtasks.length === 0 ? (
+              {(project.subtasks ?? []).length === 0 ? (
                 <p className="rounded-md border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">
                   Bu proje için alt görev tanımlanmamış.
                 </p>
@@ -597,7 +606,7 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                     </p>
                   )}
 
-                  {project.subtasks
+                  {(project.subtasks ?? [])
                     .filter((s) => s.kind !== 'revize')
                     .map((s) => {
                       const canEdit = canEditSubtask(s)
@@ -686,7 +695,7 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                       : 'Bu projeye atanmadığınız için alt görevleri düzenleyemezsiniz.'}
                 </p>
               )}
-              {canEditSubtasks && project.subtasks.some((s) => s.assigned_to && s.assigned_to !== user?.id) && (
+              {canEditSubtasks && (project.subtasks ?? []).some((s) => s.assigned_to && s.assigned_to !== user?.id) && (
                 <p className="pt-1 text-[11px] text-muted-foreground">
                   Size atanmayan alt görevler (
                   <UserIcon className="inline h-2.5 w-2.5" /> ikonlu) düzenlenemez.
