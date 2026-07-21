@@ -103,7 +103,49 @@ export function createHttpProjectRepository(userRepo) {
       return data
     },
     async updateProject(id, patch) {
-      const { data } = await httpClient.patch(`/projects/${id}`, patch)
+      // Mirror `createProject`: the NewProjectDialog sends the same
+      // un-normalised payload for create AND edit, so we have to map it
+      // through `normalizeProjectPayload` to translate the SPA's
+      // convenience keys (`assignees`, `subtasks`, `pageCount`,
+      // `stickerCount`, `subtaskAssignees`) into the server's real
+      // columns / endpoints.
+      //
+      // Without this, the raw PATCH would only persist title / type /
+      // target_month — silently dropping subtask changes. That was the
+      // pre-bugfix behaviour too (the server then 500'd on the unknown
+      // column), so this is a long-standing gap finally plugged.
+      const cached = cache.get(id)
+      const flat = normalizeProjectPayload(patch, cached)
+      // 1) Save scalar project fields (title / type / target_month / assigned_to).
+      const patchBody = {
+        title: flat.title,
+        type: flat.type,
+        target_month: flat.target_month,
+        assigned_to: flat.assigned_to,
+      }
+      const { data } = await httpClient.patch(`/projects/${id}`, patchBody)
+      // 2) If the payload mentions subtasks, pageCount or stickerCount,
+      //    sync them through the dedicated subtasks endpoint so the
+      //    `subtasks` table actually reflects the change.
+      const wantsSubtasks =
+        Array.isArray(patch.subtasks) ||
+        'pageCount' in patch ||
+        'stickerCount' in patch ||
+        'subtaskAssignees' in patch
+      if (wantsSubtasks) {
+        const subtasks = (flat.subtasks ?? []).map((s) => ({
+          title: s.title,
+          kind: s.kind ?? 'check',
+          total_pages: s.total_pages ?? null,
+          total_stickers: s.total_stickers ?? null,
+          is_done: !!s.is_done,
+        }))
+        const putRes = await httpClient.put(`/projects/${id}/subtasks`, {
+          subtasks,
+        })
+        cache.set(id, putRes.data.project ?? putRes.data)
+        return putRes.data.project ?? putRes.data
+      }
       cache.set(id, data)
       return data
     },
