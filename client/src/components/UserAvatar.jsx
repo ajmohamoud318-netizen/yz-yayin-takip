@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn, initials } from '@/lib/utils'
 import { API_ORIGIN } from '@/api'
@@ -64,7 +65,24 @@ export default function UserAvatar({ user, size = 'md', className }) {
     '2xl': 'h-12 w-12 text-base',
   }
   const dotClass = sizes[size] || sizes.md
-  const src = avatarSrc(user?.avatar_url, user)
+  const initialSrc = avatarSrc(user?.avatar_url, user)
+  // When the on-disk avatar file has been deleted out from under the DB
+  // (e.g. container restart wiped /tmp/yz-uploads/avatars before the
+  // Dokploy named-volume was attached, or a long-ago upload landed in
+  // /app/uploads/avatars and that path no longer matches the route's
+  // read target), the <img> 404s and the browser would render its own
+  // broken-image icon over the avatar circle. Detect the error locally
+  // so we hide the broken <img> and the AvatarFallback (initials) takes
+  // over cleanly instead of leaving a visual artefact.
+  const [imageBroken, setImageBroken] = useState(false)
+  // Reset the broken flag whenever the source URL changes (user switched
+  // tabs to a row with a real image) so the next render gets a fresh
+  // chance — otherwise a single 404 in one tab sticks forever.
+  useEffect(() => {
+    setImageBroken(false)
+  }, [initialSrc])
+
+  const src = initialSrc && !imageBroken ? initialSrc : null
   return (
     <Avatar
       className={cn(dotClass, 'ring-2 ring-background shadow-sm', className)}
@@ -77,6 +95,7 @@ export default function UserAvatar({ user, size = 'md', className }) {
           alt={user?.name ? `${user.name} profil fotoğrafı` : 'Profil fotoğrafı'}
           className="h-full w-full rounded-full object-cover"
           loading="lazy"
+          onError={() => setImageBroken(true)}
         />
       ) : null}
       <AvatarFallback className={cn('bg-primary/10 font-semibold text-primary', dotClass.split(' ').pop())}>
