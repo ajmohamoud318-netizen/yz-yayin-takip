@@ -80,13 +80,24 @@ export function createHttpProjectRepository(userRepo) {
     },
     async createProject(payload) {
       const flat = normalizeProjectPayload(payload)
+      // Forward the mapper-normalised subtasks. The server's JSON schema
+      // requires each subtask to carry `kind` (and total_pages /
+      // total_stickers for the numeric kinds) — the mapper already
+      // produces the right shape, so we just hand it over instead of
+      // re-flattening to bare titles (which the schema rejects with 400).
+      const subtasks = (flat.subtasks ?? []).map((s) => ({
+        title: s.title,
+        kind: s.kind ?? 'check',
+        total_pages: s.total_pages ?? null,
+        total_stickers: s.total_stickers ?? null,
+      }))
       const { data } = await httpClient.post('/projects', {
         title: flat.title,
         type: flat.type,
         target_month: flat.target_month,
         pass_kind: flat.pass_kind ?? PASS_KIND.FIRST_EDITION,
         assigned_to: flat.assigned_to,
-        subtasks: (payload.subtasks ?? []).map((key) => ({ title: key })),
+        subtasks,
       })
       cache.set(data.id, data)
       return data
