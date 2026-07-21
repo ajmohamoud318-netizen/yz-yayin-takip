@@ -40,8 +40,13 @@ export async function userRoutes(fastify) {
   fastify.post('/users/invite', { schema: schemas.usersInvite }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
-    const { name, email, role } = request.body
+    // The SPA surfaces a "Demo + Özalit onay yetkisi" toggle in the
+    // invite dialog for designers. We accept it here and persist it on
+    // the new row. Non-designers are always coerced to FALSE so the
+    // column only ever makes sense for `role = 'designer'`.
+    const { name, email, role, canApproveOzalit = false } = request.body
     const normalisedEmail = email.trim().toLowerCase()
+    const persistedCapability = role === 'designer' ? !!canApproveOzalit : false
     const existing = await getPool().query(
       `SELECT id, is_active FROM users WHERE email = $1`,
       [normalisedEmail],
@@ -51,10 +56,16 @@ export async function userRoutes(fastify) {
       // and mint a fresh invitation token. Active users still 409.
       if (!existing.rows[0].is_active) {
         const reactivated = await getPool().query(
-          `UPDATE users SET is_active = TRUE, invited_at = NOW(), name = $2, role = $3
-           WHERE id = $1
-           RETURNING id, name, email, role, is_active, invited_at, joined_at, created_at`,
-          [existing.rows[0].id, name.trim(), role],
+          `UPDATE users
+              SET is_active = TRUE,
+                  invited_at = NOW(),
+                  name = $2,
+                  role = $3,
+                  can_approve_ozalit = $4
+            WHERE id = $1
+        RETURNING id, name, email, role, is_active, can_approve_ozalit,
+                  invited_at, joined_at, created_at`,
+          [existing.rows[0].id, name.trim(), role, persistedCapability],
         )
         const user = reactivated.rows[0]
         const invitation = await createInvitation({ userId: user.id })
@@ -90,10 +101,11 @@ export async function userRoutes(fastify) {
     // prefix used by the demo data migration.
     const userId = `u-${nanoid(16)}`
     const { rows } = await getPool().query(
-      `INSERT INTO users (id, name, email, role, is_active, invited_at)
-       VALUES ($1,$2,$3,$4,TRUE,NOW())
-       RETURNING id, name, email, role, is_active, invited_at, joined_at, created_at`,
-      [userId, name.trim(), normalisedEmail, role],
+      `INSERT INTO users (id, name, email, role, is_active, can_approve_ozalit, invited_at)
+       VALUES ($1,$2,$3,$4,TRUE,$5,NOW())
+       RETURNING id, name, email, role, is_active, can_approve_ozalit,
+                 invited_at, joined_at, created_at`,
+      [userId, name.trim(), normalisedEmail, role, persistedCapability],
     )
     const user = rows[0]
 

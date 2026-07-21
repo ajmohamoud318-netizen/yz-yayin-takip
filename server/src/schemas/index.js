@@ -150,6 +150,11 @@ const usersInvite = {
       name: { type: 'string', minLength: 1, maxLength: 200 },
       email: { type: 'string', format: 'email', maxLength: 320 },
       role,
+      // SPA invites can pre-set the `can_approve_ozalit` capability on
+      // invited designers (the Team page surfaces a toggle alongside
+      // the role select). Stored on the `users` row at insert time; the
+      // server coerces to FALSE for non-designers in the route handler.
+      canApproveOzalit: { type: 'boolean' },
     },
   },
 }
