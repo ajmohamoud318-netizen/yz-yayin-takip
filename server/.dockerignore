@@ -1,0 +1,50 @@
+# Files excluded from the Docker build context for server/.
+#
+# Without this, `COPY . .` would ship .git, .env, test fixtures, and local
+# notes into the image — bloating layers and (in the .env case) leaking
+# secrets. Keep this list in sync with .gitignore plus a few Docker-specific
+# extras.
+
+# ---- VCS / OS noise ----
+.git
+.gitignore
+.gitattributes
+.DS_Store
+Thumbs.db
+
+# ---- Local secrets (NEVER ship these in an image) ----
+.env
+.env.*
+!.env.example
+
+# ---- Node ----
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tgz
+
+# ---- Tests / dev artifacts ----
+coverage
+.nyc_output
+.vitest
+__tests__
+*.test.js
+*.spec.js
+.vscode
+.idea
+
+# ---- Docs that don't belong in the image ----
+README.md
+CHANGELOG.md
+*.md
+
+# ---- Docker meta ----
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# ---- Migration scratch / dev scripts ----
+scripts
+tmp
+*.local.js

@@ -1,7 +1,8 @@
 # Deployment Guide — YZ Yayın Takip
 
-Production deployment on **Dokploy** with a **GitHub → Nixpacks** pipeline.
-Two apps share one monorepo: a static SPA and a Fastify API.
+Production deployment on **Dokploy** with a **GitHub → Dockerfile** pipeline.
+Two apps share one monorepo: a static SPA and a Fastify API, each built
+from its own committed Dockerfile.
 
 ---
 
@@ -9,8 +10,8 @@ Two apps share one monorepo: a static SPA and a Fastify API.
 
 | Layer | Tech | Where |
 |---|---|---|
-| Frontend | React + Vite SPA, served by `serve.cjs` | `https://yt.mucitkarinca.com` |
-| Backend  | Fastify + Node 20, pg, bcryptjs, nodemailer | `https://api.yt.mucitkarinca.com` |
+| Frontend | React + Vite SPA, served by `serve.cjs` (built via root `Dockerfile`) | `https://yt.mucitkarinca.com` |
+| Backend  | Fastify + Node 20, pg, bcryptjs, nodemailer (built via `server/Dockerfile`) | `https://api.yt.mucitkarinca.com` |
 | Database | PostgreSQL 16 (Dokploy-managed) | internal: `yz-postgres:5432` |
 | Email    | Resend SMTP relay | `smtp.resend.com:587` |
 | Source   | GitHub `ajmohamoud318-netizen/yz-yayin-takip`, branch `main` |
@@ -28,9 +29,9 @@ yz-yayin-takip/
 │   ├── src/
 │   ├── db/migrations/         # idempotent SQL
 │   ├── db/seed/               # seed fixtures
-│   ├── Dockerfile
-│   └── nixpacks.toml          # build config (read by Dokploy)
-├── nixpacks.toml              # SPA build config
+│   ├── Dockerfile             # production image (used by Dokploy + docker compose)
+│   └── .dockerignore
+├── Dockerfile                 # SPA build image (root)
 ├── serve.cjs                  # zero-dep static + SPA fallback
 ├── docker-compose.yml         # local dev parity
 ├── .env.example               # canonical env reference
@@ -53,10 +54,16 @@ Create **two** services from the same GitHub repo.
 |---|---|
 | Source | GitHub → `yz-yayin-takip` → branch `main` |
 | **Build Path** | *(empty — repo root)* |
-| Build Pack | Nixpacks (auto-detected via root `nixpacks.toml`) |
+| **Build Pack** | **Dockerfile** (uses the root `Dockerfile`) |
+| **Dockerfile Path** | `Dockerfile` (relative to Build Path → `./Dockerfile`) |
 | Port | `3000` |
 | Domain | `yt.mucitkarinca.com` (Let's Encrypt) |
 | Trigger | On Push |
+
+> `VITE_API_BASE_URL` is wired through as a **build-time ARG** in the root
+> Dockerfile (see "Build-time Arguments" in the service config). Without
+> it the bundle is built with an empty API URL and the SPA can't reach
+> the backend.
 
 **Environment:**
 ```
@@ -80,10 +87,16 @@ VITE_API_BASE_URL=https://yayin-takip-backend-4dvoqr-53441c-46-62-170-64.sslip.i
 |---|---|
 | Source | GitHub → same repo → branch `main` |
 | **Build Path** | `/server` (lowercase — case-sensitive on Linux) |
-| Build Pack | Nixpacks |
+| **Build Pack** | **Dockerfile** (uses the committed `server/Dockerfile`) |
+| **Dockerfile Path** | `Dockerfile` (relative to Build Path → `server/Dockerfile`) |
 | Port | `4000` |
 | Domain | `api.yt.mucitkarinca.com` (Let's Encrypt) |
 | Trigger | On Push |
+
+> The Dockerfile ships with a built-in `HEALTHCHECK` against
+> `GET /api/health`, so Dokploy's container probe will start passing
+> within ~15 s of boot (after migrations run). No extra Dokploy-side
+> healthcheck config needed.
 
 **Environment** (paste as Key/Value pairs):
 ```
@@ -125,22 +138,25 @@ of the API app.
 ### SPA flow
 
 ```
-GitHub → clone root → npm ci (root installs all workspaces)
-       → npm run build (runs `vite build` in client/)
+GitHub → clone root → docker build (root Dockerfile, two stages)
+       → npm install (root, with devDeps) → npm run build (vite)
        → serve.cjs serves client/dist on :3000
 ```
 
 ### API flow
 
 ```
-GitHub → clone /server → cd .. && npm ci (climbs to root for lockfile)
-       → npm start → node src/index.js (Fastify on :4000)
+GitHub → clone /server → docker build (server/Dockerfile, two stages)
+       → image runs `node src/index.js` directly on :4000
        → migrations run on boot (MIGRATE_ON_BOOT=true)
        → optional seed on first deploy (SEED_ON_BOOT=true)
+       → HEALTHCHECK probes GET /api/health every 30 s
 ```
 
-> The `cd .. && npm ci` in `server/nixpacks.toml` is intentional: the
-> root `package-lock.json` is the source of truth for all workspace deps.
+> The Dockerfile lives at `server/Dockerfile` and is self-contained:
+> it installs from `server/package.json` + `server/package-lock.json`
+> (no climb to the repo root required). The older `server/nixpacks.toml`
+> has been removed now that the API ships via Dockerfile.
 
 ---
 
