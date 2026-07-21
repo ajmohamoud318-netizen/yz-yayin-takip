@@ -141,9 +141,12 @@ export default function AllProjects() {
                       <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', meta.dot)} />
                       <p className="text-sm font-semibold leading-snug">{p.title}</p>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {TYPE_LABELS[p.type]} · {STAGE_LABELS[p.stage]} · {p.assigned_name}
-                    </p>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="truncate">{TYPE_LABELS[p.type]} · {STAGE_LABELS[p.stage]}</span>
+                      <span className="ml-auto shrink-0">
+                        <AssigneeAvatars assignees={p.assignees} />
+                      </span>
+                    </div>
                     <div className="flex items-center gap-2">
                       <Progress value={p.progress} className="h-1.5 flex-1" indicatorClassName={meta.dot} />
                       <span className="font-mono text-xs tabular-nums">{p.progress}%</span>
@@ -202,12 +205,7 @@ export default function AllProjects() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <AssigneeAvatars assignees={p.assignees} />
-                            <span className="max-w-[12rem] truncate text-xs text-muted-foreground">
-                              {p.assigned_name}
-                            </span>
-                          </div>
+                          <AssigneeAvatars assignees={p.assignees} />
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">

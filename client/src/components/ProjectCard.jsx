@@ -90,12 +90,17 @@ export default function ProjectCard({ project, onClick }) {
       {/* mini pipeline */}
       <StageBar type={project.type} stage={project.stage} compact />
 
-      {/* assigned designer */}
-      <div className="flex items-center gap-2">
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">
-          {initials(project.assigned_name)}
+      {/* assigned designer — single avatar chip with name tooltip on hover.
+          No name text in the row: when a project has 2-3 designers, the
+          initials + tooltip is enough and avoids the row being dominated by
+          long concatenated names like "Rahşan Tuncer, Aylin Ulu, Feyza K." */}
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary"
+          title={project.assigned_name ?? 'Atanmamış'}
+        >
+          {initials(project.assigned_name) || '—'}
         </span>
-        <span className="truncate text-xs text-muted-foreground">{project.assigned_name}</span>
       </div>
     </button>
   )

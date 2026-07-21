@@ -184,9 +184,9 @@ export default function MyProjects() {
                       <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', meta.dot)} />
                       <p className="text-sm font-semibold leading-snug">{p.title}</p>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {TYPE_LABELS[p.type]} · {STAGE_LABELS[p.stage]} · {p.assigned_name}
-                    </p>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="truncate">{TYPE_LABELS[p.type]} · {STAGE_LABELS[p.stage]} · {p.assigned_name}</span>
+                    </div>
                     <div className="flex items-center gap-2">
                       <Progress value={p.progress} className="h-1.5 flex-1" indicatorClassName={meta.dot} />
                       <span className="font-mono text-xs tabular-nums">{p.progress}%</span>
