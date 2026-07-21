@@ -32,21 +32,47 @@ export async function listProjects() {
      LEFT JOIN users a ON a.id = p.assigned_to
      ORDER BY p.created_at DESC, p.id`,
   )
-  // Hydrate a per-project `assignees` array (`[{id, name}, ...]`) so
-  // list-side consumers (MyProjects filter, Dashboard cards, navigation)
-  // don't need to round-trip to /api/projects/:id just to know who's
-  // on the project. Today the only source of truth is the legacy
-  // `projects.assigned_to` single column, so `assignees` is a 1-element
-  // array when one user is assigned and empty when none is — but it
-  // matches the shape the detail endpoint already returns, which is
-  // what the client (`client/src/application/mappers/project-mapper.js`
-  // and `client/src/pages/MyProjects.jsx`) consumes.
+  // Build a per-project `assignees` array (`[{id, name}, ...]`) from BOTH
+  // the project primary (`assigned_to`) AND every distinct per-subtask
+  // `assigned_to`. Without the subtask merge, a project where the team
+  // leader split the work across Kapak → Rahşan, Kutu → Aylin would
+  // show only the primary assignee on the dashboard / Tüm Projeler row
+  // and the team leader would never see the second designer until they
+  // opened the detail page.
+  const ids = rows.map((r) => r.id).filter(Boolean)
+  const subAssignees = new Map() // projectId -> [{id, name}, ...]
+  if (ids.length > 0) {
+    const subRes = await getPool().query(
+      `SELECT s.project_id, s.assigned_to, u.name AS assignee_name
+         FROM subtasks s
+         LEFT JOIN users u ON u.id = s.assigned_to
+        WHERE s.project_id = ANY($1) AND s.assigned_to IS NOT NULL`,
+      [ids],
+    )
+    for (const row of subRes.rows) {
+      const list = subAssignees.get(row.project_id) ?? []
+      list.push({ id: row.assigned_to, name: row.assignee_name })
+      subAssignees.set(row.project_id, list)
+    }
+  }
   return Promise.all(rows.map(async (r) => {
     const project = rowToProject(r)
     project.assigned_name = r.assignee_name ?? null
-    project.assignees = project.assigned_to
-      ? [{ id: project.assigned_to, name: project.assigned_name }]
-      : []
+    // Merge in insertion order: primary first, then per-subtask assignees
+    // (deduped by id). Order matters for the AssigneeAvatars stack — the
+    // primary always leads.
+    const seen = new Set()
+    const merged = []
+    if (project.assigned_to) {
+      merged.push({ id: project.assigned_to, name: project.assigned_name })
+      seen.add(project.assigned_to)
+    }
+    for (const sa of subAssignees.get(r.id) ?? []) {
+      if (seen.has(sa.id)) continue
+      seen.add(sa.id)
+      merged.push(sa)
+    }
+    project.assignees = merged
     return project
   }))
 }
