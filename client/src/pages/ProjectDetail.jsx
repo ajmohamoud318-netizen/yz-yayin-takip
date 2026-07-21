@@ -40,6 +40,7 @@ import DemoFormDialog from '@/components/DemoFormDialog'
 import { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import { cn, formatDateTr, initials } from '@/lib/utils'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
+import { isSubtaskDone } from '@/domain/services/progress'
 
 const ACTION_META = {
   create:  { icon: Plus,        color: 'text-primary' },
@@ -205,9 +206,21 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
     })
   }
 
-  // Returns the effective checked state (local pending or server value)
+  // Returns the effective checked state for a subtask — local pending
+  // changes win over the server value, but for `pages` /
+  // `sticker-count` rows the server value is derived from
+  // pages_done/total_pages and stickers_done/total_stickers, NOT from
+  // `is_done`. We delegate to the kind-aware `isSubtaskDone` helper in
+  // `domain/services/progress` so the "X / Y tamamlandı" header always
+  // matches the server's `subtaskProgress` — and so optimistic UI can
+  // show "done" the moment the last page is added, without waiting for
+  // the POST /api/subtasks/:id/pages round-trip to flip `is_done`.
   function subtaskChecked(sub) {
-    return localDone[sub.id] !== undefined ? localDone[sub.id] : sub.is_done
+    if (!sub) return false
+    if (sub.kind === 'pages' || sub.kind === 'sticker-count') {
+      return isSubtaskDone(sub)
+    }
+    return localDone[sub.id] !== undefined ? localDone[sub.id] : isSubtaskDone(sub)
   }
 
   // ── per-subtask update log: designer records WHAT changed ──────────────────
