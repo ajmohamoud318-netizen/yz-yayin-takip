@@ -51,7 +51,17 @@ export async function attachUser(request) {
   const userId = request.headers['x-user-id']
   if (!userId) unauthorized('X-User-Id header is required')
   const user = await loadUserById(userId)
-  if (!user) unauthorized('Unknown user')
+  if (!user) {
+    // The SPA always sends the header value it cached from the last
+    // successful login. When that user no longer exists in the DB
+    // (seed reset, deletion, re-run of `npm run seed`), the SPA can't
+    // tell the difference between "no header" and "stale header" — the
+    // old message hid this and made the client flash the
+    // 'X-User-Id header is required' error on every cold-load. Surface
+    // the actual cause so the response interceptor in client.js can
+    // drop the cached token and bounce to /login cleanly.
+    unauthorized('Oturum geçersiz — lütfen yeniden giriş yapın')
+  }
   if (user.is_active === false) forbidden('Hesabınız devre dışı bırakılmış.')
   request.user = user
 }

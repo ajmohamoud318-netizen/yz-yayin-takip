@@ -203,7 +203,7 @@ export default function Dashboard() {
               >
                 <span>
                   Listenin son güncellemesi başarısız oldu — eski veriler gösteriliyor.
-                  {error && /\bx-user-id header is required\b/i.test(error) && (
+                  {error && /\b(x-user-id header is required|oturum geçersiz)\b/i.test(error) && (
                     <> Oturum sona ermiş olabilir; <button
                       type="button"
                       onClick={() => window.location.assign('/login?next=' + encodeURIComponent(window.location.pathname + window.location.search))}
