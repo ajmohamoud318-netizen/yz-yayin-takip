@@ -19,6 +19,12 @@ const DIST = path.join(__dirname, 'client', 'dist');
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
+// Reverse-proxy target for /api/* requests. In Dokploy the backend service is
+// reachable on the internal network by its service slug (default: `backend`).
+// Override with API_UPSTREAM=<scheme>://<host>:<port> if your slug differs.
+const API_UPSTREAM = process.env.API_UPSTREAM || 'http://backend:4000';
+const API_PROXY_PREFIX = '/api/';
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js':   'application/javascript; charset=utf-8',
@@ -101,12 +107,42 @@ async function resolveTarget(urlPath) {
 }
 
 const server = http.createServer(async (req, res) => {
+  const url = req.url || '/';
+
+  // Reverse-proxy /api/* → Fastify backend. Same-origin from the browser's
+  // perspective, so the existing *.mucitkarinca.com wildcard cert covers
+  // it without provisioning a separate edge cert for `api.yt.mucitkarinca.com`.
+  if (url === '/api' || url.startsWith(API_PROXY_PREFIX) || url.startsWith('/api?')) {
+    const upstream = new URL(API_UPSTREAM);
+    const opts = {
+      protocol: upstream.protocol,
+      hostname: upstream.hostname,
+      port: upstream.port || (upstream.protocol === 'https:' ? 443 : 80),
+      method: req.method,
+      path: url,
+      headers: {
+        ...req.headers,
+        host: `${upstream.hostname}${upstream.port ? `:${upstream.port}` : ''}`,
+      },
+    };
+    const proxyReq = http.request(opts, (proxyRes) => {
+      res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+      proxyRes.pipe(res);
+    });
+    proxyReq.on('error', (err) => {
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'bad_gateway', message: err.message }));
+    });
+    req.pipe(proxyReq);
+    return;
+  }
+
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.writeHead(405, { 'Allow': 'GET, HEAD' });
     return res.end();
   }
 
-  const target = await resolveTarget(req.url || '/');
+  const target = await resolveTarget(url);
 
   if (!target) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
