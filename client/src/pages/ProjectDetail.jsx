@@ -110,6 +110,22 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
 
   const isAssigned = (project?.assignees ?? []).some((a) => a.id === user?.id)
 
+  // Distinct designers referenced anywhere on this project: the project-level
+  // assignees plus anyone picked on a per-subtask `assigned_to` row. Merged
+  // here (not on the server) so the detail UI stays correct even when the
+  // server only stored the project primary on `assigned_to` — the per-subtask
+  // overrides from `subtasks.assigned_to` still surface as additional designers.
+  const allDesigners = useMemo(() => {
+    const map = new Map()
+    for (const a of project?.assignees ?? []) map.set(a.id, a)
+    for (const s of project?.subtasks ?? []) {
+      if (s.assigned_to && !map.has(s.assigned_to)) {
+        map.set(s.assigned_to, { id: s.assigned_to, name: s.assigned_name ?? null })
+      }
+    }
+    return Array.from(map.values())
+  }, [project?.assignees, project?.subtasks])
+
   // Stages where a designer may still work on the subtasks after submitting an
   // early demo. The demo can be sent before the design is finished, so as long
   // as the project hasn't hit 100% the assigned designer keeps editing — once
@@ -679,10 +695,13 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                               Revize gerekmiyor
                             </span>
                           )}
-                          {s.assigned_name && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
+                          {s.assigned_to && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground"
+                              title={`Bu alt görevin tasarımcısı: ${s.assigned_name ?? s.assigned_to}`}
+                            >
                               <UserIcon className="h-2.5 w-2.5" />
-                              {s.assigned_name}
+                              {s.assigned_name ?? initials(s.assigned_to)}
                             </span>
                           )}
                           {localDone[s.id] !== undefined && localDone[s.id] !== s.is_done && (
@@ -721,27 +740,47 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  {(project.assignees ?? []).length > 1 ? (
+                  {allDesigners.length > 1 ? (
                     <UsersIcon className="h-4 w-4" />
                   ) : (
                     <UserIcon className="h-4 w-4" />
                   )}
-                  {(project.assignees ?? []).length > 1 ? 'Tasarımcılar' : 'Tasarımcı'}
+                  {allDesigners.length > 1 ? 'Tasarımcılar' : 'Tasarımcı'}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2.5 pt-0">
-                {(project.assignees ?? []).length === 0 && (
+                {allDesigners.length === 0 && (
                   <p className="text-xs text-muted-foreground">Henüz tasarımcı atanmadı.</p>
                 )}
-                {(project.assignees ?? []).map((a) => (
-                  <div key={a.id} className="flex items-center gap-3">
-                    <UserAvatar user={a} size="lg" />
-                    <div>
-                      <p className="text-sm font-semibold">{a.name}</p>
-                      <p className="text-xs text-muted-foreground">Tasarımcı</p>
+                {allDesigners.map((a) => {
+                  // Surface which subtasks this designer owns so the team
+                  // leader can see at a glance who is doing what — even when
+                  // the project-level primary doesn't include them.
+                  const owns = (project?.subtasks ?? [])
+                    .filter((s) => s.assigned_to === a.id)
+                    .map((s) => s.title)
+                  return (
+                    <div key={a.id} className="flex items-start gap-3">
+                      <UserAvatar user={a} size="lg" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold">{a.name ?? a.id}</p>
+                        <p className="text-xs text-muted-foreground">Tasarımcı</p>
+                        {owns.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {owns.map((t) => (
+                              <span
+                                key={t}
+                                className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                              >
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </CardContent>
             </Card>
 

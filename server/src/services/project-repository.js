@@ -82,10 +82,19 @@ export async function getProjectForUpdate(client, id) {
 }
 
 export async function listProjectSubtasks(client, projectId) {
+  // LEFT JOIN users so each row carries `assigned_name`. Without this the
+  // ProjectDetail UI can show "Kapak → u-1bMgmt0PcKOpGdvC" (raw id) because
+  // it has no way to resolve the user name client-side without a separate
+  // /api/users round trip per row.
   const { rows } = await client.query(
-    `SELECT id, project_id, title, kind, is_done, total_pages, pages_done,
-            total_stickers, stickers_done, assigned_to, done_at, created_at, updated_at
-       FROM subtasks WHERE project_id = $1 ORDER BY created_at`,
+    `SELECT s.id, s.project_id, s.title, s.kind, s.is_done, s.total_pages, s.pages_done,
+            s.total_stickers, s.stickers_done, s.assigned_to, s.done_at,
+            s.created_at, s.updated_at,
+            u.name AS assigned_name
+       FROM subtasks s
+       LEFT JOIN users u ON u.id = s.assigned_to
+       WHERE s.project_id = $1
+       ORDER BY s.created_at`,
     [projectId],
   )
   return rows
