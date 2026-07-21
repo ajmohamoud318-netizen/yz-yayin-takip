@@ -10,10 +10,6 @@ export function createHttpOrderRepository() {
       const { data } = await httpClient.post('/order-requests', payload)
       return data
     },
-    async updateOrderRequest(id, status) {
-      const { data } = await httpClient.patch(`/order-requests/${id}`, { status })
-      return data
-    },
     async findOpenByProject(projectId) {
       const all = await httpClient.get('/order-requests')
       return (all.data ?? []).find(

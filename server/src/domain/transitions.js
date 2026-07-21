@@ -45,6 +45,7 @@ function pipelineFor(project) {
 function makeEntry(project, partial) {
   return {
     id: uid(`${project.id}-h`),
+    project_id: project.id,
     created_at: new Date().toISOString(),
     ...partial,
   }

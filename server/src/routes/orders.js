@@ -1,3 +1,4 @@
+import { nanoid } from 'nanoid'
 import { attachUser } from '../middleware/auth.js'
 import { badRequest, forbidden, notFound } from '../domain/errors.js'
 import { withTx } from '../db/pool.js'
@@ -64,11 +65,14 @@ export async function orderRoutes(fastify) {
 
     const merged = { ...payload, items, quantity, notes: notes ?? payload.notes ?? '' }
 
+    // order_requests.id is TEXT PRIMARY KEY with no default — mint an
+    // `o-<nanoid>` so the INSERT doesn't violate NOT NULL.
+    const orderIdRow = `o-${nanoid(16)}`
     const { rows } = await getPool().query(
-      `INSERT INTO order_requests (project_id, status, requested_by, payload)
-       VALUES ($1,'pending',$2,$3)
+      `INSERT INTO order_requests (id, project_id, status, requested_by, payload)
+       VALUES ($1,$2,'pending',$3,$4)
        RETURNING id, project_id, status, requested_by, payload, version, created_at, updated_at`,
-      [projectId, request.user.id, merged],
+      [orderIdRow, projectId, request.user.id, merged],
     )
     const order = rows[0]
     await getPool().query(

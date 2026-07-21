@@ -1,3 +1,4 @@
+import { nanoid } from 'nanoid'
 import { attachUser } from '../middleware/auth.js'
 import { badRequest, forbidden, notFound } from '../domain/errors.js'
 import { withTx } from '../db/pool.js'
@@ -43,11 +44,14 @@ export async function handoverRoutes(fastify) {
       [projectId],
     )
     if (pending.length > 0) badRequest('Bu proje için zaten bekleyen bir teslim talebi var.')
+    // handovers.id is TEXT PRIMARY KEY with no default — mint an
+    // `h-<nanoid>` so the INSERT satisfies NOT NULL.
+    const handoverId = `h-${nanoid(16)}`
     const { rows } = await getPool().query(
-      `INSERT INTO handovers (project_id, status, from_stage, raised_by)
-       VALUES ($1,'pending',$2,$3)
+      `INSERT INTO handovers (id, project_id, status, from_stage, raised_by)
+       VALUES ($1,$2,'pending',$3,$4)
        RETURNING id, project_id, status, from_stage, raised_by, created_at, confirmed_at`,
-      [projectId, project.stage, request.user.id],
+      [handoverId, projectId, project.stage, request.user.id],
     )
     return rows[0]
   })

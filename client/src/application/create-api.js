@@ -79,7 +79,6 @@ export function createApi() {
     // Orders
     listOrderRequests: () => orderRepo.listOrderRequests(),
     createOrderRequest: makeCreateOrderRequest(),
-    updateOrderRequest: (id, status) => orderRepo.updateOrderRequest(id, status),
     advanceOrderRequest: makeAdvanceOrderRequest(),
     rejectOrderRequest: makeRejectOrderRequest(),
 

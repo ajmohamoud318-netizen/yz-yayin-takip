@@ -75,8 +75,38 @@ export async function listProjectHistory(client, projectId) {
   return rows
 }
 
+// Columns writable on projects. Anything else arriving in `fields` is
+// dropped here so a schema-accepted but column-less key (assignees,
+// subtasks, subtaskAssignees, pageCount, stickerCount) can't reach the
+// SQL and 500 on a "column does not exist" PG error.
+const PROJECT_WRITABLE_COLUMNS = new Set([
+  'title',
+  'type',
+  'target_month',
+  'assigned_to',
+  'stage',
+  'progress',
+  'version',
+  'last_reject_reason',
+  'ozalit_leader_approved',
+  'ozalit_leader_approved_by',
+  'ozalit_leader_approved_at',
+  'ozalit_designer_approvals',
+])
+
 export async function patchProject(client, id, fields) {
-  const cols = Object.keys(fields)
+  // Translate the SPA's `assignees[0]` convenience field into the
+  // `assigned_to` column the projects table actually has. The SPA
+  // payload includes `assignees` as a convenience for multi-select
+  // UIs; we only persist the first one (the primary owner).
+  if (Array.isArray(fields.assignees)) {
+    fields = {
+      ...fields,
+      assigned_to: fields.assignees[0] ?? null,
+    }
+    delete fields.assignees
+  }
+  const cols = Object.keys(fields).filter((c) => PROJECT_WRITABLE_COLUMNS.has(c))
   if (cols.length === 0) return getProjectForUpdate(client, id)
   const setSql = cols.map((c, i) => `${c} = $${i + 2}`).join(', ')
   const values = cols.map((c) => fields[c])
