@@ -53,18 +53,34 @@ export async function projectRoutes(fastify) {
   fastify.post('/projects', { schema: schemas.projectsCreate }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
-    const { title, type, target_month, subtasks = [], pass_kind, assigned_to } = request.body
+    const {
+      title, type, target_month, subtasks = [], pass_kind,
+      // SPA sends `assignees` as an array (multi-designer UI). We persist the
+      // first as `projects.assigned_to` (the column the rest of the schema
+      // and the My Projects filter still rely on) — every additional assignee
+      // becomes a per-subtask `assigned_to` via `subtaskAssignees`.
+      assigned_to, assignees = [], subtaskAssignees = {},
+    } = request.body
+    const primaryAssignee = assigned_to ?? (Array.isArray(assignees) && assignees[0]) ?? null
     const result = await withTx(async (client) => {
       const project = await insertProject(client, {
-        title, type, target_month, pass_kind, assigned_to,
+        title, type, target_month, pass_kind, assigned_to: primaryAssignee,
         created_by: request.user.id,
       })
       const subRows = []
       for (const s of subtasks) {
+        // Look up the per-subtask override by either the SPA's library key
+        // (e.g. "kapak") or — for custom ad-hoc subtasks — by the title the
+        // team leader just typed. Falls back to the project primary so the
+        // assignment is never silently empty.
+        const subAssignee =
+          subtaskAssignees?.[s.title] ??
+          subtaskAssignees?.[s.key] ??
+          primaryAssignee
         const { rows } = await client.query(
-          `INSERT INTO subtasks (project_id, title, kind, total_pages, total_stickers)
-           VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-          [project.id, s.title, s.kind ?? 'check', s.total_pages ?? null, s.total_stickers ?? null],
+          `INSERT INTO subtasks (project_id, title, kind, total_pages, total_stickers, assigned_to)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+          [project.id, s.title, s.kind ?? 'check', s.total_pages ?? null, s.total_stickers ?? null, subAssignee],
         )
         subRows.push(rows[0])
       }

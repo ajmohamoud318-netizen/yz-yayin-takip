@@ -151,13 +151,19 @@ export default function Dashboard() {
         <div className="flex flex-wrap items-end justify-between gap-3 pb-4">
           <div>
             <h1 className="text-3xl text-foreground">Yıllık Plan</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+            {/* Was a <p> — but the loading branch renders a <Skeleton>
+                (<div>), and the HTML spec disallows block content inside
+                <p>. The browser silently lifts the <div> out of the <p>
+                and React's dev-mode logs a validateDOMNesting warning
+                every render. A <div> with the same prose spacing reads
+                identically and keeps the DOM valid. */}
+            <div className="mt-1 text-sm text-muted-foreground">
               {loading ? (
                 <Skeleton className="inline-block h-4 w-48 align-middle" />
               ) : (
                 <>{year} · {bars.length} proje zaman çizelgesinde</>
               )}
-            </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">

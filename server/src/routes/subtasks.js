@@ -84,10 +84,14 @@ export async function subtaskRoutes(fastify) {
       await client.query('DELETE FROM subtasks WHERE project_id = $1', [project.id])
       const inserted = []
       for (const s of subtasks) {
+        // Per-subtask designer override from the NewProjectDialog. Falls
+        // back to the project's primary `assigned_to` so every subtask
+        // still has a sensible owner when the team leader doesn't override.
+        const subAssignee = s.assigned_to ?? project.assigned_to ?? null
         const { rows } = await client.query(
-          `INSERT INTO subtasks (project_id, title, kind, total_pages, total_stickers, is_done)
-           VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-          [project.id, s.title, s.kind ?? 'check', s.total_pages ?? null, s.total_stickers ?? null, !!s.is_done],
+          `INSERT INTO subtasks (project_id, title, kind, total_pages, total_stickers, is_done, assigned_to)
+           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+          [project.id, s.title, s.kind ?? 'check', s.total_pages ?? null, s.total_stickers ?? null, !!s.is_done, subAssignee],
         )
         inserted.push(rows[0])
       }

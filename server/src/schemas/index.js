@@ -206,6 +206,20 @@ const projectsCreate = {
         enum: ['first_edition', 'reprint', 'redesign'],
       },
       assigned_to: { type: ['string', 'null'], maxLength: 64 },
+      // The SPA's multi-designer picker sends `assignees` as an array.
+      // The route handler picks the first one as the project primary and
+      // distributes the rest to per-subtask `assigned_to` columns via
+      // `subtaskAssignees`. We accept both shapes for forward-compat.
+      assignees: {
+        type: 'array',
+        maxItems: 8,
+        items: { type: 'string', minLength: 1, maxLength: 64 },
+      },
+      // { [subtaskKeyOrTitle]: userId } — per-subtask designer override.
+      subtaskAssignees: {
+        type: 'object',
+        additionalProperties: { type: 'string', minLength: 1, maxLength: 64 },
+      },
       subtasks: {
         type: 'array',
         maxItems: 32,
@@ -358,6 +372,10 @@ const projectsSubtasksPut = {
             total_pages: { type: ['integer', 'null'], minimum: 1, maximum: 100000 },
             total_stickers: { type: ['integer', 'null'], minimum: 1, maximum: 100000 },
             is_done: { type: 'boolean' },
+            // Per-subtask designer assignment. Optional; null/omitted means
+            // "inherit from the project". The PUT handler passes it through
+            // to the subtasks.assigned_to column.
+            assigned_to: { type: ['string', 'null'], maxLength: 64 },
           },
         },
       },

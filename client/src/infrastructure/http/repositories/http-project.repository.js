@@ -85,11 +85,14 @@ export function createHttpProjectRepository(userRepo) {
       // total_stickers for the numeric kinds) — the mapper already
       // produces the right shape, so we just hand it over instead of
       // re-flattening to bare titles (which the schema rejects with 400).
+      // We also forward `assigned_to` so the team leader's per-subtask
+      // designer assignment survives the round trip.
       const subtasks = (flat.subtasks ?? []).map((s) => ({
         title: s.title,
         kind: s.kind ?? 'check',
         total_pages: s.total_pages ?? null,
         total_stickers: s.total_stickers ?? null,
+        assigned_to: s.assigned_to ?? null,
       }))
       const { data } = await httpClient.post('/projects', {
         title: flat.title,
@@ -97,6 +100,10 @@ export function createHttpProjectRepository(userRepo) {
         target_month: flat.target_month,
         pass_kind: flat.pass_kind ?? PASS_KIND.FIRST_EDITION,
         assigned_to: flat.assigned_to,
+        // Forward the multi-designer array too so the server can map it to
+        // the project primary + per-subtask overrides.
+        assignees: Array.isArray(payload.assignees) ? payload.assignees : undefined,
+        subtaskAssignees: payload.subtaskAssignees ?? undefined,
         subtasks,
       })
       cache.set(data.id, data)
@@ -133,12 +140,17 @@ export function createHttpProjectRepository(userRepo) {
         'stickerCount' in patch ||
         'subtaskAssignees' in patch
       if (wantsSubtasks) {
+        // Persist per-subtask designer overrides too — without this the
+        // server would replace each subtask with no `assigned_to`, and the
+        // team leader's "Kapak → Rahşan, Kutu → Aylin" mapping would be
+        // silently dropped on every save.
         const subtasks = (flat.subtasks ?? []).map((s) => ({
           title: s.title,
           kind: s.kind ?? 'check',
           total_pages: s.total_pages ?? null,
           total_stickers: s.total_stickers ?? null,
           is_done: !!s.is_done,
+          assigned_to: s.assigned_to ?? null,
         }))
         const putRes = await httpClient.put(`/projects/${id}/subtasks`, {
           subtasks,
