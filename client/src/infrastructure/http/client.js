@@ -26,6 +26,25 @@ const client = axios.create({
   withCredentials: false,
 })
 
+// Token storage. We keep both a module-level mirror (for the fast path
+// inside interceptors) AND read from localStorage on every request — so a
+// hard reload, a second tab, or a race between login and submit can't
+// drop the header (the previous behaviour silently returned 401 "X-User-Id
+// header is required" once `authToken` was ever reset to null).
+const AUTH_KEY = 'yz_auth_v1'
+
+function readStoredToken() {
+  if (typeof localStorage === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(AUTH_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed?.token ?? null
+  } catch {
+    return null
+  }
+}
+
 let authToken = null
 
 export function setAuthToken(token) {
@@ -33,16 +52,27 @@ export function setAuthToken(token) {
 }
 
 export function getAuthToken() {
-  return authToken
+  // Module var is authoritative if explicitly set; otherwise fall back to
+  // localStorage so we never silently send no header.
+  return authToken ?? readStoredToken()
 }
 
 /**
  * Request interceptor. Auth is currently a trusted `X-User-Id` header;
  * real OAuth+cookie sessions arrive next pass.
+ *
+ * Reads from `getAuthToken()` (not the local `authToken` directly) so a
+ * missing module mirror falls back to localStorage. This makes the SPA
+ * resilient to:
+ *   - the user logging in on a different tab and switching back
+ *   - a hard reload that re-evaluates this module before `useAuth.js`'s
+ *     mount-effect has run `setAuthToken(...)`
+ *   - any future code path that clears the module mirror but leaves the
+ *     session in storage
  */
 client.interceptors.request.use((config) => {
-  if (!authToken) return config
-  config.headers['X-User-Id'] = authToken
+  const token = getAuthToken()
+  if (token) config.headers['X-User-Id'] = token
   return config
 })
 
