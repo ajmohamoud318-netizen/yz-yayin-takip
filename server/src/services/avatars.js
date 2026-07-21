@@ -31,28 +31,42 @@ export const MAX_AVATAR_BYTES = 2 * 1024 * 1024  // 2 MB
  * Resolves the avatar directory in this order:
  *  1. `AVATAR_DIR` env var — explicit override for operators who need a
  *     different path on disk (e.g. an audited managed disk).
- *  2. `/tmp/yz-uploads/avatars` — the production default. `/tmp` is
- *     always writable by the non-root `node` user the image runs as
- *     (UID 1000) on Node 20-alpine, so no Dockerfile `USER root`
- *     workaround is needed. `/tmp` is ephemeral inside a fresh
- *     container, so Dokploy MUST mount a named volume at
- *     `/tmp/yz-uploads` to make avatars survive redeploys (see
- *     `DEPLOY.md > Persistent volumes`).
+ *  2. `/app/.yz-uploads/avatars` — the production default. The image
+ *     runs as the unprivileged `node` user (UID 1000) and `WORKDIR` is
+ *     `/app`, so this path is created writable by the runtime without
+ *     any Dockerfile `USER root` workaround. Dokploy mounts the
+ *     persistent volume at `/app/.yz-uploads` (see `DEPLOY.md >
+ *     Persistent volumes`) so avatars survive redeploys.
  *  3. `<cwd>/server/uploads/avatars` — last-resort fallback for local
  *     dev. `docker-compose.yml` mounts the `yzuploads` named volume
- *     under `/tmp/yz-uploads`, so dev and prod share path #2.
+ *     under `/app/.yz-uploads`, so dev and prod share path #2.
+ *
+ * Note: `/tmp` is NOT a candidate — even though it's always writable,
+ * it's wiped on every container restart, so any avatar landing there
+ * disappears the next time Dokploy redeploys. The previous default of
+ * `/tmp/yz-uploads/avatars` was the source of the "avatar deleted on
+ * every deploy" bug; see git log for the fix.
  */
 function resolveConfiguredAvatarDir() {
   if (process.env.AVATAR_DIR) return path.resolve(process.env.AVATAR_DIR)
-  if (process.env.NODE_ENV === 'production') return '/tmp/yz-uploads/avatars'
+  if (process.env.NODE_ENV === 'production') return '/app/.yz-uploads/avatars'
   // server/dev only: relative to the repo
   return path.resolve(process.cwd(), 'server/uploads/avatars')
 }
 
 function resolveFallbackAvatarDir() {
-  // Last-resort fallback that's always writable by the non-root `node`
-  // user, even if Dokploy's mounted volume is root-owned.
-  return path.join(os.tmpdir(), 'yz-avatars')
+  // Last-resort fallback when the configured dir isn't writable (e.g.
+  // an external managed disk that mounted read-only, or a Dokploy
+  // volume that landed root-owned). The fallback intentionally lives
+  // outside `/tmp` too — process.cwd() is `/app` in production, which
+  // the `node` user owns and which is rewritten on every deploy BUT
+  // any *sub-directory* of /app survives between deploys as long as it
+  // isn't the WORKDIR itself. The `.data` prefix keeps it alphabetically
+  // out of the way of the source tree.
+  const base = process.env.NODE_ENV === 'production'
+    ? '/app/.yz-fallback'
+    : path.resolve(process.cwd(), 'server/.yz-fallback')
+  return base
 }
 
 /**

@@ -121,26 +121,33 @@ INVITE_BASE_URL=https://yt.mucitkarinca.com
 
 The API writes one piece of state to disk: user-uploaded avatars. The
 default storage path in `server/src/services/avatars.js` is
-`/tmp/yz-uploads/avatars` (chosen because `/tmp` is always writable
-by the non-root `node` user that the image runs as). But `/tmp` is
-**ephemeral**: any Dokploy redeploy / container restart wipes it.
+`/app/.yz-uploads/avatars`. The Docker image uses an entrypoint
+(`server/docker-entrypoint.sh`) that runs as root only long enough to
+`mkdir -p` and `chown 1000:1000` the upload dir (Dokploy creates
+named volumes root-owned by default) before `exec`-ing the Fastify
+process as the unprivileged `node` user — so the runtime itself never
+has root, but persistent volumes still become writable without
+operator intervention.
 
-Mount a Dokploy named volume to make avatars survive:
+Mount a Dokploy named volume at `/app/.yz-uploads` so avatars survive
+every redeploy:
 
 | Dokploy setting (on the **yz-api** service) | Value |
 |---|---|
 | Volume name | `yz_uploads` |
-| Mount path  | `/tmp/yz-uploads` |
+| Mount path  | `/app/.yz-uploads` |
 | Sub-path    | *(leave empty)* |
 
-Why `/tmp/yz-uploads` and not `/app/uploads/avatars`: the latter lives
-inside the WORKDIR, which is owned by root during `COPY . .` and not
-writable by UID 1000 (the user the container runs as). Mounting a
-volume under `/tmp` keeps the rights intact and avoids needing a
-`USER root` workaround in the Dockerfile.
+Why `/app/.yz-uploads` and not `/tmp/yz-uploads` (the old default):
+`/tmp` is **ephemeral** — any Dokploy redeploy / container restart
+wipes it, which is why earlier avatar uploads always disappeared on
+deploy. `/app` is the WORKDIR, and the entrypoint ensures its subdirs
+are owned by UID 1000 (the user the container runs as), so a mounted
+named volume at this path is both persistent and writable.
 
-`docker-compose.yml` already mirrors this with a `yzuploads` named
-volume, so local dev and production behave the same.
+`docker-compose.yml` mirrors this with a `yzuploads` named volume
+mounted at the same path, so local dev and production behave the
+same.
 
 > If you ever need to swap paths (e.g. audited persistent disk on a
 > managed cluster), set `AVATAR_DIR=/your/path` on the **yz-api**

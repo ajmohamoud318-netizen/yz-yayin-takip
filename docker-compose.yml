@@ -53,9 +53,13 @@ services:
     # the prod default from server/src/services/avatars.js; mounting a
     # named volume here means local avatars survive `docker compose down`
     # without losing tests-in-progress uploads. See DEPLOY.md > Persistent
-    # volumes for the same requirement in Dokploy.
+    # volumes for the same requirement in Dokploy. The Docker image's
+    # entrypoint (server/docker-entrypoint.sh) chowns the dir to the
+    # `node` user (UID 1000) on boot, so the compose stack doesn't need
+    # a `user:` directive here — named volumes default to root:0 and
+    # the entrypoint fixes that.
     volumes:
-      - yzuploads:/tmp/yz-uploads
+      - yzuploads:/app/.yz-uploads
     ports:
       - '4000:4000'
 

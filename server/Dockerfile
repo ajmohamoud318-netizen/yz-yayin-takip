@@ -11,7 +11,10 @@
 # Runtime notes:
 #   • binds on PORT (default 4000) for Fastify
 #   • exposes HEALTHCHECK against GET /api/health
-#   • runs as the unprivileged `node` user (UID 1000)
+#   • runs the entrypoint as root so it can chown the persistent upload
+#     directory (Dokploy creates mounted volumes root-owned by default);
+#     the entrypoint then `exec`s into the unprivileged `node` user
+#     before launching Fastify. The actual Node process never runs as root.
 #   • CMD is `node` directly so PID 1 receives SIGTERM/SIGINT and the
 #     graceful shutdown handlers in src/index.js actually run. Going through
 #     `npm start` would swallow the signal and force a hard kill.
@@ -49,9 +52,24 @@ COPY --from=deps /app/node_modules ./node_modules
 # .dockerignore excludes .git, .env, tests, and other dev-only files.
 COPY . .
 
-# The official node:20-alpine image ships a non-root `node` user (UID 1000).
-# Drop privileges so a compromise in app code doesn't give an attacker root.
-USER node
+# gosu lets a root-owned entrypoint drop to a specific user via
+# `gosu <user> <cmd...>` — without it we'd need to deal with su's
+# SIGCHLD / pty quirks. Available in the alpine community repo.
+RUN apk add --no-cache gosu
+
+# The official node:20-alpine image ships a non-root `node` user
+# (UID 1000). Stay as root for the entrypoint (which has to chown
+# the on-disk upload dir that Dokploy creates root-owned), then
+# the entrypoint `exec`s into the node user right before launching
+# Fastify. The Fastify process itself runs unprivileged — root is
+# only used for the mkdir/chown/chmod that prepares persistent
+# state, in a single tightly-scoped moment at boot.
+USER root
+
+# Copy the entrypoint that prepares the avatar upload dir then drops
+# privileges. Idempotent: safe on every boot, not just first deploy.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 4000
 
@@ -62,6 +80,9 @@ EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget --quiet --tries=1 --spider http://127.0.0.1:4000/api/health || exit 1
 
-# Run node directly (not via `npm start`) so SIGTERM reaches the Fastify
-# process and graceful shutdown closes the pg pool cleanly.
+# Run via entrypoint (which chowns the upload dir then drops to the
+# `node` user) instead of `node` directly. `exec` inside the
+# entrypoint makes the Fastify process PID 1 so SIGTERM reaches it
+# and graceful shutdown closes the pg pool cleanly.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "src/index.js"]
