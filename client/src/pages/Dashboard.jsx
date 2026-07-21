@@ -186,18 +186,49 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Yıllık plan chart */}
-        {error ? (
+        {/* Yıllık plan chart. A transient API error (e.g. a 30-second poll
+            tick that 401'd mid-session) used to replace the chart wholesale
+            with a red "X-User-Id header is required" card — even if bars
+            were already loaded. Demote the error to an inline banner when
+            we have data, keep the full-screen error card only as the cold-
+            load fallback. */}
+        {error && bars.length === 0 && !loading ? (
           <ErrorState message={error} onRetry={refetch} />
-        ) : loading ? (
-          <Skeleton className="h-[420px] w-full rounded-xl" />
-        ) : bars.length === 0 ? (
-          <div className="rounded-xl border border-dashed bg-card p-12 text-center">
-            <p className="text-sm font-medium text-foreground">{year} için planlanmış proje yok.</p>
-            <p className="mt-1 text-xs text-muted-foreground">Başka bir yıl seçin veya proje hedef ayı belirleyin.</p>
-          </div>
         ) : (
-          <Card className="overflow-hidden shadow-sm ring-1 ring-border/60">
+          <>
+            {error && bars.length > 0 && (
+              <div
+                role="status"
+                className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+              >
+                <span>
+                  Listenin son güncellemesi başarısız oldu — eski veriler gösteriliyor.
+                  {error && /\bx-user-id header is required\b/i.test(error) && (
+                    <> Oturum sona ermiş olabilir; <button
+                      type="button"
+                      onClick={() => window.location.assign('/login?next=' + encodeURIComponent(window.location.pathname + window.location.search))}
+                      className="underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-100"
+                    >tekrar giriş yap</button>.</>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={refetch}
+                  className="rounded-md border border-amber-300 bg-white px-2 py-1 font-medium hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/40 dark:hover:bg-amber-900/60"
+                >
+                  Yenile
+                </button>
+              </div>
+            )}
+            {loading ? (
+              <Skeleton className="h-[420px] w-full rounded-xl" />
+            ) : bars.length === 0 ? (
+              <div className="rounded-xl border border-dashed bg-card p-12 text-center">
+                <p className="text-sm font-medium text-foreground">{year} için planlanmış proje yok.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Başka bir yıl seçin veya proje hedef ayı belirleyin.</p>
+              </div>
+            ) : (
+              <Card className="overflow-hidden shadow-sm ring-1 ring-border/60">
             <div ref={scrollRef} className="scrollbar-thin overflow-x-auto">
               <div className="relative min-w-[900px] bg-card">
                 {/* Current-month band (spans full height behind rows) */}
@@ -296,6 +327,8 @@ export default function Dashboard() {
               </div>
             </div>
           </Card>
+            )}
+          </>
         )}
 
         {!loading && !error && undated.length > 0 && (
