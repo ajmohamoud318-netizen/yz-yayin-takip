@@ -55,9 +55,28 @@ function setCacheHeaders(res, filePath) {
   }
   // Everything under /assets/* has a content-hashed filename and is safe to
   // cache aggressively. Same for fonts and other static buckets.
+  //
+  // The Cloudflare-fronted hosts (`yt.mucitkarinca.com`,
+  // `yayin-takip-backend-…sslip.io`) cache the *response*, including
+  // any headers we set. To deploy a new build without waiting for
+  // Cloudflare's cache to expire, the operator must purge that path
+  // from the Cloudflare dashboard on push. Capping browser `max-age`
+  // at 1 hour makes a *browser* refresh pick up changes within an
+  // hour even without a manual purge (Cloudflare still caches longer
+  // on the edge, but a reload + cache-bust works).
   if (filePath.includes(`${path.sep}assets${path.sep}`) ||
       filePath.includes(`${path.sep}fonts${path.sep}`)) {
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
+    // Vite emits `<link rel="stylesheet" crossorigin="…">` and
+    // `<script type="module" crossorigin="…">` for hashed production
+    // assets. With `crossorigin`, browsers do a CORS-mode fetch and
+    // *silently disable* the stylesheet / module if the response is
+    // missing `Access-Control-Allow-Origin` — the page renders raw
+    // HTML with no styling, and DevTools shows a misleading
+    // `net::ERR_ABORTED 404`. We always serve the SPA from the same
+    // origin as the host, so a permissive CORS header is harmless and
+    // keeps the production build working.
+    res.setHeader('Access-Control-Allow-Origin', '*')
   } else {
     // Default to short cache for everything else (icons, favicons, etc.).
     res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
