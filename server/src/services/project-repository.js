@@ -19,10 +19,24 @@ const PROJECT_COLUMNS = `
 `
 
 export async function listProjects() {
+  // LEFT JOIN the assignee so the list path returns a fully-hydrated
+  // `assigned_name`. Without this every project card on the dashboard
+  // crashed with "Cannot read properties of null (reading 'split')"
+  // because `project-mapper.js` passed the null straight into
+  // `initials(project.assigned_name)`. The `assigned_name = $alias`
+  // fallback keeps unassigned projects rendering "—".
   const { rows } = await getPool().query(
-    `SELECT ${PROJECT_COLUMNS} FROM projects ORDER BY created_at DESC, id`,
+    `SELECT ${PROJECT_COLUMNS.split(',').map((c) => 'p.' + c.trim()).join(', ')}
+       , a.name AS assignee_name
+     FROM projects p
+     LEFT JOIN users a ON a.id = p.assigned_to
+     ORDER BY p.created_at DESC, p.id`,
   )
-  return rows.map(rowToProject)
+  return rows.map((r) => {
+    const project = rowToProject(r)
+    project.assigned_name = r.assignee_name ?? null
+    return project
+  })
 }
 
 export async function getProject(id) {

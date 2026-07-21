@@ -51,6 +51,10 @@ export function formatTargetDate(iso) {
 
 /** "AY" suffix for card initials etc. */
 export function initials(name = '') {
+  // Null-safe — the server's list endpoint can return `assigned_name: null`
+  // for unassigned projects or when the join is incomplete. Without this
+  // guard the entire dashboard throws `Cannot read properties of null`.
+  if (!name) return ''
   return name
     .split(' ')
     .filter(Boolean)

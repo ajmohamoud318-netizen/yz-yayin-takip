@@ -8,8 +8,13 @@ import { cn } from '../lib/utils.js'
 import StageBar from './StageBar.jsx'
 
 function initials(name = '') {
+  // Null-safe — the server's list endpoint can return `assigned_name: null`
+  // for unassigned projects. Without this guard `project.assigned_name`
+  // of `null` would throw on the dashboard and tank the whole page.
+  if (!name) return ''
   return name
     .split(' ')
+    .filter(Boolean)
     .map((p) => p[0])
     .slice(0, 2)
     .join('')
