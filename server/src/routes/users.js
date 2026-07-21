@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs'
 import { nanoid } from 'nanoid'
 import { attachUser, requireRole } from '../middleware/auth.js'
-import { badRequest, conflict, forbidden, notFound } from '../domain/errors.js'
+import { badRequest, conflict, forbidden, notFound, HttpError } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
 import { schemas } from '../schemas/index.js'
 import { createInvitation } from '../services/invitations.js'
@@ -252,7 +252,14 @@ export async function userRoutes(fastify) {
     const buffer = Buffer.concat(chunks, total)
 
     const ext = extForMime(file.mimetype)
-    const url = await saveAvatar(request.user.id, ext, buffer)
+    let url
+    try {
+      url = await saveAvatar(request.user.id, ext, buffer)
+    } catch (err) {
+      // Surface the real reason instead of "Beklenmeyen sunucu hatası".
+      request.log.error({ err }, 'avatar save failed')
+      throw new HttpError(500, `Avatar yüklenemedi: ${err.message}`, 'avatar_save_failed')
+    }
     // Store the *relative* URL — the SPA knows its own VITE_API_BASE_URL
     // and rewrites the path at render time (see avatarSrc() in Settings).
     // An absolute URL would couple this column to whichever origin was

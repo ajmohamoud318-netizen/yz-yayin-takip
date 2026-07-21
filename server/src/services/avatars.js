@@ -16,6 +16,8 @@
  */
 
 import fs from 'node:fs/promises'
+import fsSync from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 
 const ALLOWED_MIME = new Map([
@@ -40,12 +42,66 @@ export const MAX_AVATAR_BYTES = 2 * 1024 * 1024  // 2 MB
  *     dev. `docker-compose.yml` mounts the `yzuploads` named volume
  *     under `/tmp/yz-uploads`, so dev and prod share path #2.
  */
-export const AVATAR_DIR = (() => {
+function resolveConfiguredAvatarDir() {
   if (process.env.AVATAR_DIR) return path.resolve(process.env.AVATAR_DIR)
   if (process.env.NODE_ENV === 'production') return '/tmp/yz-uploads/avatars'
   // server/dev only: relative to the repo
   return path.resolve(process.cwd(), 'server/uploads/avatars')
-})()
+}
+
+function resolveFallbackAvatarDir() {
+  // Last-resort fallback that's always writable by the non-root `node`
+  // user, even if Dokploy's mounted volume is root-owned.
+  return path.join(os.tmpdir(), 'yz-avatars')
+}
+
+/**
+ * Production default for the upload directory.
+ *
+ * Important: this constant reports the *configured* root only. If the
+ * configured root turns out to be read-only / not-writable-by-our-uid at
+ * boot, `pickWritableRoot()` falls back to a per-tmpdir location and the
+ * module keeps that as the *active* write root. Lookups
+ * (`resolveAvatarPath`) search BOTH roots so existing files still
+ * resolve regardless of which root they live under.
+ */
+export const AVATAR_DIR = resolveConfiguredAvatarDir()
+
+/**
+ * Probe the candidate directories and remember the first one that's
+ * actually writable by this process. Runs once at module-load; if neither
+ * candidate is writable (very unusual) we surface the failure on the
+ * first upload instead of crashing the server.
+ */
+function pickWritableRoot() {
+  // Synchronous because the rest of the service is sync at module-load.
+  const candidates = []
+  const seen = new Set()
+  for (const cand of [resolveConfiguredAvatarDir(), resolveFallbackAvatarDir()]) {
+    if (seen.has(cand)) continue
+    seen.add(cand)
+    candidates.push(cand)
+  }
+  for (const root of candidates) {
+    try {
+      fsSync.mkdirSync(root, { recursive: true })
+      // Probe write — `mkdir -p` succeeds even on read-only mounts.
+      const probe = path.join(root, `.probe-${process.pid}`)
+      fsSync.writeFileSync(probe, 'ok')
+      fsSync.unlinkSync(probe)
+      return root
+    } catch (err) {
+      // Continue to the next candidate.
+      // eslint-disable-next-line no-console
+      console.warn(`[avatars] ${root} not writable (${err.code || err.message}); trying next`)
+    }
+  }
+  // Return the configured dir anyway — writeAvatar() will raise a real
+  // error on upload instead of mysteriously 500-ing inside Fastify.
+  return candidates[0]
+}
+
+export const ACTIVE_AVATAR_DIR = pickWritableRoot()
 
 export function extForMime(mime) {
   return ALLOWED_MIME.get(String(mime || '').toLowerCase()) ?? null
@@ -55,15 +111,31 @@ export function isAllowedMime(mime) {
   return ALLOWED_MIME.has(String(mime || '').toLowerCase())
 }
 
-function pathFor(userId, ext) {
-  return path.join(AVATAR_DIR, `${userId}.${ext}`)
+/**
+ * Build a candidate on-disk path for this user/ext under the given root.
+ * Migrated to a per-user subdir so the writable-root fallback can keep
+ * files separate from files the operator intentionally placed under the
+ * configured root (e.g. seeded via env).
+ */
+function pathFor(userId, ext, root = ACTIVE_AVATAR_DIR) {
+  return path.join(root, userId, `image.${ext}`)
 }
 
-/** Ensure the on-disk directory exists. Safe to call repeatedly. */
+/** Ensure the on-disk directory exists for every candidate root. */
 export async function ensureAvatarDir() {
-  await fs.mkdir(AVATAR_DIR, { recursive: true })
-  // Restrict permissions in production so avatar files aren't world-readable
-  // (Node default umask is 0644 on Linux; explicit here for safety).
+  for (const root of allRoots()) {
+    await fs.mkdir(root, { recursive: true })
+  }
+}
+
+/** All roots we ever look under — configured + active. */
+function allRoots() {
+  const out = []
+  const seen = new Set()
+  for (const r of [AVATAR_DIR, ACTIVE_AVATAR_DIR]) {
+    if (r && !seen.has(r)) { seen.add(r); out.push(r) }
+  }
+  return out
 }
 
 /**
@@ -74,24 +146,43 @@ export async function ensureAvatarDir() {
  */
 export async function saveAvatar(userId, ext, buffer) {
   if (!userId) throw new Error('userId is required')
-  await ensureAvatarDir()
-  // Clear stale files for this user (different extensions, e.g. png → webp).
-  for (const e of ALLOWED_MIME.values()) {
-    if (e === ext) continue
-    try { await fs.unlink(pathFor(userId, e)) } catch { /* missing is fine */ }
+  // Try every writable root in order. If a previous successful write
+  // stored the file under the configured root, replacing it can succeed
+  // there too; otherwise we land on the active fallback.
+  let lastErr = null
+  for (const root of allRoots()) {
+    const userDir = path.join(root, userId)
+    try {
+      await fs.mkdir(userDir, { recursive: true })
+      // Clear stale files for this user (different extensions).
+      for (const e of ALLOWED_MIME.values()) {
+        if (e === ext) continue
+        try { await fs.unlink(pathFor(userId, e, root)) } catch { /* missing */ }
+      }
+      await fs.writeFile(pathFor(userId, ext, root), buffer)
+      return `/api/users/${encodeURIComponent(userId)}/avatar/file`
+    } catch (err) {
+      lastErr = err
+      // EACCES / EPERM / EROFS / ENOSPC — try the next root.
+      // eslint-disable-next-line no-console
+      console.warn(`[avatars] saveAvatar(${userId}) under ${root} failed: ${err.code || err.message}`)
+    }
   }
-  await fs.writeFile(pathFor(userId, ext), buffer)
-  // Embed a *resolved* UUID path so the SPA can load the file with a
-  // static <img src>. The owner-only `/users/me/avatar/file` alias exists
-  // too but uses the X-User-Id header — <img> can't carry custom headers.
-  return `/api/users/${encodeURIComponent(userId)}/avatar/file`
+  throw new Error(`avatar save failed under all roots: ${lastErr?.message || 'unknown'}`)
 }
 
 /** Remove the avatar file for a user, if any. */
 export async function deleteAvatar(userId) {
   if (!userId) return
-  for (const e of ALLOWED_MIME.values()) {
-    try { await fs.unlink(pathFor(userId, e)) } catch { /* missing is fine */ }
+  for (const root of allRoots()) {
+    // New per-user subdir layout.
+    for (const e of ALLOWED_MIME.values()) {
+      try { await fs.unlink(pathFor(userId, e, root)) } catch { /* missing */ }
+    }
+    // Legacy flat layout — already-uploaded files from older deploys.
+    for (const e of ALLOWED_MIME.values()) {
+      try { await fs.unlink(path.join(root, `${userId}.${e}`)) } catch { /* missing */ }
+    }
   }
 }
 
@@ -99,12 +190,26 @@ export async function deleteAvatar(userId) {
 export async function resolveAvatarPath(userId, avatarUrl) {
   if (!userId || !avatarUrl) return null
   await ensureAvatarDir()
-  for (const ext of ALLOWED_MIME.values()) {
-    const candidate = pathFor(userId, ext)
-    try {
-      await fs.access(candidate)
-      return candidate
-    } catch { /* try next */ }
+  // Search every root so files written by an older deployment under the
+  // configured dir still resolve after we fall back to a tmpdir root.
+  for (const root of allRoots()) {
+    for (const ext of ALLOWED_MIME.values()) {
+      // New (per-user subdir) layout.
+      const candidate = pathFor(userId, ext, root)
+      try {
+        await fs.access(candidate)
+        return candidate
+      } catch { /* try next */ }
+      // Legacy flat layout: `<root>/<userId>.<ext>`. Older deployments
+      // (pre-per-user-subdir migration) wrote files here. Quietly
+      // resolve them so already-uploaded avatars don't disappear until
+      // the user re-uploads.
+      try {
+        const legacy = path.join(root, `${userId}.${ext}`)
+        await fs.access(legacy)
+        return legacy
+      } catch { /* try next */ }
+    }
   }
   return null
 }
