@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { canEditProductInfo } from '@/domain'
 import { TYPE_LABELS } from '@/api'
 import { cn } from '@/lib/utils'
+import { Skeleton } from '@/components/ui/skeleton'
 import PRODUCT_INFO from '@/data/productInfo'
 
 const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
@@ -553,9 +554,9 @@ export default function UrunBilgileri() {
 
       {/* List */}
       {loading ? (
-        <div className="space-y-3">
+        <div className="space-y-3" role="status" aria-label="Ürünler yükleniyor">
           {[0, 1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-[72px] animate-pulse rounded-2xl border bg-card" style={{ animationDelay: `${i * 80}ms` }} />
+            <Skeleton key={i} className="h-[72px] rounded-2xl" />
           ))}
         </div>
       ) : filtered.length === 0 ? (

@@ -1015,7 +1015,10 @@ function UserMenu({ user, onLogout }) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link to="/team">Takım</Link>
+          <Link to="/team">
+            <UsersRound className="h-4 w-4" />
+            Ekip
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link to="/settings">

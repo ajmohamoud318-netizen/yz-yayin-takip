@@ -124,12 +124,27 @@ export default function Dashboard() {
         {/* Summary cards — Toplam + one per status group.
             8 cards on a single row from xl+ (desktop with sidebar rail) so the count
             strip reads as one horizontal metric row. 4-col at lg (tablet) where 8
-            would feel cramped, and 2-col on mobile. Gaps widen at 2xl for breathing. */}
+            would feel cramped, and 2-col on mobile. Gaps widen at 2xl for breathing.
+            While loading, render 8 skeleton tiles instead of real values —
+            otherwise the cards flash "0" for ~100–400 ms on every hard
+            refresh, which reads as "your data is empty" until numbers pop
+            in. */}
         <div className="stagger-children grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8 2xl:gap-4">
-          <SummaryCard label="Toplam Proje" value={counts.total} colorKey="total" />
-          {LEGEND_KEYS.map((k) => (
-            <SummaryCard key={k} label={STATUS_STYLES[k].label} value={counts[k]} colorKey={k} />
-          ))}
+          {loading ? (
+            <>
+              <Skeleton className="h-[78px] rounded-lg" />
+              {LEGEND_KEYS.map((k) => (
+                <Skeleton key={k} className="h-[78px] rounded-lg" />
+              ))}
+            </>
+          ) : (
+            <>
+              <SummaryCard label="Toplam Proje" value={counts.total} colorKey="total" />
+              {LEGEND_KEYS.map((k) => (
+                <SummaryCard key={k} label={STATUS_STYLES[k].label} value={counts[k]} colorKey={k} />
+              ))}
+            </>
+          )}
         </div>
 
         {/* Title row */}
@@ -137,7 +152,11 @@ export default function Dashboard() {
           <div>
             <h1 className="text-3xl text-foreground">Yıllık Plan</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {year} · {bars.length} proje zaman çizelgesinde
+              {loading ? (
+                <Skeleton className="inline-block h-4 w-48 align-middle" />
+              ) : (
+                <>{year} · {bars.length} proje zaman çizelgesinde</>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-2">
