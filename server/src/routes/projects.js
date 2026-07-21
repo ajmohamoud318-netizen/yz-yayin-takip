@@ -4,6 +4,7 @@ import { withTx, getPool } from '../db/pool.js'
 import {
   listProjects, getProject, getProjectForUpdate,
   listProjectSubtasks, listProjectHistory,
+  loadProjectAssignees,
   patchProject, deleteProject, insertProject, insertHistory,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
@@ -38,7 +39,7 @@ export async function projectRoutes(fastify) {
     const [subtasks, history, assignees] = await Promise.all([
       listProjectSubtasks(getPool(), project.id),
       listProjectHistory(getPool(), project.id),
-      loadAssignees(project),
+      loadProjectAssignees(getPool(), project),
     ])
     return {
       ...project,
@@ -177,3 +178,5 @@ async function loadAssignees(project) {
   )
   return rows
 }
+// (legacy helper — kept here only so an unlikely direct import still
+// resolves. Use loadProjectAssignees from the repository instead.)

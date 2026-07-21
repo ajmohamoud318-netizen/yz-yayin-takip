@@ -34,8 +34,17 @@ export default function MyProjects() {
   const [signOrder, setSignOrder] = useState(null)
   const [viewOrder, setViewOrder] = useState(null)
 
+  // Filter to projects this designer is assigned to. Today only the
+  // legacy `projects.assigned_to` column is the source of truth on the
+  // server (the /api/projects list endpoint hydrates an `assignees`
+  // array from it), but we also fall back to `assigned_to` so a stale
+  // or older list payload still routes the project here correctly.
   const mine = useMemo(
-    () => projects.filter((p) => (p.assignees ?? []).some((a) => a.id === user?.id)),
+    () => projects.filter((p) => {
+      if ((p.assignees ?? []).some((a) => a.id === user?.id)) return true
+      if (p.assigned_to && p.assigned_to === user?.id) return true
+      return false
+    }),
     [projects, user?.id],
   )
 

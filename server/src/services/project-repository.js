@@ -32,11 +32,38 @@ export async function listProjects() {
      LEFT JOIN users a ON a.id = p.assigned_to
      ORDER BY p.created_at DESC, p.id`,
   )
-  return rows.map((r) => {
+  // Hydrate a per-project `assignees` array (`[{id, name}, ...]`) so
+  // list-side consumers (MyProjects filter, Dashboard cards, navigation)
+  // don't need to round-trip to /api/projects/:id just to know who's
+  // on the project. Today the only source of truth is the legacy
+  // `projects.assigned_to` single column, so `assignees` is a 1-element
+  // array when one user is assigned and empty when none is — but it
+  // matches the shape the detail endpoint already returns, which is
+  // what the client (`client/src/application/mappers/project-mapper.js`
+  // and `client/src/pages/MyProjects.jsx`) consumes.
+  return Promise.all(rows.map(async (r) => {
     const project = rowToProject(r)
     project.assigned_name = r.assignee_name ?? null
+    project.assignees = project.assigned_to
+      ? [{ id: project.assigned_to, name: project.assigned_name }]
+      : []
     return project
-  })
+  }))
+}
+
+/**
+ * Resolve the assignee list for a single project. Mirrors the list
+ * endpoint: today the only source of truth is `projects.assigned_to`,
+ * so this is a 1-row lookup. Kept here (rather than in the route
+ * file) so both listProjects and the detail route use one helper.
+ */
+export async function loadProjectAssignees(client, project) {
+  if (!project.assigned_to) return []
+  const { rows } = await client.query(
+    'SELECT id, name FROM users WHERE id = $1',
+    [project.assigned_to],
+  )
+  return rows
 }
 
 export async function getProject(id) {
