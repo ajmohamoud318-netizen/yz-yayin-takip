@@ -1269,16 +1269,17 @@ function advanceActionLabel(project, userRole) {
       return project.last_reject_type === 'ozalit' ? "Ozalit'e Gönder" : "Demo'ya Gönder"
     case 'demo_onay':
     case 'cin_demo_onay':
-      // The leader has approved (or the demo is in flight). The
-      // designer (or the leader) can re-trigger a new demo round by
-      // sending it back to demo_teslim.
-      return 'Tekrar Demo Gönder'
+      // Matbaa delivered; leader can approve/reject. The leader or
+      // designer can also re-trigger a new demo round.
+      return 'Demo İste'
     case 'ozalit_teslim':
       // Leader / assigned designer requesting the ozalit proof.
       return 'Ozalit İste'
     case 'demo_teslim':
     case 'cin_demo_teslim':
-      return 'Onaya Gönder'
+      // At demo_teslim the matbaa delivers (printer). The team leader
+      // or assigned designer re-triggers a new demo round.
+      return userRole === 'printer' ? "Demo'yu Teslim Et" : 'Demo İste'
     case 'uretimde':
       // Only ÇİN reaches here as a leader-advanceable stage (→ Gümrük). TR
       // Üretimde is closed out via the Sales handover, not this button.
