@@ -12,21 +12,22 @@ describe('statusKeyForProject', () => {
     expect(statusKeyForProject({ stage: 'ozalit_teslim' })).toBe('blue')
     expect(statusKeyForProject({ stage: 'ozalit_onay' })).toBe('blue')
   })
-  // "Demo aşamasında" (green) means: design is at 100% AND the team
-  // leader has approved. demo_teslim (printer hasn't delivered) and
-  // demo_onay at <100% (held, waiting on designer) fall through to
-  // 'Devam Eden' (purple) — never Yeni Proje (orange) even at 0%
-  // progress, because the project has clearly moved beyond tasarim.
-  it('maps demo_teslim to devam eden regardless of progress', () => {
-    expect(statusKeyForProject({ stage: 'demo_teslim', progress: 0 })).toBe('purple')
-    expect(statusKeyForProject({ stage: 'demo_teslim', progress: 50 })).toBe('purple')
-    expect(statusKeyForProject({ stage: 'cin_demo_teslim', progress: 100 })).toBe('purple')
+  // Demo stages (demo_teslim / cin_demo_teslim) and demo_onay while
+  // awaiting approval share the same 'review checkpoint' accent as
+  // the ozalit stages (blue). The project is no longer 'Yeni Proje'
+  // (orange) or generic 'Devam Eden' (purple) — the team can see at
+  // a glance it's blocked on the matbaa/leader side rather than
+  // designer work.
+  it('maps demo_teslim to blue regardless of progress', () => {
+    expect(statusKeyForProject({ stage: 'demo_teslim', progress: 0 })).toBe('blue')
+    expect(statusKeyForProject({ stage: 'demo_teslim', progress: 50 })).toBe('blue')
+    expect(statusKeyForProject({ stage: 'cin_demo_teslim', progress: 100 })).toBe('blue')
   })
-  it('maps demo_onay at <100% (held) to devam eden', () => {
-    expect(statusKeyForProject({ stage: 'demo_onay', progress: 25 })).toBe('purple')
-    expect(statusKeyForProject({ stage: 'cin_demo_onay', progress: 50 })).toBe('purple')
+  it('maps demo_onay at <100% (held) to blue (still awaiting approval)', () => {
+    expect(statusKeyForProject({ stage: 'demo_onay', progress: 25 })).toBe('blue')
+    expect(statusKeyForProject({ stage: 'cin_demo_onay', progress: 50 })).toBe('blue')
   })
-  it('maps demo_onay at 100% to green (Demo aşamasında — ready)', () => {
+  it('maps demo_onay at 100% to green (Demo aşamasında — approved, ready to advance)', () => {
     expect(statusKeyForProject({ stage: 'demo_onay', progress: 100 })).toBe('green')
     expect(statusKeyForProject({ stage: 'cin_demo_onay', progress: 100 })).toBe('green')
   })

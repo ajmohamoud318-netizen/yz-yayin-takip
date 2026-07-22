@@ -16,21 +16,21 @@ export function statusKeyForProject(p) {
       return 'blue'
     case 'demo_teslim':
     case 'cin_demo_teslim':
-      // Printer hasn't delivered yet. The project has clearly left
-      // tasarim (a demo was requested and accepted into the demo
-      // queue), so it's never 'Yeni Proje' (orange) — always
-      // 'Devam Eden' (purple). The 0%-progress case (designer sent
-      // the demo without ticking any subtasks first) used to fall to
-      // orange, which read as 'this is a fresh untouched project' —
-      // confusing, since the project is actually mid-flow.
-      return 'purple'
+      // Demo requested / awaiting matbaa delivery. Treated as part
+      // of the same 'review checkpoint' phase as ozalit, so it picks
+      // up the blue accent. Distinct from tasarim (purple/orange) so
+      // the team can see at a glance which projects are blocked on
+      // matbaa delivery vs. designer work.
+      return 'blue'
     case 'demo_onay':
     case 'cin_demo_onay':
-      // Approved demo — but only "really in demo approval" once the
-      // design is 100%. Held approvals (<100%) drop to purple so the
-      // team leader can tell at a glance which projects are stuck
-      // waiting on the designer vs. ready for the next stage.
-      return (p.progress ?? 0) >= 100 ? 'green' : 'purple'
+      // Awaiting leader approval. Blue while waiting — the same
+      // 'review checkpoint' accent as demo_teslim and the ozalit
+      // stages. Once approved at 100% the project is in the
+      // 'Demo aşamasında' bucket (green) and immediately advances to
+      // ozalit_teslim, so green only appears for the brief moment
+      // between approval and the next advance.
+      return (p.progress ?? 0) >= 100 ? 'green' : 'blue'
     default:
       return p.progress > 0 ? 'purple' : 'orange'
   }
