@@ -1197,13 +1197,14 @@ function availableActions({ project, user }) {
     role === 'designer' && (project.assignees ?? []).some((a) => a.id === user.id)
 
   if ((stage === 'demo_onay' || stage === 'cin_demo_onay') && role === 'team_leader') {
-    // Onayla stays enabled even in the held state — approving a demo
-    // that hasn't reached 100% just re-records the hold (the project
-    // stays at demo_onay, demo_held stays true, the designer still
-    // needs to re-send a second demo at 100%). The dialog explains
-    // this so the leader knows what they're doing.
-    set.add('approve')
-    set.add('reject')
+    // Hide Onayla + Reddet while the demo is held. The leader has
+    // already approved; the project is waiting for the designer to
+    // finish and re-send a second demo. There's nothing to approve
+    // or reject again until the new demo lands.
+    if (project.demo_held !== true) {
+      set.add('approve')
+      set.add('reject')
+    }
   }
 
   // Demo re-send: after a demo was approved but the design was <100%, the
