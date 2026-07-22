@@ -85,14 +85,15 @@ export function createHttpProjectRepository(userRepo) {
       // total_stickers for the numeric kinds) — the mapper already
       // produces the right shape, so we just hand it over instead of
       // re-flattening to bare titles (which the schema rejects with 400).
-      // We also forward `assigned_to` so the team leader's per-subtask
-      // designer assignment survives the round trip.
+      // Per-subtask designer overrides travel in the top-level
+      // `subtaskAssignees` map (server reads it back into the subtasks
+      // table), NOT inside each subtask object — the projectsCreate
+      // schema explicitly forbids additional properties on subtasks.
       const subtasks = (flat.subtasks ?? []).map((s) => ({
         title: s.title,
         kind: s.kind ?? 'check',
         total_pages: s.total_pages ?? null,
         total_stickers: s.total_stickers ?? null,
-        assigned_to: s.assigned_to ?? null,
       }))
       const { data } = await httpClient.post('/projects', {
         title: flat.title,
