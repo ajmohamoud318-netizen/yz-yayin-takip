@@ -15,6 +15,7 @@ const PROJECT_COLUMNS = `
   last_reject_reason, progress, version,
   ozalit_leader_approved, ozalit_leader_approved_by, ozalit_leader_approved_at,
   ozalit_designer_approvals,
+  demo_held, demo_held_at, demo_held_by_name,
   created_at, updated_at
 `
 
@@ -213,6 +214,11 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
   'ozalit_leader_approved_by',
   'ozalit_leader_approved_at',
   'ozalit_designer_approvals',
+  // demo_held trio — flipped by the demo "approve-but-stay" branch in
+  // computeApproval and reset when a second demo is sent (computeAdvance).
+  'demo_held',
+  'demo_held_at',
+  'demo_held_by_name',
 ])
 
 export async function patchProject(client, id, fields) {
@@ -335,6 +341,11 @@ function rowToProject(r) {
       ? r.ozalit_leader_approved_at.toISOString()
       : r.ozalit_leader_approved_at,
     ozalit_designer_approvals: r.ozalit_designer_approvals ?? [],
+    demo_held: r.demo_held ?? false,
+    demo_held_at: r.demo_held_at instanceof Date
+      ? r.demo_held_at.toISOString()
+      : r.demo_held_at,
+    demo_held_by_name: r.demo_held_by_name ?? null,
     created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
     updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at,
   }

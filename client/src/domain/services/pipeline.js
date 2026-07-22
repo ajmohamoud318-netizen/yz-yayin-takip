@@ -66,16 +66,19 @@ export function getNextStage(project) {
 }
 
 /**
- * Stages a project may only enter once its design is 100% complete. Everything
- * from the demo stages onward — demo review, approval, the print proof and
- * all production stages — requires a finished design. Designers no longer
- * submit partial designs for review; a demo is the polish check before print.
+ * Stages a project may only enter once its design is 100% complete. The gate
+ * starts at the print proof (ozalit) — that's where the matbaa actually runs
+ * paper through a press and a half-finished design is expensive to recall.
+ *
+ * Demos are deliberately allowed below 100%: a designer (or the team leader)
+ * can request a demo at any progress, the matbaa prints the proof, and the
+ * team leader approves. If the design was complete the project advances to
+ * ozalit. If it wasn't, the project stays at `demo_onay` (the leader can't
+ * approve-and-advance an incomplete design — see `assertDemoCanAdvance`),
+ * the designer keeps working, and a second demo is sent once the design
+ * reaches 100%.
  */
 export const STAGES_REQUIRING_FULL_PROGRESS = new Set([
-  'demo_teslim',
-  'cin_demo_teslim',
-  'demo_onay',
-  'cin_demo_onay',
   'ozalit_teslim',
   'ozalit_onay',
   'uretime_hazir',
@@ -85,17 +88,38 @@ export const STAGES_REQUIRING_FULL_PROGRESS = new Set([
 ])
 
 /**
- * Business rule: a project cannot reach Demo (or any later stage) until its
- * design is 100% complete.
+ * Business rule: a project cannot enter any post-design stage (ozalit and
+ * beyond) until the design is 100% complete. Demo stages may be entered at
+ * any progress — see the rule explanation above.
  * @param {string} nextStage
  * @param {number} progress
  */
 export function assertCanEnterProduction(nextStage, progress) {
   if (STAGES_REQUIRING_FULL_PROGRESS.has(nextStage) && (progress ?? 0) < 100) {
-    const err = new Error('Proje %100 tamamlanmadan Demo, Ozalit ve üretim aşamasına geçemez.')
+    const err = new Error('Proje %100 tamamlanmadan Ozalit ve üretim aşamasına geçemez.')
     err.status = 400
     throw err
   }
+}
+
+/**
+ * Business rule: a demo can be approved at any progress, but the project
+ * can only advance out of `demo_onay` once the design is fully complete.
+ * Approval at <100% is a "hold" — the leader's approve is recorded, the
+ * project stays at `demo_onay`, and a second demo is required after the
+ * designer finishes.
+ *
+ * Returns `null` when the project may advance. Returns a string explaining
+ * why it's held when progress < 100% (caller surfaces this to the leader).
+ *
+ * @param {number} progress
+ * @returns {string | null}
+ */
+export function assertDemoCanAdvance(progress) {
+  if ((progress ?? 0) < 100) {
+    return 'Tasarım tamamlanmadan demo onayı sonraki aşamaya geçiremez. Tasarımcı kalan görevleri bitirip yeni bir demo gönderecek.'
+  }
+  return null
 }
 
 /**

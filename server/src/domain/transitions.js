@@ -134,6 +134,44 @@ export function computeAdvance(project, actor) {
     return computeDemoTeslimAdvance(project, actor, now, 'cin_demo_onay')
   }
 
+  // 2b) Re-send demo after the first one was approved-but-held because the
+  // design wasn't 100%. The designer (or the leader) triggers a second
+  // demo round by advancing demo_onay → demo_teslim. Only allowed when
+  // progress has since reached 100% AND the prior demo is held.
+  if (
+    (project.stage === 'demo_onay' || project.stage === 'cin_demo_onay') &&
+    project.demo_held === true &&
+    (project.progress ?? 0) >= 100
+  ) {
+    const role = actor?.role
+    const isAssigned = (project.assignees ?? []).some((a) => a.id === actor?.id)
+    if (role !== 'team_leader' && !isAssigned) {
+      badRequest('Tekrar demo göndermek için ekip lideri veya atanmış tasarımcı olmalısınız.')
+    }
+    const targetStage = project.stage === 'demo_onay' ? 'demo_teslim' : 'cin_demo_teslim'
+    return {
+      project: {
+        ...project,
+        stage: targetStage,
+        demo_held: false,
+        demo_held_at: null,
+        demo_held_by_name: null,
+        demo_delivered_at: null,
+        reject_target: null,
+        last_reject_reason: null,
+        last_reject_type: null,
+        updated_at: now,
+      },
+      history: makeEntry(project, {
+        action: 'advance',
+        from_stage: project.stage,
+        to_stage: targetStage,
+        done_by_name: actorName,
+        note: 'Tasarım tamamlandı — yeniden demo gönderildi',
+      }),
+    }
+  }
+
   // 3) Ozalit Teslim dual-step.
   if (project.stage === 'ozalit_teslim') {
     return computeOzalitTeslimAdvance(project, actor, now)
@@ -253,9 +291,32 @@ export function computeApproval(project, actor) {
   }
 
   // Demo approval: leader OR printer OR designer-with-flag can advance it.
+  // New demo rule (see client pipeline.js#assertDemoCanAdvance): an approve
+  // at <100% progress is recorded as a hold — the project stays at
+  // `demo_onay` and a second demo is required after the designer finishes.
   if (project.stage === 'demo_onay' || project.stage === 'cin_demo_onay') {
     if (!canApproveAt(project.stage, actor)) {
       badRequest('Demo onayını yalnızca ekip lideri, matbaa veya özel tasarımcı yapabilir.')
+    }
+    if ((project.progress ?? 0) < 100) {
+      // Approve but don't advance. Designer keeps working; once they hit
+      // 100% they (or the leader) send a second demo via /advance.
+      return {
+        project: {
+          ...project,
+          demo_held: true,
+          demo_held_at: now,
+          demo_held_by_name: actorName,
+          updated_at: now,
+        },
+        history: makeEntry(project, {
+          action: 'approve',
+          from_stage: project.stage,
+          to_stage: project.stage,
+          done_by_name: actorName,
+          note: 'Demo onaylandı — tasarım tamamlanmadığı için Ozalit bekleniyor',
+        }),
+      }
     }
     const pipeline = pipelineFor(project)
     const stageIdx = pipeline.indexOf(project.stage)
@@ -263,7 +324,12 @@ export function computeApproval(project, actor) {
     if (!next) return { project, history: null }
     assertCanEnterProductionLocal(next, project.progress)
     return {
-      project: { ...project, stage: next, updated_at: now },
+      project: {
+        ...project,
+        stage: next,
+        demo_held: false,
+        updated_at: now,
+      },
       history: makeEntry(project, {
         action: 'approve',
         from_stage: project.stage,
@@ -452,6 +518,6 @@ function applyRevize(subtask, selected, nowIso) {
 
 function assertCanEnterProductionLocal(nextStage, progress) {
   if (STAGES_REQUIRING_FULL_PROGRESS.has(nextStage) && (progress ?? 0) < 100) {
-    badRequest('Proje %100 tamamlanmadan Demo, Ozalit ve üretim aşamasına geçemez.')
+    badRequest('Proje %100 tamamlanmadan Ozalit ve üretim aşamasına geçemez.')
   }
 }

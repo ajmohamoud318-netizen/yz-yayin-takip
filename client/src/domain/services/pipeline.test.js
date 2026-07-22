@@ -12,6 +12,7 @@ import {
   getPipeline,
   getNextStage,
   assertCanEnterProduction,
+  assertDemoCanAdvance,
   canRequestOrder,
   assertOrderable,
   handoverStageFor,
@@ -50,7 +51,11 @@ describe('getNextStage', () => {
 })
 
 describe('assertCanEnterProduction (100% gate)', () => {
-  it('blocks every post-design stage at < 100% — demo onward is locked', () => {
+  it('blocks every post-design stage at < 100% — ozalit onward is locked', () => {
+    // Note: demo_teslim / cin_demo_teslim / demo_onay / cin_demo_onay are
+    // deliberately NOT in STAGES_REQUIRING_FULL_PROGRESS anymore. A demo
+    // round can run at any progress; the hold at <100% is enforced by
+    // assertDemoCanAdvance when the leader approves (server side).
     for (const stage of STAGES_REQUIRING_FULL_PROGRESS) {
       expect(() => assertCanEnterProduction(stage, 99)).toThrow(/%100 tamamlanmadan/)
     }
@@ -58,14 +63,41 @@ describe('assertCanEnterProduction (100% gate)', () => {
   it('lets tasarım‑stage transitions stay open at partial progress', () => {
     expect(() => assertCanEnterProduction('tasarim', 0)).not.toThrow()
   })
+  it('allows demo stages at any progress (gate starts at ozalit)', () => {
+    // The demo rule: any progress is OK for entering demo_teslim /
+    // demo_onay / cin_demo_teslim / cin_demo_onay. The actual advance
+    // out of demo_onay is what assertDemoCanAdvance guards.
+    for (const stage of ['demo_teslim', 'demo_onay', 'cin_demo_teslim', 'cin_demo_onay']) {
+      expect(() => assertCanEnterProduction(stage, 0)).not.toThrow()
+      expect(() => assertCanEnterProduction(stage, 50)).not.toThrow()
+      expect(() => assertCanEnterProduction(stage, 100)).not.toThrow()
+    }
+  })
   it('allows every post-design stage at exactly 100%', () => {
     for (const stage of STAGES_REQUIRING_FULL_PROGRESS) {
       expect(() => assertCanEnterProduction(stage, 100)).not.toThrow()
     }
   })
   it('treats undefined progress as 0', () => {
-    expect(() => assertCanEnterProduction('demo_teslim', undefined)).toThrow()
+    // demo_teslim now accepts undefined (the gate no longer covers it).
+    expect(() => assertCanEnterProduction('demo_teslim', undefined)).not.toThrow()
+    // ozalit_teslim still requires 100% — undefined falls through to the gate.
     expect(() => assertCanEnterProduction('ozalit_teslim', undefined)).toThrow()
+  })
+})
+
+describe('assertDemoCanAdvance (approve-but-hold rule)', () => {
+  it('returns null at 100% (project may advance)', () => {
+    expect(assertDemoCanAdvance(100)).toBeNull()
+    expect(assertDemoCanAdvance(150)).toBeNull() // over-100 is treated as OK
+  })
+  it('returns a Turkish hold reason at < 100%', () => {
+    const msg = assertDemoCanAdvance(50)
+    expect(msg).toMatch(/tasarım tamamlanmadan/i)
+    expect(msg).toMatch(/yeni bir demo/i)
+  })
+  it('treats undefined progress as 0', () => {
+    expect(assertDemoCanAdvance(undefined)).toMatch(/tasarım tamamlanmadan/i)
   })
 })
 

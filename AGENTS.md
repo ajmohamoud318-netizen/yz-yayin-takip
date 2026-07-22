@@ -89,6 +89,21 @@ Server-side, the same predicates are mirrored in `server/src/domain/transitions.
 ### Production Gate
 A project **cannot** enter Ozalit or any later stage until `progress === 100%`. Enforced by `assertCanEnterProduction` in `domain/services/pipeline.js`. `STAGES_REQUIRING_FULL_PROGRESS` = `ozalit_teslim, ozalit_onay, uretime_hazir, uretimde, gumruk, satista`.
 
+### Demo Rule (demos are exempt from the 100% gate)
+Demos are a **review checkpoint**, not a production step. The 100% gate kicks in at ozalit — a half-finished design must not reach the print proof or the press.
+
+- **Designer or team leader can request a demo at any progress.** The team leader's request is `tasarim → demo_teslim`; the designer's is the same path (assigned designers are listed in `availableActions` at `tasarim`). No second demo request is allowed while one is in flight (`stage ∈ {demo_teslim, demo_onay, cin_demo_teslim, cin_demo_onay}`).
+- **Matbaa delivers the demo** (`demo_teslim → demo_onay`); a printer-only `advance`.
+- **Team leader approves or rejects.** On rejection, they pick the responsible party (`designer` | `matbaa`) and a reason.
+- **Approved demo at <100% is a "hold"**: the leader's approve is recorded, the project stays at `demo_onay`, `demo_held = true`. The designer keeps working on the held project — the UI shows a yellow "Tasarım tamamlanmadı — onay sonraki aşamaya geçirmez" hint next to the approve button.
+- **When progress reaches 100%, the designer (or leader) sends a second demo** by clicking "Tekrar Demo Gönder". The server's `computeAdvance` gates this on `demo_held === true && progress >= 100`. The full demo loop re-runs (`demo_onay → demo_teslim → demo_onay`); leader approves again to advance to `ozalit_teslim`.
+
+Enforced by:
+- `client/src/domain/services/pipeline.js#assertCanEnterProduction` (gate at ozalit onward, not at demo)
+- `client/src/domain/services/pipeline.js#assertDemoCanAdvance` (the `<100%` hold explanation)
+- `server/src/domain/transitions.js#computeAdvance` (the "tekrar demo" branch)
+- `server/src/domain/transitions.js#computeApproval` (the demo_onay `<100%` hold branch)
+
 ### Rejection Rule (main pipeline)
 - Every rejection requires a written `reason` (backend-enforced)
 - The reason is stored in `stage_history` and visible on the project history

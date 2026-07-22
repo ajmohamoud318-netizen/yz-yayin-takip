@@ -31,9 +31,15 @@ describe('pipeline', () => {
     assert.equal(getNextStage({ type: 'TR', stage: 'satista' }), null)
   })
 
-  it('assertCanEnterProduction blocks Ozalit+ below 100%', () => {
+  it('assertCanEnterProduction blocks Ozalit+ below 100% but lets demo run at any progress', () => {
     assert.doesNotThrow(() => assertCanEnterProduction('uretime_hazir', 100))
-    assert.throws(() => assertCanEnterProduction('demo_teslim', 50), /100/)
+    // demo_teslim no longer requires 100% — demos are allowed at any
+    // progress; the hold-at-<100% rule lives in computeApproval instead.
+    assert.doesNotThrow(() => assertCanEnterProduction('demo_teslim', 50))
+    assert.doesNotThrow(() => assertCanEnterProduction('cin_demo_onay', 0))
+    // ozalit onward still requires 100%.
+    assert.throws(() => assertCanEnterProduction('ozalit_teslim', 50), /100/)
+    assert.throws(() => assertCanEnterProduction('uretime_hazir', 99), /100/)
     assert.doesNotThrow(() => assertCanEnterProduction('tasarim', 0))
   })
 

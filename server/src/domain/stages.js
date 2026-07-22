@@ -21,9 +21,19 @@ export const ORDERABLE_STAGES = new Set(['satista'])
 
 export const HANDOVER_ELIGIBLE_STAGE = { TR: 'uretimde', CIN: 'gumruk' }
 
+/**
+ * Stages that require the design to be 100% complete to enter. The gate
+ * starts at the print proof (ozalit) — that's where the matbaa actually runs
+ * paper through a press and a half-finished design is expensive to recall.
+ *
+ * Demo stages (demo_teslim, demo_onay, cin_demo_*) are deliberately
+ * excluded: a designer (or the team leader) can request a demo at any
+ * progress, the matbaa prints the proof, and the team leader approves. If
+ * the design wasn't complete the project stays at demo_onay (server's
+ * `computeApprove` records the approve but holds the project) until the
+ * designer finishes and a second demo is sent.
+ */
 export const STAGES_REQUIRING_FULL_PROGRESS = new Set([
-  'demo_teslim', 'cin_demo_teslim',
-  'demo_onay',   'cin_demo_onay',
   'ozalit_teslim', 'ozalit_onay',
   'uretime_hazir', 'uretimde', 'gumruk', 'satista',
 ])

@@ -10,6 +10,7 @@ export {
   getPipeline,
   getNextStage,
   assertCanEnterProduction,
+  assertDemoCanAdvance,
   STAGES_REQUIRING_FULL_PROGRESS,
   canRequestOrder,
   assertOrderable,

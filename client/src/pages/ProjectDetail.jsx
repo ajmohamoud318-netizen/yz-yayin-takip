@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Calendar,
   CheckCircle2,
+  Clock,
   ChevronRight,
   ClipboardEdit,
   ClipboardList,
@@ -588,6 +589,20 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                     {approveLabel}
                   </Button>
                 )}
+                {/* Demo-hold hint: the leader's approve at <100% won't
+                    advance — surface the rule next to the approve button so
+                    they understand why nothing happened on screen. */}
+                {actions.includes('approve') &&
+                  (project.stage === 'demo_onay' || project.stage === 'cin_demo_onay') &&
+                  (project.progress ?? 0) < 100 && (
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800"
+                      title="Tasarımcı kalan görevleri bitirip yeni demo gönderdiğinde ilerleyecek"
+                    >
+                      <Clock className="h-3.5 w-3.5" />
+                      Tasarım tamamlanmadı — onay sonraki aşamaya geçirmez
+                    </span>
+                  )}
                 {actions.includes('reject') && (
                   <Button size="sm" variant="destructive" onClick={() => setDialog('reject')}>
                     <ThumbsDown className="h-4 w-4" />
@@ -1213,6 +1228,20 @@ function availableActions({ project, user }) {
     set.add('reject')
   }
 
+  // Demo re-send: after a demo was approved but the design was <100%, the
+  // project sits at demo_onay. The designer (or leader) finishes the
+  // remaining subtasks, then advances back to demo_teslim so the matbaa
+  // re-prints with the now-complete design. The server's computeAdvance
+  // gates this on demo_held && progress >= 100.
+  if (
+    (stage === 'demo_onay' || stage === 'cin_demo_onay') &&
+    project.demo_held === true &&
+    (project.progress ?? 0) >= 100 &&
+    (role === 'team_leader' || isAssignedDesigner)
+  ) {
+    set.add('advance')
+  }
+
   // Ozalit Onay is a two-step sign-off: the team leader approves first, then the
   // assigned designer gives the final approval (which sends it to production).
   // The leader can reject at any point.
@@ -1269,6 +1298,15 @@ function advanceActionLabel(project, userRole) {
       // A design that's back in Tasarım after an ozalit rejection resubmits to
       // the ozalit flow, not the demo.
       return project.last_reject_type === 'ozalit' ? "Ozalit'e Gönder" : "Demo'ya Gönder"
+    case 'demo_onay':
+    case 'cin_demo_onay':
+      // Demo was approved but held because the design wasn't 100% — the
+      // designer (or leader) is sending a second demo now that the design
+      // is complete.
+      if (project.demo_held === true && (project.progress ?? 0) >= 100) {
+        return 'Tekrar Demo Gönder'
+      }
+      return 'İlerlet'
     case 'ozalit_teslim':
       // Leader / assigned designer requesting the ozalit proof.
       return 'Ozalit İste'

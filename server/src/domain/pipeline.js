@@ -13,7 +13,7 @@ export function getNextStage(project) {
 
 export function assertCanEnterProduction(nextStage, progress) {
   if (STAGES_REQUIRING_FULL_PROGRESS.has(nextStage) && (progress ?? 0) < 100) {
-    const err = new Error('Proje %100 tamamlanmadan Demo, Ozalit ve üretim aşamasına geçemez.')
+    const err = new Error('Proje %100 tamamlanmadan Ozalit ve üretim aşamasına geçemez.')
     err.status = 400
     throw err
   }

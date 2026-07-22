@@ -181,9 +181,20 @@ export async function projectRoutes(fastify) {
       const { project: next, history } = applyAdvance(project, {
         user: request.user, note: request.body?.note ?? '',
       })
-      const updated = await patchProject(client, project.id, {
-        stage: next.stage, version: next.version,
-      })
+      // stage + version are always written. demo_held* are written only when
+      // the transition actually flips them (e.g. the "send a second demo"
+      // branch resets them to false / null).
+      const fields = { stage: next.stage, version: next.version }
+      if (Object.prototype.hasOwnProperty.call(next, 'demo_held')) {
+        fields.demo_held = next.demo_held
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'demo_held_at')) {
+        fields.demo_held_at = next.demo_held_at
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'demo_held_by_name')) {
+        fields.demo_held_by_name = next.demo_held_by_name
+      }
+      const updated = await patchProject(client, project.id, fields)
       if (history) await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
       return updated
     })
@@ -200,7 +211,8 @@ export async function projectRoutes(fastify) {
         user: request.user, stage, note: note ?? '',
       })
       // Persist all state-mutating fields from the transition (stage,
-      // optimistic-lock version, AND-rule flags for ozalit_onay).
+      // optimistic-lock version, AND-rule flags for ozalit_onay, AND the
+      // demo_held* trio set by the demo "approve-but-stay" branch).
       const fields = { stage: next.stage, version: next.version }
       if (Object.prototype.hasOwnProperty.call(next, 'ozalit_leader_approved')) {
         fields.ozalit_leader_approved = next.ozalit_leader_approved
@@ -213,6 +225,16 @@ export async function projectRoutes(fastify) {
       }
       if (Object.prototype.hasOwnProperty.call(next, 'ozalit_designer_approvals')) {
         fields.ozalit_designer_approvals = JSON.stringify(next.ozalit_designer_approvals)
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'demo_held')) {
+        fields.demo_held = next.demo_held
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'demo_held_at')) {
+        fields.demo_held_at = next.demo_held_at
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'demo_held_by_name')) {
+        fields.demo_held_by_name = next.demo_held_by_name
+      }
       }
       const updated = await patchProject(client, project.id, fields)
       if (history) await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
