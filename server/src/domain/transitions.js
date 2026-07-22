@@ -164,9 +164,9 @@ export function computeAdvance(project, actor) {
       history: makeEntry(project, {
         action: 'advance',
         from_stage: project.stage,
-        to_stage: targetStage,
+        to_stage: 'tasarim',
         done_by_name: actorName,
-        note: 'Tasarım tamamlandı — yeniden demo gönderildi',
+        note: 'Tasarıma geri dönüldü — yeni demo gönderilecek',
       }),
     }
   }
