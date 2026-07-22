@@ -454,7 +454,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                 )
               })}
               {customSubtasks.length > 0 && (
-                <div className="mt-2 space-y-1 border-t pt-2">
+                <div className="mt-2 space-y-1">
                   {customSubtasks.map((c) => {
                     const isCustomChecked = !!customChecked[c.id]
                     const showAssigneeSelect = assignedIds.length > 1
