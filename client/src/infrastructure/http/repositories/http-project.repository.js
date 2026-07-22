@@ -95,6 +95,17 @@ export function createHttpProjectRepository(userRepo) {
         total_pages: s.total_pages ?? null,
         total_stickers: s.total_stickers ?? null,
       }))
+      // The NewProjectDialog seeds `subtaskAssignees` with empty strings
+      // for every library key ("" means "inherit from the project").
+      // The server's schema requires every value in this map to have
+      // `minLength: 1`, so an empty-string entry 400s the request
+      // (`body/subtaskAssignees/kapak must NOT have fewer than 1
+      // characters`). Strip the empty entries before posting — the
+      // server's `??` fallback then resolves each subtask to the
+      // project primary assignee.
+      const subtaskAssignees = Object.fromEntries(
+        Object.entries(payload.subtaskAssignees ?? {}).filter(([, v]) => typeof v === 'string' && v.length > 0),
+      )
       const { data } = await httpClient.post('/projects', {
         title: flat.title,
         type: flat.type,
@@ -104,7 +115,9 @@ export function createHttpProjectRepository(userRepo) {
         // Forward the multi-designer array too so the server can map it to
         // the project primary + per-subtask overrides.
         assignees: Array.isArray(payload.assignees) ? payload.assignees : undefined,
-        subtaskAssignees: payload.subtaskAssignees ?? undefined,
+        ...(Object.keys(subtaskAssignees).length > 0
+          ? { subtaskAssignees }
+          : {}),
         subtasks,
       })
       cache.set(data.id, data)

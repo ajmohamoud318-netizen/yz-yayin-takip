@@ -108,4 +108,56 @@ describe('createProject HTTP body shape', () => {
     const kinds = captured.body.subtasks.map((s) => s.kind)
     expect(kinds.every((k) => k === 'check')).toBe(true)
   })
+
+  it('strips empty-string entries from subtaskAssignees', async () => {
+    // Regression: the NewProjectDialog seeds `subtaskAssignees` with
+    // empty strings for every library key ("" = "inherit from project").
+    // The server's projectsCreate schema requires `minLength: 1`, so
+    // forwarding `""` 400s the request with
+    // `body/subtaskAssignees/kapak must NOT have fewer than 1
+    // characters`. Strip the empties here so the SPA never sends them.
+    const { createHttpProjectRepository } = await import(
+      '@/infrastructure/http/repositories/http-project.repository.js'
+    )
+    const repo = createHttpProjectRepository(stubUserRepo)
+
+    await repo.createProject({
+      title: 'Boş tasarımcılar',
+      type: 'TR',
+      assignees: ['u-aylin'],
+      subtasks: ['kapak'],
+      subtaskAssignees: {
+        kapak: '',
+        kutu: '',
+        ses: '',
+        sayfalar: '',
+        sticker: '',
+        yazilim: '',
+        media: '',
+        // Real override survives the filter
+        'custom-oyun-abc12': 'u-feyza',
+      },
+    })
+
+    expect(captured.body.subtaskAssignees).toEqual({
+      'custom-oyun-abc12': 'u-feyza',
+    })
+  })
+
+  it('omits subtaskAssignees entirely when every entry is empty', async () => {
+    const { createHttpProjectRepository } = await import(
+      '@/infrastructure/http/repositories/http-project.repository.js'
+    )
+    const repo = createHttpProjectRepository(stubUserRepo)
+
+    await repo.createProject({
+      title: 'Hiç override yok',
+      type: 'TR',
+      assignees: ['u-aylin'],
+      subtasks: ['kapak'],
+      subtaskAssignees: { kapak: '', kutu: '', ses: '' },
+    })
+
+    expect('subtaskAssignees' in captured.body).toBe(false)
+  })
 })
