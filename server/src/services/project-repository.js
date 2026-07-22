@@ -58,19 +58,36 @@ export async function listProjects() {
   return Promise.all(rows.map(async (r) => {
     const project = rowToProject(r)
     project.assigned_name = r.assignee_name ?? null
-    // Merge in insertion order: primary first, then per-subtask assignees
-    // (deduped by id). Order matters for the AssigneeAvatars stack — the
-    // primary always leads.
+    // Build the assignees array from designers who actually have work:
+    //   1. everyone with at least one subtask `assigned_to` set
+    //   2. project primary (`assigned_to`) — but ONLY if they also have a
+    //      subtask. If the team leader reassigned every subtask off the
+    //      primary, that primary is no longer a designer on this project
+    //      and shouldn't render in the row card / dashboard tile.
+    const projectSubAssignees = subAssignees.get(r.id) ?? []
+    const subtaskOwnerIds = new Set(projectSubAssignees.map((s) => s.id))
     const seen = new Set()
     const merged = []
-    if (project.assigned_to) {
-      merged.push({ id: project.assigned_to, name: project.assigned_name })
-      seen.add(project.assigned_to)
-    }
-    for (const sa of subAssignees.get(r.id) ?? []) {
+    // Subtask assignees first (they're guaranteed to have real work).
+    for (const sa of projectSubAssignees) {
       if (seen.has(sa.id)) continue
       seen.add(sa.id)
       merged.push(sa)
+    }
+    // Project primary only if they're already one of the subtask owners.
+    if (project.assigned_to && subtaskOwnerIds.has(project.assigned_to)) {
+      // De-dup: the primary may already be in `merged` via the subtask
+      // loop. Move them to the front so the avatar stack always leads
+      // with the primary (matches the "primary leads" convention used
+      // elsewhere in the UI).
+      const existingIdx = merged.findIndex((a) => a.id === project.assigned_to)
+      if (existingIdx > 0) {
+        const [existing] = merged.splice(existingIdx, 1)
+        merged.unshift(existing)
+      } else if (existingIdx === -1) {
+        merged.unshift({ id: project.assigned_to, name: project.assigned_name })
+      }
+      seen.add(project.assigned_to)
     }
     project.assignees = merged
     return project

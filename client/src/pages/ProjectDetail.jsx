@@ -110,21 +110,34 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
 
   const isAssigned = (project?.assignees ?? []).some((a) => a.id === user?.id)
 
-  // Distinct designers referenced anywhere on this project: the project-level
-  // assignees plus anyone picked on a per-subtask `assigned_to` row. Merged
-  // here (not on the server) so the detail UI stays correct even when the
-  // server only stored the project primary on `assigned_to` — the per-subtask
-  // overrides from `subtasks.assigned_to` still surface as additional designers.
+  // Distinct designers actually doing work on this project. We include:
+  //   1. Anyone with at least one subtask `assigned_to` set (the people
+  //      the team leader split the work across).
+  //   2. The project primary (`projects.assigned_to`) — BUT only if they
+  //      also have at least one subtask. If the team leader moved every
+  //      subtask off the primary, the primary has no work to do here
+  //      and shouldn't show up in the per-project designer list.
+  // Without rule (2) the header renders a designer who isn't actually
+  // responsible for any subtask (the user reported this exact issue on
+  // project X1: the primary "Abdijibar" had zero subtasks but appeared
+  // in the header next to Rahşan and Aylin, who each had real work).
   const allDesigners = useMemo(() => {
-    const map = new Map()
-    for (const a of project?.assignees ?? []) map.set(a.id, a)
-    for (const s of project?.subtasks ?? []) {
-      if (s.assigned_to && !map.has(s.assigned_to)) {
-        map.set(s.assigned_to, { id: s.assigned_to, name: s.assigned_name ?? null })
+    const subs = project?.subtasks ?? []
+    const byId = new Map()
+    // 1. seed from subtask assignees — these are always real workers
+    for (const s of subs) {
+      if (s.assigned_to && !byId.has(s.assigned_to)) {
+        byId.set(s.assigned_to, { id: s.assigned_to, name: s.assigned_name ?? null })
       }
     }
-    return Array.from(map.values())
-  }, [project?.assignees, project?.subtasks])
+    // 2. add project primary only if they're already a subtask owner
+    const primaryId = project?.assigned_to
+    if (primaryId && byId.has(primaryId)) {
+      const primary = project?.assignees?.find((a) => a.id === primaryId)
+      if (primary) byId.set(primary.id, { ...primary, name: primary.name ?? byId.get(primary.id).name })
+    }
+    return Array.from(byId.values())
+  }, [project?.assignees, project?.assigned_to, project?.subtasks])
 
   // Stages where a designer may still work on the subtasks after submitting an
   // early demo. The demo can be sent before the design is finished, so as long
