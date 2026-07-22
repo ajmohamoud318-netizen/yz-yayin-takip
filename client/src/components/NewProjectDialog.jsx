@@ -90,7 +90,24 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
     if (isEdit) {
       setTitle(project.title)
       setType(project.type)
-      setAssignedIds((project.assignees ?? []).map((a) => a.id))
+      // Merge project-level assignees with per-subtask designers so the
+      // picker pre-fills with everyone who actually owns a piece of this
+      // project. The server's detail endpoint should already return the
+      // union — this is a defensive client-side fallback in case it
+      // returns only the project primary (e.g. after a stale cache hit
+      // or while the server fix is rolling out). Mirrors the allDesigners
+      // pattern in ProjectDetail.jsx so the two views stay in lock-step.
+      const designerMap = new Map()
+      for (const a of project.assignees ?? []) designerMap.set(a.id, a)
+      for (const s of project.subtasks ?? []) {
+        if (s.assigned_to && !designerMap.has(s.assigned_to)) {
+          designerMap.set(s.assigned_to, {
+            id: s.assigned_to,
+            name: s.assigned_name ?? null,
+          })
+        }
+      }
+      setAssignedIds(Array.from(designerMap.keys()))
       setTargetDate(((project.target_month ?? defaultTargetDate()).slice(0, 10) < todayISO())
         ? todayISO()
         : (project.target_month ?? defaultTargetDate()).slice(0, 10))

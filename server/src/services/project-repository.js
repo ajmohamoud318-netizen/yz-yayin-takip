@@ -79,17 +79,49 @@ export async function listProjects() {
 
 /**
  * Resolve the assignee list for a single project. Mirrors the list
- * endpoint: today the only source of truth is `projects.assigned_to`,
- * so this is a 1-row lookup. Kept here (rather than in the route
- * file) so both listProjects and the detail route use one helper.
+ * endpoint: returns the project primary assignee AND every distinct
+ * per-subtask assignee, in stable order (primary first, then subtask
+ * owners in insertion order, deduped by id). Without the subtask merge
+ * a project where the team leader split the work across Kapak → Rahşan,
+ * Kutu → Aylin, Ses → Abdijibar would only ship one designer in the
+ * detail response and the edit dialog would pre-fill with just that
+ * one — the per-subtask designers would silently vanish from the picker.
+ *
+ * The merge order is intentional: the primary leads so the AssigneeAvatars
+ * stack and the "Tasarımcılar" header card on the detail page both render
+ * the project owner first, with the per-subtask designers following.
  */
 export async function loadProjectAssignees(client, project) {
-  if (!project.assigned_to) return []
-  const { rows } = await client.query(
-    'SELECT id, name FROM users WHERE id = $1',
-    [project.assigned_to],
-  )
-  return rows
+  if (!project.assigned_to && !(project.id ?? project.project_id)) return []
+  const projectId = project.id ?? project.project_id
+  const seen = new Set()
+  const merged = []
+  if (project.assigned_to) {
+    const { rows } = await client.query(
+      'SELECT id, name FROM users WHERE id = $1',
+      [project.assigned_to],
+    )
+    if (rows[0]) {
+      merged.push({ id: rows[0].id, name: rows[0].name })
+      seen.add(rows[0].id)
+    }
+  }
+  if (projectId) {
+    const { rows } = await client.query(
+      `SELECT s.assigned_to, u.name AS assignee_name
+         FROM subtasks s
+         LEFT JOIN users u ON u.id = s.assigned_to
+        WHERE s.project_id = $1 AND s.assigned_to IS NOT NULL
+        ORDER BY s.created_at, s.id`,
+      [projectId],
+    )
+    for (const r of rows) {
+      if (seen.has(r.assigned_to)) continue
+      seen.add(r.assigned_to)
+      merged.push({ id: r.assigned_to, name: r.assignee_name })
+    }
+  }
+  return merged
 }
 
 export async function getProject(id) {
