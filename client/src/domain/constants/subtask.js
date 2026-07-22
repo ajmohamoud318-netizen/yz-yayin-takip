@@ -18,7 +18,7 @@ export const SUBTASK_KIND = Object.freeze({
 /** A user-facing label per subtask kind (used in logs and history notes). */
 export const SUBTASK_KIND_LABEL = Object.freeze({
   [SUBTASK_KIND.NORMAL]: 'Normal',
-  [SUBTASK_KIND.PAGES]: 'Sayfa',
+  [SUBTASK_KIND.PAGES]: 'Sayfa Sayısı',
   [SUBTASK_KIND.REVIZE]: 'Revize',
 })
 

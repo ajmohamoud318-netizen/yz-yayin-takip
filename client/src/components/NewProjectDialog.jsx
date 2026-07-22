@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Plus, Pencil, X } from 'lucide-react'
 
@@ -15,6 +15,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -77,7 +82,21 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
   // Custom (ad-hoc) subtasks added by the team leader for this project.
   // Shape: { id: string, label: string }[]
   const [customSubtasks, setCustomSubtasks] = useState([])
+  // Which custom subtasks are currently checked on. Custom items are
+  // opt-in (the leader chose to add them) so they default to checked; the
+  // leader can still uncheck a custom row to skip it for this project.
+  // Shape: { [customId]: boolean }
+  const [customChecked, setCustomChecked] = useState({})
   const [customDraft, setCustomDraft] = useState('')
+  // Popover that hosts the "Ekle" mini-form. When the team leader confirms,
+  // the new subtask is pushed into `customSubtasks` AND immediately marked as
+  // checked (it's a work item they just chose to add — "checked" is the right
+  // default for an item they opted into, vs. the predefined library which
+  // starts unchecked).
+  const [addSubtaskOpen, setAddSubtaskOpen] = useState(false)
+  // Ref for the popover input — auto-focused on open so the leader can
+  // start typing immediately.
+  const addInputRef = useRef(null)
   const [targetDate, setTargetDate] = useState(defaultTargetDate())
   const [designers, setDesigners] = useState([])
   const [saving, setSaving] = useState(false)
@@ -134,6 +153,14 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
       setSubtasks(map)
       setSubtaskAssignees(assigneeMap)
       setCustomSubtasks(customs)
+      // Custom subtasks are always treated as checked on rehydration — the
+      // server only persists items the leader opted into (customs have no
+      // unchecked representation on the server side).
+      const checkedMap = {}
+      for (const c of customs) checkedMap[c.id] = true
+      setCustomChecked(checkedMap)
+      setAddSubtaskOpen(false)
+      setCustomDraft('')
       setPageCount(pc)
     } else {
       setTargetDate(defaultTargetDate())
@@ -149,6 +176,8 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
     setSubtasks(emptySubtasks())
     setSubtaskAssignees(emptySubtaskAssignees())
     setCustomSubtasks([])
+    setCustomChecked({})
+    setAddSubtaskOpen(false)
     setCustomDraft('')
     setPageCount(32)
     setStickerCount(1)
@@ -157,12 +186,37 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
   function addCustomSubtask() {
     const label = customDraft.trim()
     if (!label) return
-    setCustomSubtasks((prev) => [...prev, { id: customSubtaskKey(label), label }])
+    const id = customSubtaskKey(label)
+    setCustomSubtasks((prev) => [...prev, { id, label }])
+    // Custom subtasks are opt-in — the team leader just chose to add them,
+    // so they default to checked. This matches how the predefined library
+    // behaves once the box is ticked, and avoids the surprise of adding
+    // "Öğretmen Kılavuzu" and seeing it sit there greyed out.
+    setSubtaskAssignees((prev) => ({ ...prev, [id]: '' }))
+    setCustomChecked((prev) => ({ ...prev, [id]: true }))
     setCustomDraft('')
+    setAddSubtaskOpen(false)
   }
 
   function removeCustomSubtask(id) {
     setCustomSubtasks((prev) => prev.filter((c) => c.id !== id))
+    setSubtaskAssignees((prev) => {
+      if (!(id in prev)) return prev
+      const { [id]: _drop, ...rest } = prev
+      return rest
+    })
+    setCustomChecked((prev) => {
+      if (!(id in prev)) return prev
+      const { [id]: _drop, ...rest } = prev
+      return rest
+    })
+  }
+
+  function toggleCustomChecked(id, value) {
+    setCustomChecked((prev) => ({ ...prev, [id]: !!value }))
+    if (!value) {
+      setSubtaskAssignees((prev) => ({ ...prev, [id]: '' }))
+    }
   }
 
   // Force the page/sticker count to stay at >= 1. The HTML `min="1"` only
@@ -218,9 +272,12 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         .map(([k]) => k)
       // Custom subtasks are sent alongside the library keys. The mapper
       // recognises unknown keys and stores them verbatim as `kind: 'check'`.
-      const customSelected = customSubtasks.map((c) => c.label)
+      // Only checked customs go to the server — an unchecked custom is
+      // effectively deleted from this project's perspective.
+      const visibleCustoms = customSubtasks.filter((c) => customChecked[c.id])
+      const customSelected = visibleCustoms.map((c) => c.label)
       const mergedSubtasks = [...selected, ...customSelected]
-      const customAssignees = customSubtasks.reduce((acc, c) => {
+      const customAssignees = visibleCustoms.reduce((acc, c) => {
         const v = subtaskAssignees[c.id]
         if (v) acc[c.label] = v
         return acc
@@ -352,36 +409,91 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
               )}
             </div>
 
-            {/* Custom subtask entry row. Each project can come with its own
-                ad-hoc items in addition to the predefined library. */}
+            {/* Custom subtask entry. The "+ Ekle" button opens a small popover
+                with a name field; pressing Ekle (or Enter) appends a new row
+                below in the same visual rhythm as the predefined library —
+                already checked, because the team leader just chose to add it. */}
             <div className="flex items-center gap-2">
-              <Input
-                value={customDraft}
-                onChange={(e) => setCustomDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    addCustomSubtask()
+              <Popover
+                open={addSubtaskOpen}
+                onOpenChange={(v) => {
+                  setAddSubtaskOpen(v)
+                  if (v) {
+                    // Defer focus until after Radix mounts the popover.
+                    requestAnimationFrame(() => addInputRef.current?.focus())
                   }
                 }}
-                placeholder="Örn. Sticker Şablonu, Öğretmen Kılavuzu…"
-                className="h-9 flex-1"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={addCustomSubtask}
-                disabled={!customDraft.trim()}
-                className="h-9 shrink-0"
               >
-                <Plus className="mr-1 h-3.5 w-3.5" /> Ekle
-              </Button>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 shrink-0"
+                  >
+                    <Plus className="mr-1 h-3.5 w-3.5" /> Ekle
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="end"
+                  sideOffset={6}
+                  className="w-72 space-y-2"
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                >
+                  <Label htmlFor="np-custom-subtask" className="text-xs">
+                    Yeni alt görev adı
+                  </Label>
+                  <Input
+                    id="np-custom-subtask"
+                    ref={addInputRef}
+                    value={customDraft}
+                    onChange={(e) => setCustomDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        addCustomSubtask()
+                      } else if (e.key === 'Escape') {
+                        setAddSubtaskOpen(false)
+                      }
+                    }}
+                    placeholder="Örn. Öğretmen Kılavuzu, Aktivite Kitabı…"
+                    className="h-9"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Eklendiğinde otomatik olarak işaretli gelir; isterseniz sonra kaldırabilirsiniz.
+                  </p>
+                  <div className="flex justify-end gap-2 pt-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8"
+                      onClick={() => setAddSubtaskOpen(false)}
+                    >
+                      Vazgeç
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8"
+                      onClick={addCustomSubtask}
+                      disabled={!customDraft.trim()}
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" /> Ekle
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="space-y-1 rounded-lg border bg-muted/30 p-3">
               {SUBTASK_LIBRARY.map((s) => {
                 const isChecked = !!subtasks[s.key]
+                // The assignee dropdown is rendered for every row so the
+                // visual rhythm stays constant. It's disabled until the
+                // subtask is checked (and hidden entirely when the project
+                // has only one assigned designer — no choice to make).
+                const showAssigneeSelect = assignedIds.length > 1
                 return (
                   <div key={s.key} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-background">
                     <Checkbox
@@ -398,15 +510,22 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                     >
                       {s.label}
                     </label>
-                    {isChecked && assignedIds.length > 1 && (
+                    {showAssigneeSelect && (
                       <Select
                         value={subtaskAssignees[s.key] || ''}
                         onValueChange={(v) =>
                           setSubtaskAssignees((prev) => ({ ...prev, [s.key]: v }))
                         }
+                        disabled={!isChecked}
                       >
-                        <SelectTrigger className="h-7 w-36 text-xs">
-                          <SelectValue placeholder="Tasarımcı seç…" />
+                        <SelectTrigger
+                          className={cn(
+                            'h-7 w-36 text-xs',
+                            !isChecked && 'opacity-50',
+                          )}
+                          aria-disabled={!isChecked}
+                        >
+                          <SelectValue placeholder={isChecked ? 'Tasarımcı seç…' : '—'} />
                         </SelectTrigger>
                         <SelectContent>
                           {designers
@@ -424,45 +543,66 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
               })}
               {customSubtasks.length > 0 && (
                 <div className="mt-2 space-y-1 border-t pt-2">
-                  {customSubtasks.map((c) => (
-                    <div
-                      key={c.id}
-                      className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5"
-                    >
-                      <span className="flex-1 text-sm">{c.label}</span>
-                      {assignedIds.length > 1 && (
-                        <Select
-                          value={subtaskAssignees[c.id] || ''}
-                          onValueChange={(v) =>
-                            setSubtaskAssignees((prev) => ({ ...prev, [c.id]: v }))
-                          }
-                        >
-                          <SelectTrigger className="h-7 w-36 text-xs">
-                            <SelectValue placeholder="Tasarımcı seç…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {designers
-                              .filter((d) => assignedIds.includes(d.id))
-                              .map((d) => (
-                                <SelectItem key={d.id} value={d.id}>
-                                  {d.name}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        onClick={() => removeCustomSubtask(c.id)}
-                        aria-label={`${c.label} alt görevini kaldır`}
+                  {customSubtasks.map((c) => {
+                    const isCustomChecked = !!customChecked[c.id]
+                    const showAssigneeSelect = assignedIds.length > 1
+                    return (
+                      <div
+                        key={c.id}
+                        className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5"
                       >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  ))}
+                        <Checkbox
+                          id={`st-custom-${c.id}`}
+                          checked={isCustomChecked}
+                          onCheckedChange={(v) => toggleCustomChecked(c.id, v)}
+                        />
+                        <label
+                          htmlFor={`st-custom-${c.id}`}
+                          className="flex-1 cursor-pointer text-sm select-none"
+                        >
+                          {c.label}
+                        </label>
+                        {showAssigneeSelect && (
+                          <Select
+                            value={subtaskAssignees[c.id] || ''}
+                            onValueChange={(v) =>
+                              setSubtaskAssignees((prev) => ({ ...prev, [c.id]: v }))
+                            }
+                            disabled={!isCustomChecked}
+                          >
+                            <SelectTrigger
+                              className={cn(
+                                'h-7 w-36 text-xs',
+                                !isCustomChecked && 'opacity-50',
+                              )}
+                              aria-disabled={!isCustomChecked}
+                            >
+                              <SelectValue placeholder={isCustomChecked ? 'Tasarımcı seç…' : '—'} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {designers
+                                .filter((d) => assignedIds.includes(d.id))
+                                .map((d) => (
+                                  <SelectItem key={d.id} value={d.id}>
+                                    {d.name}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => removeCustomSubtask(c.id)}
+                          aria-label={`${c.label} alt görevini kaldır`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
