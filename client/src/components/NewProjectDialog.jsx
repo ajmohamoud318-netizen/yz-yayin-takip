@@ -520,10 +520,10 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
 
               {/* Inline add-row. Sits at the bottom of the same card so the
                   visual rhythm stays constant. Type a name, press Enter or
-                  hit + to push the new subtask onto the list above — already
-                  checked. No popover, no portal — clicks can't be lost. */}
+                  click "Ekle" to push the new subtask onto the list above —
+                  already checked. No popover, no portal — clicks can't be
+                  lost. */}
               <div className="mt-2 flex items-center gap-2 border-t pt-2">
-                <Plus className="ml-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <Input
                   value={customDraft}
                   onChange={(e) => setCustomDraft(e.target.value)}
@@ -534,18 +534,16 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                     }
                   }}
                   placeholder="Yeni alt görev ekle…"
-                  className="h-7 flex-1 border-transparent bg-transparent px-1 text-sm shadow-none focus-visible:border-input focus-visible:bg-background focus-visible:ring-1 focus-visible:ring-ring"
+                  className="h-9 flex-1"
                 />
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                  size="sm"
+                  className="h-9 shrink-0"
                   onClick={addCustomSubtask}
                   disabled={!customDraft.trim()}
-                  aria-label="Yeni alt görev ekle"
                 >
-                  <Plus className="h-3.5 w-3.5" />
+                  <Plus className="mr-1 h-3.5 w-3.5" /> Ekle
                 </Button>
               </div>
             </div>
