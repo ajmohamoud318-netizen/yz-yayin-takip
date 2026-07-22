@@ -152,8 +152,8 @@ When Matbaa finishes printing (`uretimde` for TR, `gumruk` for ÇİN), they rais
 - Color-coded by status (see below)
 **Status colors:**
 - 🟠 Orange — Yeni Proje / just started
-- 🟣 Purple — Devam Eden / in progress
-- 🟢 Green — Demo aşamasında
+- 🟣 Purple — Devam Eden / in progress (includes the first demo cycle — `demo_teslim` + `demo_onay` before the leader has approved once)
+- 🟢 Green — Second demo cycle in flight (leader already approved once, designer reached 100%, demo re-sent) — ready for the leader to send to Özalit
 - 🔵 Blue — Özalit aşamasında
 - 🩷 Pink — Üretimde
 - 🟡 Yellow — Satışta

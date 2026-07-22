@@ -2,6 +2,19 @@
  * Maps a project (stage + progress) to one of the status color keys.
  * Mirrors the CLAUDE.md color rules.
  */
+
+/** True when the leader has already approved a demo at least once,
+ *  meaning we're on the second demo cycle (designer finished to
+ *  100% and re-sent the demo for the leader to send to Ozalit). */
+function isSecondDemoCycle(p) {
+  if (!Array.isArray(p.history)) return false
+  return p.history.some(
+    (h) =>
+      h.action === 'approve' &&
+      (h.to_stage === 'demo_onay' || h.to_stage === 'cin_demo_onay'),
+  )
+}
+
 export function statusKeyForProject(p) {
   switch (p.stage) {
     case 'satista':
@@ -15,14 +28,15 @@ export function statusKeyForProject(p) {
     case 'ozalit_onay':
       return 'blue'
     case 'demo_teslim':
-    case 'demo_onay':
     case 'cin_demo_teslim':
+    case 'demo_onay':
     case 'cin_demo_onay':
-      // The whole demo stage is "Demo aşamasında" (green) — both
-      // before and after the matbaa delivers, and both at <100%
-      // (held, waiting on designer) and at 100% (ready for the
-      // team leader to approve and move to Ozalit).
-      return 'green'
+      // First demo cycle (leader hasn't approved yet): purple — the
+      // project is mid-flow, the design isn't necessarily finished.
+      // Second demo cycle (leader approved at <100%, designer
+      // reached 100%, designer re-sent): green — the demo is now
+      // the "ready for the leader to send to Ozalit" state.
+      return isSecondDemoCycle(p) ? 'green' : 'purple'
     default:
       return p.progress > 0 ? 'purple' : 'orange'
   }
