@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Plus, Pencil, X } from 'lucide-react'
 
@@ -15,11 +15,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
@@ -88,15 +83,6 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
   // Shape: { [customId]: boolean }
   const [customChecked, setCustomChecked] = useState({})
   const [customDraft, setCustomDraft] = useState('')
-  // Popover that hosts the "Ekle" mini-form. When the team leader confirms,
-  // the new subtask is pushed into `customSubtasks` AND immediately marked as
-  // checked (it's a work item they just chose to add — "checked" is the right
-  // default for an item they opted into, vs. the predefined library which
-  // starts unchecked).
-  const [addSubtaskOpen, setAddSubtaskOpen] = useState(false)
-  // Ref for the popover input — auto-focused on open so the leader can
-  // start typing immediately.
-  const addInputRef = useRef(null)
   const [targetDate, setTargetDate] = useState(defaultTargetDate())
   const [designers, setDesigners] = useState([])
   const [saving, setSaving] = useState(false)
@@ -159,7 +145,6 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
       const checkedMap = {}
       for (const c of customs) checkedMap[c.id] = true
       setCustomChecked(checkedMap)
-      setAddSubtaskOpen(false)
       setCustomDraft('')
       setPageCount(pc)
     } else {
@@ -177,7 +162,6 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
     setSubtaskAssignees(emptySubtaskAssignees())
     setCustomSubtasks([])
     setCustomChecked({})
-    setAddSubtaskOpen(false)
     setCustomDraft('')
     setPageCount(32)
     setStickerCount(1)
@@ -195,7 +179,6 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
     setSubtaskAssignees((prev) => ({ ...prev, [id]: '' }))
     setCustomChecked((prev) => ({ ...prev, [id]: true }))
     setCustomDraft('')
-    setAddSubtaskOpen(false)
   }
 
   function removeCustomSubtask(id) {
@@ -409,83 +392,12 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
               )}
             </div>
 
-            {/* Custom subtask entry. The "+ Ekle" button opens a small popover
-                with a name field; pressing Ekle (or Enter) appends a new row
-                below in the same visual rhythm as the predefined library —
-                already checked, because the team leader just chose to add it. */}
-            <div className="flex items-center gap-2">
-              <Popover
-                open={addSubtaskOpen}
-                onOpenChange={(v) => {
-                  setAddSubtaskOpen(v)
-                  if (v) {
-                    // Defer focus until after Radix mounts the popover.
-                    requestAnimationFrame(() => addInputRef.current?.focus())
-                  }
-                }}
-              >
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-9 shrink-0"
-                  >
-                    <Plus className="mr-1 h-3.5 w-3.5" /> Ekle
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="end"
-                  sideOffset={6}
-                  className="w-72 space-y-2"
-                  onOpenAutoFocus={(e) => e.preventDefault()}
-                >
-                  <Label htmlFor="np-custom-subtask" className="text-xs">
-                    Yeni alt görev adı
-                  </Label>
-                  <Input
-                    id="np-custom-subtask"
-                    ref={addInputRef}
-                    value={customDraft}
-                    onChange={(e) => setCustomDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        addCustomSubtask()
-                      } else if (e.key === 'Escape') {
-                        setAddSubtaskOpen(false)
-                      }
-                    }}
-                    placeholder="Örn. Öğretmen Kılavuzu, Aktivite Kitabı…"
-                    className="h-9"
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Eklendiğinde otomatik olarak işaretli gelir; isterseniz sonra kaldırabilirsiniz.
-                  </p>
-                  <div className="flex justify-end gap-2 pt-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8"
-                      onClick={() => setAddSubtaskOpen(false)}
-                    >
-                      Vazgeç
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-8"
-                      onClick={addCustomSubtask}
-                      disabled={!customDraft.trim()}
-                    >
-                      <Plus className="mr-1 h-3.5 w-3.5" /> Ekle
-                    </Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-
+            {/* Custom subtask entry. The "+ Yeni alt görev ekle…" row lives
+                at the bottom of the same card as the predefined library, so
+                the visual rhythm stays constant and there's no portal /
+                popover to lose clicks into. Pressing Enter or clicking the
+                plus button appends a new row right above it — already
+                checked, because the leader just opted into it. */}
             <div className="space-y-1 rounded-lg border bg-muted/30 p-3">
               {SUBTASK_LIBRARY.map((s) => {
                 const isChecked = !!subtasks[s.key]
@@ -605,6 +517,37 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                   })}
                 </div>
               )}
+
+              {/* Inline add-row. Sits at the bottom of the same card so the
+                  visual rhythm stays constant. Type a name, press Enter or
+                  hit + to push the new subtask onto the list above — already
+                  checked. No popover, no portal — clicks can't be lost. */}
+              <div className="mt-2 flex items-center gap-2 border-t pt-2">
+                <Plus className="ml-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <Input
+                  value={customDraft}
+                  onChange={(e) => setCustomDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      addCustomSubtask()
+                    }
+                  }}
+                  placeholder="Yeni alt görev ekle…"
+                  className="h-7 flex-1 border-transparent bg-transparent px-1 text-sm shadow-none focus-visible:border-input focus-visible:bg-background focus-visible:ring-1 focus-visible:ring-ring"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                  onClick={addCustomSubtask}
+                  disabled={!customDraft.trim()}
+                  aria-label="Yeni alt görev ekle"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
 
             {subtasks.sayfalar && (
