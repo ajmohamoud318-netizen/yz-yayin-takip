@@ -235,7 +235,6 @@ export async function projectRoutes(fastify) {
       if (Object.prototype.hasOwnProperty.call(next, 'demo_held_by_name')) {
         fields.demo_held_by_name = next.demo_held_by_name
       }
-      }
       const updated = await patchProject(client, project.id, fields)
       if (history) await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
       return updated
