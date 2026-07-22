@@ -14,10 +14,11 @@ describe('statusKeyForProject', () => {
   })
   // "Demo aşamasında" (green) means: design is at 100% AND the team
   // leader has approved. demo_teslim (printer hasn't delivered) and
-  // demo_onay at <100% (held, waiting on designer) fall through to the
-  // devam-eden buckets.
-  it('maps demo_teslim to devam eden (not yet approved)', () => {
-    expect(statusKeyForProject({ stage: 'demo_teslim', progress: 0 })).toBe('orange')
+  // demo_onay at <100% (held, waiting on designer) fall through to
+  // 'Devam Eden' (purple) — never Yeni Proje (orange) even at 0%
+  // progress, because the project has clearly moved beyond tasarim.
+  it('maps demo_teslim to devam eden regardless of progress', () => {
+    expect(statusKeyForProject({ stage: 'demo_teslim', progress: 0 })).toBe('purple')
     expect(statusKeyForProject({ stage: 'demo_teslim', progress: 50 })).toBe('purple')
     expect(statusKeyForProject({ stage: 'cin_demo_teslim', progress: 100 })).toBe('purple')
   })
