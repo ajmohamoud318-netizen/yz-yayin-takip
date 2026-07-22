@@ -718,9 +718,6 @@ function buildNotifications(projects, user, orders = []) {
       if (mine && p.stage === 'tasarim' && ((p.demo_attempt ?? 0) > 0 || (p.ozalit_attempt ?? 0) > 0)) {
         items.push({ id: `${p.id}-rej-${p.demo_attempt ?? 0}-${p.ozalit_attempt ?? 0}`, projectId: p.id, tone: 'rose', title: p.title, text: 'Revizyon gerekiyor — tasarıma geri döndü', _updatedAt: ts })
       }
-      if (mine && p.stage === 'ozalit_onay' && p.ozalit_leader_approved && !(p.ozalit_designer_approvals ?? []).includes(user.id)) {
-        items.push({ id: `${p.id}-ozalit-des-onay-${p.ozalit_attempt ?? 0}`, projectId: p.id, tone: 'amber', title: p.title, text: 'Ozalit onayınızı bekliyor', _updatedAt: ts })
-      }
     }
   }
   return items.sort((a, b) => {

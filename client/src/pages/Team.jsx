@@ -26,7 +26,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -71,22 +70,6 @@ export default function Team() {
       toast.success(updated.is_active ? 'Kullanıcı aktifleştirildi.' : 'Kullanıcı devre dışı bırakıldı.')
     } catch (err) {
       toast.error(err.message || 'İşlem başarısız.')
-    }
-  }
-
-  async function toggleCapability(u, capability, value) {
-    try {
-      const updated = await api.setUserCapability(u.id, capability, value)
-      setUsers((prev) => prev.map((x) => (x.id === u.id ? updated : x)))
-      toast.success(
-        capability === 'can_approve_ozalit'
-          ? value
-            ? 'Demo + Özalit onay yetkisi verildi.'
-            : 'Demo + Özalit onay yetkisi kaldırıldı.'
-          : 'Yetki güncellendi.',
-      )
-    } catch (err) {
-      toast.error(err.message || 'Yetki güncellenemedi.')
     }
   }
 
@@ -167,7 +150,6 @@ export default function Team() {
                 canManage={isLeader && u.id !== user.id}
                 onToggle={toggleActive}
                 onRequestDelete={requestDelete}
-                onCapabilityChange={toggleCapability}
               />
             ))}
             {filtered.length === 0 && (
@@ -208,8 +190,7 @@ export default function Team() {
 }
 
 
-function UserCard({ user, canManage, onToggle, onRequestDelete, onCapabilityChange }) {
-  const isDesigner = user.role === 'designer'
+function UserCard({ user, canManage, onToggle, onRequestDelete }) {
   return (
     <Card>
       <CardContent className="flex items-start gap-3 p-4">
@@ -233,21 +214,6 @@ function UserCard({ user, canManage, onToggle, onRequestDelete, onCapabilityChan
               <span className="text-[11px] text-amber-600">Davet bekliyor</span>
             )}
           </div>
-          {isDesigner && (
-            <div className="mt-3 flex items-center justify-between rounded-md border bg-muted/40 px-2.5 py-1.5">
-              <span className="text-[11px] text-muted-foreground">
-                Demo + Özalit onay yetkisi
-              </span>
-              <Switch
-                aria-label={`${user.name} için Demo + Özalit onay yetkisi`}
-                checked={user.can_approve_ozalit === true}
-                disabled={!canManage}
-                onCheckedChange={(v) =>
-                  onCapabilityChange?.(user, 'can_approve_ozalit', v)
-                }
-              />
-            </div>
-          )}
         </div>
         {canManage && (
           <DropdownMenu>
@@ -278,9 +244,6 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('designer')
-  // Special-designer capability. Only meaningful when role === 'designer';
-  // the server also enforces this (silently coerced to false otherwise).
-  const [canApproveOzalit, setCanApproveOzalit] = useState(false)
   const [saving, setSaving] = useState(false)
   const [lastInvite, setLastInvite] = useState(null)
 
@@ -294,10 +257,6 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
   }, [open])
 
   // Drop the capability when the role is no longer designer.
-  useEffect(() => {
-    if (role !== 'designer') setCanApproveOzalit(false)
-  }, [role])
-
   function copyLink() {
     if (!lastInvite?.url) return
     navigator.clipboard.writeText(lastInvite.url).then(
@@ -318,7 +277,6 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
         name: name.trim(),
         email: email.trim(),
         role,
-        canApproveOzalit,
       })
       // The server returns the invitation URL + whether the email was sent.
       // If SMTP failed, surface the link so the leader can forward it manually.
@@ -337,7 +295,6 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
       setName('')
       setEmail('')
       setRole('designer')
-      setCanApproveOzalit(false)
     } catch (err) {
       toast.error(err.message || 'Davet gönderilemedi.')
     } finally {
@@ -385,21 +342,6 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
               </SelectContent>
             </Select>
           </div>
-          {role === 'designer' && (
-            <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2">
-              <div>
-                <p className="text-sm font-medium">Demo + Özalit onay yetkisi</p>
-                <p className="text-[11px] text-muted-foreground">
-                  Bu tasarımcı Demo ve Özalit aşamalarında onay/red yapabilir.
-                </p>
-              </div>
-              <Switch
-                aria-label="Demo + Özalit onay yetkisi"
-                checked={canApproveOzalit}
-                onCheckedChange={setCanApproveOzalit}
-              />
-            </div>
-          )}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               İptal

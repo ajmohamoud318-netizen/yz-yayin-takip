@@ -380,9 +380,7 @@ function ProductCard({ project, comps, open, onToggle, canEdit, editing, draft, 
 export default function UrunBilgileri() {
   const { projects, loading } = useProjects()
   const { user } = useAuth()
-  // Edit rights: team_leader OR a designer with the `can_approve_ozalit`
-  // flag (a.k.a. "special designer"). The flag, not project assignment, is
-  // what unlocks edit access — see domain/services/pipeline.js.
+  // Edit rights: team_leader only.
   const canEdit = canEditProductInfo(user)
 
   const [search, setSearch] = useState('')

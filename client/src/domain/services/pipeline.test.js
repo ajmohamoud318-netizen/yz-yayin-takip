@@ -155,31 +155,25 @@ describe('handoverStageFor / canRequestHandover / assertHandoverEligible', () =>
 const LEADER = { role: 'team_leader' }
 const PRINTER = { role: 'printer' }
 const DESIGNER = { role: 'designer' }
-const SPECIAL_DESIGNER = { role: 'designer', canApproveOzalit: true }
 
 describe('isOzalitApprover (ozalit_onay approval)', () => {
   it('allows team_leader', () => {
     expect(isOzalitApprover(LEADER)).toBe(true)
   })
-  it('allows designer with the flag', () => {
-    expect(isOzalitApprover(SPECIAL_DESIGNER)).toBe(true)
-  })
-  it('denies plain designer / printer / satis / missing / false flag', () => {
+  it('denies designer / printer / satis / missing', () => {
     expect(isOzalitApprover(DESIGNER)).toBe(false)
     expect(isOzalitApprover(PRINTER)).toBe(false)
     expect(isOzalitApprover({ role: 'satis' })).toBe(false)
     expect(isOzalitApprover(undefined)).toBe(false)
-    expect(isOzalitApprover({ role: 'designer', canApproveOzalit: false })).toBe(false)
   })
 })
 
 describe('isDemoApprover (demo_onay / cin_demo_onay approval)', () => {
-  it('allows team_leader, printer, or designer with flag', () => {
+  it('allows team_leader and printer', () => {
     expect(isDemoApprover(LEADER)).toBe(true)
     expect(isDemoApprover(PRINTER)).toBe(true)
-    expect(isDemoApprover(SPECIAL_DESIGNER)).toBe(true)
   })
-  it('denies plain designer / satis', () => {
+  it('denies designer / satis', () => {
     expect(isDemoApprover(DESIGNER)).toBe(false)
     expect(isDemoApprover({ role: 'satis' })).toBe(false)
   })
@@ -196,28 +190,12 @@ describe('canRejectAtStage', () => {
     }
   })
 
-  it('lets the special designer reject only at Demo + Özalit stages', () => {
-    expect(canRejectAtStage(SPECIAL_DESIGNER, 'demo_onay')).toBe(true)
-    expect(canRejectAtStage(SPECIAL_DESIGNER, 'cin_demo_onay')).toBe(true)
-    expect(canRejectAtStage(SPECIAL_DESIGNER, 'ozalit_onay')).toBe(true)
-  })
-
-  it('blocks the special designer at non-Demo / non-Özalit stages', () => {
-    expect(canRejectAtStage(SPECIAL_DESIGNER, 'tasarim')).toBe(false)
-    expect(canRejectAtStage(SPECIAL_DESIGNER, 'demo_teslim')).toBe(false)
-    expect(canRejectAtStage(SPECIAL_DESIGNER, 'ozalit_teslim')).toBe(false)
-    expect(canRejectAtStage(SPECIAL_DESIGNER, 'uretime_hazir')).toBe(false)
-    expect(canRejectAtStage(SPECIAL_DESIGNER, 'uretimde')).toBe(false)
-  })
-
-  it('blocks plain designer / printer / satis', () => {
-    expect(canRejectAtStage(DESIGNER, 'ozalit_onay')).toBe(false)
-    expect(canRejectAtStage(PRINTER, 'ozalit_onay')).toBe(false)
-    expect(canRejectAtStage({ role: 'satis' }, 'demo_onay')).toBe(false)
-  })
-
-  it('treats a designer with canApproveOzalit=false as a plain designer', () => {
-    expect(canRejectAtStage({ role: 'designer', canApproveOzalit: false }, 'ozalit_onay')).toBe(false)
+  it('blocks designer / printer / satis at every stage', () => {
+    for (const stage of ['demo_onay', 'ozalit_onay', 'tasarim', 'uretime_hazir']) {
+      expect(canRejectAtStage(DESIGNER, stage)).toBe(false)
+      expect(canRejectAtStage(PRINTER, stage)).toBe(false)
+      expect(canRejectAtStage({ role: 'satis' }, stage)).toBe(false)
+    }
   })
 })
 
@@ -225,18 +203,10 @@ describe('canEditProductInfo (Ürün Bilgileri edit)', () => {
   it('allows team_leader', () => {
     expect(canEditProductInfo(LEADER)).toBe(true)
   })
-  it('allows designer with the flag', () => {
-    expect(canEditProductInfo(SPECIAL_DESIGNER)).toBe(true)
-  })
-  it('denies plain designer / printer / satis / missing', () => {
+  it('denies designer / printer / satis / missing', () => {
     expect(canEditProductInfo(DESIGNER)).toBe(false)
     expect(canEditProductInfo(PRINTER)).toBe(false)
     expect(canEditProductInfo({ role: 'satis' })).toBe(false)
     expect(canEditProductInfo(undefined)).toBe(false)
-  })
-  it('does not auto-grant based on project assignment', () => {
-    // Even if a designer is `assigned_to` a project, the flag — not the
-    // assignment — is what unlocks product-info editing.
-    expect(canEditProductInfo({ role: 'designer', assignedTo: 'p1' })).toBe(false)
   })
 })

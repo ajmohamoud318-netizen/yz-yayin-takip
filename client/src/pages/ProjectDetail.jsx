@@ -630,28 +630,6 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
               </div>
             )}
 
-            {/* Ozalit sign-off: leader approved, waiting on every assigned designer */}
-            {project.stage === 'ozalit_onay' && project.ozalit_leader_approved && (() => {
-              const total = (project.assignees ?? []).length
-              const done = (project.ozalit_designer_approvals ?? []).length
-              const iApproved = (project.ozalit_designer_approvals ?? []).includes(user?.id)
-              return (
-                <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
-                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-blue-800">
-                      Ekip lideri ozaliti onayladı — tasarımcı onayı bekleniyor ({done}/{total})
-                    </p>
-                    <p className="mt-0.5 text-xs text-blue-600">
-                      {isAssigned && user?.role === 'designer' && !iApproved
-                        ? 'Ozaliti onayladığınızda diğer tasarımcıların onayı beklenecek.'
-                        : 'Tüm atanmış tasarımcılar onayladığında proje üretime alınacak.'}
-                    </p>
-                  </div>
-                </div>
-              )
-            })()}
-
             {/* Rejection banner — shown whenever the project is back in tasarım after a rejection */}
             {isAssigned && project.stage === 'tasarim' && ((project.demo_attempt ?? 0) > 0 || (project.ozalit_attempt ?? 0) > 0) && (
               <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
@@ -1242,21 +1220,11 @@ function availableActions({ project, user }) {
     set.add('advance')
   }
 
-  // Ozalit Onay is a two-step sign-off: the team leader approves first, then the
-  // assigned designer gives the final approval (which sends it to production).
-  // The leader can reject at any point.
-  if (stage === 'ozalit_onay') {
-    if (role === 'team_leader') {
-      if (!project.ozalit_leader_approved) set.add('approve')
-      set.add('reject')
-    } else if (
-      isAssignedDesigner &&
-      project.ozalit_leader_approved &&
-      !(project.ozalit_designer_approvals ?? []).includes(user.id)
-    ) {
-      // Each assigned designer approves once; all must approve to reach production.
-      set.add('approve')
-    }
+  // Ozalit Onay: team leader approves; a single approval advances to
+  // Üretime Hazır. The leader can reject at any point.
+  if (stage === 'ozalit_onay' && role === 'team_leader') {
+    set.add('approve')
+    set.add('reject')
   }
   if (isAssignedDesigner && stage === 'tasarim') {
     set.add('advance')

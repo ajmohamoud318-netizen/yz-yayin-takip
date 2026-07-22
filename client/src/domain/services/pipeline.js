@@ -123,83 +123,58 @@ export function assertDemoCanAdvance(progress) {
 }
 
 /**
- * Capability helpers — these answer "is THIS user allowed to do X?" given
- * the per-user `can_approve_ozalit` flag (set by the team leader when
- * inviting a designer; colloquially "special designer").
+ * Capability helpers — these answer "is THIS user allowed to do X?"
  *
- *   canApproveOzalit   — advance `ozalit_onay → uretime_hazir`
- *                        owner: team_leader  OR  designer with flag
- *                        rule: AND-of-two (leader + special-designer) is
- *                              enforced at the route layer, not here
- *   canApproveDemo     — advance `demo_onay | cin_demo_onay → ozalit_teslim |
+ *   isOzalitApprover  — advance `ozalit_onay → uretime_hazir`
+ *                       owner: team_leader only
+ *   isDemoApprover    — advance `demo_onay | cin_demo_onay → ozalit_teslim |
  *                              uretime_hazir`
- *                        owner: team_leader  OR  printer  OR  designer with flag
- *                        rule: any one of the three approves
- *   canRejectAtStage   — reject at any stage (reason + reject_target where
- *                        applicable)
- *                        owner: team_leader only. Designers never reject.
+ *                       owner: team_leader  OR  printer
+ *   canRejectAtStage  — reject at any stage (reason + reject_target where
+ *                       applicable)
+ *                       owner: team_leader only
  *   canEditProductInfo — edit Ürün Bilgileri
- *                        owner: team_leader  OR  designer with flag
- *                        rule: assignment to a project does NOT grant this
- *
- * The flag column lives on `users` (server: `can_approve_ozalit`); the
- * client also reads the camelCase alias `canApproveOzalit` off the user
- * object the API returns.
+ *                       owner: team_leader only
  */
 
 /**
- * @param {{ role: string, canApproveOzalit?: boolean }} user
+ * @param {{ role: string }} user
  */
 export function isOzalitApprover(user) {
   if (!user) return false
   if (user.role === 'team_leader') return true
-  if (user.role === 'designer' && user.canApproveOzalit === true) return true
   return false
 }
 
 /**
- * @param {{ role: string, canApproveOzalit?: boolean }} user
+ * @param {{ role: string }} user
  */
 export function isDemoApprover(user) {
   if (!user) return false
   if (user.role === 'team_leader') return true
   if (user.role === 'printer') return true
-  if (user.role === 'designer' && user.canApproveOzalit === true) return true
   return false
 }
 
 /**
- * Rejection rights. Two roles can reject:
- *   - `team_leader`              — at ANY stage, unconditionally
- *   - `designer` with the flag   — at Demo + Özalit only (their domain)
+ * Rejection rights. Only `team_leader` can reject — at any stage.
  *
- * The plain `designer` (assigned to the project) and `printer` cannot reject.
- *
- * @param {{ role: string, canApproveOzalit?: boolean }} user
+ * @param {{ role: string }} user
  * @param {string} stage
  */
 export function canRejectAtStage(user, stage) {
   if (!user) return false
   if (user.role === 'team_leader') return true
-  if (user.role === 'designer' && user.canApproveOzalit === true) {
-    return (
-      stage === 'demo_onay' ||
-      stage === 'cin_demo_onay' ||
-      stage === 'ozalit_onay'
-    )
-  }
   return false
 }
 
 /**
- * Ürün Bilgileri edit rights. team_leader OR designer with the flag.
- * Mere project assignment does NOT grant this.
+ * Ürün Bilgileri edit rights. team_leader only.
  *
- * @param {{ role: string, canApproveOzalit?: boolean }} user
+ * @param {{ role: string }} user
  */
 export function canEditProductInfo(user) {
   if (!user) return false
   if (user.role === 'team_leader') return true
-  if (user.role === 'designer' && user.canApproveOzalit === true) return true
   return false
 }

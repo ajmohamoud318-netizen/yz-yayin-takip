@@ -22,14 +22,13 @@ import {
  *  POST   /api/users/invite
  *  PATCH  /api/users/:id/deactivate
  *  PATCH  /api/users/:id/reactivate
- *  PATCH  /api/users/:id/capabilities   { canApproveOzalit: boolean }
  *  DELETE /api/users/:id
  */
 export async function userRoutes(fastify) {
   fastify.get('/users', async (request) => {
     await attachUser(request)
     const { rows } = await getPool().query(
-      `SELECT id, name, email, role, is_active, can_approve_ozalit,
+      `SELECT id, name, email, role, is_active,
               invited_at, joined_at, created_at
          FROM users
         ORDER BY created_at`,
@@ -40,13 +39,8 @@ export async function userRoutes(fastify) {
   fastify.post('/users/invite', { schema: schemas.usersInvite }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
-    // The SPA surfaces a "Demo + Özalit onay yetkisi" toggle in the
-    // invite dialog for designers. We accept it here and persist it on
-    // the new row. Non-designers are always coerced to FALSE so the
-    // column only ever makes sense for `role = 'designer'`.
-    const { name, email, role, canApproveOzalit = false } = request.body
+    const { name, email, role } = request.body
     const normalisedEmail = email.trim().toLowerCase()
-    const persistedCapability = role === 'designer' ? !!canApproveOzalit : false
     const existing = await getPool().query(
       `SELECT id, is_active FROM users WHERE email = $1`,
       [normalisedEmail],
@@ -60,12 +54,11 @@ export async function userRoutes(fastify) {
               SET is_active = TRUE,
                   invited_at = NOW(),
                   name = $2,
-                  role = $3,
-                  can_approve_ozalit = $4
+                  role = $3
             WHERE id = $1
-        RETURNING id, name, email, role, is_active, can_approve_ozalit,
+        RETURNING id, name, email, role, is_active,
                   invited_at, joined_at, created_at`,
-          [existing.rows[0].id, name.trim(), role, persistedCapability],
+          [existing.rows[0].id, name.trim(), role],
         )
         const user = reactivated.rows[0]
         const invitation = await createInvitation({ userId: user.id })
@@ -101,11 +94,11 @@ export async function userRoutes(fastify) {
     // prefix used by the demo data migration.
     const userId = `u-${nanoid(16)}`
     const { rows } = await getPool().query(
-      `INSERT INTO users (id, name, email, role, is_active, can_approve_ozalit, invited_at)
-       VALUES ($1,$2,$3,$4,TRUE,$5,NOW())
-       RETURNING id, name, email, role, is_active, can_approve_ozalit,
+      `INSERT INTO users (id, name, email, role, is_active, invited_at)
+       VALUES ($1,$2,$3,$4,TRUE,NOW())
+       RETURNING id, name, email, role, is_active,
                  invited_at, joined_at, created_at`,
-      [userId, name.trim(), normalisedEmail, role, persistedCapability],
+      [userId, name.trim(), normalisedEmail, role],
     )
     const user = rows[0]
 
@@ -163,27 +156,6 @@ export async function userRoutes(fastify) {
       [id],
     )
     if (!rows[0]) notFound('Kullanıcı bulunamadı.')
-    return rows[0]
-  })
-
-  // Toggle a per-user capability. Today the only exposed capability is
-  // `can_approve_ozalit` (lets a designer reject/approve at Demo + Özalit).
-  // We forward the boolean to the users.can_approve_ozalit column and
-  // coerce to FALSE for non-designers on the server so the SPA never has
-  // to second-guess role semantics.
-  fastify.patch('/users/:id/capabilities', { schema: schemas.usersCapabilities }, async (request) => {
-    await attachUser(request)
-    requireRole(request, 'team_leader')
-    const { id } = request.params
-    const { canApproveOzalit } = request.body
-    const target = await getPool().query('SELECT role FROM users WHERE id = $1', [id])
-    if (target.rowCount === 0) notFound('Kullanıcı bulunamadı.')
-    const newValue = target.rows[0].role === 'designer' ? canApproveOzalit : false
-    const { rows } = await getPool().query(
-      `UPDATE users SET can_approve_ozalit = $2, updated_at = NOW() WHERE id = $1
-       RETURNING id, name, email, role, is_active, can_approve_ozalit`,
-      [id, newValue],
-    )
     return rows[0]
   })
 

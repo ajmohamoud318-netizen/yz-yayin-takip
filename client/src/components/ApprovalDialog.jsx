@@ -39,8 +39,6 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
   const { updateOne } = useProjectsStore()
   const { user } = useAuth()
   const isLeader = user?.role === 'team_leader'
-  const isSpecialDesigner =
-    user?.role === 'designer' && user?.can_approve_ozalit === true
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   // IDs of the subtasks the leader wants the designer to revise.
@@ -66,25 +64,15 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
     )
   }
 
-  // Ozalit Onay is a two-step sign-off: the team leader approves first
-  // (which does NOT advance the project — it just records their sign-off
-  // and waits for an assigned designer OR a special designer to give the
-  // second approval), then the second approval advances to Üretime Hazır.
+  // Ozalit Onay is single-step: only the team leader can approve, and a
+  // single approval advances the project to Üretime Hazır.
   const isOzalitLeaderStep =
-    project?.stage === 'ozalit_onay' && !project?.ozalit_leader_approved
-  const isOzalitDesignerStep =
-    project?.stage === 'ozalit_onay' && !!project?.ozalit_leader_approved
+    project?.stage === 'ozalit_onay'
 
   // Destination of this approval (e.g. Demo Onay → Ozalit). Null on non-approve.
   const approveDest = project ? APPROVE_DEST[project.stage] : null
 
-  const approveLabel = isOzalitLeaderStep
-    ? '1. Onay (Lider)'
-    : isOzalitDesignerStep && isLeader
-      ? '2. Onay'
-      : isOzalitDesignerStep && isSpecialDesigner
-        ? 'Onayla'
-        : approveDest?.label ?? 'Onayla'
+  const approveLabel = approveDest?.label ?? 'Onayla'
 
   // Demo onayı at <100%: the leader's approve is recorded as a "hold" —
   // the project stays at demo_onay waiting for the designer to finish
@@ -106,10 +94,10 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
     !isDemoHeldApproval
 
   const titles = {
-    approve: isOzalitLeaderStep
-      ? 'Ozalit onayı'
-      : isDemoHeldApproval
-        ? 'Demo onayı (tasarım tamamlanmadı)'
+    approve: isDemoHeldApproval
+      ? 'Demo onayı (tasarım tamamlanmadı)'
+      : isOzalitLeaderStep
+        ? 'Ozalit onayı'
         : approveDest?.label ?? 'Aşamayı onayla',
     reject: 'Reddet ve geri gönder',
     advance: advanceLabel,
@@ -117,17 +105,13 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
   const isOzalitReject = project?.stage === 'ozalit_onay'
   const teslimLabel = isOzalitReject ? 'Ozalit Teslim' : 'Demo Teslim'
   const descriptions = {
-    approve: isOzalitLeaderStep
-      ? 'Ekip lideri onayınız kaydedilecek. Proje, atanmış tasarımcı(lar) veya özel tasarımcı da onayladığında "Üretime Hazır" aşamasına geçer. Onaylıyor musunuz?'
-      : isDemoHeldApproval
-        ? 'Onayınız kaydedilecek. Proje tasarım tamamlanmadığı için Ozalit aşamasına ilerlemeyecek; tasarımcı yeni demo gönderdiğinde Ozalit aşamasına geçecek. Onaylıyor musunuz?'
-        : isOzalitDesignerStep
-          ? approveDest
-            ? `Onayınız ile proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylamaya emin misiniz?`
-            : 'Bu proje bir sonraki aşamaya ilerleyecek. Onaylamaya emin misiniz?'
-          : approveDest
-            ? `Onaylandığında proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylamaya emin misiniz?`
-            : 'Bu proje bir sonraki aşamaya ilerleyecek. Onaylamaya emin misiniz?',
+    approve: isDemoHeldApproval
+      ? 'Onayınız kaydedilecek. Proje tasarım tamamlanmadığı için Ozalit aşamasına ilerlemeyecek; tasarımcı yeni demo gönderdiğinde Ozalit aşamasına geçecek. Onaylıyor musunuz?'
+      : isOzalitLeaderStep
+        ? `Onayınız ile proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylıyor musunuz?`
+        : approveDest
+          ? `Onaylandığında proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylamaya emin misiniz?`
+          : 'Bu proje bir sonraki aşamaya ilerleyecek. Onaylamaya emin misiniz?',
     reject:
       rejectTarget === 'matbaa'
         ? `Proje "${teslimLabel}" aşamasına döner; matbaa yeniden teslim eder. Tasarım değişmez. Bir red sebebi yazın.`
@@ -135,12 +119,9 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
     advance: 'Bu projeyi sonraki aşamaya elle ilerleteceksiniz. Devam edilsin mi?',
   }
 
-  // Step 1 is leader-only. A designer (special or not) cannot press Onayla
-  // until the leader has already signed — block the submit and surface why.
-  const ozalitStep1Blocked =
+  // Ozalit approval is leader-only — block any non-leader from submitting.
+  const ozalitBlockedForNonLeader =
     mode === 'approve' && isOzalitLeaderStep && !isLeader
-  const ozalitStep2BlockedForDesigners =
-    mode === 'approve' && isOzalitDesignerStep && !isLeader && !isSpecialDesigner
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -299,8 +280,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
               disabled={
                 busy ||
                 blocksUretim ||
-                ozalitStep1Blocked ||
-                ozalitStep2BlockedForDesigners ||
+                ozalitBlockedForNonLeader ||
                 (mode === 'reject' &&
                   (!reason.trim() ||
                     (rejectTarget === 'designer' &&

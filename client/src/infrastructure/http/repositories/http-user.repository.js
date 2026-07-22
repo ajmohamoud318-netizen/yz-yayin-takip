@@ -44,20 +44,6 @@ export function createHttpUserRepository() {
       raw = raw.map((u) => (u.id === data.id ? data : u))
       return data
     },
-    async setUserCapability(id, capability, value) {
-      // Today only `can_approve_ozalit` is exposed via the API. Future
-      // capabilities would route through the same endpoint with the
-      // capability name in the request body.
-      if (capability !== 'can_approve_ozalit') {
-        throw new Error(`Bilinmeyen yetki: ${capability}`)
-      }
-      const { data } = await httpClient.patch(`/users/${id}/capabilities`, {
-        canApproveOzalit: !!value,
-      })
-      cache.set(data.id, data)
-      raw = raw.map((u) => (u.id === data.id ? data : u))
-      return data
-    },
     async deleteUser(id) {
       await httpClient.delete(`/users/${id}`)
       cache.delete(id)
