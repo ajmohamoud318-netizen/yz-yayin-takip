@@ -62,7 +62,16 @@ export default function Approvals({ tab = 'demo' }) {
         if (sub === 'ozalit') return p.stage === 'ozalit_teslim' && (!!p.ozalit_requested || p.reject_target === 'matbaa')
         return false
       }
-      if (sub === 'demo') return p.stage === 'demo_onay' || p.stage === 'cin_demo_onay'
+      if (sub === 'demo') {
+        // Hide held demos from the team leader's queue. After a
+        // leader approves at <100% the project sits at demo_onay
+        // waiting for the designer to finish and re-send a second
+        // demo. There's nothing to approve or reject until the new
+        // demo lands (stage → demo_teslim → matbaa delivers → demo_onay,
+        // demo_held reset to false).
+        if (p.demo_held === true) return false
+        return p.stage === 'demo_onay' || p.stage === 'cin_demo_onay'
+      }
       if (sub === 'ozalit') return p.stage === 'ozalit_onay'
       return false
     })
