@@ -49,6 +49,14 @@ ENV HOST=0.0.0.0
 COPY --from=deps /app/node_modules ./node_modules
 
 # Source tree (routes, services, migrations, seed fixtures, etc.).
+# Build-time git SHA — surfaced via `GET /api/health` so a curl can tell
+# at a glance whether the running container is on the latest commit. Pass
+# with `docker build --build-arg GIT_COMMIT=$(git rev-parse HEAD) .` or set
+# it as a Dokploy build-arg. Falls back to "unknown" if unset (e.g. local
+# builds without git history).
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=${GIT_COMMIT}
+
 # .dockerignore excludes .git, .env, tests, and other dev-only files.
 COPY . .
 

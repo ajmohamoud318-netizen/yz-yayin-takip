@@ -102,8 +102,15 @@ export async function buildServer() {
   await fastify.register(orderRoutes, { prefix: '/api' })
   await fastify.register(handoverRoutes, { prefix: '/api' })
 
-  // Health — used by Dokploy's container probe.
-  fastify.get('/api/health', async () => ({ ok: true, ts: new Date().toISOString() }))
+  // Health — used by Dokploy's container probe AND for human-readable
+  // "is this the new build?" checks. The `commit` field is sourced from
+  // `GIT_COMMIT` (set by the Dockerfile's build-arg wiring) so a curl
+  // against this endpoint immediately reveals which revision is live.
+  fastify.get('/api/health', async () => ({
+    ok: true,
+    ts: new Date().toISOString(),
+    commit: process.env.GIT_COMMIT ?? 'unknown',
+  }))
 
   return fastify
 }
