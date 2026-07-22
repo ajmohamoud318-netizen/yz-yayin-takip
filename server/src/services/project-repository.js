@@ -176,11 +176,21 @@ export async function listProjectSubtasks(client, projectId) {
 }
 
 export async function listProjectHistory(client, projectId) {
+  // LEFT JOIN users so each row carries `done_by_name`. Without this the
+  // ProjectDetail UI shows the user icon with no name — every entry would
+  // render `h.done_by_name` as null because the raw SELECT only returned
+  // `done_by` (the foreign key id). The two-pass order keeps the timeline
+  // stable even when two rows share the same created_at timestamp (common
+  // for batched inserts).
   const { rows } = await client.query(
-    `SELECT id, project_id, from_stage, to_stage, action, reason,
-            reject_target, pass_number, done_by, note, created_at
-       FROM stage_history WHERE project_id = $1
-       ORDER BY created_at, id`,
+    `SELECT h.id, h.project_id, h.from_stage, h.to_stage,
+            h.action, h.event, h.reason, h.reject_target,
+            h.pass_number, h.done_by, h.note, h.created_at,
+            u.name AS done_by_name
+       FROM stage_history h
+       LEFT JOIN users u ON u.id = h.done_by
+      WHERE h.project_id = $1
+      ORDER BY h.created_at, h.id`,
     [projectId],
   )
   return rows
@@ -236,13 +246,14 @@ export async function deleteProject(id) {
 export async function insertHistory(client, entry) {
   await client.query(
     `INSERT INTO stage_history
-       (project_id, from_stage, to_stage, action, reason, reject_target, pass_number, done_by, note)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+       (project_id, from_stage, to_stage, action, event, reason, reject_target, pass_number, done_by, note)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
     [
       entry.project_id,
       entry.from_stage ?? null,
       entry.to_stage,
       entry.action,
+      entry.event ?? 'general',
       entry.reason ?? null,
       entry.reject_target ?? null,
       entry.pass_number ?? 1,
@@ -250,6 +261,29 @@ export async function insertHistory(client, entry) {
       entry.note ?? null,
     ],
   )
+}
+
+/**
+ * Convenience helper that wraps `insertHistory` and automatically tags the
+ * entry with the current user's id + name. Route handlers should prefer
+ * this call so a forgotten `done_by` doesn't silently produce a nameless
+ * timeline row. Falls back to whatever `entry.done_by` / `entry.done_by_name`
+ * were passed if `user` is missing (defensive — every route that mutates
+ * project state has a logged-in user by the time it gets here).
+ */
+export async function logHistory(client, entry, user) {
+  const doneBy = user?.id ?? entry.done_by ?? null
+  const doneByName = user?.name ?? entry.done_by_name ?? null
+  return insertHistory(client, {
+    ...entry,
+    done_by: doneBy,
+    // Persist the name in the JSONB-shaped row — we don't have a column for
+    // it, but `listProjectHistory` will overwrite it via the JOIN on
+    // `done_by`. Setting it here too keeps the object shape consistent
+    // when callers read it back from the in-memory return value before
+    // refetching.
+    done_by_name: doneByName,
+  })
 }
 
 export async function insertProject(client, fields) {

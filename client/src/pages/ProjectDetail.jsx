@@ -4,17 +4,24 @@ import {
   AlertTriangle,
   ArrowLeft,
   Calendar,
+  CheckCircle2,
   ChevronRight,
+  ClipboardEdit,
+  ClipboardList,
   FileText,
   History,
   Lock,
+  MessageSquarePlus,
+  Package,
   Pencil,
   Plus,
+  RotateCcw,
   Save,
   Send,
   ShoppingCart,
   ThumbsDown,
   ThumbsUp,
+  Truck,
   Users as UsersIcon,
   User as UserIcon,
 } from 'lucide-react'
@@ -42,15 +49,72 @@ import { cn, formatDateTr, initials } from '@/lib/utils'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { isSubtaskDone } from '@/domain/services/progress'
 
-const ACTION_META = {
-  create:  { icon: Plus,        color: 'text-primary' },
-  advance: { icon: ChevronRight, color: 'text-primary' },
-  approve: { icon: ThumbsUp,    color: 'text-emerald-600' },
-  reject:  { icon: ThumbsDown,  color: 'text-destructive' },
-  order:   { icon: ShoppingCart, color: 'text-violet-600' },
+// Event-level icon + color hints. `event` is a free-form short identifier
+// coming from the backend (`stage_history.event`); the timeline routes
+// dispatch on it BEFORE falling back to the coarser `action` if the
+// server hasn't tagged the row yet (e.g. seed data).
+const EVENT_META = {
+  // Project-shape events
+  project_created:   { icon: Plus,            color: 'text-primary' },
+  project_edit:      { icon: ClipboardEdit,   color: 'text-slate-600' },
+  // Subtask events
+  subtask_done:      { icon: CheckCircle2,    color: 'text-emerald-600' },
+  subtask_undone:    { icon: RotateCcw,       color: 'text-amber-600' },
+  subtask_progress:  { icon: ClipboardList,   color: 'text-sky-600' },
+  subtask_note:      { icon: MessageSquarePlus, color: 'text-slate-600' },
+  subtask_list_update: { icon: ClipboardList, color: 'text-slate-600' },
+  // Demo + Ozalit form submissions
+  demo_form:         { icon: Send,            color: 'text-indigo-600' },
+  ozalit_form:       { icon: Send,            color: 'text-indigo-600' },
+  // Handover (Teslim)
+  handover_request:  { icon: Truck,           color: 'text-amber-600' },
+  handover_confirm:  { icon: Package,         color: 'text-emerald-600' },
+  // Order (Sipariş) workflow
+  order_request:     { icon: ShoppingCart,    color: 'text-violet-600' },
+  order_transfer:    { icon: ShoppingCart,    color: 'text-violet-600' },
+  order_advance:     { icon: ShoppingCart,    color: 'text-violet-600' },
+  order_final:       { icon: ShoppingCart,    color: 'text-violet-600' },
+  order_reject:      { icon: ShoppingCart,    color: 'text-violet-600' },
 }
 
-function historyLabel({ action, from_stage, to_stage }) {
+// Coarser fallback table used when the backend only logged the action
+// (e.g. legacy rows that don't have an `event` populated).
+const ACTION_META = {
+  create:  { icon: Plus,         color: 'text-primary' },
+  advance: { icon: ChevronRight, color: 'text-primary' },
+  approve: { icon: ThumbsUp,     color: 'text-emerald-600' },
+  reject:  { icon: ThumbsDown,   color: 'text-destructive' },
+  order:   { icon: ShoppingCart, color: 'text-violet-600' },
+  system:  { icon: Package,      color: 'text-slate-600' },
+}
+
+function historyLabel(entry) {
+  const { action, event, from_stage, to_stage } = entry
+  // Prefer the fine-grained event id when present — this is what route
+  // handlers set in 014. The `note` field already carries the human
+  // description (e.g. "Kapak — tamamlandı"), so we just title-case the
+  // event id for the heading.
+  if (event && event !== 'general') {
+    const evtLabels = {
+      project_created: 'Proje Oluşturuldu',
+      project_edit: 'Proje Düzenlendi',
+      subtask_done: 'Alt Görev Tamamlandı',
+      subtask_undone: 'Alt Görev Geri Alındı',
+      subtask_progress: 'Alt Görev İlerlemesi',
+      subtask_note: 'Alt Görev Notu',
+      subtask_list_update: 'Alt Görev Listesi Güncellendi',
+      demo_form: 'Demo Formu Gönderildi',
+      ozalit_form: 'Ozalit Formu Gönderildi',
+      handover_request: 'Teslim Talebi Oluşturuldu',
+      handover_confirm: 'Teslim Onaylandı',
+      order_request: 'Sipariş Talebi Oluşturuldu',
+      order_transfer: 'Tasarımcı Atandı',
+      order_advance: 'Sipariş İlerletildi',
+      order_final: 'Sipariş Onaylandı',
+      order_reject: 'Sipariş Reddedildi',
+    }
+    return evtLabels[event] ?? event
+  }
   if (action === 'create') return 'Proje Oluşturuldu'
   if (action === 'advance') {
     if (to_stage === 'demo_teslim' || to_stage === 'cin_demo_teslim') return 'Demoya Gönderildi'
@@ -812,23 +876,52 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                 )}
                 <ol className="relative">
                   {historyWithAttempts.map((h, i) => {
-                    const meta = ACTION_META[h.action] ?? ACTION_META.advance
+                    // Pick the icon by `event` first (fine-grained) so the
+                    // timeline shows distinct dots for "subtask done" vs
+                    // "ozalit form" vs "handover confirmed", then fall back
+                    // to the coarse `action` for legacy rows.
+                    const meta = (h.event && EVENT_META[h.event])
+                      || ACTION_META[h.action]
+                      || ACTION_META.advance
                     const Icon = meta.icon
                     const isLast = i === historyWithAttempts.length - 1
 
                     const isDemoEntry =
                       (h.action === 'advance' && (h.to_stage === 'demo_teslim' || h.to_stage === 'cin_demo_teslim')) ||
                       (h.action === 'advance' && (h.from_stage === 'demo_teslim' || h.from_stage === 'cin_demo_teslim')) ||
-                      h.from_stage === 'demo_onay' || h.from_stage === 'cin_demo_onay'
+                      h.from_stage === 'demo_onay' || h.from_stage === 'cin_demo_onay' ||
+                      h.event === 'demo_form'
 
                     const isOzalitEntry = (
                       (h.action === 'advance' && h.to_stage === 'ozalit_teslim') ||
                       (h.action === 'advance' && h.from_stage === 'ozalit_teslim') ||
-                      (h.from_stage === 'ozalit_onay')
+                      (h.from_stage === 'ozalit_onay') ||
+                      h.event === 'ozalit_form'
                     ) && project.type === 'TR'
 
-                    const iconBg =
-                      h.action === 'approve'
+                    // Background ring color tracks the icon color from the
+                    // meta table; if we don't have a meta entry we fall
+                    // back to the previous coarse logic.
+                    const iconBg = (() => {
+                      if (h.event === 'subtask_done' || h.event === 'handover_confirm') {
+                        return 'bg-emerald-100 ring-emerald-200'
+                      }
+                      if (h.event === 'subtask_undone' || h.event === 'handover_request') {
+                        return 'bg-amber-100 ring-amber-200'
+                      }
+                      if (h.event === 'subtask_progress' || h.event === 'demo_form' || h.event === 'ozalit_form') {
+                        return 'bg-indigo-100 ring-indigo-200'
+                      }
+                      if (h.event === 'order_reject' || h.action === 'reject') {
+                        return 'bg-red-100 ring-red-200'
+                      }
+                      if (h.event === 'order_request' || h.event === 'order_transfer' || h.event === 'order_advance' || h.event === 'order_final' || h.action === 'order') {
+                        return 'bg-violet-100 ring-violet-200'
+                      }
+                      if (h.event === 'project_edit' || h.event === 'subtask_note' || h.event === 'subtask_list_update' || h.action === 'system') {
+                        return 'bg-slate-100 ring-slate-200'
+                      }
+                      return h.action === 'approve'
                         ? 'bg-emerald-100 ring-emerald-200'
                         : h.action === 'reject'
                           ? 'bg-red-100 ring-red-200'
@@ -837,6 +930,7 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                             : h.action === 'order'
                               ? 'bg-violet-100 ring-violet-200'
                               : 'bg-muted ring-border'
+                    })()
 
                     return (
                       <li key={h.id ?? i} className="relative flex gap-3 pb-5 last:pb-0">
@@ -880,7 +974,13 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                           <div className="mt-1.5 flex flex-wrap items-center gap-2">
                             <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                               <UserIcon className="h-2.5 w-2.5" />
-                              {h.done_by_name}
+                              {/* The backend now LEFT JOINs users on done_by
+                                  so this is populated for every row written
+                                  by a route handler. Older rows (legacy
+                                  data, before the JOIN was added) can have
+                                  `done_by_name = null` — show 'Bilinmeyen'
+                                  instead of rendering an empty label. */}
+                              {h.done_by_name ?? 'Bilinmeyen'}
                             </span>
                             <span className="text-[11px] text-muted-foreground/60">·</span>
                             <span className="text-[11px] text-muted-foreground">
