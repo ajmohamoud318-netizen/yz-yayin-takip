@@ -86,15 +86,31 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
         ? 'Onayla'
         : approveDest?.label ?? 'Onayla'
 
-  // A project can't reach Ozalit or production until its design is 100% complete.
+  // Demo onayı at <100%: the leader's approve is recorded as a "hold" —
+  // the project stays at demo_onay waiting for the designer to finish
+  // and re-send a second demo. The button stays enabled (the hold IS
+  // the leader's decision), but the dialog copy needs to say so.
+  const isDemoApproval =
+    mode === 'approve' &&
+    (project?.stage === 'demo_onay' || project?.stage === 'cin_demo_onay')
+  const isDemoHeldApproval =
+    isDemoApproval && (project?.progress ?? 0) < 100
+  // Ozalit onayı at <100%: a hard gate — the project literally can't
+  // enter production. We never reach this state because the demo
+  // approval is gated upstream, but kept here as a safety net.
   const blocksUretim =
     mode === 'approve' &&
     approveDest &&
     STAGES_REQUIRING_FULL_PROGRESS.has(approveDest.stage) &&
-    (project?.progress ?? 0) < 100
+    (project?.progress ?? 0) < 100 &&
+    !isDemoHeldApproval
 
   const titles = {
-    approve: isOzalitLeaderStep ? 'Ozalit onayı' : approveDest?.label ?? 'Aşamayı onayla',
+    approve: isOzalitLeaderStep
+      ? 'Ozalit onayı'
+      : isDemoHeldApproval
+        ? 'Demo onayı (tasarım tamamlanmadı)'
+        : approveDest?.label ?? 'Aşamayı onayla',
     reject: 'Reddet ve geri gönder',
     advance: advanceLabel,
   }
@@ -103,13 +119,15 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
   const descriptions = {
     approve: isOzalitLeaderStep
       ? 'Ekip lideri onayınız kaydedilecek. Proje, atanmış tasarımcı(lar) veya özel tasarımcı da onayladığında "Üretime Hazır" aşamasına geçer. Onaylıyor musunuz?'
-      : isOzalitDesignerStep
-        ? approveDest
-          ? `Onayınız ile proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylamaya emin misiniz?`
-          : 'Bu proje bir sonraki aşamaya ilerleyecek. Onaylamaya emin misiniz?'
-        : approveDest
-          ? `Onaylandığında proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylamaya emin misiniz?`
-          : 'Bu proje bir sonraki aşamaya ilerleyecek. Onaylamaya emin misiniz?',
+      : isDemoHeldApproval
+        ? 'Onayınız kaydedilecek. Proje tasarım tamamlanmadığı için Ozalit aşamasına ilerlemeyecek; tasarımcı yeni demo gönderdiğinde Ozalit aşamasına geçecek. Onaylıyor musunuz?'
+        : isOzalitDesignerStep
+          ? approveDest
+            ? `Onayınız ile proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylamaya emin misiniz?`
+            : 'Bu proje bir sonraki aşamaya ilerleyecek. Onaylamaya emin misiniz?'
+          : approveDest
+            ? `Onaylandığında proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylamaya emin misiniz?`
+            : 'Bu proje bir sonraki aşamaya ilerleyecek. Onaylamaya emin misiniz?',
     reject:
       rejectTarget === 'matbaa'
         ? `Proje "${teslimLabel}" aşamasına döner; matbaa yeniden teslim eder. Tasarım değişmez. Bir red sebebi yazın.`
