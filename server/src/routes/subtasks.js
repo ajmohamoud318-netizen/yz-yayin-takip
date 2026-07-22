@@ -2,7 +2,7 @@ import { attachUser, requireRole } from '../middleware/auth.js'
 import { badRequest, notFound } from '../domain/errors.js'
 import { withTx } from '../db/pool.js'
 import {
-  getProject, getProjectForUpdate, patchProject, insertHistory,
+  getProject, getProjectForUpdate, patchProject, logHistory,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
@@ -16,7 +16,10 @@ import { progressFor } from '../domain/progress.js'
  * PUT   /api/projects/:id/subtasks        — team_leader bulk replaces the list
  *
  * The `progress` field on the parent project is recomputed in the same
- * transaction so the client cache stays valid.
+ * transaction so the client cache stays valid. Every state change also
+ * writes a `stage_history` row so the project timeline can show who did
+ * what (subtask_done / subtask_undone / subtask_progress / subtask_note /
+ * subtask_list_update).
  */
 export async function subtaskRoutes(fastify) {
   fastify.patch('/subtasks/:id', { schema: schemas.subtasksPatch }, async (request) => {
@@ -29,12 +32,22 @@ export async function subtaskRoutes(fastify) {
       if (!sub) notFound('Alt görev bulunamadı.')
       const project = await getProjectForUpdate(client, sub.project_id)
       const allowed = {}
+      let isDoneChanged = false
+      let pagesChanged = false
+      let stickersChanged = false
       if (typeof request.body.is_done === 'boolean') {
         allowed.is_done = request.body.is_done
         allowed.done_at = request.body.is_done ? new Date().toISOString() : null
+        isDoneChanged = request.body.is_done !== sub.is_done
       }
-      if (Number.isFinite(request.body.pages_done)) allowed.pages_done = request.body.pages_done
-      if (Number.isFinite(request.body.stickers_done)) allowed.stickers_done = request.body.stickers_done
+      if (Number.isFinite(request.body.pages_done)) {
+        allowed.pages_done = request.body.pages_done
+        pagesChanged = request.body.pages_done !== sub.pages_done
+      }
+      if (Number.isFinite(request.body.stickers_done)) {
+        allowed.stickers_done = request.body.stickers_done
+        stickersChanged = request.body.stickers_done !== sub.stickers_done
+      }
       if (Object.keys(allowed).length === 0) badRequest('Geçerli alan yok.')
       const cols = Object.keys(allowed)
       const setSql = cols.map((c, i) => `${c} = $${i + 2}`).join(', ')
@@ -47,6 +60,53 @@ export async function subtaskRoutes(fastify) {
       )
       const progress = progressFor(project, projectSubs)
       const updProject = await patchProject(client, project.id, { progress })
+      // The project timeline is the single source of truth for "who did
+      // what". We tag every subtask change with a fine-grained event so
+      // the UI can pick the right icon (check toggle vs. page counter vs.
+      // sticker counter vs. note). Skipping the history row when nothing
+      // actually changed keeps the timeline clean.
+      if (isDoneChanged) {
+        await logHistory(
+          client,
+          {
+            project_id: project.id,
+            from_stage: project.stage,
+            to_stage: project.stage,
+            action: 'system',
+            event: request.body.is_done ? 'subtask_done' : 'subtask_undone',
+            note: `${sub.title} — ${request.body.is_done ? 'tamamlandı' : 'tamamlanmadı olarak işaretlendi'}`,
+          },
+          request.user,
+        )
+      }
+      if (pagesChanged) {
+        await logHistory(
+          client,
+          {
+            project_id: project.id,
+            from_stage: project.stage,
+            to_stage: project.stage,
+            action: 'system',
+            event: 'subtask_progress',
+            note: `${sub.title} — sayfa ${request.body.pages_done}/${sub.total_pages ?? '?'}`,
+          },
+          request.user,
+        )
+      }
+      if (stickersChanged) {
+        await logHistory(
+          client,
+          {
+            project_id: project.id,
+            from_stage: project.stage,
+            to_stage: project.stage,
+            action: 'system',
+            event: 'subtask_progress',
+            note: `${sub.title} — etiket ${request.body.stickers_done}/${sub.total_stickers ?? '?'}`,
+          },
+          request.user,
+        )
+      }
       return { subtask: updatedSub[0], project: updProject }
     })
     // Returning the full project so the client can refresh its tile without
@@ -59,7 +119,7 @@ export async function subtaskRoutes(fastify) {
     const { note } = request.body
     const result = await withTx(async (client) => {
       const { rows: subRows } = await client.query(
-        'SELECT id, project_id FROM subtasks WHERE id = $1', [request.params.id],
+        'SELECT id, project_id, title FROM subtasks WHERE id = $1', [request.params.id],
       )
       const sub = subRows[0]
       if (!sub) notFound('Alt görev bulunamadı.')
@@ -69,6 +129,21 @@ export async function subtaskRoutes(fastify) {
         [sub.id, note, request.user.id],
       )
       const project = await getProjectForUpdate(client, sub.project_id)
+      // Append a project-level history entry so the timeline captures the
+      // what-changed note alongside the subtask_updates row. Truncated to
+      // 200 chars so a fat paragraph doesn't blow up the column.
+      await logHistory(
+        client,
+        {
+          project_id: project.id,
+          from_stage: project.stage,
+          to_stage: project.stage,
+          action: 'system',
+          event: 'subtask_note',
+          note: `${sub.title} — ${note.length > 200 ? note.slice(0, 200) + '…' : note}`,
+        },
+        request.user,
+      )
       return { project, entry: rows[0] }
     })
     return result
@@ -97,10 +172,18 @@ export async function subtaskRoutes(fastify) {
       }
       const progress = progressFor(project, inserted)
       const updated = await patchProject(client, project.id, { progress })
-      await insertHistory(client, {
-        project_id: project.id, from_stage: project.stage, to_stage: project.stage,
-        action: 'system', note: 'Alt görev listesi güncellendi',
-      })
+      await logHistory(
+        client,
+        {
+          project_id: project.id,
+          from_stage: project.stage,
+          to_stage: project.stage,
+          action: 'system',
+          event: 'subtask_list_update',
+          note: `Alt görev listesi güncellendi (${inserted.length} görev)`,
+        },
+        request.user,
+      )
       return { project: updated, subtasks: inserted, progress }
     })
     return result

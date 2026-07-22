@@ -5,7 +5,7 @@ import { withTx } from '../db/pool.js'
 import { getPool } from '../db/pool.js'
 import { ORDER_STEP_NEXT, ORDER_STEP_OWNER } from '../domain/orders.js'
 import {
-  getProject, getProjectForUpdate, patchProject, insertHistory,
+  getProject, getProjectForUpdate, patchProject, logHistory,
 } from '../services/project-repository.js'
 import { assertCanEnterProduction, assertOrderable } from '../domain/pipeline.js'
 import { schemas } from '../schemas/index.js'
@@ -17,6 +17,11 @@ import { schemas } from '../schemas/index.js'
  * POST   /api/order-requests              — satis only
  * PATCH  /api/order-requests/:id/advance  — owner of current step
  * PATCH  /api/order-requests/:id/reject   — team_leader only
+ *
+ * Every state change writes a `stage_history` row tagged with the
+ * matching event (`order_request` / `order_transfer` / `order_advance` /
+ * `order_final` / `order_reject`) so the project timeline shows the
+ * full sales-order story.
  */
 export async function orderRoutes(fastify) {
   fastify.get('/order-requests', async (request) => {
@@ -34,8 +39,11 @@ export async function orderRoutes(fastify) {
     const out = []
     for (const row of rows) {
       const { rows: hist } = await getPool().query(
-        `SELECT step, notes, signed_by_id, created_at FROM order_history
-         WHERE order_id = $1 ORDER BY created_at`,
+        `SELECT oh.step, oh.notes, oh.signed_by_id, oh.created_at,
+                u.name AS signed_by_name
+           FROM order_history oh
+           LEFT JOIN users u ON u.id = oh.signed_by_id
+          WHERE oh.order_id = $1 ORDER BY oh.created_at`,
         [row.id],
       )
       out.push({
@@ -44,7 +52,7 @@ export async function orderRoutes(fastify) {
           step: h.step,
           notes: h.notes,
           signed_by_id: h.signed_by_id,
-          signed_by_name: null,
+          signed_by_name: h.signed_by_name,
           signed_by_role: null,
           signed_at: h.created_at,
           created_at: h.created_at,
@@ -68,19 +76,37 @@ export async function orderRoutes(fastify) {
     // order_requests.id is TEXT PRIMARY KEY with no default — mint an
     // `o-<nanoid>` so the INSERT doesn't violate NOT NULL.
     const orderIdRow = `o-${nanoid(16)}`
-    const { rows } = await getPool().query(
-      `INSERT INTO order_requests (id, project_id, status, requested_by, payload)
-       VALUES ($1,$2,'pending',$3,$4)
-       RETURNING id, project_id, status, requested_by, payload, version, created_at, updated_at`,
-      [orderIdRow, projectId, request.user.id, merged],
-    )
-    const order = rows[0]
-    await getPool().query(
-      `INSERT INTO order_history (order_id, step, signed_by_id, notes, created_at)
-       VALUES ($1,'pending',$2,$3,NOW())`,
-      [order.id, request.user.id, notes ?? ''],
-    )
-    return order
+    const result = await withTx(async (client) => {
+      const { rows } = await client.query(
+        `INSERT INTO order_requests (id, project_id, status, requested_by, payload)
+         VALUES ($1,$2,'pending',$3,$4)
+         RETURNING id, project_id, status, requested_by, payload, version, created_at, updated_at`,
+        [orderIdRow, projectId, request.user.id, merged],
+      )
+      const order = rows[0]
+      await client.query(
+        `INSERT INTO order_history (order_id, step, signed_by_id, notes, created_at)
+         VALUES ($1,'pending',$2,$3,NOW())`,
+        [order.id, request.user.id, notes ?? ''],
+      )
+      // Surface the order request in the project timeline. The "from_stage"
+      // is the project's current stage at request time (always `satista`
+      // right now, but the order stage set could expand later).
+      await logHistory(
+        client,
+        {
+          project_id: projectId,
+          from_stage: project.stage,
+          to_stage: project.stage,
+          action: 'system',
+          event: 'order_request',
+          note: 'Sipariş talebi oluşturuldu',
+        },
+        request.user,
+      )
+      return order
+    })
+    return result
   })
 
   fastify.patch('/order-requests/:id/advance', { schema: schemas.ordersAdvance }, async (request) => {
@@ -127,12 +153,18 @@ export async function orderRoutes(fastify) {
           const updated = await patchProject(client, proj.id, {
             assigned_to: assignees[0],
           })
-          await insertHistory(client, {
-            project_id: proj.id,
-            from_stage: proj.stage, to_stage: proj.stage,
-            action: 'system', done_by: request.user.id,
-            note: 'Sipariş aktarımı: tasarımcı atandı',
-          })
+          await logHistory(
+            client,
+            {
+              project_id: proj.id,
+              from_stage: proj.stage,
+              to_stage: proj.stage,
+              action: 'system',
+              event: 'order_transfer',
+              note: 'Sipariş aktarımı: tasarımcı atandı',
+            },
+            request.user,
+          )
           void updated
         }
       }
@@ -152,16 +184,48 @@ export async function orderRoutes(fastify) {
          VALUES ($1,$2,$3,$4)`,
         [orderId, next, request.user.id, notes ?? ''],
       )
+      // Mid-flow advance (designer → matbaa, or matbaa → leader) — log it
+      // so the timeline pairs every order step with the signer.
+      if (next !== 'onaylandi') {
+        const proj = await getProjectForUpdate(client, order.project_id)
+        if (proj) {
+          await logHistory(
+            client,
+            {
+              project_id: proj.id,
+              from_stage: proj.stage,
+              to_stage: proj.stage,
+              action: 'system',
+              event: 'order_advance',
+              note: next === 'goruldu'
+                ? 'Sipariş tasarımcıya aktarıldı'
+                : next === 'tasarimci_onay'
+                  ? 'Tasarımcı onayı verildi'
+                  : next === 'matbaa_onay'
+                    ? 'Matbaa teslimi yapıldı'
+                    : `Sipariş adımı: ${next}`,
+            },
+            request.user,
+          )
+        }
+      }
       // Final approval flips the project into uretimde.
       if (next === 'onaylandi') {
         const proj = await getProjectForUpdate(client, order.project_id)
         if (proj) {
           await patchProject(client, proj.id, { stage: 'uretimde' })
-          await insertHistory(client, {
-            project_id: proj.id, from_stage: proj.stage, to_stage: 'uretimde',
-            action: 'system', done_by: request.user.id,
-            note: 'Sipariş onaylandı — üretime alındı',
-          })
+          await logHistory(
+            client,
+            {
+              project_id: proj.id,
+              from_stage: proj.stage,
+              to_stage: 'uretimde',
+              action: 'system',
+              event: 'order_final',
+              note: 'Sipariş onaylandı — üretime alındı',
+            },
+            request.user,
+          )
         }
       }
       return updated[0]
@@ -203,12 +267,20 @@ export async function orderRoutes(fastify) {
         await patchProject(client, proj.id, {
           ozalit_attempt: (proj.ozalit_attempt ?? 0) + 1,
         })
-        await insertHistory(client, {
-          project_id: proj.id, from_stage: proj.stage, to_stage: proj.stage,
-          action: 'reject', reason, reject_target: rejectTarget,
-          done_by: request.user.id,
-          note: `Sipariş reddedildi (${rejectTarget})`,
-        })
+        await logHistory(
+          client,
+          {
+            project_id: proj.id,
+            from_stage: proj.stage,
+            to_stage: proj.stage,
+            action: 'reject',
+            event: 'order_reject',
+            reason,
+            reject_target: rejectTarget,
+            note: `Sipariş reddedildi (${rejectTarget})`,
+          },
+          request.user,
+        )
       }
       return updated[0]
     })

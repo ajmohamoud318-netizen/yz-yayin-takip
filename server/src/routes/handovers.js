@@ -5,7 +5,7 @@ import { withTx } from '../db/pool.js'
 import { getPool } from '../db/pool.js'
 import { assertHandoverEligible } from '../domain/pipeline.js'
 import {
-  getProject, getProjectForUpdate, patchProject, insertHistory,
+  getProject, getProjectForUpdate, patchProject, logHistory,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
 
@@ -15,6 +15,10 @@ import { schemas } from '../schemas/index.js'
  * GET   /api/handovers
  * POST  /api/handovers
  * PATCH /api/handovers/:id/confirm
+ *
+ * Both the raise AND the confirm are written to `stage_history` so the
+ * project timeline shows the full handover story (who shipped, who
+ * received, when).
  */
 export async function handoverRoutes(fastify) {
   fastify.get('/handovers', async (request) => {
@@ -47,13 +51,31 @@ export async function handoverRoutes(fastify) {
     // handovers.id is TEXT PRIMARY KEY with no default — mint an
     // `h-<nanoid>` so the INSERT satisfies NOT NULL.
     const handoverId = `h-${nanoid(16)}`
-    const { rows } = await getPool().query(
-      `INSERT INTO handovers (id, project_id, status, from_stage, raised_by)
-       VALUES ($1,$2,'pending',$3,$4)
-       RETURNING id, project_id, status, from_stage, raised_by, created_at, confirmed_at`,
-      [handoverId, projectId, project.stage, request.user.id],
-    )
-    return rows[0]
+    const result = await withTx(async (client) => {
+      const { rows } = await client.query(
+        `INSERT INTO handovers (id, project_id, status, from_stage, raised_by)
+         VALUES ($1,$2,'pending',$3,$4)
+         RETURNING id, project_id, status, from_stage, raised_by, created_at, confirmed_at`,
+        [handoverId, projectId, project.stage, request.user.id],
+      )
+      // The matbaa just raised a handover — log it so the project
+      // timeline can pair the "talep oluşturuldu" row with the later
+      // "alındı" confirmation.
+      await logHistory(
+        client,
+        {
+          project_id: projectId,
+          from_stage: project.stage,
+          to_stage: project.stage,
+          action: 'system',
+          event: 'handover_request',
+          note: 'Teslim talebi oluşturuldu',
+        },
+        request.user,
+      )
+      return rows[0]
+    })
+    return result
   })
 
   fastify.patch('/handovers/:id/confirm', { schema: schemas.handoversConfirm }, async (request) => {
@@ -76,11 +98,18 @@ export async function handoverRoutes(fastify) {
       const project = await getProjectForUpdate(client, handover.project_id)
       if (!project) notFound('Proje bulunamadı.')
       const updated = await patchProject(client, project.id, { stage: 'satista' })
-      await insertHistory(client, {
-        project_id: project.id, from_stage: handover.from_stage, to_stage: 'satista',
-        action: 'system', done_by: request.user.id,
-        note: 'Teslim onaylandı — satışta',
-      })
+      await logHistory(
+        client,
+        {
+          project_id: project.id,
+          from_stage: handover.from_stage,
+          to_stage: 'satista',
+          action: 'system',
+          event: 'handover_confirm',
+          note: 'Teslim onaylandı — satışta',
+        },
+        request.user,
+      )
       return { handover: rows[0], project: updated }
     })
     return result

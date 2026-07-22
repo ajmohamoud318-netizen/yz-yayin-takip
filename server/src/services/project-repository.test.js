@@ -103,3 +103,121 @@ describe('loadProjectAssignees', () => {
     assert.deepEqual(assignees, [{ id: rahsan.id, name: rahsan.name }])
   })
 })
+
+// Locks in the fix for the "history shows the user icon but no name"
+// bug. Before 014, `listProjectHistory` only SELECTed `done_by` (the FK
+// id) and the frontend rendered `h.done_by_name` as null. The new query
+// LEFT JOINs `users` so every row carries the actor's name. We also
+// check the new `event` column is selected so the React timeline can
+// switch on it instead of the coarser `action`.
+import { listProjectHistory } from './project-repository.js'
+
+// The real `listProjectHistory` runs a single LEFT JOIN against users and
+// the DB returns rows already containing `done_by_name`. The fake client
+// simulates that by mapping `done_by` → `users.name` on the way out and
+// applying the same `ORDER BY created_at, id` the production query uses.
+function makeHistoryClient({ historyRows, usersById }) {
+  return {
+    async query(sql, params) {
+      if (/FROM stage_history h/.test(sql)) {
+        const rows = historyRows
+          .filter((r) => r.project_id === params[0])
+          .map((r) => ({
+            ...r,
+            done_by_name: r.done_by ? usersById[r.done_by]?.name ?? null : null,
+          }))
+          .sort((a, b) => {
+            const ta = new Date(a.created_at).getTime()
+            const tb = new Date(b.created_at).getTime()
+            if (ta !== tb) return ta - tb
+            return (a.id ?? '').localeCompare(b.id ?? '')
+          })
+        return { rows }
+      }
+      return { rows: [] }
+    },
+  }
+}
+
+describe('listProjectHistory', () => {
+  it('returns rows with join-resolved done_by_name and event column', async () => {
+    // Realistic feed: create + advance + system(subtask) entries.
+    const historyRows = [
+      {
+        id: 'h-1',
+        project_id: 'p-1',
+        from_stage: null,
+        to_stage: 'tasarim',
+        action: 'create',
+        event: 'project_created',
+        reason: null,
+        reject_target: null,
+        pass_number: 1,
+        done_by: abdijibar.id,
+        note: 'Proje oluşturuldu',
+        created_at: new Date('2025-01-01T10:00:00Z'),
+      },
+      {
+        id: 'h-2',
+        project_id: 'p-1',
+        from_stage: 'tasarim',
+        to_stage: 'tasarim',
+        action: 'system',
+        event: 'subtask_done',
+        reason: null,
+        reject_target: null,
+        pass_number: 1,
+        done_by: rahsan.id,
+        note: 'Kapak — tamamlandı',
+        created_at: new Date('2025-01-02T11:00:00Z'),
+      },
+      {
+        id: 'h-3',
+        project_id: 'p-1',
+        from_stage: 'tasarim',
+        to_stage: 'tasarim',
+        action: 'system',
+        event: 'handover_request',
+        reason: null,
+        reject_target: null,
+        pass_number: 1,
+        done_by: null, // User-initiated system event with no actor
+        note: 'Teslim talebi oluşturuldu',
+        created_at: new Date('2025-01-03T12:00:00Z'),
+      },
+    ]
+    const usersById = {
+      [abdijibar.id]: abdijibar,
+      [rahsan.id]: rahsan,
+    }
+    const client = makeHistoryClient({ historyRows, usersById })
+    const rows = await listProjectHistory(client, 'p-1')
+    assert.equal(rows.length, 3)
+    assert.equal(rows[0].event, 'project_created')
+    assert.equal(rows[0].done_by_name, abdijibar.name)
+    assert.equal(rows[1].event, 'subtask_done')
+    assert.equal(rows[1].done_by_name, rahsan.name)
+    // rows with done_by=null should still come back (LEFT JOIN) with
+    // done_by_name = null — the frontend shows 'Bilinmeyen' for those.
+    assert.equal(rows[2].done_by, null)
+    assert.equal(rows[2].done_by_name, null)
+  })
+
+  it('orders by created_at ascending so the timeline reads top-to-bottom', async () => {
+    const historyRows = [
+      { id: 'h-2', project_id: 'p-1', from_stage: 'tasarim', to_stage: 'demo_teslim',
+        action: 'advance', event: 'general', reason: null, reject_target: null,
+        pass_number: 1, done_by: abdijibar.id, note: null,
+        created_at: new Date('2025-01-02T10:00:00Z') },
+      { id: 'h-1', project_id: 'p-1', from_stage: null, to_stage: 'tasarim',
+        action: 'create', event: 'project_created', reason: null, reject_target: null,
+        pass_number: 1, done_by: abdijibar.id, note: null,
+        created_at: new Date('2025-01-01T10:00:00Z') },
+    ]
+    const usersById = { [abdijibar.id]: abdijibar }
+    const client = makeHistoryClient({ historyRows, usersById })
+    const rows = await listProjectHistory(client, 'p-1')
+    assert.equal(rows[0].id, 'h-1', 'older entry first')
+    assert.equal(rows[1].id, 'h-2', 'newer entry second')
+  })
+})

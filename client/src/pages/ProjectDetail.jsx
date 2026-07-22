@@ -953,7 +953,14 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                         {/* Content */}
                         <div className="min-w-0 flex-1 pt-0.5">
                           <p className="text-sm font-semibold leading-snug">
-                            {h.action === 'order'
+                            {(
+                              h.action === 'order'
+                              || h.event === 'order_request'
+                              || h.event === 'order_transfer'
+                              || h.event === 'order_advance'
+                              || h.event === 'order_final'
+                              || h.event === 'order_reject'
+                            )
                               ? `Sipariş — ${h.order_step_label ?? ''}`
                               : historyLabel(h)}
                           </p>
@@ -1014,7 +1021,14 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                                 Ozalit Formu
                               </button>
                             )}
-                            {h.action === 'order' && projectOrders.length > 0 && (() => {
+                            {(
+                              h.action === 'order'
+                              || h.event === 'order_request'
+                              || h.event === 'order_transfer'
+                              || h.event === 'order_advance'
+                              || h.event === 'order_final'
+                              || h.event === 'order_reject'
+                            ) && projectOrders.length > 0 && (() => {
                               const ord = h.order_id
                                 ? projectOrders.find((o) => o.id === h.order_id)
                                 : projectOrders[0]

@@ -5,7 +5,7 @@ import {
   listProjects, getProject, getProjectForUpdate,
   listProjectSubtasks, listProjectHistory,
   loadProjectAssignees,
-  patchProject, deleteProject, insertProject, insertHistory,
+  patchProject, deleteProject, insertProject, logHistory,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
@@ -25,6 +25,17 @@ import {
  * POST   /api/projects/:id/approve
  * POST   /api/projects/:id/reject
  */
+
+// Human-readable labels for each editable column. The PATCH route builds a
+// `project_edit` history entry by looking up the field name in this map so
+// the timeline reads naturally ("Başlık değiştirildi → Yeni Kitap Adı"),
+// not as raw SQL column names.
+const PROJECT_FIELD_LABELS = {
+  title: 'Başlık',
+  type: 'Tür (TR / ÇİN)',
+  target_month: 'Hedef ay',
+  assigned_to: 'Tasarımcı',
+}
 
 export async function projectRoutes(fastify) {
   fastify.get('/projects', async (request) => {
@@ -86,10 +97,18 @@ export async function projectRoutes(fastify) {
       }
       const progress = subtaskProgress(subRows)
       const updated = await patchProject(client, project.id, { progress })
-      await insertHistory(client, {
-        project_id: project.id, from_stage: null, to_stage: 'tasarim',
-        action: 'create', done_by: request.user.id, note: 'Proje oluşturuldu',
-      })
+      await logHistory(
+        client,
+        {
+          project_id: project.id,
+          from_stage: null,
+          to_stage: 'tasarim',
+          action: 'create',
+          event: 'project_created',
+          note: 'Proje oluşturuldu',
+        },
+        request.user,
+      )
       return { ...updated, subtasks: subRows, history: [] }
     })
     return result
@@ -101,8 +120,47 @@ export async function projectRoutes(fastify) {
     // Schema already restricts to the allowed keys, so no manual filter.
     const fields = request.body
     const result = await withTx(async (client) => {
+      // Snapshot the project BEFORE the patch so we can describe what
+      // changed. For `assigned_to` we resolve the user id to a name so
+      // the timeline reads "Tasarımcı değiştirildi → Aylin" instead of
+      // the raw id.
+      const before = await getProjectForUpdate(client, request.params.id)
+      if (!before) notFound('Proje bulunamadı.')
       const updated = await patchProject(client, request.params.id, fields)
       if (!updated) notFound('Proje bulunamadı.')
+      // Build a per-field diff description. Only the columns with a
+      // human label are tracked; everything else (version, progress,
+      // last_reject_reason, …) is bookkeeping that doesn't belong in
+      // a user-facing timeline.
+      const changes = []
+      for (const [key, label] of Object.entries(PROJECT_FIELD_LABELS)) {
+        if (!Object.prototype.hasOwnProperty.call(fields, key)) continue
+        const oldVal = before[key]
+        const newVal = updated[key]
+        if (oldVal === newVal) continue
+        if (key === 'assigned_to') {
+          const { rows: u } = await client.query(
+            'SELECT name FROM users WHERE id = $1', [newVal],
+          )
+          changes.push(`${label} → ${u[0]?.name ?? 'atanmadı'}`)
+        } else {
+          changes.push(`${label} → ${newVal ?? '—'}`)
+        }
+      }
+      if (changes.length > 0) {
+        await logHistory(
+          client,
+          {
+            project_id: updated.id,
+            from_stage: updated.stage,
+            to_stage: updated.stage,
+            action: 'system',
+            event: 'project_edit',
+            note: changes.join(' · '),
+          },
+          request.user,
+        )
+      }
       return updated
     })
     return result
@@ -126,7 +184,7 @@ export async function projectRoutes(fastify) {
       const updated = await patchProject(client, project.id, {
         stage: next.stage, version: next.version,
       })
-      if (history) await insertHistory(client, { ...history, done_by: request.user.id })
+      if (history) await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
       return updated
     })
     return result
@@ -157,7 +215,7 @@ export async function projectRoutes(fastify) {
         fields.ozalit_designer_approvals = JSON.stringify(next.ozalit_designer_approvals)
       }
       const updated = await patchProject(client, project.id, fields)
-      if (history) await insertHistory(client, { ...history, done_by: request.user.id })
+      if (history) await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
       return updated
     })
     return result
@@ -179,7 +237,7 @@ export async function projectRoutes(fastify) {
         last_reject_reason: next.last_reject_reason,
         version: next.version,
       })
-      await insertHistory(client, { ...history, done_by: request.user.id })
+      await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
       return updated
     })
     return result
