@@ -210,6 +210,8 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
   'progress',
   'version',
   'last_reject_reason',
+  'demo_attempt',
+  'ozalit_attempt',
   'ozalit_leader_approved',
   'ozalit_leader_approved_by',
   'ozalit_leader_approved_at',

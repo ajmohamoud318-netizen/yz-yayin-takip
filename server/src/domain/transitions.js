@@ -141,6 +141,10 @@ export function computeAdvance(project, actor) {
       project: {
         ...project,
         stage: targetStage,
+        // Bump demo_attempt so the 'Demo N' badge reflects the second
+        // demo round (the first attempt was the held approval, this is
+        // the second).
+        demo_attempt: (project.demo_attempt ?? 0) + 1,
         demo_held: false,
         demo_held_at: null,
         demo_held_by_name: null,

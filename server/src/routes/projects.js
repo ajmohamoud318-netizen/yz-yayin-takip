@@ -181,10 +181,14 @@ export async function projectRoutes(fastify) {
       const { project: next, history } = applyAdvance(project, {
         user: request.user, note: request.body?.note ?? '',
       })
-      // stage + version are always written. demo_held* are written only when
-      // the transition actually flips them (e.g. the "send a second demo"
-      // branch resets them to false / null).
+      // stage + version are always written. demo_attempt is bumped by the
+      // "send a second demo" branch (held → demo_teslim) so the 'Demo N'
+      // badge reflects the second cycle. demo_held* are written only when
+      // the transition actually flips them.
       const fields = { stage: next.stage, version: next.version }
+      if (Object.prototype.hasOwnProperty.call(next, 'demo_attempt')) {
+        fields.demo_attempt = next.demo_attempt
+      }
       if (Object.prototype.hasOwnProperty.call(next, 'demo_held')) {
         fields.demo_held = next.demo_held
       }
