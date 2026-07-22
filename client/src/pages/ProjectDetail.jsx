@@ -582,18 +582,20 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                     {approveLabel}
                   </Button>
                 )}
-                {/* Demo-hold hint: the leader's approve at <100% won't
-                    advance — surface the rule next to the approve button so
-                    they understand why nothing happened on screen. */}
-                {actions.includes('approve') &&
-                  (project.stage === 'demo_onay' || project.stage === 'cin_demo_onay') &&
+                {/* Demo-hold hint: the leader has already approved the first
+                    demo but the design wasn't 100%, so the project sits at
+                    demo_onay waiting for the designer to finish and re-send.
+                    This replaces the approve/reject buttons (which are
+                    hidden in this state — see availableActions). */}
+                {(project.stage === 'demo_onay' || project.stage === 'cin_demo_onay') &&
+                  project.demo_held === true &&
                   (project.progress ?? 0) < 100 && (
                     <span
                       className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800"
                       title="Tasarımcı kalan görevleri bitirip yeni demo gönderdiğinde ilerleyecek"
                     >
                       <Clock className="h-3.5 w-3.5" />
-                      Tasarım tamamlanmadı — onay sonraki aşamaya geçirmez
+                      Tasarım tamamlanmadı — tasarımcı yeni demo gönderdiğinde ilerleyecek
                     </span>
                   )}
                 {actions.includes('reject') && (
@@ -1217,8 +1219,15 @@ function availableActions({ project, user }) {
     role === 'designer' && (project.assignees ?? []).some((a) => a.id === user.id)
 
   if ((stage === 'demo_onay' || stage === 'cin_demo_onay') && role === 'team_leader') {
-    set.add('approve')
-    set.add('reject')
+    // Demo-hold state: the leader has already approved the first demo
+    // at <100%. The project is waiting for the designer to finish
+    // and re-send the demo. The leader can't approve or reject
+    // again — they just wait. (The advance button surfaces for the
+    // second cycle once progress hits 100%.)
+    if (project.demo_held !== true) {
+      set.add('approve')
+      set.add('reject')
+    }
   }
 
   // Demo re-send: after a demo was approved but the design was <100%, the
