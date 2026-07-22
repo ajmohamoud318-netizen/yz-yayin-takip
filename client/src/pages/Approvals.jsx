@@ -62,16 +62,7 @@ export default function Approvals({ tab = 'demo' }) {
         if (sub === 'ozalit') return p.stage === 'ozalit_teslim' && (!!p.ozalit_requested || p.reject_target === 'matbaa')
         return false
       }
-      if (sub === 'demo') {
-        // Hide held demos from the team leader's queue. After a
-        // leader approves at <100% the project sits at demo_onay
-        // waiting for the designer to finish and re-send a second
-        // demo. There's nothing to approve or reject until the new
-        // demo lands (stage → demo_teslim → matbaa delivers → demo_onay,
-        // demo_held reset to false).
-        if (p.demo_held === true) return false
-        return p.stage === 'demo_onay' || p.stage === 'cin_demo_onay'
-      }
+      if (sub === 'demo') return p.stage === 'demo_onay' || p.stage === 'cin_demo_onay'
       if (sub === 'ozalit') return p.stage === 'ozalit_onay'
       return false
     })
@@ -207,35 +198,57 @@ export default function Approvals({ tab = 'demo' }) {
                   </>
                 ) : isLeader ? (
                   <>
-                    <Button
-                      size="sm"
-                      variant="success"
-                      className="w-full sm:flex-1"
-                      onClick={() => {
-                        if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
-                        else setDialog({ project: p, mode: 'approve' })
-                      }}
-                    >
-                      <ThumbsUp className="h-4 w-4" />
-                      Onayla
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      className="w-full sm:flex-1"
-                      onClick={() => setDialog({ project: p, mode: 'reject' })}
-                    >
-                      <ThumbsDown className="h-4 w-4" />
-                      Reddet
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="w-full sm:w-auto"
-                      onClick={() => openProject(p.id)}
-                    >
-                      Detay
-                    </Button>
+                    {sub === 'demo' && p.demo_held === true ? (
+                      <>
+                        {/* Held demo: nothing to approve or reject until
+                            the designer re-sends a second demo. Project
+                            stays in the queue so the leader can see
+                            what's waiting, but the only action is Detay. */}
+                        <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 sm:flex-1">
+                          Tasarım tamamlanmadı — tasarımcı yeni demo gönderecek
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="w-full sm:w-auto"
+                          onClick={() => openProject(p.id)}
+                        >
+                          Detay
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="success"
+                          className="w-full sm:flex-1"
+                          onClick={() => {
+                            if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
+                            else setDialog({ project: p, mode: 'approve' })
+                          }}
+                        >
+                          <ThumbsUp className="h-4 w-4" />
+                          Onayla
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="w-full sm:flex-1"
+                          onClick={() => setDialog({ project: p, mode: 'reject' })}
+                        >
+                          <ThumbsDown className="h-4 w-4" />
+                          Reddet
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="w-full sm:w-auto"
+                          onClick={() => openProject(p.id)}
+                        >
+                          Detay
+                        </Button>
+                      </>
+                    )}
                   </>
                 ) : null}
               </div>
