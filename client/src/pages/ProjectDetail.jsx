@@ -1207,15 +1207,15 @@ function availableActions({ project, user }) {
     }
   }
 
-  // Demo re-send: after a demo was approved but the design was <100%, the
-  // project sits at demo_onay. The designer (or leader) finishes the
-  // remaining subtasks, then advances back to demo_teslim so the matbaa
-  // re-prints with the now-complete design. The server's computeAdvance
-  // gates this on demo_held && progress >= 100.
+  // Re-send demo: at any demo stage (demo_teslim, demo_onay), the
+  // team leader or assigned designer can advance to demo_teslim to
+  // start the cycle over. The server gates this with the same
+  // allow-list (leader OR assigned designer).
   if (
-    (stage === 'demo_onay' || stage === 'cin_demo_onay') &&
-    project.demo_held === true &&
-    (project.progress ?? 0) >= 100 &&
+    (stage === 'demo_teslim' ||
+      stage === 'demo_onay' ||
+      stage === 'cin_demo_teslim' ||
+      stage === 'cin_demo_onay') &&
     (role === 'team_leader' || isAssignedDesigner)
   ) {
     set.add('advance')
@@ -1269,13 +1269,10 @@ function advanceActionLabel(project, userRole) {
       return project.last_reject_type === 'ozalit' ? "Ozalit'e Gönder" : "Demo'ya Gönder"
     case 'demo_onay':
     case 'cin_demo_onay':
-      // Demo was approved but held because the design wasn't 100% — the
-      // designer (or leader) is sending a second demo now that the design
-      // is complete.
-      if (project.demo_held === true && (project.progress ?? 0) >= 100) {
-        return 'Tekrar Demo Gönder'
-      }
-      return 'İlerlet'
+      // The leader has approved (or the demo is in flight). The
+      // designer (or the leader) can re-trigger a new demo round by
+      // sending it back to demo_teslim.
+      return 'Tekrar Demo Gönder'
     case 'ozalit_teslim':
       // Leader / assigned designer requesting the ozalit proof.
       return 'Ozalit İste'

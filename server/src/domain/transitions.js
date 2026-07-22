@@ -114,29 +114,37 @@ export function computeAdvance(project, actor) {
     }
   }
 
-  // 2) Demo Teslim dual-step (TR + ÇİN).
-  if (project.stage === 'demo_teslim') {
-    return computeDemoTeslimAdvance(project, actor, now, 'demo_onay')
-  }
-  if (project.stage === 'cin_demo_teslim') {
-    return computeDemoTeslimAdvance(project, actor, now, 'cin_demo_onay')
-  }
-
-  // 2b) Re-send demo after the first one was approved-but-held because the
-  // design wasn't 100%. The designer (or the leader) triggers a second
-  // demo round by advancing demo_onay → demo_teslim. Only allowed when
-  // progress has since reached 100% AND the prior demo is held.
+  // 2) Re-send a demo at any demo stage. The team leader or the
+  // assigned designer can advance any of {demo_teslim, demo_onay,
+  // cin_demo_teslim, cin_demo_onay} back to the corresponding
+  // _teslim stage to start the demo cycle over. Allowed at any
+  // progress and any held-state — once the leader has approved a
+  // demo, the team may iterate again.
   if (
-    (project.stage === 'demo_onay' || project.stage === 'cin_demo_onay') &&
-    project.demo_held === true &&
-    (project.progress ?? 0) >= 100
+    project.stage === 'demo_teslim' ||
+    project.stage === 'demo_onay' ||
+    project.stage === 'cin_demo_teslim' ||
+    project.stage === 'cin_demo_onay'
   ) {
     const role = actor?.role
     const isAssigned = (project.assignees ?? []).some((a) => a.id === actor?.id)
+    // The matbaa delivers at demo_teslim → demo_onay. Other roles
+    // can re-send / cancel the cycle back to demo_teslim.
+    if (role === 'printer') {
+      if (project.stage === 'demo_teslim' || project.stage === 'cin_demo_teslim') {
+        const approvalStage =
+          project.stage === 'cin_demo_teslim' ? 'cin_demo_onay' : 'demo_onay'
+        return computeDemoTeslimAdvance(project, actor, now, approvalStage)
+      }
+      badRequest('Matbaa yalnızca demo teslim aşamasında ilerletebilir.')
+    }
     if (role !== 'team_leader' && !isAssigned) {
       badRequest('Tekrar demo göndermek için ekip lideri veya atanmış tasarımcı olmalısınız.')
     }
-    const targetStage = project.stage === 'demo_onay' ? 'demo_teslim' : 'cin_demo_teslim'
+    const targetStage =
+      project.stage === 'cin_demo_teslim' || project.stage === 'cin_demo_onay'
+        ? 'cin_demo_teslim'
+        : 'demo_teslim'
     return {
       project: {
         ...project,
