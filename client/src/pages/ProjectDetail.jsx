@@ -1332,10 +1332,13 @@ function availableActions({ project, user }) {
   // once (hidden after they have). Only the team leader can reject.
   if (stage === 'ozalit_onay') {
     const alreadyApproved = (project.ozalit_approvals ?? []).some((a) => a.id === user.id)
+    // Each leader/designer approves once. A leader who hasn't decided yet sees
+    // both Onayla and Reddet; once they approve, BOTH disappear (they've
+    // committed) — a different leader who hasn't approved still sees Reddet.
     if ((role === 'team_leader' || isAssignedDesigner) && !alreadyApproved) {
       set.add('approve')
     }
-    if (role === 'team_leader') {
+    if (role === 'team_leader' && !alreadyApproved) {
       set.add('reject')
     }
   }

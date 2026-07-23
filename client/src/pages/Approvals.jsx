@@ -241,8 +241,9 @@ export default function Approvals({ tab = 'demo' }) {
                         Onay bekleniyor
                       </span>
                     )}
-                    {/* Only the team leader can reject. */}
-                    {isLeader && (
+                    {/* Only a team leader who hasn't approved yet can reject —
+                        approving commits them, so Reddet disappears afterward. */}
+                    {isLeader && !alreadyApproved && (
                       <Button
                         size="sm"
                         variant="destructive"
