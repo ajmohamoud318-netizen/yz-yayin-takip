@@ -1223,15 +1223,14 @@ function availableActions({ project, user }) {
     }
   }
 
-  // Re-send demo: at any demo stage (demo_teslim, demo_onay), the
-  // team leader or assigned designer can advance to demo_teslim to
-  // start the cycle over. The server gates this with the same
-  // allow-list (leader OR assigned designer).
+  // Re-send demo: at the *_onay stages the team leader or assigned
+  // designer can start a new demo round (the server sends it straight
+  // back to the matbaa). While a demo is in flight at demo_teslim /
+  // cin_demo_teslim there is nothing for them to do — the "Demo İste"
+  // button is hidden and the header shows the "Demoya Gönderildi"
+  // status pill instead (see sentStatusLabel).
   if (
-    (stage === 'demo_teslim' ||
-      stage === 'demo_onay' ||
-      stage === 'cin_demo_teslim' ||
-      stage === 'cin_demo_onay') &&
+    (stage === 'demo_onay' || stage === 'cin_demo_onay') &&
     (role === 'team_leader' || isAssignedDesigner)
   ) {
     set.add('advance')
