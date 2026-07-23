@@ -457,28 +457,25 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
 
   const selected = new Set(revizeIds ?? [])
   const baseSubs = (project.subtasks ?? []).filter((s) => s.kind !== 'revize')
-  const updatedSubs = baseSubs.map((s) => applyRevize(s, selected, nowIso))
+  const updatedSubs = baseSubs.map((s) => applyRevize(s, selected))
   return {
     project: { ...base, ...counter, subtasks: updatedSubs, progress: subtaskProgress(updatedSubs) },
     history,
   }
 }
 
-function applyRevize(subtask, selected, nowIso) {
-  const needs = selected.has(subtask.id)
+function applyRevize(subtask, selected) {
+  // Only the subtasks the leader flagged for revision reopen. Everything else
+  // keeps its real state. Previously the un-flagged branch force-set
+  // is_done: true (pages → full), so rejecting an incomplete demo marked every
+  // un-flagged subtask done and inflated progress to ~100% — the phantom
+  // "fully done" project. Revision only applies to work that was actually
+  // done; incomplete work simply stays incomplete for the designer to finish.
+  if (!selected.has(subtask.id)) return subtask
   if (subtask.kind === 'pages') {
-    return needs
-      ? { ...subtask, needs_revize: true, pages_done: 0, is_done: false }
-      : {
-          ...subtask,
-          needs_revize: false,
-          pages_done: subtask.total_pages ?? subtask.pages_done ?? 0,
-          is_done: true,
-        }
+    return { ...subtask, needs_revize: true, pages_done: 0, is_done: false }
   }
-  return needs
-    ? { ...subtask, needs_revize: true, is_done: false, done_at: null }
-    : { ...subtask, needs_revize: false, is_done: true, done_at: subtask.done_at ?? nowIso }
+  return { ...subtask, needs_revize: true, is_done: false, done_at: null }
 }
 
 /* ============================================================================

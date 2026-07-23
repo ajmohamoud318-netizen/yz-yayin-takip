@@ -223,17 +223,19 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
   const canLogUpdate = user?.role === 'designer' && isAssigned
 
   // Revision mode: the project is back in tasarım after a rejection and the
-  // leader has flagged specific subtasks to revise. Only those are editable;
-  // everything else is treated as already completed and locked.
+  // leader has flagged specific subtasks to revise. Flagged subtasks are
+  // editable (rework); subtasks that are done-and-not-flagged are locked
+  // (leave them); subtasks that were never done stay editable so the designer
+  // can still finish them — they were never "revision", just unfinished work.
   const inRevision =
     project?.stage === 'tasarim' && (project?.subtasks ?? []).some((s) => s.needs_revize)
 
   // Per-subtask: if the subtask has a specific assigned_to, only that designer can edit it.
-  // During a revision cycle only the leader-flagged (needs_revize) subtasks are editable.
+  // During a revision cycle, lock only the done-and-unflagged subtasks.
   function canEditSubtask(sub) {
     if (!canEditBase) return false
     if (sub.assigned_to && sub.assigned_to !== user?.id) return false
-    if (inRevision && !sub.needs_revize) return false
+    if (inRevision && !sub.needs_revize && sub.is_done) return false
     return true
   }
 
@@ -732,7 +734,7 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                     .map((s) => {
                       const canEdit = canEditSubtask(s)
                       const flagged = inRevision && s.needs_revize
-                      const lockedDone = inRevision && !s.needs_revize
+                      const lockedDone = inRevision && !s.needs_revize && s.is_done
 
                       if (s.kind === 'pages') {
                         return (

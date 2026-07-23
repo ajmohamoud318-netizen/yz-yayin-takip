@@ -46,8 +46,10 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
   // Who the rejection is routed to: 'designer' (redesign) or 'matbaa' (re-deliver).
   const [rejectTarget, setRejectTarget] = useState('designer')
 
-  // Project's own subtasks (drop any legacy revize-kind rows).
-  const revisableSubtasks = (project?.subtasks ?? []).filter((s) => s.kind !== 'revize')
+  // Only completed subtasks are revisable — you can't "revise" work that was
+  // never done; incomplete subtasks simply stay pending for the designer to
+  // finish. (Drop any legacy revize-kind rows too.)
+  const revisableSubtasks = (project?.subtasks ?? []).filter((s) => s.kind !== 'revize' && s.is_done)
 
   // Reset the picker each time the dialog is (re)opened.
   useEffect(() => {
@@ -130,10 +132,9 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
       toast.error('Red sebebi zorunludur.')
       return
     }
-    if (mode === 'reject' && rejectTarget === 'designer' && revisableSubtasks.length > 0 && revizeIds.length === 0) {
-      toast.error('Revize edilecek en az bir alt görev seçin.')
-      return
-    }
+    // Selecting subtasks to revise is optional — zero is allowed ("nothing
+    // needs redoing, just send it back"). Only completed subtasks appear as
+    // candidates (see revisableSubtasks).
     setBusy(true)
     try {
       let updated
@@ -230,10 +231,11 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
 
           {mode === 'reject' && rejectTarget === 'designer' && revisableSubtasks.length > 0 && (
             <div className="space-y-1.5">
-              <Label>Revize Edilecek Alt Görevler *</Label>
+              <Label>Revize Edilecek Alt Görevler <span className="font-normal text-muted-foreground">(isteğe bağlı)</span></Label>
               <p className="text-xs text-muted-foreground">
-                Tasarımcı yalnızca seçtiğiniz görevleri yeniden düzenleyebilir; diğerleri
-                tamamlanmış kabul edilir.
+                Yalnızca tamamlanmış görevler revize edilebilir. Seçtikleriniz tasarımcıya
+                yeniden açılır; seçmezseniz hiçbir görev revize edilmez ve diğerleri olduğu
+                gibi kalır.
               </p>
               <div className="max-h-52 space-y-1.5 overflow-y-auto rounded-md border p-2">
                 {revisableSubtasks.map((s) => {
