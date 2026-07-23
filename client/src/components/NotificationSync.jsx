@@ -71,6 +71,9 @@ export default function NotificationSync() {
           toast.error(`${p.title} — Demo reddedildi, revizyon gerekiyor.`, { duration: 8000 })
         } else if (stageChanged && p.stage === 'ozalit_teslim' && p.type === 'TR') {
           toast.info(`${p.title} — Ozalit isteyebilirsiniz.`, { duration: 7000 })
+        } else if (stageChanged && p.stage === 'ozalit_onay' && p.type === 'TR') {
+          // Multi-party ozalit: the assigned designer must approve too.
+          toast.info(`${p.title} — Ozalit onayınızı bekliyor.`, { duration: 8000 })
         }
         // Progress hit 100 %
         if (!stageChanged && old.progress < 100 && p.progress === 100) {

@@ -105,6 +105,7 @@ export default function AppShell() {
     let urgent = 0
     let handoverEligible = 0
     let productionReady = 0
+    let designerOzalitApprovals = 0
     for (const p of projects) {
       if (p.stage !== 'satista') active++
       else satista++
@@ -120,9 +121,15 @@ export default function AppShell() {
       if (role === 'printer' && p.stage === 'uretime_hazir') productionReady++
       if (role === 'printer' && canRequestHandover(p)) handoverEligible++
       if (role === 'designer' && (p.assignees ?? []).some((a) => a.id === user?.id)) myProjects++
+      // Designer's pending ozalit approvals: assigned, at ozalit_onay, not yet approved by them.
+      if (role === 'designer' && p.stage === 'ozalit_onay' &&
+          (p.assignees ?? []).some((a) => a.id === user?.id) &&
+          !(p.ozalit_approvals ?? []).some((a) => a.id === user?.id)) {
+        designerOzalitApprovals++
+      }
       if ((p.demo_attempt ?? 0) >= 2 || (p.ozalit_attempt ?? 0) >= 2) urgent++
     }
-    return { active, demoApprovals, ozalitApprovals, production, satista, total: projects.length, myProjects, urgent, handoverEligible, productionReady }
+    return { active, demoApprovals, ozalitApprovals, production, satista, total: projects.length, myProjects, urgent, handoverEligible, productionReady, designerOzalitApprovals }
   }, [projects, user?.role, user?.id])
 
   const pinned = useMemo(
@@ -1107,6 +1114,15 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
       badgeTone: 'amber',
       highlight: printerOrders > 0,
       roles: ['printer'],
+    },
+    {
+      to: '/approvals/ozalit',
+      label: 'Ozalit Onayı',
+      icon: BadgeCheck,
+      badge: counts.designerOzalitApprovals || undefined,
+      badgeTone: 'amber',
+      highlight: counts.designerOzalitApprovals > 0,
+      roles: ['designer'],
     },
     {
       to: '/siparis-onay',

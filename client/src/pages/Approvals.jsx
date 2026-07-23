@@ -40,9 +40,11 @@ export default function Approvals({ tab = 'demo' }) {
 
   const isPrinter = user?.role === 'printer'
   const isLeader = user?.role === 'team_leader'
-  // Demo approvals: leader OR printer. Ozalit approvals: leader only.
+  const isDesigner = user?.role === 'designer'
+  // Demo approvals: leader OR printer. Ozalit approvals are multi-party:
+  // every leader AND every assigned designer must approve.
   const canActOnDemo = isLeader || isPrinter
-  const canActOnOzalit = isLeader
+  const canActOnOzalit = isLeader || isDesigner
 
   useEffect(() => {
     if (!isPrinter || tab !== 'siparis') return
@@ -62,8 +64,17 @@ export default function Approvals({ tab = 'demo' }) {
         if (sub === 'ozalit') return p.stage === 'ozalit_teslim' && (!!p.ozalit_requested || p.reject_target === 'matbaa')
         return false
       }
-      if (sub === 'demo') return p.stage === 'demo_onay' || p.stage === 'cin_demo_onay'
-      if (sub === 'ozalit') return p.stage === 'ozalit_onay'
+      // Designers only act on ozalit (multi-party), never demo.
+      if (sub === 'demo') {
+        if (!isLeader) return false
+        return p.stage === 'demo_onay' || p.stage === 'cin_demo_onay'
+      }
+      if (sub === 'ozalit') {
+        if (p.stage !== 'ozalit_onay') return false
+        if (isLeader) return true
+        // Designer: only their assigned projects.
+        return (p.assignees ?? []).some((a) => a.id === user?.id)
+      }
       return false
     })
 
@@ -152,7 +163,12 @@ export default function Approvals({ tab = 'demo' }) {
     }
     return (
       <div className="stagger-children grid gap-3 md:grid-cols-2">
-        {queue.map((p) => (
+        {queue.map((p) => {
+          const isAssignedDesigner = (p.assignees ?? []).some((a) => a.id === user?.id)
+          const alreadyApproved = sub === 'ozalit' && (p.ozalit_approvals ?? []).some((a) => a.id === user?.id)
+          const canApprove = sub === 'demo' ? isLeader : (isLeader || isAssignedDesigner)
+          const heldDemo = sub === 'demo' && p.demo_held === true
+          return (
           <Card key={p.id}>
             <CardContent className="space-y-3 p-4">
               <div className="flex items-start justify-between gap-2">
@@ -169,10 +185,7 @@ export default function Approvals({ tab = 'demo' }) {
               <div className="rounded-md border bg-muted/30 p-2.5 text-xs">
                 <span className="font-medium">Aşama:</span> {STAGE_LABELS[p.stage]}
               </div>
-              {/* Action row — stacks below sm so each button gets the full
-                  width on mobile, then sits in a row on tablet+. The primary
-                  action (Onayla / Onaya Gönder) is rendered first so thumb
-                  reach lands on it. */}
+              {/* Action row — stacks below sm on mobile, row on tablet+. */}
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 {isPrinter ? (
                   <>
@@ -187,74 +200,69 @@ export default function Approvals({ tab = 'demo' }) {
                       <Send className="h-4 w-4" />
                       {sub === 'demo' ? "Demo'yu Teslim Et" : 'Ozaliti Teslim Et'}
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="w-full sm:flex-1"
-                      onClick={() => openProject(p.id)}
-                    >
+                    <Button size="sm" variant="ghost" className="w-full sm:flex-1" onClick={() => openProject(p.id)}>
                       Detay
                     </Button>
                   </>
-                ) : isLeader ? (
+                ) : heldDemo && isLeader ? (
                   <>
-                    {sub === 'demo' && p.demo_held === true ? (
-                      <>
-                        {/* Held demo: nothing to approve or reject until
-                            the designer re-sends a second demo. Project
-                            stays in the queue so the leader can see
-                            what's waiting, but the only action is Detay. */}
-                        <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 sm:flex-1">
-                          Tasarım tamamlanmadı — tasarımcı yeni demo gönderecek
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="w-full sm:w-auto"
-                          onClick={() => openProject(p.id)}
-                        >
-                          Detay
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="success"
-                          className="w-full sm:flex-1"
-                          onClick={() => {
-                            if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
-                            else setDialog({ project: p, mode: 'approve' })
-                          }}
-                        >
-                          <ThumbsUp className="h-4 w-4" />
-                          Onayla
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          className="w-full sm:flex-1"
-                          onClick={() => setDialog({ project: p, mode: 'reject' })}
-                        >
-                          <ThumbsDown className="h-4 w-4" />
-                          Reddet
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="w-full sm:w-auto"
-                          onClick={() => openProject(p.id)}
-                        >
-                          Detay
-                        </Button>
-                      </>
-                    )}
+                    {/* Held demo: nothing to approve/reject until the designer
+                        re-sends. Kept in the queue for visibility. */}
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 sm:flex-1">
+                      Tasarım tamamlanmadı — tasarımcı yeni demo gönderecek
+                    </span>
+                    <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={() => openProject(p.id)}>
+                      Detay
+                    </Button>
                   </>
-                ) : null}
+                ) : (
+                  <>
+                    {alreadyApproved ? (
+                      // This user already signed off — waiting on the others.
+                      <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800 sm:flex-1">
+                        <ThumbsUp className="h-3.5 w-3.5" />
+                        Onayınız kaydedildi — diğer onaylar bekleniyor
+                      </span>
+                    ) : canApprove ? (
+                      <Button
+                        size="sm"
+                        variant="success"
+                        className="w-full sm:flex-1"
+                        onClick={() => {
+                          if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
+                          else setDialog({ project: p, mode: 'approve' })
+                        }}
+                      >
+                        <ThumbsUp className="h-4 w-4" />
+                        Onayla
+                      </Button>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/30 px-2 py-1 text-xs font-medium text-muted-foreground sm:flex-1">
+                        Onay bekleniyor
+                      </span>
+                    )}
+                    {/* Only the team leader can reject. */}
+                    {isLeader && (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="w-full sm:flex-1"
+                        onClick={() => setDialog({ project: p, mode: 'reject' })}
+                      >
+                        <ThumbsDown className="h-4 w-4" />
+                        Reddet
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={() => openProject(p.id)}>
+                      Detay
+                    </Button>
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>
-        ))}
+          )
+        })}
       </div>
     )
   }
