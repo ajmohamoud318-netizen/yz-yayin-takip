@@ -45,11 +45,17 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
   const [revizeIds, setRevizeIds] = useState([])
   // Who the rejection is routed to: 'designer' (redesign) or 'matbaa' (re-deliver).
   const [rejectTarget, setRejectTarget] = useState('designer')
+  // The Approvals list feeds this dialog a project WITHOUT its subtasks — the
+  // /projects list endpoint omits them; only the single-project detail fetch
+  // includes them. Without loading them here the revise picker was always empty
+  // on the Approvals page even for a project with completed subtasks. Seed from
+  // the prop, then fetch the detail on open if they're missing.
+  const [loadedSubtasks, setLoadedSubtasks] = useState(project?.subtasks ?? null)
 
   // Only completed subtasks are revisable — you can't "revise" work that was
   // never done; incomplete subtasks simply stay pending for the designer to
   // finish. (Drop any legacy revize-kind rows too.)
-  const revisableSubtasks = (project?.subtasks ?? []).filter((s) => s.kind !== 'revize' && s.is_done)
+  const revisableSubtasks = (loadedSubtasks ?? []).filter((s) => s.kind !== 'revize' && s.is_done)
 
   // Reset the picker each time the dialog is (re)opened.
   useEffect(() => {
@@ -58,6 +64,18 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
       setReason('')
       setRejectTarget('designer')
     }
+  }, [open, project?.id])
+
+  // Load subtasks when the dialog opens if the caller didn't supply them
+  // (Approvals list projects carry none). The reject revise picker needs them.
+  useEffect(() => {
+    if (!open || !project?.id) return
+    if (Array.isArray(project.subtasks)) { setLoadedSubtasks(project.subtasks); return }
+    let cancelled = false
+    api.getProject(project.id)
+      .then((full) => { if (!cancelled) setLoadedSubtasks(full?.subtasks ?? []) })
+      .catch(() => { if (!cancelled) setLoadedSubtasks([]) })
+    return () => { cancelled = true }
   }, [open, project?.id])
 
   function toggleRevize(subId) {
