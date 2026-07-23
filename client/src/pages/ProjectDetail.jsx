@@ -478,7 +478,16 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                     {TYPE_LABELS[project.type]}
                   </Badge>
                   <Badge variant="outline" className="font-medium">
-                    {STAGE_LABELS[project.stage]}
+                    {/* A demo/ozalit in process reads "…Gönderildi" (same wording
+                        as the first send), not the raw pipeline stage name. The
+                        ozalit variant only once it's actually with the matbaa —
+                        ozalit_teslim also covers the "not yet requested" sub-state. */}
+                    {project.stage === 'demo_teslim' || project.stage === 'cin_demo_teslim'
+                      ? 'Demoya Gönderildi'
+                      : project.stage === 'ozalit_teslim' &&
+                          (project.ozalit_requested || project.reject_target === 'matbaa')
+                        ? "Ozalit'e Gönderildi"
+                        : STAGE_LABELS[project.stage]}
                   </Badge>
                   {project.demo_attempt > 0 && (
                     <Badge variant="outline" className="font-medium text-muted-foreground">

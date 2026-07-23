@@ -60,3 +60,4 @@ client/dist/
 
 # Vite temp config timestamp files
 *.timestamp-*.mjs
+server/server/

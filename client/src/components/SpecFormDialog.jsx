@@ -476,7 +476,23 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     setForm((prev) => ({ ...prev, [name]: value }))
   }
 
-  const attemptNo = viewAttempt ?? ((project?.[variant.attemptField] ?? 0) + 1)
+  // Re-sending a demo from a demo stage bumps demo_attempt on the server at
+  // submit time (see server transitions: "Re-send starts a new demo round").
+  // While composing that re-send the stored counter is still the *previous*
+  // attempt, so naively showing demo_attempt+1 leaves the form one behind —
+  // it reads "1. DEMO" on the 2nd demo, "2. DEMO" on the 3rd, etc. Add the
+  // extra +1 so the form (and the snapshot it saves) already reflect the
+  // number this demo will carry once sent. First demo / post-reject revisions
+  // advance from Tasarım (no bump) and the matbaa's delivery isn't a re-send,
+  // so those keep demo_attempt+1.
+  const DEMO_RESEND_STAGES = new Set(['demo_teslim', 'demo_onay', 'cin_demo_teslim', 'cin_demo_onay'])
+  const willResendBump =
+    variant.kind === 'demo' &&
+    mode === 'advance' &&
+    user?.role !== 'printer' &&
+    DEMO_RESEND_STAGES.has(project?.stage)
+  const attemptNo =
+    viewAttempt ?? ((project?.[variant.attemptField] ?? 0) + (willResendBump ? 2 : 1))
 
   async function handleAdvance() {
     if (!project) return
