@@ -615,7 +615,13 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
+      <DialogContent
+        // Radix focuses the first focusable element on open — here that's the
+        // İŞİN ADI input, and browsers render focused-input text as selected,
+        // so the sheet opened with the title looking "highlighted". Keep
+        // focus on the dialog itself instead.
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        className="max-h-[90vh] max-w-2xl overflow-y-auto max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
