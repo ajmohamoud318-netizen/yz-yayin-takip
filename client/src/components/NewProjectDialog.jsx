@@ -1,8 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Plus, Pencil, X } from 'lucide-react'
+import { Plus, Pencil, Sparkles, Wand2, X } from 'lucide-react'
 
 import api, { TYPE_LABELS, SUBTASK_LIBRARY } from '@/api'
+import {
+  inferSubtasksFromTemplate,
+  inferTitleFromTemplate,
+  listOrphanTemplates,
+  seedProjectFromTemplate,
+} from '@/data/productCatalog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -86,6 +92,21 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
   const [targetDate, setTargetDate] = useState(defaultTargetDate())
   const [designers, setDesigners] = useState([])
   const [saving, setSaving] = useState(false)
+  // Product template picked from Ürün Bilgileri. Empty string = "start from
+  // scratch". The selected template's components are copied into the new
+  // project's localStorage entry on create, so Ürün Bilgileri picks the
+  // project up immediately — the leader can refine the data from the
+  // catalog without re-typing it. Template state is meaningless in edit
+  // mode (the project already has its own product info) so the UI hides
+  // the picker entirely when `isEdit`.
+  const [templateId, setTemplateId] = useState('')
+  const [templates, setTemplates] = useState([])
+  // Snapshot of the currently selected template (null when none / edit
+  // mode). Drives the "auto-filled" hint pill and the live subtask list.
+  const selectedTemplate = useMemo(
+    () => templates.find((t) => t.id === templateId) ?? null,
+    [templates, templateId],
+  )
 
   useEffect(() => {
     if (!open) return
@@ -149,7 +170,19 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
       setPageCount(pc)
     } else {
       setTargetDate(defaultTargetDate())
+      // In create mode, surface the orphan Ürün Bilgileri templates so the
+      // leader can pick one and have subtasks auto-fill. We refetch every
+      // time the dialog opens so the list stays in lock-step with anything
+      // the leader added/edited in Ürün Bilgileri between dialog sessions.
+      api.listProjects()
+        .then((real) => listOrphanTemplates(real.map((p) => p.id)))
+        .then(setTemplates)
+        .catch(() => setTemplates([]))
     }
+    // Always start with no template chosen. The "Ürün Bilgileri şablonu"
+    // picker is only meaningful in create mode; in edit mode the project
+    // already owns its product info and the picker is hidden anyway.
+    setTemplateId('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
@@ -165,6 +198,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
     setCustomDraft('')
     setPageCount(32)
     setStickerCount(1)
+    setTemplateId('')
   }
 
   function addCustomSubtask() {
@@ -213,6 +247,30 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
 
   function toggleDesigner(id) {
     setAssignedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  // Apply a Ürün Bilgileri template: pre-fill the title (only if the leader
+  // hasn't typed one yet), check the subtasks the template suggests, and
+  // copy any page / sticker counts the template carries. The leader can
+  // still fine-tune every field afterwards — auto-fill is a starting
+  // point, not a commitment. Designers are NOT assigned here: they stay
+  // project-specific and the leader picks them explicitly below.
+  function applyTemplate(id) {
+    setTemplateId(id)
+    const tpl = templates.find((t) => t.id === id)
+    if (!tpl) return
+    const { subtasks: suggested, pageCount: pc, stickerCount: sc } = inferSubtasksFromTemplate(tpl.components)
+    setSubtasks((prev) => ({ ...prev, ...suggested }))
+    if (typeof pc === 'number') setPageCount(pc)
+    if (typeof sc === 'number') setStickerCount(sc)
+    setTitle((prev) => (prev.trim() ? prev : inferTitleFromTemplate(tpl.components, prev)))
+  }
+
+  // Drop the template — clears the picked id but keeps whatever the leader
+  // already typed/checked. The leader may want to keep some auto-filled
+  // values (e.g. "Kapak") while deselecting the template itself.
+  function clearTemplate() {
+    setTemplateId('')
   }
 
   async function handleSubmit(e) {
@@ -283,7 +341,19 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
       } else {
         const created = await api.createProject(payload)
         addOne(created)
-        toast.success('Proje oluşturuldu.')
+        // When the leader started from a Ürün Bilgileri template, copy its
+        // components into localStorage overrides keyed by the new project
+        // id. The catalog's read order (overrides → PRODUCT_INFO seed)
+        // means the template "claims" the new project immediately and any
+        // edits the leader makes in Ürün Bilgileri flow through.
+        if (selectedTemplate) {
+          seedProjectFromTemplate(created.id, selectedTemplate.components)
+        }
+        toast.success(
+          selectedTemplate
+            ? `Proje oluşturuldu · "${selectedTemplate.title}" şablonundan dolduruldu.`
+            : 'Proje oluşturuldu.',
+        )
         onCreated?.(created)
         reset()
       }
@@ -319,6 +389,74 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Template picker — only meaningful in create mode. The team leader
+              can pick an existing Ürün Bilgileri product to seed the title,
+              subtasks, page count and sticker count. Picking nothing is
+              still a valid choice; the rest of the form keeps behaving the
+              way it always did. */}
+          {!isEdit && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="np-template" className="flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-primary" />
+                  Ürün Bilgileri Şablonu
+                  <span className="font-normal text-muted-foreground">(opsiyonel)</span>
+                </Label>
+                {selectedTemplate && (
+                  <button
+                    type="button"
+                    onClick={clearTemplate}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground transition active:scale-95 hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" /> Şablonu temizle
+                  </button>
+                )}
+              </div>
+              <Select value={templateId} onValueChange={applyTemplate}>
+                <SelectTrigger
+                  id="np-template"
+                  className={cn(
+                    'w-full',
+                    selectedTemplate && 'border-primary/50 bg-primary/[0.04]',
+                  )}
+                >
+                  <SelectValue placeholder="Boş başla veya bir şablon seç…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">— Boş başla —</SelectItem>
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      <span className="inline-flex items-center gap-2">
+                        <Wand2 className="h-3.5 w-3.5 text-primary" />
+                        <span className="truncate">{t.title}</span>
+                        {t.parcaCount > 1 && (
+                          <span className="rounded-full bg-amber-50 px-1.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-600/20">
+                            {t.parcaCount} parça
+                          </span>
+                        )}
+                      </span>
+                    </SelectItem>
+                  ))}
+                  {templates.length === 0 && (
+                    <div className="px-2 py-2 text-xs text-muted-foreground">
+                      Ürün Bilgileri'nde henüz şablon yok — yine de boş başlayabilirsiniz.
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
+              {selectedTemplate && (
+                <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                  <Sparkles className="mt-px h-3 w-3 shrink-0 text-primary" />
+                  <span>
+                    <span className="font-semibold text-foreground">{selectedTemplate.title}</span>{' '}
+                    şablonundan otomatik dolduruldu. Alt görevleri, sayfa ve sticker sayılarını
+                    isterseniz değiştirebilirsiniz.
+                  </span>
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <Label htmlFor="np-title">Proje Başlığı</Label>
             <Input
