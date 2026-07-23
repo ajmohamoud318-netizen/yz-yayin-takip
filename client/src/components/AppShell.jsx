@@ -114,7 +114,8 @@ export default function AppShell() {
         if (p.type === 'TR' && p.stage === 'demo_teslim') demoApprovals++
         if (p.type === 'TR' && p.stage === 'ozalit_teslim' && (p.ozalit_requested || p.reject_target === 'matbaa')) ozalitApprovals++
       } else if (role === 'team_leader') {
-        if (p.stage === 'demo_onay' || p.stage === 'cin_demo_onay') demoApprovals++
+        // A held demo has no pending approval action — exclude it from the count.
+        if ((p.stage === 'demo_onay' || p.stage === 'cin_demo_onay') && p.demo_held !== true) demoApprovals++
         if (p.stage === 'ozalit_onay') ozalitApprovals++
       }
       if (p.stage === 'uretimde' || p.stage === 'gumruk') production++

@@ -67,6 +67,9 @@ export default function Approvals({ tab = 'demo' }) {
       // Designers only act on ozalit (multi-party), never demo.
       if (sub === 'demo') {
         if (!isLeader) return false
+        // A held demo has no pending action — it's waiting on the designer to
+        // finish and re-send — so it doesn't belong in the approval queue.
+        if (p.demo_held === true) return false
         return p.stage === 'demo_onay' || p.stage === 'cin_demo_onay'
       }
       if (sub === 'ozalit') {
@@ -88,7 +91,8 @@ export default function Approvals({ tab = 'demo' }) {
     setSignOrder(null)
   }
 
-  const activeTab = tab === 'ozalit' ? 'ozalit' : 'demo'
+  // Designers only have the ozalit queue — force them onto it.
+  const activeTab = isDesigner ? 'ozalit' : (tab === 'ozalit' ? 'ozalit' : 'demo')
 
   // Sipariş tab is printer-only
   if (tab === 'siparis' && isPrinter) {
@@ -277,14 +281,17 @@ export default function Approvals({ tab = 'demo' }) {
 
         <Tabs value={activeTab} onValueChange={(v) => navigate(`/approvals/${v}`)}>
           <TabsList>
-            <TabsTrigger value="demo" className="gap-1.5">
-              Demo Onayı
-              {demoQueue.length > 0 && (
-                <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">
-                  {demoQueue.length}
-                </Badge>
-              )}
-            </TabsTrigger>
+            {/* Designers only approve ozalit — no demo tab for them. */}
+            {!isDesigner && (
+              <TabsTrigger value="demo" className="gap-1.5">
+                Demo Onayı
+                {demoQueue.length > 0 && (
+                  <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">
+                    {demoQueue.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            )}
             <TabsTrigger value="ozalit" className="gap-1.5">
               Ozalit Onayı
               {ozalitQueue.length > 0 && (
@@ -294,9 +301,11 @@ export default function Approvals({ tab = 'demo' }) {
               )}
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="demo" className="mt-4">
-            {renderQueue(demoQueue, 'demo')}
-          </TabsContent>
+          {!isDesigner && (
+            <TabsContent value="demo" className="mt-4">
+              {renderQueue(demoQueue, 'demo')}
+            </TabsContent>
+          )}
           <TabsContent value="ozalit" className="mt-4">
             {renderQueue(ozalitQueue, 'ozalit')}
           </TabsContent>
