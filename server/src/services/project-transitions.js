@@ -32,11 +32,13 @@ export function applyAdvance(project, { user, note = '' }) {
   return computeAdvance(project, user)
 }
 
-/** `POST /projects/:id/approve`. */
-export function applyApproval(project, { user }) {
-  // The client `computeApproval` reads the *current* stage from the
-  // project shape and dispatches by stage.
-  return computeApproval(project, user)
+/**
+ * `POST /projects/:id/approve`. For ozalit_onay the approval is multi-party:
+ * pass the required approver ids (`teamLeaderIds`, `designerIds`) so the
+ * transition can record each approval and advance only once the set is complete.
+ */
+export function applyApproval(project, { user, teamLeaderIds = [], designerIds = [] }) {
+  return computeApproval(project, user, { teamLeaderIds, designerIds })
 }
 
 /** `POST /projects/:id/reject`. */

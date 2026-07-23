@@ -312,12 +312,12 @@ function computeOzalitTeslimAdvance(project, actor, now) {
  *  approve(project, actor) → next project state
  * ========================================================================== */
 
-export function computeApproval(project, actor) {
+export function computeApproval(project, actor, ctx = {}) {
   const now = new Date().toISOString()
   const actorName = actor?.name ?? 'Bilinmeyen'
 
   if (project.stage === 'ozalit_onay') {
-    return computeOzalitOnayApproval(project, actor, now, actorName)
+    return computeOzalitOnayApproval(project, actor, now, actorName, ctx)
   }
 
   // Demo approval: leader OR printer can advance it.
@@ -385,19 +385,54 @@ export function computeApproval(project, actor) {
   }
 }
 
-function computeOzalitOnayApproval(project, actor, now, actorName) {
-  // Single-step approval: team_leader only. Approval advances directly
-  // from ozalit_onay → uretime_hazir (no separate designer/special-designer
-  // step). The leader fields stay in the schema for backward compatibility
-  // but are no longer required.
-  if (actor?.role !== 'team_leader') {
-    badRequest('Ozalit onayını yalnızca ekip lideri yapabilir.')
+function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
+  // Multi-party approval: EVERY active team leader AND every assigned designer
+  // must approve before the project advances to Üretime Hazır. ctx carries the
+  // required approver ids (the approve route loads them). Each approval is
+  // recorded; the project stays at ozalit_onay until the set is complete.
+  const teamLeaderIds = ctx.teamLeaderIds ?? []
+  const designerIds = ctx.designerIds ?? []
+
+  const isLeader = actor?.role === 'team_leader'
+  const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
+  if (!isLeader && !isAssignedDesigner) {
+    badRequest('Ozalit onayını yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
   }
+
+  // Record this approver (idempotent — approving twice is a no-op).
+  const approvals = Array.isArray(project.ozalit_approvals) ? project.ozalit_approvals : []
+  const already = approvals.some((a) => a.id === actor?.id)
+  const nextApprovals = already
+    ? approvals
+    : [...approvals, { id: actor?.id, role: actor?.role, name: actorName, at: now }]
+
+  // Required = every active team leader + every assigned designer.
+  const required = [...new Set([...teamLeaderIds, ...designerIds])]
+  const approvedIds = new Set(nextApprovals.map((a) => a.id))
+  const allApproved = required.length > 0 && required.every((id) => approvedIds.has(id))
+
+  if (!allApproved) {
+    // Not everyone has signed off yet — stay at ozalit_onay, record the approval.
+    const remaining = required.filter((id) => !approvedIds.has(id)).length
+    return {
+      project: { ...project, ozalit_approvals: nextApprovals, updated_at: now },
+      history: makeEntry(project, {
+        action: 'approve',
+        from_stage: 'ozalit_onay',
+        to_stage: 'ozalit_onay',
+        done_by_name: actorName,
+        note: `Ozalit onayı verildi — ${remaining} onay daha bekleniyor`,
+      }),
+    }
+  }
+
+  // Everyone approved → advance to production-ready and clear the ledger.
   assertCanEnterProductionLocal('uretime_hazir', project.progress)
   return {
     project: {
       ...project,
       stage: 'uretime_hazir',
+      ozalit_approvals: [],
       ozalit_leader_approved: false,
       ozalit_leader_approved_by: null,
       ozalit_leader_approved_at: null,
@@ -449,6 +484,9 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
           ozalit_leader_approved_by: null,
           ozalit_leader_approved_at: null,
           ozalit_designer_approvals: [],
+          // Multi-party ledger: a rejection wipes any partial approvals so the
+          // next ozalit round starts fresh.
+          ozalit_approvals: [],
         }
       : {}),
   }

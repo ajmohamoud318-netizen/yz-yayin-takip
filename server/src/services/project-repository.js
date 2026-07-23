@@ -17,6 +17,7 @@ const PROJECT_COLUMNS = `
   ozalit_designer_approvals,
   demo_held, demo_held_at, demo_held_by_name,
   ozalit_requested, reject_target, last_reject_type, last_reject_target,
+  ozalit_approvals,
   created_at, updated_at
 `
 
@@ -259,6 +260,8 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
   // reads last_reject_type to route an ozalit-revision resubmit to ozalit_teslim.
   'last_reject_type',
   'last_reject_target',
+  // Multi-party ozalit approval: array of { id, role, name, at } approvers.
+  'ozalit_approvals',
 ])
 
 export async function patchProject(client, id, fields) {
@@ -390,6 +393,7 @@ function rowToProject(r) {
     reject_target: r.reject_target ?? null,
     last_reject_type: r.last_reject_type ?? null,
     last_reject_target: r.last_reject_target ?? null,
+    ozalit_approvals: r.ozalit_approvals ?? [],
     created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
     updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at,
   }

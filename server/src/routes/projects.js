@@ -238,8 +238,17 @@ export async function projectRoutes(fastify) {
     const result = await withTx(async (client) => {
       const project = await getProjectForUpdate(client, request.params.id)
       if (!project) notFound('Proje bulunamadı.')
+      // Multi-party ozalit approval needs the full required set: every active
+      // team leader + every assigned designer. Load both so the transition can
+      // record this approval and advance only once everyone has signed off.
+      project.assignees = await loadProjectAssignees(client, project)
+      const designerIds = project.assignees.map((a) => a.id)
+      const { rows: leaderRows } = await client.query(
+        "SELECT id FROM users WHERE role = 'team_leader' AND is_active = TRUE",
+      )
+      const teamLeaderIds = leaderRows.map((r) => r.id)
       const { project: next, history } = applyApproval(project, {
-        user: request.user, stage, note: note ?? '',
+        user: request.user, stage, note: note ?? '', teamLeaderIds, designerIds,
       })
       // Persist all state-mutating fields from the transition (stage,
       // optimistic-lock version, AND-rule flags for ozalit_onay, AND the
@@ -256,6 +265,9 @@ export async function projectRoutes(fastify) {
       }
       if (Object.prototype.hasOwnProperty.call(next, 'ozalit_designer_approvals')) {
         fields.ozalit_designer_approvals = JSON.stringify(next.ozalit_designer_approvals)
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'ozalit_approvals')) {
+        fields.ozalit_approvals = JSON.stringify(next.ozalit_approvals)
       }
       if (Object.prototype.hasOwnProperty.call(next, 'demo_held')) {
         fields.demo_held = next.demo_held
@@ -301,6 +313,8 @@ export async function projectRoutes(fastify) {
         // vs demo → demo_teslim) and labels the button; persist it + its target.
         last_reject_type: next.last_reject_type,
         last_reject_target: next.last_reject_target,
+        // An ozalit rejection wipes the multi-party approval ledger.
+        ozalit_approvals: JSON.stringify(next.ozalit_approvals ?? []),
       }
       // Reject-to-designer recomputes progress from the reopened subtasks;
       // reject-to-matbaa leaves subtasks (and progress) untouched.
