@@ -36,7 +36,10 @@ export function statusKeyForProject(p) {
       // Second demo cycle (leader approved at <100%, designer
       // reached 100%, designer re-sent): green — the demo is now
       // the "ready for the leader to send to Ozalit" state.
-      return isSecondDemoCycle(p) ? 'green' : 'purple'
+      // BOTH conditions are required for green: an earlier demo
+      // approval AND a finished (100%) design. A held approval with
+      // the design still incomplete stays purple.
+      return isSecondDemoCycle(p) && (p.progress ?? 0) === 100 ? 'green' : 'purple'
     default:
       return p.progress > 0 ? 'purple' : 'orange'
   }

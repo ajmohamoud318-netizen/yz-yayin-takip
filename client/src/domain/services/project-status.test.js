@@ -41,6 +41,15 @@ describe('statusKeyForProject', () => {
       { action: 'approve', to_stage: 'cin_demo_onay' },
     ] })).toBe('green')
   })
+  it('keeps an approved-but-unfinished (held) demo purple at any stage', () => {
+    const held = {
+      history: [
+        { action: 'approve', to_stage: 'demo_onay' },
+      ],
+    }
+    expect(statusKeyForProject({ ...held, stage: 'demo_onay', progress: 0 })).toBe('purple')
+    expect(statusKeyForProject({ ...held, stage: 'demo_teslim', progress: 60 })).toBe('purple')
+  })
   it('maps tasarim with progress 0 to orange (yeni proje)', () => {
     expect(statusKeyForProject({ stage: 'tasarim', progress: 0 })).toBe('orange')
   })
