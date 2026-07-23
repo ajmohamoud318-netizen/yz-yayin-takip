@@ -8,14 +8,32 @@ import api, { setAuthToken } from '../api.js'
  */
 const AuthContext = createContext(null)
 const AUTH_KEY = 'yz_auth_v1'
+const REMEMBER_DAYS = 30
 
 function loadAuth() {
   if (typeof localStorage === 'undefined') return null
   try {
     const raw = localStorage.getItem(AUTH_KEY)
-    return raw ? JSON.parse(raw) : null
+    const saved = raw ? JSON.parse(raw) : null
+    // "30 gün hatırla" sessions carry an expiry stamp — honour it.
+    // Legacy sessions without one stay valid (they predate the stamp).
+    if (saved?.expires_at && Date.parse(saved.expires_at) < Date.now()) {
+      localStorage.removeItem(AUTH_KEY)
+      return null
+    }
+    return saved
   } catch {
     return null
+  }
+}
+
+/** Persist the session for REMEMBER_DAYS ("30 gün hatırla" ticked). */
+function persistAuth(token, user) {
+  try {
+    const expires_at = new Date(Date.now() + REMEMBER_DAYS * 86400000).toISOString()
+    localStorage.setItem(AUTH_KEY, JSON.stringify({ token, user, expires_at }))
+  } catch {
+    /* ignore storage errors */
   }
 }
 
@@ -30,16 +48,23 @@ export function AuthProvider({ children }) {
     setAuthToken(saved.token)
   }, [])
 
-  const login = useCallback(async (email, password) => {
+  const login = useCallback(async (email, password, { remember = false } = {}) => {
     setLoading(true)
     try {
       const { token, user: u } = await api.login(email, password)
       setAuthToken(token)
       setUser(u)
-      try {
-        localStorage.setItem(AUTH_KEY, JSON.stringify({ token, user: u }))
-      } catch {
-        /* ignore storage errors */
+      if (remember) {
+        // "30 gün hatırla" ticked → keep the session for 30 days.
+        persistAuth(token, u)
+      } else {
+        // Not ticked → memory-only session; also drop any previously
+        // remembered session so it can't outlive this explicit choice.
+        try {
+          localStorage.removeItem(AUTH_KEY)
+        } catch {
+          /* ignore storage errors */
+        }
       }
       return u
     } finally {
@@ -53,11 +78,7 @@ export function AuthProvider({ children }) {
       const { token, user: u } = await api.loginAsUser(userId)
       setAuthToken(token)
       setUser(u)
-      try {
-        localStorage.setItem(AUTH_KEY, JSON.stringify({ token, user: u }))
-      } catch {
-        /* ignore storage errors */
-      }
+      persistAuth(token, u)
       return u
     } finally {
       setLoading(false)
@@ -88,7 +109,12 @@ export function AuthProvider({ children }) {
       try {
         const saved = loadAuth()
         if (saved?.token) {
-          localStorage.setItem(AUTH_KEY, JSON.stringify({ token: saved.token, user: next }))
+          // Preserve the original expiry — updating the avatar or name must
+          // not silently extend (or drop) the 30-day session window.
+          localStorage.setItem(
+            AUTH_KEY,
+            JSON.stringify({ token: saved.token, user: next, expires_at: saved.expires_at }),
+          )
         }
       } catch {
         /* ignore storage errors */

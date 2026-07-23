@@ -13,13 +13,14 @@ export default function Login() {
   const [email, setEmail]           = useState('')
   const [password, setPassword]     = useState('')
   const [showPw, setShowPw]         = useState(false)
+  const [remember, setRemember]     = useState(false)
   const [error, setError]           = useState('')
   const [exiting, setExiting]       = useState(false)
 
   async function submit(mail, pass) {
     setError('')
     if (!mail.trim() || !pass) { setError('Lütfen e-posta ve şifrenizi girin.'); return }
-    try   { await login(mail, pass); setExiting(true) }
+    try   { await login(mail, pass, { remember }); setExiting(true) }
     catch (err) { setError(err.message || 'Giriş yapılamadı. Lütfen tekrar deneyin.') }
   }
 
@@ -92,8 +93,14 @@ export default function Login() {
 
               {/* Remember + Forgot */}
               <div className="flex items-center justify-between">
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-600 select-none">
-                  <input type="checkbox" className="h-4 w-4 rounded border-gray-300 accent-red-500" />
+                <label htmlFor="remember" className="flex cursor-pointer items-center gap-2 text-sm text-gray-600 select-none">
+                  <input
+                    id="remember"
+                    type="checkbox"
+                    checked={remember}
+                    onChange={(e) => setRemember(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 accent-red-500"
+                  />
                   30 gün hatırla
                 </label>
                 <Link
