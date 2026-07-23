@@ -56,9 +56,38 @@ export async function listProjects() {
       subAssignees.set(row.project_id, list)
     }
   }
+  // History for every listed project in one query. The client's status
+  // color rules (statusKeyForProject → isSecondDemoCycle) read history to
+  // tell the first demo cycle (purple) from the second (green). Without it
+  // the dashboard rendered purple/"Demo aşamasında: 0" until the user
+  // opened a project detail (whose payload does include history), at which
+  // point the merged store flipped the same project to green — the color
+  // and the counters visibly changed after just opening and closing a
+  // project. Shipping the real history with the list keeps every view
+  // consistent from first load.
+  const historyByProject = new Map() // projectId -> [rows]
+  if (ids.length > 0) {
+    const histRes = await getPool().query(
+      `SELECT h.id, h.project_id, h.from_stage, h.to_stage,
+              h.action, h.event, h.reason, h.reject_target,
+              h.pass_number, h.done_by, h.note, h.created_at,
+              u.name AS done_by_name
+         FROM stage_history h
+         LEFT JOIN users u ON u.id = h.done_by
+        WHERE h.project_id = ANY($1)
+        ORDER BY h.created_at, h.id`,
+      [ids],
+    )
+    for (const row of histRes.rows) {
+      const list = historyByProject.get(row.project_id) ?? []
+      list.push(row)
+      historyByProject.set(row.project_id, list)
+    }
+  }
   return Promise.all(rows.map(async (r) => {
     const project = rowToProject(r)
     project.assigned_name = r.assignee_name ?? null
+    project.history = historyByProject.get(r.id) ?? []
     // Build the assignees array from designers who actually have work:
     //   1. everyone with at least one subtask `assigned_to` set
     //   2. project primary (`assigned_to`) — but ONLY if they also have a
