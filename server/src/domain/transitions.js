@@ -124,12 +124,14 @@ export function computeAdvance(project, actor) {
     }
   }
 
-  // 2) Re-send a demo at any demo stage. The team leader or the
-  // assigned designer can advance any of {demo_teslim, demo_onay,
-  // cin_demo_teslim, cin_demo_onay} back to the corresponding
-  // _teslim stage to start the demo cycle over. Allowed at any
-  // progress and any held-state — once the leader has approved a
-  // demo, the team may iterate again.
+  // 2) Re-send a demo at a demo stage. The matbaa delivers at
+  // {demo_teslim, cin_demo_teslim}. A re-send by the team leader or
+  // assigned designer is only valid on a HELD demo (approved at <100%
+  // — the designer has since finished and is sending the next round).
+  // A demo still with the matbaa (demo_teslim / cin_demo_teslim) or one
+  // freshly delivered and awaiting the leader's decision (demo_onay,
+  // demo_held falsey) is "in progress" and must be delivered / approved /
+  // rejected first — you can't spawn a duplicate demo alongside it.
   if (
     project.stage === 'demo_teslim' ||
     project.stage === 'demo_onay' ||
@@ -138,8 +140,7 @@ export function computeAdvance(project, actor) {
   ) {
     const role = actor?.role
     const isAssigned = (project.assignees ?? []).some((a) => a.id === actor?.id)
-    // The matbaa delivers at demo_teslim → demo_onay. Other roles
-    // can re-send / cancel the cycle back to demo_teslim.
+    // The matbaa delivers at demo_teslim → demo_onay.
     if (role === 'printer') {
       if (project.stage === 'demo_teslim' || project.stage === 'cin_demo_teslim') {
         const approvalStage =
@@ -150,6 +151,11 @@ export function computeAdvance(project, actor) {
     }
     if (role !== 'team_leader' && !isAssigned) {
       badRequest('Tekrar demo göndermek için ekip lideri veya atanmış tasarımcı olmalısınız.')
+    }
+    // Only a held demo may be re-sent. Otherwise a demo is already in
+    // progress (with the matbaa, or awaiting the leader's approve/reject).
+    if (project.demo_held !== true) {
+      badRequest('Devam eden bir demo var — yeni demo istemeden önce mevcut demo teslim edilmeli, onaylanmalı veya reddedilmelidir.')
     }
     // Re-send starts a new demo round at the *_teslim stage so the
     // matbaa (TR) / leader (ÇİN) immediately receives the new demo —
@@ -452,7 +458,12 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
   })
 
   if (toMatbaa) {
-    return { project: { ...base, ...counter }, history }
+    // Re-delivery of the SAME demo/ozalit — the design is unchanged, the matbaa
+    // just delivers it again. Do NOT bump the attempt counter here; only a
+    // reject-to-designer (a genuine redesign) starts a new numbered attempt.
+    // Bumping on every matbaa bounce is what made the "Demo N" badge climb
+    // (e.g. reach "Demo 12") without any real new demo.
+    return { project: { ...base }, history }
   }
 
   const selected = new Set(revizeIds ?? [])

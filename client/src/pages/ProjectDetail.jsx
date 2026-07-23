@@ -1236,14 +1236,15 @@ function availableActions({ project, user }) {
     }
   }
 
-  // Re-send demo: at the *_onay stages the team leader or assigned
-  // designer can start a new demo round (the server sends it straight
-  // back to the matbaa). While a demo is in flight at demo_teslim /
-  // cin_demo_teslim there is nothing for them to do — the "Demo İste"
-  // button is hidden and the header shows the "Demoya Gönderildi"
-  // status pill instead (see sentStatusLabel).
+  // Re-send demo: only valid on a HELD demo (approved at <100% — the
+  // designer has since finished and sends the next round). A demo that's
+  // freshly delivered and awaiting the leader's decision (demo_held falsey)
+  // is still in progress: the leader must approve or reject it, not spawn a
+  // duplicate. And while a demo is in flight at demo_teslim / cin_demo_teslim
+  // the header shows the "Demoya Gönderildi" pill (see sentStatusLabel).
   if (
     (stage === 'demo_onay' || stage === 'cin_demo_onay') &&
+    project.demo_held === true &&
     (role === 'team_leader' || isAssignedDesigner)
   ) {
     set.add('advance')
