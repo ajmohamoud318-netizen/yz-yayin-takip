@@ -27,7 +27,7 @@ function projectWith(subtasks) {
 const ctx = { actorName: leader.name, actor: leader }
 
 describe('computeRejection — revise rules', () => {
-  it('flagging a done subtask reopens it; the undone one stays undone (no phantom 100%)', () => {
+  it('flagging a done subtask keeps it complete (progress NOT reduced); undone stays undone', () => {
     const project = projectWith([
       { id: 's1', kind: 'check', is_done: true, done_at: '2026-01-01T00:00:00Z' },
       { id: 's2', kind: 'check', is_done: false, done_at: null },
@@ -36,11 +36,11 @@ describe('computeRejection — revise rules', () => {
 
     const s1 = next.subtasks.find((s) => s.id === 's1')
     const s2 = next.subtasks.find((s) => s.id === 's2')
-    assert.equal(s1.is_done, false)        // flagged → reopened
-    assert.equal(s1.needs_revize, true)
+    assert.equal(s1.needs_revize, true)    // flagged for revision
+    assert.equal(s1.is_done, true)         // but stays complete — progress preserved
     assert.equal(s2.is_done, false)        // undone → unchanged
     assert.equal(next.stage, 'tasarim')
-    assert.equal(next.progress, 0)         // 0/2 done — reflects reality
+    assert.equal(next.progress, 50)        // 1/2 done — unchanged by the flag
     assert.equal(next.demo_attempt, 1)     // attempt counter bumped
   })
 

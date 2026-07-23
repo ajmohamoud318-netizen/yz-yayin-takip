@@ -337,6 +337,15 @@ const subtasksUpdates = {
   },
 }
 
+const subtasksRevize = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id'],
+    properties: { id: { type: 'string', minLength: 1, maxLength: 64 } },
+  },
+}
+
 const projectsSubtasksPut = {
   params: projectsIdParams.params,
   body: {
@@ -489,6 +498,7 @@ export const schemas = {
   projectsReject,
   subtasksPatch,
   subtasksUpdates,
+  subtasksRevize,
   projectsSubtasksPut,
   demosCreate,
   ordersCreate,

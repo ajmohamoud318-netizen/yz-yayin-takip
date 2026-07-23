@@ -61,6 +61,7 @@ const EVENT_META = {
   // Subtask events
   subtask_done:      { icon: CheckCircle2,    color: 'text-emerald-600' },
   subtask_undone:    { icon: RotateCcw,       color: 'text-amber-600' },
+  subtask_revize:    { icon: RotateCcw,       color: 'text-amber-600' },
   subtask_progress:  { icon: ClipboardList,   color: 'text-sky-600' },
   subtask_note:      { icon: MessageSquarePlus, color: 'text-slate-600' },
   subtask_list_update: { icon: ClipboardList, color: 'text-slate-600' },
@@ -101,6 +102,7 @@ function historyLabel(entry) {
       project_edit: 'Proje Düzenlendi',
       subtask_done: 'Alt Görev Tamamlandı',
       subtask_undone: 'Alt Görev Geri Alındı',
+      subtask_revize: 'Alt Görev Revize Edildi',
       subtask_progress: 'Alt Görev İlerlemesi',
       subtask_note: 'Alt Görev Notu',
       subtask_list_update: 'Alt Görev Listesi Güncellendi',
@@ -377,6 +379,9 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
     subtasksSafe.some(
       (s) => localDone[s.id] !== undefined && localDone[s.id] !== s.is_done,
     ) ?? false
+  // Any subtask still flagged for revision. Blocks the resubmit button until
+  // the designer has revized them all (the server enforces the same gate).
+  const pendingRevize = subtasksSafe.some((s) => s.needs_revize)
 
   async function saveSubtaskChanges() {
     if (!hasSubtaskChanges) return
@@ -427,6 +432,22 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
       setProject((prev) => ({ ...prev, subtasks: updated.subtasks, progress: updated.progress }))
     } catch (err) {
       toast.error(err.message || 'Sayfa güncellenemedi.')
+    } finally {
+      setToggling(null)
+    }
+  }
+
+  // Designer clears a subtask's revision flag once reworked. The subtask stays
+  // complete (progress unchanged); this just logs a "revize edildi" entry and
+  // drops the flag. Once none remain, the resubmit button unlocks.
+  async function handleRevize(sub) {
+    setToggling(sub.id)
+    try {
+      await api.reviseSubtask(sub.id)
+      await refetch()
+      toast.success(`${sub.title} — revize edildi.`)
+    } catch (err) {
+      toast.error(err.message || 'Revize kaydedilemedi.')
     } finally {
       setToggling(null)
     }
@@ -558,6 +579,8 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                 {actions.includes('advance') && (
                   <Button
                     size="sm"
+                    disabled={pendingRevize}
+                    title={pendingRevize ? 'Önce revize bekleyen alt görevleri revize edin.' : undefined}
                     onClick={() => {
                       // An ozalit-revision redesign resubmits straight to the
                       // ozalit flow (a simple confirm), not the demo form.
@@ -745,6 +768,8 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                             flagged={flagged}
                             lockedDone={lockedDone}
                             busy={toggling === s.id}
+                            revizing={toggling === s.id}
+                            onRevize={() => handleRevize(s)}
                             onAdd={(delta) => addPages(s, delta)}
                           />
                         )
@@ -773,16 +798,21 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                         >
                           <Checkbox
                             checked={subtaskChecked(s)}
-                            onCheckedChange={() => canEdit && toggleSubtask(s)}
-                            disabled={!canEdit}
+                            onCheckedChange={() => canEdit && !flagged && toggleSubtask(s)}
+                            disabled={!canEdit || flagged}
                           />
                           <span className={cn('flex-1', subtaskChecked(s) && 'text-muted-foreground line-through')}>
                             {s.title}
                           </span>
                           {flagged && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                              Revize Et
-                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRevize(s) }}
+                              disabled={toggling === s.id}
+                              className="inline-flex items-center gap-1 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
+                            >
+                              {toggling === s.id ? 'Kaydediliyor…' : 'Revize Et'}
+                            </button>
                           )}
                           {lockedDone && (
                             <span className="text-[11px] font-medium text-muted-foreground">
@@ -930,7 +960,7 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                       if (h.event === 'subtask_done' || h.event === 'handover_confirm') {
                         return 'bg-emerald-100 ring-emerald-200'
                       }
-                      if (h.event === 'subtask_undone' || h.event === 'handover_request') {
+                      if (h.event === 'subtask_undone' || h.event === 'subtask_revize' || h.event === 'handover_request') {
                         return 'bg-amber-100 ring-amber-200'
                       }
                       if (h.event === 'subtask_progress' || h.event === 'demo_form' || h.event === 'ozalit_form') {
@@ -1131,7 +1161,7 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
  * Page-count subtask. The designer logs how many pages they finished today;
  * progress is recalculated automatically (pages done / total pages).
  */
-function PageSubtaskRow({ sub, canEdit, busy, onAdd, flagged = false, lockedDone = false }) {
+function PageSubtaskRow({ sub, canEdit, busy, onAdd, onRevize, revizing = false, flagged = false, lockedDone = false }) {
   const [today, setToday] = useState('')
   const total = sub.total_pages ?? 0
   const done = sub.pages_done ?? 0
@@ -1159,9 +1189,14 @@ function PageSubtaskRow({ sub, canEdit, busy, onAdd, flagged = false, lockedDone
         <span className="flex items-center gap-2 text-sm font-medium">
           {sub.title}
           {flagged && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-              Revize Et
-            </span>
+            <button
+              type="button"
+              onClick={onRevize}
+              disabled={revizing}
+              className="inline-flex items-center gap-1 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
+            >
+              {revizing ? 'Kaydediliyor…' : 'Revize Et'}
+            </button>
           )}
           {lockedDone && (
             <span className="text-[11px] font-medium text-muted-foreground">Revize gerekmiyor</span>

@@ -100,6 +100,15 @@ export function computeAdvance(project, actor) {
   const now = new Date().toISOString()
   const actorName = actor?.name ?? 'Bilinmeyen'
 
+  // Resubmit gate: a project back in Tasarım after a reject-to-designer can't
+  // move forward until the designer has revized every flagged subtask. The
+  // flagged subtasks stay complete (progress unchanged); each must be cleared
+  // via the Revize action first. (The advance route loads subtasks so this
+  // guard can see them; a first submission has no needs_revize flags.)
+  if (project.stage === 'tasarim' && (project.subtasks ?? []).some((s) => s.needs_revize)) {
+    badRequest('Revize bekleyen alt görevler var — hepsini revize etmeden gönderemezsiniz.')
+  }
+
   // 1) Ozalit revision resubmit — designer finished a redesign after a
   // previous ozalit rejection → jump straight to ozalit_teslim.
   if (project.stage === 'tasarim' && project.last_reject_type === 'ozalit') {
@@ -476,17 +485,13 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
 }
 
 function applyRevize(subtask, selected) {
-  // Only the subtasks the leader flagged for revision reopen. Everything else
-  // keeps its real state. Previously the un-flagged branch force-set
-  // is_done: true (pages → full), so rejecting an incomplete demo marked every
-  // un-flagged subtask done and inflated progress to ~100% — the phantom
-  // "fully done" project. Revision only applies to work that was actually
-  // done; incomplete work simply stays incomplete for the designer to finish.
+  // Flag the leader-selected subtasks for revision but KEEP them complete —
+  // progress is NOT reduced (the design work was done; it just needs a
+  // touch-up). Only completed subtasks are ever offered for revision. The
+  // designer clears the flag via the "Revize" action once reworked, which is
+  // logged in the project history. Un-flagged subtasks are untouched.
   if (!selected.has(subtask.id)) return subtask
-  if (subtask.kind === 'pages') {
-    return { ...subtask, needs_revize: true, pages_done: 0, is_done: false }
-  }
-  return { ...subtask, needs_revize: true, is_done: false, done_at: null }
+  return { ...subtask, needs_revize: true }
 }
 
 /* ============================================================================

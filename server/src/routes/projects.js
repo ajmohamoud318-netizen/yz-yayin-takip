@@ -185,6 +185,9 @@ export async function projectRoutes(fastify) {
       // (which has assignees loaded) shows them the button. Load it so the API
       // matches the frontend's gate. See ProjectDetail.jsx isAssignedDesigner.
       project.assignees = await loadProjectAssignees(client, project)
+      // Subtasks feed the resubmit gate: a Tasarım resubmit is blocked while
+      // any subtask still needs revision (see computeAdvance).
+      project.subtasks = await listProjectSubtasks(client, project.id)
       const { project: next, history } = applyAdvance(project, {
         user: request.user, note: request.body?.note ?? '',
       })
@@ -214,6 +217,13 @@ export async function projectRoutes(fastify) {
       }
       if (Object.prototype.hasOwnProperty.call(next, 'reject_target')) {
         fields.reject_target = next.reject_target
+      }
+      // Cleared to null when an ozalit-revision resubmit leaves Tasarım.
+      if (Object.prototype.hasOwnProperty.call(next, 'last_reject_type')) {
+        fields.last_reject_type = next.last_reject_type
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'last_reject_target')) {
+        fields.last_reject_target = next.last_reject_target
       }
       const updated = await patchProject(client, project.id, fields)
       if (history) await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
@@ -287,6 +297,10 @@ export async function projectRoutes(fastify) {
         // every reject clears ozalit_requested. Persist both so the state sticks.
         reject_target: next.reject_target,
         ozalit_requested: next.ozalit_requested,
+        // last_reject_type routes the designer's resubmit (ozalit → ozalit_teslim
+        // vs demo → demo_teslim) and labels the button; persist it + its target.
+        last_reject_type: next.last_reject_type,
+        last_reject_target: next.last_reject_target,
       }
       // Reject-to-designer recomputes progress from the reopened subtasks;
       // reject-to-matbaa leaves subtasks (and progress) untouched.
@@ -298,9 +312,9 @@ export async function projectRoutes(fastify) {
         for (const s of next.subtasks) {
           await client.query(
             `UPDATE subtasks
-                SET is_done = $2, done_at = $3, pages_done = $4, updated_at = NOW()
+                SET is_done = $2, done_at = $3, pages_done = $4, needs_revize = $5, updated_at = NOW()
               WHERE id = $1`,
-            [s.id, !!s.is_done, s.done_at ?? null, s.pages_done ?? null],
+            [s.id, !!s.is_done, s.done_at ?? null, s.pages_done ?? null, !!s.needs_revize],
           )
         }
       }

@@ -114,6 +114,40 @@ export async function subtaskRoutes(fastify) {
     return result.project
   })
 
+  // Designer marks a flagged subtask as revised. The subtask stays complete
+  // (progress unchanged) — this only clears the needs_revize flag and logs a
+  // timeline entry. Once every flagged subtask is revized the designer can
+  // resubmit (the advance route enforces the same gate).
+  fastify.post('/subtasks/:id/revize', { schema: schemas.subtasksRevize }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const { rows: subRows } = await client.query(
+        'SELECT * FROM subtasks WHERE id = $1 FOR UPDATE', [request.params.id],
+      )
+      const sub = subRows[0]
+      if (!sub) notFound('Alt görev bulunamadı.')
+      if (!sub.needs_revize) badRequest('Bu alt görev revize beklemiyor.')
+      const project = await getProjectForUpdate(client, sub.project_id)
+      await client.query(
+        'UPDATE subtasks SET needs_revize = FALSE, updated_at = NOW() WHERE id = $1', [sub.id],
+      )
+      await logHistory(
+        client,
+        {
+          project_id: project.id,
+          from_stage: project.stage,
+          to_stage: project.stage,
+          action: 'system',
+          event: 'subtask_revize',
+          note: `${sub.title} — revize edildi`,
+        },
+        request.user,
+      )
+      return getProject(sub.project_id)
+    })
+    return result
+  })
+
   fastify.post('/subtasks/:id/updates', { schema: schemas.subtasksUpdates }, async (request) => {
     await attachUser(request)
     const { note } = request.body

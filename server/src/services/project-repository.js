@@ -16,7 +16,7 @@ const PROJECT_COLUMNS = `
   ozalit_leader_approved, ozalit_leader_approved_by, ozalit_leader_approved_at,
   ozalit_designer_approvals,
   demo_held, demo_held_at, demo_held_by_name,
-  ozalit_requested, reject_target,
+  ozalit_requested, reject_target, last_reject_type, last_reject_target,
   created_at, updated_at
 `
 
@@ -195,7 +195,7 @@ export async function listProjectSubtasks(client, projectId) {
   const { rows } = await client.query(
     `SELECT s.id, s.project_id, s.title, s.kind, s.is_done, s.total_pages, s.pages_done,
             s.total_stickers, s.stickers_done, s.assigned_to, s.done_at,
-            s.created_at, s.updated_at,
+            s.needs_revize, s.created_at, s.updated_at,
             u.name AS assigned_name
        FROM subtasks s
        LEFT JOIN users u ON u.id = s.assigned_to
@@ -255,6 +255,10 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
   // ozalit transitions (computeOzalitTeslimAdvance) and computeRejection.
   'ozalit_requested',
   'reject_target',
+  // Which kind of rejection sent the project back to Tasarım. computeAdvance
+  // reads last_reject_type to route an ozalit-revision resubmit to ozalit_teslim.
+  'last_reject_type',
+  'last_reject_target',
 ])
 
 export async function patchProject(client, id, fields) {
@@ -384,6 +388,8 @@ function rowToProject(r) {
     demo_held_by_name: r.demo_held_by_name ?? null,
     ozalit_requested: r.ozalit_requested ?? false,
     reject_target: r.reject_target ?? null,
+    last_reject_type: r.last_reject_type ?? null,
+    last_reject_target: r.last_reject_target ?? null,
     created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
     updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at,
   }
