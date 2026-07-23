@@ -255,20 +255,41 @@ export async function projectRoutes(fastify) {
 
   fastify.post('/projects/:id/reject', { schema: schemas.projectsReject }, async (request) => {
     await attachUser(request)
-    const { stage, reason, reject_target: rejectTarget, note } = request.body
+    const { stage, reason, reject_target: rejectTarget, revizeIds, note } = request.body
     const result = await withTx(async (client) => {
       const project = await getProjectForUpdate(client, request.params.id)
       if (!project) notFound('Proje bulunamadı.')
+      // Load subtasks so computeRejection can reset exactly the leader-selected
+      // ones (revizeIds) and recompute progress on a reject-to-designer. Without
+      // this the transition operates on an empty subtask list and the revise
+      // selection has nothing to act on.
+      project.subtasks = await listProjectSubtasks(client, project.id)
       const { project: next, history } = applyRejection(project, {
-        user: request.user, stage, reason, rejectTarget, note,
+        user: request.user, stage, reason, rejectTarget, revizeIds, note,
       })
-      const updated = await patchProject(client, project.id, {
+      const projectFields = {
         stage: next.stage,
         demo_attempt: next.demo_attempt,
         ozalit_attempt: next.ozalit_attempt,
         last_reject_reason: next.last_reject_reason,
         version: next.version,
-      })
+      }
+      // Reject-to-designer recomputes progress from the reopened subtasks;
+      // reject-to-matbaa leaves subtasks (and progress) untouched.
+      if (typeof next.progress === 'number') projectFields.progress = next.progress
+      const updated = await patchProject(client, project.id, projectFields)
+      // Persist the subtask resets from the revise selection. The matbaa route
+      // returns no `subtasks`, so those rows are left as-is.
+      if (Array.isArray(next.subtasks)) {
+        for (const s of next.subtasks) {
+          await client.query(
+            `UPDATE subtasks
+                SET is_done = $2, done_at = $3, pages_done = $4, updated_at = NOW()
+              WHERE id = $1`,
+            [s.id, !!s.is_done, s.done_at ?? null, s.pages_done ?? null],
+          )
+        }
+      }
       await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
       return updated
     })

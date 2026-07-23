@@ -40,7 +40,7 @@ export function applyApproval(project, { user }) {
 }
 
 /** `POST /projects/:id/reject`. */
-export function applyRejection(project, { user, stage, reason, rejectTarget = null, note = '' }) {
+export function applyRejection(project, { user, stage, reason, rejectTarget = null, revizeIds = [], note = '' }) {
   // The client `computeRejection(project, reason, revizeIds, target, { actorName, actor })`.
   // Rejecting at a stage that is not the project's current stage short-
   // circuits with a 409 — preserves the Fastify error contract.
@@ -49,7 +49,10 @@ export function applyRejection(project, { user, stage, reason, rejectTarget = nu
     err.status = 409
     throw err
   }
-  return computeRejection(project, reason, [], rejectTarget, {
+  // Pass the leader's per-subtask revise selection through (previously
+  // hard-coded to []), so computeRejection resets exactly those subtasks and
+  // recomputes progress. The route persists the resulting subtasks + progress.
+  return computeRejection(project, reason, revizeIds ?? [], rejectTarget, {
     actorName: user.name,
     actor: user,
   })

@@ -291,6 +291,11 @@ const projectsReject = {
       stage,
       reason: { type: 'string', minLength: 1, maxLength: 2000 },
       reject_target: rejectTarget,
+      // IDs of the subtasks the leader marked for revision. The SPA always
+      // sends this key (empty array when routing to matbaa or when nothing is
+      // selected); without it here the strict additionalProperties:false guard
+      // rejected every reject request with a 400.
+      revizeIds: { type: 'array', items: { type: 'string' }, default: [] },
       note: { type: 'string', maxLength: 1000 },
     },
   },
