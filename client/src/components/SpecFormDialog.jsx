@@ -1,0 +1,717 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Check, CheckSquare, FileText, Plus, Printer, Send, Square, X } from 'lucide-react'
+import { toast } from 'sonner'
+
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import api from '@/api'
+import { useAuth } from '@/hooks/useAuth'
+import { useProjectsStore } from '@/hooks/useProjectsStore'
+import { useDesignerCelebration } from '@/hooks/useCelebration'
+import { getComponentsForProject, getComponentRows } from '@/data/productCatalog'
+import { buildAdetRows } from '@/data/orderAdet'
+
+/* ------------------------------------------------------------------ */
+/*  Variant configuration — everything that differs between the Demo  */
+/*  and Ozalit spec sheets lives here. The component below is shared. */
+/* ------------------------------------------------------------------ */
+
+// Yazdır is only available to the designer once the demo has been submitted —
+// i.e. while composing (mode === 'advance') the button is hidden, and other
+// roles never see it. Stages after Tasarım mark "demo already submitted".
+const POST_DEMO_STAGES = new Set([
+  'demo_teslim', 'cin_demo_teslim',
+  'demo_onay',   'cin_demo_onay',
+  'ozalit_teslim','ozalit_onay',
+  'uretime_hazir','uretimde','gumruk','satista',
+])
+
+export const VARIANTS = {
+  demo: {
+    kind: 'demo',
+    storagePrefix: 'yz_demo_form_',
+    dateField:   'demoIstemTarihi',
+    personField: 'demoIsteyenKisi',
+    dateLabel:   'DEMO İSTEM TARİHİ',
+    personLabel: 'DEMO İSTEYEN KİŞİ',
+    attemptField: 'demo_attempt',
+    title: 'Demo Üretim Formu',
+    attemptWord: 'Demo',
+    attemptUpper: 'DEMO',
+    // İŞİN ADI is always the project title — designers can override the value
+    // with custom rows but cannot edit the title field. System-driven fields
+    // (dates / requester) are likewise never editable by the designer.
+    systemFieldsEditable: false,
+    // Active editing starts from fresh, keeping only the printer-signed field
+    // (matbaaYetkilisi); the system-driven fields auto-recompute.
+    restoreSavedOnEdit: false,
+    celebrateOnAdvance: true,
+    // Kaydet in 'view' mode is not additionally gated on readOnly.
+    saveRequiresEditable: false,
+    // Matbaa (printer) may view, sign, and forward the demo but must never
+    // alter the spec the designer/leader prepared — lock every field for them.
+    // History snapshots are read-only for everyone.
+    isReadOnly: ({ mode, user }) => mode === 'history' || user?.role === 'printer',
+    canPrint: ({ user, project }) =>
+      user?.role === 'designer' && !!project?.stage && POST_DEMO_STAGES.has(project.stage),
+    advanceToast: (project) =>
+      project.type === 'CIN' ? 'Demo gönderildi.' : 'Demo matbaaya gönderildi.',
+    advanceLabel: (user) => (user?.role === 'printer' ? "Demo'yu Teslim Et" : 'Demo İste'),
+    saveToast: 'Demo formu kaydedildi.',
+  },
+  ozalit: {
+    kind: 'ozalit',
+    storagePrefix: 'yz_ozalit_form_',
+    dateField:   'ozalitIstemTarihi',
+    personField: 'ozalitIsteyenKisi',
+    dateLabel:   'OZALİT İSTEM TARİHİ',
+    personLabel: 'OZALİT İSTEYEN KİŞİ',
+    attemptField: 'ozalit_attempt',
+    title: 'Ozalit Üretim Formu',
+    attemptWord: 'Ozalit',
+    attemptUpper: 'OZALİT',
+    // The team leader authors the ozalit spec, so title/date fields follow the
+    // dialog's readOnly state instead of being permanently locked.
+    systemFieldsEditable: true,
+    restoreSavedOnEdit: true,
+    celebrateOnAdvance: false,
+    saveRequiresEditable: true,
+    // Only the team leader authors the ozalit spec. Everyone else views it:
+    //   • the matbaa (printer) receives, signs, and forwards it — never edits;
+    //   • the designer can open it (e.g. from Sipariş Onayı) but must not
+    //     change the spec — they only see and print it.
+    // History snapshots are read-only for everyone.
+    isReadOnly: ({ mode, user }) =>
+      mode === 'history' || user?.role === 'printer' || user?.role === 'designer',
+    canPrint: () => true,
+    advanceToast: () => 'Ozalit onaya gönderildi.',
+    advanceLabel: (user) => (user?.role === 'printer' ? 'Ozaliti Teslim Et' : 'Matbaaya Gönder'),
+    saveToast: 'Ozalit formu kaydedildi.',
+  },
+}
+
+/* ------------------------------------------------------------------ */
+/*  localStorage persistence                                          */
+/* ------------------------------------------------------------------ */
+
+const STORAGE_KEY  = (variant, id)          => `${variant.storagePrefix}${id}`
+const SNAPSHOT_KEY = (variant, id, attempt) => `${variant.storagePrefix}${id}_snap_${attempt}`
+
+// Old field names → display labels (for migrating pre-restructure saved data)
+const OLD_FIELD_ORDER  = ['settekiKitapSayisi','adet','ebat','sayfaSayisi','icKagitCinsi','kapakKagitCinsi','cilt','laminasyon','kagitDahilBirimFiyat','basimYeri']
+const OLD_FIELD_LABELS = {
+  settekiKitapSayisi:   'SETTEKİ KİTAP SAYISI',
+  adet:                 'ADET',
+  ebat:                 'EBAT',
+  sayfaSayisi:          'SAYFA SAYISI',
+  icKagitCinsi:         'İÇ KAĞIT CİNSİ',
+  kapakKagitCinsi:      'KAPAK KAĞIT CİNSİ',
+  cilt:                 'CİLT',
+  laminasyon:           'LAMİNASYON',
+  kagitDahilBirimFiyat: 'KAĞIT DAHİL BİRİM FİYAT',
+  basimYeri:            'BASIM YERİ',
+}
+
+function knownFields(variant) {
+  return new Set(['isinAdi', variant.dateField, variant.personField, 'teslimEdenKisi', 'teslimTarihi', 'onaylayanKisi', 'matbaaYetkilisi'])
+}
+
+function parseSaved(variant, raw) {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    const form = {}
+    const migrated = []
+    for (const key of knownFields(variant)) if (parsed[key] !== undefined) form[key] = parsed[key]
+    for (const key of OLD_FIELD_ORDER) {
+      if (parsed[key]) migrated.push({ id: Math.random(), label: OLD_FIELD_LABELS[key], value: parsed[key] })
+    }
+    const allRows = [...(parsed._customRows ?? []), ...migrated].filter((r) => r.label || r.value)
+    return { form, customRows: allRows, selectedComponents: parsed._selectedComponents ?? null }
+  } catch { return null }
+}
+
+function loadSaved(variant, id)             { return parseSaved(variant, localStorage.getItem(STORAGE_KEY(variant, id))) }
+function loadSnapshot(variant, id, attempt) { return parseSaved(variant, localStorage.getItem(SNAPSHOT_KEY(variant, id, attempt))) }
+
+function saveForm(variant, id, data, customRows, selectedComponents) {
+  localStorage.setItem(STORAGE_KEY(variant, id), JSON.stringify({
+    ...data,
+    _customRows: customRows,
+    _selectedComponents: selectedComponents ?? null,
+  }))
+}
+function saveSnapshot(variant, id, attempt, data, customRows, selectedComponents) {
+  localStorage.setItem(SNAPSHOT_KEY(variant, id, attempt), JSON.stringify({
+    ...data,
+    _customRows: customRows,
+    _selectedComponents: selectedComponents ?? null,
+  }))
+}
+
+function emptyForm(variant, project, user) {
+  const today = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+  const teamLeaderName = user?.role === 'team_leader'
+    ? (user?.name ?? '')
+    : ((project?.history ?? []).find((h) => h.from_stage === null)?.done_by_name ?? project?.created_by_name ?? '')
+  return {
+    isinAdi: project?.title ?? '',
+    [variant.dateField]: today,
+    [variant.personField]:
+      // The requester is always the signed-in user who clicks the action —
+      // not editable. Falls back to the project's first assignee only if the
+      // dialog is opened outside a session (rare; for safety).
+      (user?.name ?? '') ||
+      (project?.assignees ?? []).map((a) => a.name).join(', ') ||
+      project?.assigned_name ||
+      '',
+    onaylayanKisi: teamLeaderName,
+    matbaaYetkilisi: user?.role === 'printer' ? (user?.name ?? '') : '',
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Print sheet                                                       */
+/* ------------------------------------------------------------------ */
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
+
+function buildPrintHtml({ form, customRows, project, attemptNo, kind }) {
+  const designerNames = (project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''
+  const today = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+  const attemptSuffix = kind === 'ozalit' ? 'OZALİT' : 'DEMO'
+
+  const rows = [
+    ['İŞİN ADI', form.isinAdi],
+    ...(customRows ?? []).filter((r) => r.label).map((r) => [r.label.toUpperCase(), r.value]),
+  ]
+  if (kind === 'ozalit') {
+    rows.push(
+      ['OZALİT İSTEM TARİHİ', form.ozalitIstemTarihi],
+      ['OZALİT İSTEYEN KİŞİ', form.ozalitIsteyenKisi],
+    )
+  } else {
+    rows.push(
+      ['DEMO İSTEM TARİHİ', form.demoIstemTarihi],
+      ['DEMO İSTEYEN KİŞİ', form.demoIsteyenKisi],
+    )
+  }
+  // The matbaa (printer) delivery stamp, if it has happened, becomes a
+  // distinct pair of rows on the printout.
+  if (form.teslimTarihi || form.teslimEdenKisi) {
+    rows.push(
+      ['TESLİM TARİHİ', form.teslimTarihi],
+      ['TESLİM EDEN KİŞİ', form.teslimEdenKisi],
+    )
+  }
+  rows.push(['ONAYLAYAN KİŞİ', form.onaylayanKisi])
+
+  const tableRows = rows.map(([label, val]) => `
+    <tr><td class="label">${escapeHtml(label)}</td><td class="colon">:</td><td class="val">${escapeHtml(val || '')}</td></tr>`).join('')
+
+  const sigBox = (role, name) => `
+    <div class="sig-box">
+      <p class="sig-role">${escapeHtml(role)}</p><p class="sig-name">${escapeHtml(name || '')}</p>
+      <div class="sig-line"></div><p class="sig-hint">İmza</p>
+    </div>`
+
+  return `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"/>
+  <link href="https://fonts.googleapis.com/css2?family=Alex Brush&display=swap" rel="stylesheet"/>
+  <title>${attemptSuffix} Formu — ${escapeHtml(project?.title ?? '')} — ${escapeHtml(form.isinAdi || '')}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#000;padding:18mm 20mm}
+    .doc-title{text-align:center;font-size:15pt;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:4px}
+    .attempt-label{text-align:right;font-size:12pt;font-weight:700;padding:4px 0 8px;border-bottom:1px solid #ccc}
+    table{width:100%;border-collapse:collapse}
+    tr{border-bottom:1px solid #ddd}
+    td{padding:5px 4px;vertical-align:middle}
+    td.label{width:44%;font-weight:700;font-size:9.5pt;text-transform:uppercase;letter-spacing:.03em}
+    td.colon{width:4%;font-weight:700;text-align:center}
+    td.val{width:52%;font-size:10.5pt}
+    .date-line{margin-top:14px;font-size:9.5pt;text-align:right;color:#444}
+    .sig-section{margin-top:28px;display:flex}
+    .sig-box{flex:1;border:1px solid #000;padding:12px 14px 10px;margin-right:-1px}
+    .sig-box:last-child{margin-right:0}
+    .sig-box p{margin:0}
+    .sig-role{font-size:8.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#555;margin-bottom:4px}
+    .sig-name{font-size:16pt;font-family:'Alex Brush',cursive;min-height:22px;margin-bottom:8px;color:#3d283499}
+    .sig-line{border-top:1px solid #000;margin-bottom:4px}
+    .sig-hint{font-size:8pt;color:#888;text-align:center}
+    @media print{body{padding:12mm 14mm}@page{size:A4;margin:0}}
+  </style></head><body>
+  <div class="doc-title">${escapeHtml(project?.title ?? '')}</div>
+  <div class="attempt-label">${attemptNo}. ${attemptSuffix}</div>
+  <table>${tableRows}</table>
+  <div class="date-line">Tarih: ${escapeHtml(today)}</div>
+  <div class="sig-section">
+    ${sigBox('Tasarımcı', designerNames)}
+    ${form.matbaaYetkilisi ? sigBox('Matbaa Yetkilisi', form.matbaaYetkilisi) : ''}
+    ${sigBox('Ekip Lideri / Onaylayan', form.onaylayanKisi)}
+  </div></body></html>`
+}
+
+function openPrintWindow({ form, customRows, project, attemptNo, kind }) {
+  const html = buildPrintHtml({ form, customRows, project, attemptNo, kind })
+  const win = window.open('', '_blank', 'width=800,height=900')
+  if (!win) { toast.error('Pop-up engelleyiciyi kontrol edin.'); return }
+  win.document.write(html)
+  win.document.close()
+  win.focus()
+  setTimeout(() => win.print(), 300)
+}
+
+/** Opens one print window per selected component. If none selected, prints a single window. */
+function openMultiPrint({ form, customRows, project, attemptNo, kind, selectedComponents }) {
+  const selected = (selectedComponents ?? []).filter(Boolean)
+  if (selected.length === 0) {
+    openPrintWindow({ form, customRows, project, attemptNo, kind })
+    return
+  }
+  for (const comp of selected) {
+    openPrintWindow({
+      form: { ...form, isinAdi: comp.component || form.isinAdi },
+      customRows: comp.rows ?? [],
+      project,
+      attemptNo,
+      kind,
+    })
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Small presentational pieces                                       */
+/* ------------------------------------------------------------------ */
+
+function Row({ label, name, value, onChange, readOnly }) {
+  return (
+    <div className="grid grid-cols-[1fr_auto_2fr] items-center border-b last:border-b-0">
+      <span className="py-1.5 pr-3 text-[13px] font-semibold uppercase tracking-wide text-foreground">
+        {label}
+      </span>
+      <span className="px-2 py-1.5 text-sm font-bold">:</span>
+      <Input
+        name={name}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        className="h-8 rounded-none border-0 border-l px-2 py-1 text-sm shadow-none focus-visible:ring-0 read-only:bg-transparent read-only:cursor-default"
+      />
+    </div>
+  )
+}
+
+function CustomRow({ id, label, value, onChange, onRemove, readOnly }) {
+  return (
+    <div className="grid grid-cols-[1fr_auto_2fr] items-center border-b last:border-b-0">
+      <Input
+        value={label}
+        onChange={(e) => onChange(id, 'label', e.target.value)}
+        placeholder="Alan adı"
+        readOnly={readOnly}
+        className="h-8 rounded-none border-0 bg-white px-2 py-1 text-[13px] font-semibold uppercase tracking-wide shadow-none placeholder:normal-case placeholder:tracking-normal placeholder:font-normal focus-visible:ring-0 read-only:cursor-default"
+      />
+      <span className="px-2 py-1.5 text-sm font-bold">:</span>
+      <div className="relative">
+        <Input
+          value={value}
+          onChange={(e) => onChange(id, 'value', e.target.value)}
+          readOnly={readOnly}
+          className="h-8 rounded-none border-0 border-l bg-white pr-7 px-2 py-1 text-sm shadow-none focus-visible:ring-0 read-only:bg-transparent read-only:cursor-default"
+        />
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={() => onRemove(id)}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-destructive"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SigBox({ role, name }) {
+  return (
+    <div className="flex flex-1 flex-col px-4 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{role}</p>
+      <div className="mt-3 flex min-h-[2.75rem] items-end border-b border-foreground/25 pb-0.5">
+        {name && (
+          <span style={{ fontFamily: "'Alex Brush', cursive", fontSize: '1.35rem', color: 'hsl(325 21% 20% / 0.8)' }}>
+            {name}
+          </span>
+        )}
+      </div>
+      <p className="mt-1 text-center text-[10px] text-muted-foreground">İmza</p>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  Shared spec-sheet dialog                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Shared Demo / Ozalit spec-sheet dialog. Pick a variant via the `variant`
+ * prop ('demo' | 'ozalit'); everything variant-specific lives in VARIANTS.
+ *
+ * mode:
+ *   'advance'  — send the sheet onward (api.advanceProject)
+ *   'approve'  — team leader approves and sends to production (api.approveProject; ozalit)
+ *   'view'     — edit current saved form
+ *   'history'  — read-only snapshot view (requires viewAttempt)
+ *
+ * viewAttempt — attempt number to load from snapshot (used with mode='history')
+ */
+export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, mode, onDone, viewAttempt }) {
+  const variant = VARIANTS[variantName]
+  const { user } = useAuth()
+  const { updateOne } = useProjectsStore()
+  const celebrate = useDesignerCelebration()
+  const [form, setForm] = useState(() => emptyForm(variant, project, user))
+  const [customRows, setCustomRows] = useState([])
+  const [selectedComponents, setSelectedComponents] = useState([]) // [{ id, component, rows }]
+  const [busy, setBusy] = useState(false)
+
+  const readOnly = variant.isReadOnly({ mode, user })
+  const printable = variant.canPrint({ user, project, readOnly })
+
+  // Catalog of all components defined for this project (from Ürün Bilgileri).
+  const catalogComponents = useMemo(
+    () => getComponentsForProject(project?.id).map((c) => ({
+      id: c.component,                 // component name is the stable id
+      component: c.component,
+      rows: getComponentRows(c),
+    })),
+    [project?.id]
+  )
+
+  useEffect(() => {
+    if (!open || !project) return
+    if (viewAttempt != null) {
+      // History: show the snapshot exactly as it was saved — no auto-fills
+      const snap = loadSnapshot(variant, project.id, viewAttempt) ?? loadSaved(variant, project.id)
+      setForm(snap?.form ?? emptyForm(variant, project, user))
+      setCustomRows(snap?.customRows ?? [])
+      setSelectedComponents(snap?.selectedComponents ?? [])
+    } else {
+      const data = loadSaved(variant, project.id)
+      const fresh = emptyForm(variant, project, user)
+      if (readOnly || variant.restoreSavedOnEdit) {
+        // Read-only viewers (printer, history) must see the values that were
+        // actually saved at submission time — otherwise the form would show
+        // today's date, the matbaa's own name as the requester, and the
+        // leader as "onaylayan" even before approval. Layer the saved form
+        // back on top so İŞİN ADI, İSTEM TARİHİ, İSTEYEN KİŞİ and
+        // ONAYLAYAN KİŞİ all reflect what was stamped.
+        setForm({ ...fresh, ...(data?.form ?? {}) })
+      } else {
+        // Active editing: start from fresh, then keep only the printer-signed
+        // field (matbaaYetkilisi). The system-driven fields auto-recompute.
+        setForm({
+          ...fresh,
+          ...(data?.form?.matbaaYetkilisi ? { matbaaYetkilisi: data.form.matbaaYetkilisi } : {}),
+        })
+      }
+      const savedRows = data?.customRows ?? []
+      const hasAdet = savedRows.some((r) => r.label?.toUpperCase().startsWith('ADET'))
+      setCustomRows(hasAdet ? savedRows : [...buildAdetRows(project.id), ...savedRows])
+      // null means never explicitly set — default to all catalog components checked.
+      // [] means the user intentionally cleared them — respect that.
+      const savedComponents = data?.selectedComponents ?? null
+      setSelectedComponents(savedComponents ?? catalogComponents)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, project?.id, viewAttempt])
+
+  function toggleComponent(compId) {
+    if (readOnly) return
+    setSelectedComponents((prev) => {
+      const exists = prev.find((c) => c.id === compId)
+      if (exists) return prev.filter((c) => c.id !== compId)
+      const fromCatalog = catalogComponents.find((c) => c.id === compId)
+      if (!fromCatalog) return prev
+      // Demo: İŞİN ADI is locked to the project title — never overwritten here.
+      // Ozalit: first selected component becomes İŞİN ADI.
+      if (variant.systemFieldsEditable && prev.length === 0) {
+        setForm((f) => ({ ...f, isinAdi: fromCatalog.component }))
+      }
+      return [...prev, fromCatalog]
+    })
+  }
+  function selectAllComponents() {
+    if (readOnly) return
+    setSelectedComponents(catalogComponents)
+    if (variant.systemFieldsEditable && catalogComponents[0]) {
+      setForm((f) => ({ ...f, isinAdi: catalogComponents[0].component }))
+    }
+  }
+  function clearComponents() {
+    if (readOnly) return
+    setSelectedComponents([])
+  }
+
+  function addCustomRow() {
+    setCustomRows((prev) => [...prev, { id: Date.now() + Math.random(), label: '', value: '' }])
+  }
+  function updateCustomRow(id, field, val) {
+    setCustomRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: val } : r)))
+  }
+  function removeCustomRow(id) {
+    setCustomRows((prev) => prev.filter((r) => r.id !== id))
+  }
+  function handleChange(e) {
+    const { name, value } = e.target
+    setForm((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const attemptNo = viewAttempt ?? ((project?.[variant.attemptField] ?? 0) + 1)
+
+  async function handleAdvance() {
+    if (!project) return
+    setBusy(true)
+    try {
+      // When the printer (matbaa) is the one advancing, stamp the
+      // "teslim eden kişi" + "teslim tarihi" now. The original requester
+      // stamp is preserved from the first save.
+      let payload = form
+      if (user?.role === 'printer') {
+        const today = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+        payload = { ...form, teslimEdenKisi: user?.name ?? '', teslimTarihi: today }
+      }
+      saveForm(variant, project.id, payload, customRows, selectedComponents)
+      saveSnapshot(variant, project.id, attemptNo, payload, customRows, selectedComponents)
+      const updated = await api.advanceProject(project.id)
+      updateOne(updated)
+      toast.success(variant.advanceToast(project))
+      if (variant.celebrateOnAdvance) celebrate()
+      onDone?.(updated)
+      onOpenChange(false)
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally { setBusy(false) }
+  }
+
+  async function handleApprove() {
+    if (!project) return
+    setBusy(true)
+    try {
+      saveForm(variant, project.id, form, customRows, selectedComponents)
+      saveSnapshot(variant, project.id, attemptNo, form, customRows, selectedComponents)
+      const updated = await api.approveProject(project.id)
+      updateOne(updated)
+      toast.success('Onaylandı — proje üretime alındı.')
+      onDone?.(updated)
+      onOpenChange(false)
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally { setBusy(false) }
+  }
+
+  function handleSave() {
+    if (!project) return
+    saveForm(variant, project.id, form, customRows, selectedComponents)
+    toast.success(variant.saveToast)
+    onOpenChange(false)
+  }
+
+  function handlePrint() {
+    if (!project) return
+    if (!readOnly) saveForm(variant, project.id, form, customRows, selectedComponents)
+    openMultiPrint({ form, customRows, project, attemptNo, kind: variant.kind, selectedComponents })
+  }
+
+  if (!project) return null
+
+  const hasCatalog = catalogComponents.length > 0
+  // Demo: system-driven fields must never be editable; Ozalit: they follow readOnly.
+  const systemRowReadOnly = variant.systemFieldsEditable ? readOnly : true
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            {variant.title}
+            {readOnly && <span className="ml-1 text-xs font-normal text-muted-foreground">({attemptNo}. {variant.attemptWord} — salt görüntüleme)</span>}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="rounded-lg border bg-white">
+          <div className="border-b px-4 py-3 text-center">
+            <h2 className="text-base font-bold uppercase tracking-widest text-foreground">{project.title}</h2>
+          </div>
+          <div className="border-b px-4 py-2 text-right">
+            <span className="text-sm font-bold">{attemptNo}. {variant.attemptUpper}</span>
+          </div>
+
+          {/* Per-component picker — only when the project has product info */}
+          {hasCatalog && !readOnly && (
+            <div className="border-b bg-muted/20 px-4 py-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Parçalar (ürün bilgilerinden)
+                </p>
+                <div className="flex items-center gap-3 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={selectAllComponents}
+                    className="font-semibold text-primary hover:underline"
+                  >
+                    Tümünü Seç
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearComponents}
+                    className="font-semibold text-muted-foreground hover:underline"
+                  >
+                    Hiçbiri
+                  </button>
+                </div>
+              </div>
+              <div className="grid gap-1.5 sm:grid-cols-2">
+                {catalogComponents.map((c) => {
+                  const checked = selectedComponents.some((s) => s.id === c.id)
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => toggleComponent(c.id)}
+                      className={`flex items-center gap-2 rounded-md border bg-white px-2.5 py-1.5 text-left text-xs transition active:scale-[0.99] ${
+                        checked ? 'border-primary/50 ring-1 ring-primary/30' : 'hover:border-primary/30'
+                      }`}
+                    >
+                      {checked
+                        ? <CheckSquare className="h-4 w-4 shrink-0 text-primary" />
+                        : <Square className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                      <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide">{c.component}</span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">{c.rows.length} satır</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {selectedComponents.length > 0 && (
+                <p className="mt-2 text-[10px] text-muted-foreground">
+                  Yazdır / Gönder dediğinizde <strong>{selectedComponents.length}</strong> ayrı form oluşturulur — her parça kendi imza bloğuyla birlikte.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* read-only: show which components were originally selected */}
+          {hasCatalog && readOnly && selectedComponents.length > 0 && (
+            <div className="border-b bg-muted/20 px-4 py-2.5">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Bu denemede istenen parçalar
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {selectedComponents.map((c) => (
+                  <span key={c.id} className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ring-1 ring-border">
+                    <CheckSquare className="h-3 w-3 text-primary" /> {c.component}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* İŞİN ADI + user-added rows */}
+          <div className="border-b px-4 py-1">
+            <Row label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly={systemRowReadOnly} />
+            {customRows.map((r) => (
+              <CustomRow
+                key={r.id}
+                id={r.id}
+                label={r.label}
+                value={r.value}
+                onChange={updateCustomRow}
+                onRemove={removeCustomRow}
+                readOnly={readOnly}
+              />
+            ))}
+          </div>
+
+          {/* + Satır Ekle — hidden in read-only mode */}
+          {!readOnly && (
+            <div className="border-b px-4 py-2.5">
+              <button
+                type="button"
+                onClick={addCustomRow}
+                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+              >
+                <Plus className="h-4 w-4" />
+                Satır Ekle
+              </button>
+            </div>
+          )}
+
+          {/*
+            Auto-filled bottom fields.
+            These are system-driven (today / signed-in user / assigned approver).
+          */}
+          <div className="px-4 py-1">
+            {user?.role === 'printer' ? (
+              <>
+                <Row label="TESLİM TARİHİ"    name="teslimTarihi"   value={form.teslimTarihi   ?? form[variant.dateField] ?? ''} onChange={handleChange} readOnly={systemRowReadOnly} />
+                <Row label="TESLİM EDEN KİŞİ" name="teslimEdenKisi" value={form.teslimEdenKisi ?? form[variant.personField] ?? ''} onChange={handleChange} readOnly />
+              </>
+            ) : (
+              <>
+                <Row label={variant.dateLabel}   name={variant.dateField}   value={form[variant.dateField]}   onChange={handleChange} readOnly={systemRowReadOnly} />
+                <Row label={variant.personLabel} name={variant.personField} value={form[variant.personField]} onChange={handleChange} readOnly />
+              </>
+            )}
+            {form.matbaaYetkilisi && <Row label="MATBAA YETKİLİSİ" name="matbaaYetkilisi" value={form.matbaaYetkilisi} onChange={handleChange} readOnly />}
+            <Row label="ONAYLAYAN KİŞİ" name="onaylayanKisi" value={form.onaylayanKisi ?? ''} onChange={handleChange} readOnly />
+          </div>
+        </div>
+
+        {readOnly && (
+          <div className="flex divide-x overflow-hidden rounded-lg border bg-white">
+            <SigBox role="Tasarımcı" name={(project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''} />
+            {form.matbaaYetkilisi && <SigBox role="Matbaa Yetkilisi" name={form.matbaaYetkilisi} />}
+            <SigBox role="Ekip Lideri / Onaylayan" name={form.onaylayanKisi ?? ''} />
+          </div>
+        )}
+
+        <DialogFooter className="flex-wrap gap-2">
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            {readOnly ? 'Kapat' : 'İptal'}
+          </Button>
+          {printable && (
+            <Button type="button" variant="outline" onClick={handlePrint}>
+              <Printer className="h-4 w-4" />
+              Yazdır
+            </Button>
+          )}
+          {mode === 'view' && (!variant.saveRequiresEditable || !readOnly) && (
+            <Button onClick={handleSave}>Kaydet</Button>
+          )}
+          {mode === 'advance' && (
+            <Button disabled={busy} onClick={handleAdvance}>
+              <Send className="h-4 w-4" />
+              {busy ? 'Gönderiliyor…' : variant.advanceLabel(user)}
+            </Button>
+          )}
+          {mode === 'approve' && (
+            <Button variant="success" disabled={busy} onClick={handleApprove}>
+              <Check className="h-4 w-4" />
+              {busy ? 'İşleniyor…' : 'Onayla'}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}

@@ -544,10 +544,17 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                         return
                       }
                       // Demo stages open the demo form: the designer requests it
-                      // at Tasarım, and the matbaa forwards it at Demo Teslim —
-                      // both go through the same form (read-only for the matbaa),
-                      // matching the Onaylar page.
-                      if (project.stage === 'tasarim' || project.stage === 'demo_teslim') {
+                      // at Tasarım, the matbaa forwards it at Demo Teslim, and a
+                      // re-send ("Demo İste") at any demo stage fills a fresh form
+                      // for the new attempt — all through the same form (read-only
+                      // for the matbaa), matching the Onaylar page.
+                      if (
+                        project.stage === 'tasarim' ||
+                        project.stage === 'demo_teslim' ||
+                        project.stage === 'demo_onay' ||
+                        project.stage === 'cin_demo_teslim' ||
+                        project.stage === 'cin_demo_onay'
+                      ) {
                         setDemoFormMode('advance')
                         setDemoFormAttempt(null)
                         setDemoFormOpen(true)

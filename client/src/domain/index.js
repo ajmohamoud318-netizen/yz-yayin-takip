@@ -4,7 +4,6 @@ export * from './constants/labels.js'
 export * from './constants/subtasks.js'
 export * from './constants/status-styles.js'
 export * from './constants/passes.js'
-export * from './constants/subtask.js'
 
 export {
   getPipeline,

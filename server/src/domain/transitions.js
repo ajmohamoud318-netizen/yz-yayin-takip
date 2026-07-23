@@ -141,14 +141,18 @@ export function computeAdvance(project, actor) {
     if (role !== 'team_leader' && !isAssigned) {
       badRequest('Tekrar demo göndermek için ekip lideri veya atanmış tasarımcı olmalısınız.')
     }
-    // Re-send always reverts to tasarim so the designer can fill a
-    // fresh demo form. demo_teslim → tasarim + demo_onay → tasarim.
-    // demo_attempt is bumped so the 'Demo N' badge reflects the
-    // iteration.
+    // Re-send starts a new demo round at the *_teslim stage so the
+    // matbaa (TR) / leader (ÇİN) immediately receives the new demo —
+    // per AGENTS.md the loop re-runs demo_onay → demo_teslim →
+    // demo_onay. demo_attempt is bumped so the 'Demo N' badge and the
+    // form snapshot reflect the iteration. (Previously this reverted
+    // to tasarim, which silently dropped the project out of the
+    // matbaa's queue and never logged a "Demoya Gönderildi" entry.)
+    const resendStage = project.type === 'CIN' ? 'cin_demo_teslim' : 'demo_teslim'
     return {
       project: {
         ...project,
-        stage: 'tasarim',
+        stage: resendStage,
         demo_attempt: (project.demo_attempt ?? 0) + 1,
         demo_held: false,
         demo_held_at: null,
@@ -164,9 +168,11 @@ export function computeAdvance(project, actor) {
       history: makeEntry(project, {
         action: 'advance',
         from_stage: project.stage,
-        to_stage: 'tasarim',
+        to_stage: resendStage,
         done_by_name: actorName,
-        note: 'Tasarıma geri dönüldü — yeni demo gönderilecek',
+        note: project.type === 'CIN'
+          ? 'Yeni demo gönderildi'
+          : 'Yeni demo matbaaya gönderildi',
       }),
     }
   }

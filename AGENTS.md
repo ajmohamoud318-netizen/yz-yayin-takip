@@ -79,7 +79,7 @@ Demos are a **review checkpoint**, not a production step. The 100% gate kicks in
 - **Matbaa delivers the demo** (`demo_teslim → demo_onay`); a printer-only `advance`.
 - **Team leader approves or rejects.** On rejection, they pick the responsible party (`designer` | `matbaa`) and a reason.
 - **Approved demo at <100% is a "hold"**: the leader's approve is recorded, the project stays at `demo_onay`, `demo_held = true`. The designer keeps working on the held project — the UI shows a yellow "Tasarım tamamlanmadı — onay sonraki aşamaya geçirmez" hint next to the approve button.
-- **When progress reaches 100%, the designer (or leader) sends a second demo** by clicking "Tekrar Demo Gönder". The server's `computeAdvance` gates this on `demo_held === true && progress >= 100`. The full demo loop re-runs (`demo_onay → demo_teslim → demo_onay`); leader approves again to advance to `ozalit_teslim`.
+- **The designer (or leader) sends a second demo** via "Demo İste" at any demo stage (allowed at any progress and any held-state — the team may iterate again once a demo has been reviewed). The server's `computeAdvance` re-send branch moves the project straight to the pipeline's teslim stage (`demo_onay → demo_teslim` for TR, `cin_demo_onay → cin_demo_teslim` for ÇİN) and bumps `demo_attempt`, so the matbaa immediately receives the new demo. The full demo loop re-runs (`demo_teslim → demo_onay`); leader approves again to advance to `ozalit_teslim`.
 
 Enforced by:
 - `client/src/domain/services/pipeline.js#assertCanEnterProduction` (gate at ozalit onward, not at demo)
