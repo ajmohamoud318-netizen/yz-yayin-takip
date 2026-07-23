@@ -64,7 +64,12 @@ export default function DemoRequests() {
 
   async function loadDemos() {
     try {
-      setDemos(await api.listDemos())
+      // Project-linked rows in /api/demos are per-attempt form snapshots
+      // (saved by the spec-form dialog) — not standalone demos. Only
+      // standalone entries (no project_id) belong in this list, and the
+      // card below assumes title/files exist on them.
+      const all = await api.listDemos()
+      setDemos((all ?? []).filter((d) => !d.project_id && Array.isArray(d.files)))
     } catch {
       /* demos are optional */
     }

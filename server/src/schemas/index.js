@@ -375,6 +375,9 @@ const demosCreate = {
       kind: { type: 'string', enum: ['demo', 'ozalit'] },
       payload: { type: 'object' },
       attempt: { type: 'integer', minimum: 0, maximum: 100 },
+      // Skip the "formu gönderildi" history row (the spec-form dialog's
+      // advance already logs the meaningful timeline entry).
+      silent: { type: 'boolean' },
     },
   },
 }

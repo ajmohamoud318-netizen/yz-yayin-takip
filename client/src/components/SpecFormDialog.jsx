@@ -141,6 +141,31 @@ function parseSaved(variant, raw) {
 function loadSaved(variant, id)             { return parseSaved(variant, localStorage.getItem(STORAGE_KEY(variant, id))) }
 function loadSnapshot(variant, id, attempt) { return parseSaved(variant, localStorage.getItem(SNAPSHOT_KEY(variant, id, attempt))) }
 
+/**
+ * Server-side snapshots (demos table). localStorage only exists on the
+ * browser that filled the form — the matbaa or the leader opening the same
+ * project on another computer saw an empty sheet. Every save/submit also
+ * POSTs the payload to /api/demos keyed by (project, kind, attempt); this
+ * fetches the latest matching row back. Returns null on any failure so the
+ * localStorage path stays the fallback.
+ */
+async function fetchServerSnapshot(api, variant, projectId, attempt) {
+  try {
+    const all = await api.listDemos()
+    const mine = (all ?? []).filter(
+      (d) => d.project_id === projectId && (d.kind ?? 'demo') === variant.kind &&
+             (attempt == null || d.attempt === attempt),
+    )
+    if (mine.length === 0) return null
+    // listDemos is ordered newest-first; take the most recent row.
+    const row = mine[0]
+    const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload
+    return parseSaved(variant, JSON.stringify(payload ?? {}))
+  } catch {
+    return null
+  }
+}
+
 function saveForm(variant, id, data, customRows, selectedComponents) {
   localStorage.setItem(STORAGE_KEY(variant, id), JSON.stringify({
     ...data,
@@ -399,14 +424,27 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
 
   useEffect(() => {
     if (!open || !project) return
-    if (viewAttempt != null) {
-      // History: show the snapshot exactly as it was saved — no auto-fills
-      const snap = loadSnapshot(variant, project.id, viewAttempt) ?? loadSaved(variant, project.id)
-      setForm(snap?.form ?? emptyForm(variant, project, user))
-      setCustomRows(snap?.customRows ?? [])
-      setSelectedComponents(snap?.selectedComponents ?? [])
-    } else {
-      const data = loadSaved(variant, project.id)
+    let cancelled = false
+
+    async function load() {
+      if (viewAttempt != null) {
+        // History: show the snapshot exactly as it was saved — no auto-fills.
+        // Server snapshot first (works on any computer), localStorage fallback.
+        const snap =
+          (await fetchServerSnapshot(api, variant, project.id, viewAttempt)) ??
+          loadSnapshot(variant, project.id, viewAttempt) ??
+          loadSaved(variant, project.id)
+        if (cancelled) return
+        setForm(snap?.form ?? emptyForm(variant, project, user))
+        setCustomRows(snap?.customRows ?? [])
+        setSelectedComponents(snap?.selectedComponents ?? [])
+        return
+      }
+
+      const data =
+        loadSaved(variant, project.id) ??
+        (await fetchServerSnapshot(api, variant, project.id, null))
+      if (cancelled) return
       const fresh = emptyForm(variant, project, user)
       if (readOnly || variant.restoreSavedOnEdit) {
         // Read-only viewers (printer, history) must see the values that were
@@ -432,6 +470,9 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       const savedComponents = data?.selectedComponents ?? null
       setSelectedComponents(savedComponents ?? catalogComponents)
     }
+
+    load()
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, project?.id, viewAttempt])
 
@@ -494,6 +535,21 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const attemptNo =
     viewAttempt ?? ((project?.[variant.attemptField] ?? 0) + (willResendBump ? 2 : 1))
 
+  /** Mirror the snapshot to the server so any browser can reopen it. */
+  function persistServerSnapshot(attempt, data) {
+    api.createDemo({
+      project_id: project.id,
+      kind: variant.kind,
+      attempt,
+      silent: true,
+      payload: {
+        ...data,
+        _customRows: customRows,
+        _selectedComponents: selectedComponents ?? null,
+      },
+    }).catch(() => { /* localStorage still has it; don't block the flow */ })
+  }
+
   async function handleAdvance() {
     if (!project) return
     setBusy(true)
@@ -508,6 +564,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       }
       saveForm(variant, project.id, payload, customRows, selectedComponents)
       saveSnapshot(variant, project.id, attemptNo, payload, customRows, selectedComponents)
+      persistServerSnapshot(attemptNo, payload)
       const updated = await api.advanceProject(project.id)
       updateOne(updated)
       toast.success(variant.advanceToast(project))
@@ -525,6 +582,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     try {
       saveForm(variant, project.id, form, customRows, selectedComponents)
       saveSnapshot(variant, project.id, attemptNo, form, customRows, selectedComponents)
+      persistServerSnapshot(attemptNo, form)
       const updated = await api.approveProject(project.id)
       updateOne(updated)
       toast.success('Onaylandı — proje üretime alındı.')
@@ -538,6 +596,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   function handleSave() {
     if (!project) return
     saveForm(variant, project.id, form, customRows, selectedComponents)
+    persistServerSnapshot(attemptNo, form)
     toast.success(variant.saveToast)
     onOpenChange(false)
   }

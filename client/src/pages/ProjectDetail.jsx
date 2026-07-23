@@ -279,9 +279,20 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
 
     let demoN = 0
     let ozalitN = 0
+    const DEMO_HISTORY_STAGES = ['demo_teslim', 'demo_onay', 'cin_demo_teslim', 'cin_demo_onay']
     return merged.map((h) => {
+      // A re-send (advance from a demo stage back to the teslim stage)
+      // STARTS the next demo round, so its own entry — and everything
+      // after it — must carry the new number. Rejections close a round
+      // instead: the reject entry itself still belongs to the round it
+      // rejected, so those increment after stamping.
+      const isDemoResend =
+        h.action === 'advance' &&
+        (h.to_stage === 'demo_teslim' || h.to_stage === 'cin_demo_teslim') &&
+        DEMO_HISTORY_STAGES.includes(h.from_stage)
+      if (isDemoResend) demoN++
       const entry = { ...h, demoAttemptAt: demoN + 1, ozalitAttemptAt: ozalitN + 1 }
-      if (h.action === 'reject' && h.from_stage === 'demo_onay')   demoN++
+      if (h.action === 'reject' && (h.from_stage === 'demo_onay' || h.from_stage === 'cin_demo_onay')) demoN++
       if (h.action === 'reject' && h.from_stage === 'ozalit_onay') ozalitN++
       return entry
     })
