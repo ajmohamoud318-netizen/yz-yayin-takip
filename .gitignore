@@ -61,3 +61,12 @@ client/dist/
 # Vite temp config timestamp files
 *.timestamp-*.mjs
 server/server/
+
+# Source spreadsheets (read-only inputs — regenerated into productInfo.js
+# via `node generate-product-info.js`). Keep these out of the repo so the
+# canonical data stays in the design team's drive.
+"REÇETE.xlsx"
+"REÇETE.xls"
+"*.xlsx"
+"*.xls"
+generate-product-info.js

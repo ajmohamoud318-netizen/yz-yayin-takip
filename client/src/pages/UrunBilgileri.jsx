@@ -435,8 +435,12 @@ export default function UrunBilgileri() {
     ])
   }
   function deleteProduct(pid) {
-    const next = { ...overrides }
-    delete next[pid]
+    // For real projects, an empty override simply restores the seed
+    // visibility — but since real projects are filtered out unless they
+    // have product info, an empty override hides the product. For seed
+    // (orphan) entries, an empty override masks PRODUCT_INFO[pid] so the
+    // catalog hides the row until the user re-saves it.
+    const next = { ...overrides, [pid]: [] }
     setOverrides(next)
     saveOverrides(next)
     setEditingId(null)
@@ -462,10 +466,44 @@ export default function UrunBilgileri() {
   }
 
   const products = useMemo(() => {
-    return projects
+    // 1) Real projects that have product info — preferred when present.
+    const realKeys = new Set()
+    const real = projects
       .filter((p) => Array.isArray(compsFor(p.id)) && compsFor(p.id).length > 0)
-      .map((p) => ({ project: p, comps: compsFor(p.id) }))
-      .sort((a, b) => (b.project.updated_at ?? '').localeCompare(a.project.updated_at ?? ''))
+      .map((p) => {
+        realKeys.add(p.id)
+        return { project: p, comps: compsFor(p.id) }
+      })
+    // 2) Orphan catalog entries — PRODUCT_INFO rows whose id is not a real
+    //    project. Render them as synthetic products so the catalog is
+    //    browsable even before the team creates matching project rows.
+    const nowIso = new Date().toISOString()
+    const orphanIds = new Set([
+      ...Object.keys(PRODUCT_INFO),
+      ...Object.keys(overrides),
+    ])
+    const orphans = []
+    for (const pid of orphanIds) {
+      if (realKeys.has(pid)) continue
+      const comps = compsFor(pid)
+      if (!Array.isArray(comps) || comps.length === 0) continue
+      const first = comps[0]
+      const fields = first?.fields ?? []
+      const titleField = fields.find((f) => f.k === 'İŞİN ADI')?.v
+      orphans.push({
+        project: {
+          id: pid,
+          title: titleField || first?.component || pid,
+          type: 'TR',
+          updated_at: nowIso,
+          __seed: true,
+        },
+        comps,
+      })
+    }
+    return [...real, ...orphans].sort((a, b) =>
+      (b.project.updated_at ?? '').localeCompare(a.project.updated_at ?? ''),
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projects, overrides])
 
