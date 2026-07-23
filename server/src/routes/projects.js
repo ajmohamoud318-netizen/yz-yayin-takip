@@ -205,6 +205,16 @@ export async function projectRoutes(fastify) {
       if (Object.prototype.hasOwnProperty.call(next, 'demo_held_by_name')) {
         fields.demo_held_by_name = next.demo_held_by_name
       }
+      // The ozalit_teslim two-step (request → matbaa deliver) and the
+      // reject-to-matbaa lock live on these flags. Without persisting them the
+      // "Ozalit İste" request set ozalit_requested=true in memory only and it
+      // vanished — the matbaa never saw a pending ozalit and the button stayed.
+      if (Object.prototype.hasOwnProperty.call(next, 'ozalit_requested')) {
+        fields.ozalit_requested = next.ozalit_requested
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'reject_target')) {
+        fields.reject_target = next.reject_target
+      }
       const updated = await patchProject(client, project.id, fields)
       if (history) await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
       return updated
@@ -273,6 +283,10 @@ export async function projectRoutes(fastify) {
         ozalit_attempt: next.ozalit_attempt,
         last_reject_reason: next.last_reject_reason,
         version: next.version,
+        // reject-to-matbaa sets reject_target='matbaa' (the re-delivery lock);
+        // every reject clears ozalit_requested. Persist both so the state sticks.
+        reject_target: next.reject_target,
+        ozalit_requested: next.ozalit_requested,
       }
       // Reject-to-designer recomputes progress from the reopened subtasks;
       // reject-to-matbaa leaves subtasks (and progress) untouched.

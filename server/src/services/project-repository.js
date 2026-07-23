@@ -16,6 +16,7 @@ const PROJECT_COLUMNS = `
   ozalit_leader_approved, ozalit_leader_approved_by, ozalit_leader_approved_at,
   ozalit_designer_approvals,
   demo_held, demo_held_at, demo_held_by_name,
+  ozalit_requested, reject_target,
   created_at, updated_at
 `
 
@@ -250,6 +251,10 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
   'demo_held',
   'demo_held_at',
   'demo_held_by_name',
+  // ozalit_teslim two-step + reject-to-matbaa re-delivery lock. Set by the
+  // ozalit transitions (computeOzalitTeslimAdvance) and computeRejection.
+  'ozalit_requested',
+  'reject_target',
 ])
 
 export async function patchProject(client, id, fields) {
@@ -377,6 +382,8 @@ function rowToProject(r) {
       ? r.demo_held_at.toISOString()
       : r.demo_held_at,
     demo_held_by_name: r.demo_held_by_name ?? null,
+    ozalit_requested: r.ozalit_requested ?? false,
+    reject_target: r.reject_target ?? null,
     created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
     updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at,
   }
