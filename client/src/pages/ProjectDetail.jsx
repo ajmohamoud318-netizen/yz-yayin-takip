@@ -903,16 +903,23 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                     const Icon = meta.icon
                     const isLast = i === historyWithAttempts.length - 1
 
+                    // NOTE: the demo_onay / ozalit_onay branches are scoped to
+                    // approve/reject actions. Subtask changes are logged with
+                    // from_stage = the project's current stage (action:'system',
+                    // event:'subtask_*'), so completing a subtask while the
+                    // project sits at demo_onay produced a row with
+                    // from_stage='demo_onay' that wrongly got a "Demo Formu"
+                    // button. Only real demo/ozalit lifecycle rows should.
                     const isDemoEntry =
                       (h.action === 'advance' && (h.to_stage === 'demo_teslim' || h.to_stage === 'cin_demo_teslim')) ||
                       (h.action === 'advance' && (h.from_stage === 'demo_teslim' || h.from_stage === 'cin_demo_teslim')) ||
-                      h.from_stage === 'demo_onay' || h.from_stage === 'cin_demo_onay' ||
+                      ((h.action === 'approve' || h.action === 'reject') && (h.from_stage === 'demo_onay' || h.from_stage === 'cin_demo_onay')) ||
                       h.event === 'demo_form'
 
                     const isOzalitEntry = (
                       (h.action === 'advance' && h.to_stage === 'ozalit_teslim') ||
                       (h.action === 'advance' && h.from_stage === 'ozalit_teslim') ||
-                      (h.from_stage === 'ozalit_onay') ||
+                      ((h.action === 'approve' || h.action === 'reject') && h.from_stage === 'ozalit_onay') ||
                       h.event === 'ozalit_form'
                     ) && project.type === 'TR'
 
