@@ -51,9 +51,19 @@ function makeEntry(project, partial) {
   }
 }
 
-/** Only team_leader or designer may initiate an ozalit request. */
-function canRequestOzalit(actor) {
-  return actor?.role === 'team_leader' || actor?.role === 'designer'
+/**
+ * Only the team_leader or the *assigned* designer may initiate an ozalit
+ * request. A designer must be in project.assignees — this matches the SPA's
+ * `isAssignedDesigner` gate (ProjectDetail.jsx). The advance route hydrates
+ * project.assignees via loadProjectAssignees before calling into here, so an
+ * unassigned designer no longer slips past a role-only check.
+ */
+function canRequestOzalit(actor, project) {
+  if (actor?.role === 'team_leader') return true
+  if (actor?.role === 'designer') {
+    return (project?.assignees ?? []).some((a) => a.id === actor?.id)
+  }
+  return false
 }
 
 /**
@@ -243,8 +253,8 @@ function computeOzalitTeslimAdvance(project, actor, now) {
   const matbaaLock = project.reject_target === 'matbaa'
 
   if (!isPrinter) {
-    if (!canRequestOzalit(actor)) {
-      badRequest('Yalnızca ekip lideri veya tasarımcı ozalit isteyebilir.')
+    if (!canRequestOzalit(actor, project)) {
+      badRequest('Yalnızca ekip lideri veya atanmış tasarımcı ozalit isteyebilir.')
     }
     if (project.ozalit_requested) {
       badRequest('Ozalit zaten istendi — matbaa teslimi bekleniyor.')

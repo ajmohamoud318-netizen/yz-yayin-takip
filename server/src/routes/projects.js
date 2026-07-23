@@ -178,6 +178,13 @@ export async function projectRoutes(fastify) {
     const result = await withTx(async (client) => {
       const project = await getProjectForUpdate(client, request.params.id)
       if (!project) notFound('Proje bulunamadı.')
+      // Hydrate assignees: the demo re-send branch in computeAdvance gates on
+      // "team_leader OR assigned designer" via project.assignees. getProjectForUpdate
+      // doesn't populate that array, so without this the assigned-designer check
+      // always fails and the designer's "Demo İste" 400s — even though the SPA
+      // (which has assignees loaded) shows them the button. Load it so the API
+      // matches the frontend's gate. See ProjectDetail.jsx isAssignedDesigner.
+      project.assignees = await loadProjectAssignees(client, project)
       const { project: next, history } = applyAdvance(project, {
         user: request.user, note: request.body?.note ?? '',
       })
