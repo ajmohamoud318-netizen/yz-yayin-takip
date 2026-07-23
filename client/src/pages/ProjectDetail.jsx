@@ -804,7 +804,7 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                           <span className={cn('flex-1', subtaskChecked(s) && 'text-muted-foreground line-through')}>
                             {s.title}
                           </span>
-                          {flagged && (
+                          {flagged && canEdit && (
                             <button
                               type="button"
                               onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRevize(s) }}
@@ -813,6 +813,11 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                             >
                               {toggling === s.id ? 'Kaydediliyor…' : 'Revize Et'}
                             </button>
+                          )}
+                          {flagged && !canEdit && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                              Revize bekliyor
+                            </span>
                           )}
                           {lockedDone && (
                             <span className="text-[11px] font-medium text-muted-foreground">
@@ -1188,7 +1193,7 @@ function PageSubtaskRow({ sub, canEdit, busy, onAdd, onRevize, revizing = false,
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-2 text-sm font-medium">
           {sub.title}
-          {flagged && (
+          {flagged && canEdit && (
             <button
               type="button"
               onClick={onRevize}
@@ -1197,6 +1202,11 @@ function PageSubtaskRow({ sub, canEdit, busy, onAdd, onRevize, revizing = false,
             >
               {revizing ? 'Kaydediliyor…' : 'Revize Et'}
             </button>
+          )}
+          {flagged && !canEdit && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+              Revize bekliyor
+            </span>
           )}
           {lockedDone && (
             <span className="text-[11px] font-medium text-muted-foreground">Revize gerekmiyor</span>

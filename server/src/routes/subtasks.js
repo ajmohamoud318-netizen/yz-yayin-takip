@@ -127,6 +127,14 @@ export async function subtaskRoutes(fastify) {
       const sub = subRows[0]
       if (!sub) notFound('Alt görev bulunamadı.')
       if (!sub.needs_revize) badRequest('Bu alt görev revize beklemiyor.')
+      // Revize is the designer's rework acknowledgment — only the assigned
+      // designer may do it (the team leader / matbaa never revize).
+      if (request.user.role !== 'designer') {
+        badRequest('Revize işlemini yalnızca tasarımcı yapabilir.')
+      }
+      if (sub.assigned_to && sub.assigned_to !== request.user.id) {
+        badRequest('Bu alt görev size atanmadı.')
+      }
       const project = await getProjectForUpdate(client, sub.project_id)
       await client.query(
         'UPDATE subtasks SET needs_revize = FALSE, updated_at = NOW() WHERE id = $1', [sub.id],
