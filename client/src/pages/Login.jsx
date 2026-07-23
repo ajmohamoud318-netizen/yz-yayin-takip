@@ -6,20 +6,28 @@ import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth.js'
 
 /* ─── Login ──────────────────────────────────────────────────────────── */
-// The "30 gün hatırla" tick itself is remembered across visits — without
-// this a page refresh silently reset the box to unchecked and the next
-// login wouldn't be persisted even though the user had opted in before.
-const REMEMBER_PREF_KEY = 'yz_remember_pref'
+// The "30 gün hatırla" tick — and the e-mail it was used with — are
+// remembered across visits. Without this a refresh reset the box to
+// unchecked and, after a logout, the form came back completely empty even
+// for users who had opted in. The password is deliberately NOT stored:
+// plain-text passwords in localStorage are readable by anyone at the
+// machine (and by any injected script); the browser's own password
+// manager handles that part via the autocomplete attributes.
+const REMEMBER_PREF_KEY  = 'yz_remember_pref'
+const REMEMBER_EMAIL_KEY = 'yz_remember_email'
 
 function loadRememberPref() {
   try { return localStorage.getItem(REMEMBER_PREF_KEY) === '1' } catch { return false }
+}
+function loadRememberedEmail() {
+  try { return localStorage.getItem(REMEMBER_EMAIL_KEY) ?? '' } catch { return '' }
 }
 
 export default function Login() {
   const { login, loading } = useAuth()
   const navigate = useNavigate()
 
-  const [email, setEmail]           = useState('')
+  const [email, setEmail]           = useState(loadRememberedEmail)
   const [password, setPassword]     = useState('')
   const [showPw, setShowPw]         = useState(false)
   const [remember, setRemember]     = useState(loadRememberPref)
@@ -28,13 +36,24 @@ export default function Login() {
 
   function toggleRemember(checked) {
     setRemember(checked)
-    try { localStorage.setItem(REMEMBER_PREF_KEY, checked ? '1' : '0') } catch { /* ignore */ }
+    try {
+      localStorage.setItem(REMEMBER_PREF_KEY, checked ? '1' : '0')
+      // Opting out also forgets the stored e-mail.
+      if (!checked) localStorage.removeItem(REMEMBER_EMAIL_KEY)
+    } catch { /* ignore */ }
   }
 
   async function submit(mail, pass) {
     setError('')
     if (!mail.trim() || !pass) { setError('Lütfen e-posta ve şifrenizi girin.'); return }
-    try   { await login(mail, pass, { remember }); setExiting(true) }
+    try {
+      await login(mail, pass, { remember })
+      try {
+        if (remember) localStorage.setItem(REMEMBER_EMAIL_KEY, mail.trim())
+        else localStorage.removeItem(REMEMBER_EMAIL_KEY)
+      } catch { /* ignore */ }
+      setExiting(true)
+    }
     catch (err) { setError(err.message || 'Giriş yapılamadı. Lütfen tekrar deneyin.') }
   }
 
