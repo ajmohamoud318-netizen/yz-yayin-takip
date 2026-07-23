@@ -10,14 +10,11 @@
 --
 -- Idempotent so re-running on a seeded DB is a no-op.
 
--- last_reject_type / last_reject_target were also phantom: computeRejection
--- sets them ('ozalit'|'demo' and the routing target) and computeAdvance reads
--- last_reject_type to send an ozalit-revision resubmit back to ozalit_teslim
--- (and to label the button "Ozalit'e Gönder"). Unpersisted, an ozalit reject
--- lost its type on reload and the resubmit wrongly went to the demo pipeline.
-
 ALTER TABLE projects
   ADD COLUMN IF NOT EXISTS ozalit_requested   BOOLEAN     NOT NULL DEFAULT FALSE,
-  ADD COLUMN IF NOT EXISTS reject_target      TEXT,
-  ADD COLUMN IF NOT EXISTS last_reject_type   TEXT,
-  ADD COLUMN IF NOT EXISTS last_reject_target TEXT;
+  ADD COLUMN IF NOT EXISTS reject_target      TEXT;
+
+-- NOTE: last_reject_type / last_reject_target are added in migration 018.
+-- They were briefly added here, but this migration had already been applied
+-- in production, and the runner skips already-applied IDs — so the edit never
+-- ran. Adding new columns always needs a NEW migration file.
