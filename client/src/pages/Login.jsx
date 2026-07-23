@@ -6,6 +6,15 @@ import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth.js'
 
 /* ─── Login ──────────────────────────────────────────────────────────── */
+// The "30 gün hatırla" tick itself is remembered across visits — without
+// this a page refresh silently reset the box to unchecked and the next
+// login wouldn't be persisted even though the user had opted in before.
+const REMEMBER_PREF_KEY = 'yz_remember_pref'
+
+function loadRememberPref() {
+  try { return localStorage.getItem(REMEMBER_PREF_KEY) === '1' } catch { return false }
+}
+
 export default function Login() {
   const { login, loading } = useAuth()
   const navigate = useNavigate()
@@ -13,9 +22,14 @@ export default function Login() {
   const [email, setEmail]           = useState('')
   const [password, setPassword]     = useState('')
   const [showPw, setShowPw]         = useState(false)
-  const [remember, setRemember]     = useState(false)
+  const [remember, setRemember]     = useState(loadRememberPref)
   const [error, setError]           = useState('')
   const [exiting, setExiting]       = useState(false)
+
+  function toggleRemember(checked) {
+    setRemember(checked)
+    try { localStorage.setItem(REMEMBER_PREF_KEY, checked ? '1' : '0') } catch { /* ignore */ }
+  }
 
   async function submit(mail, pass) {
     setError('')
@@ -98,7 +112,7 @@ export default function Login() {
                     id="remember"
                     type="checkbox"
                     checked={remember}
-                    onChange={(e) => setRemember(e.target.checked)}
+                    onChange={(e) => toggleRemember(e.target.checked)}
                     className="h-4 w-4 rounded border-gray-300 accent-red-500"
                   />
                   30 gün hatırla
