@@ -383,6 +383,63 @@ function SigBox({ role, name }) {
   )
 }
 
+/* Read-only definition row (label : value). Wraps long values (e.g. the
+   TUŞLAR EBAT list) instead of truncating them like a single-line input. */
+function ClassicRow({ label, value }) {
+  return (
+    <div className="grid grid-cols-[minmax(6rem,38%)_auto_1fr] items-start gap-2 border-b py-1.5 last:border-b-0">
+      <span className="pt-px text-[11px] font-semibold uppercase leading-snug tracking-wide text-muted-foreground">{label}</span>
+      <span className="text-xs font-bold text-muted-foreground">:</span>
+      <span className="min-w-0 whitespace-pre-wrap break-words text-[13px] leading-snug text-foreground">{value || '—'}</span>
+    </div>
+  )
+}
+
+/* One parça rendered in the classic single-column format (header + attempt +
+   İŞİN ADI + spec rows + system fields + signatures). Read-only. In view /
+   history mode we stack one of these per selected parça, mirroring the printed
+   output (each parça is its own sheet with its own signature block). */
+function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
+  const rows = component.rows ?? []
+  const designerNames = (project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''
+  return (
+    <div className="overflow-hidden rounded-lg border bg-white">
+      <div className="border-b px-4 py-3 text-center">
+        <h2 className="text-base font-bold uppercase tracking-widest text-foreground">{project.title}</h2>
+      </div>
+      <div className="border-b px-4 py-2 text-right">
+        <span className="text-sm font-bold">{attemptNo}. {variant.attemptUpper}</span>
+      </div>
+      <div className="border-b px-4 py-1">
+        <ClassicRow label="İŞİN ADI" value={component.component} />
+        {rows.map((r) => (
+          <ClassicRow key={r.id} label={r.label} value={r.value} />
+        ))}
+      </div>
+      <div className="border-b px-4 py-1">
+        {user?.role === 'printer' ? (
+          <>
+            <ClassicRow label="TESLİM TARİHİ" value={form.teslimTarihi ?? form[variant.dateField] ?? ''} />
+            <ClassicRow label="TESLİM EDEN KİŞİ" value={form.teslimEdenKisi ?? form[variant.personField] ?? ''} />
+          </>
+        ) : (
+          <>
+            <ClassicRow label={variant.dateLabel} value={form[variant.dateField]} />
+            <ClassicRow label={variant.personLabel} value={form[variant.personField]} />
+          </>
+        )}
+        {form.matbaaYetkilisi && <ClassicRow label="MATBAA YETKİLİSİ" value={form.matbaaYetkilisi} />}
+        <ClassicRow label="ONAYLAYAN KİŞİ" value={form.onaylayanKisi ?? ''} />
+      </div>
+      <div className="flex divide-x">
+        <SigBox role="Tasarımcı" name={designerNames} />
+        {form.matbaaYetkilisi && <SigBox role="Matbaa Yetkilisi" name={form.matbaaYetkilisi} />}
+        <SigBox role="Ekip Lideri / Onaylayan" name={form.onaylayanKisi ?? ''} />
+      </div>
+    </div>
+  )
+}
+
 /* ------------------------------------------------------------------ */
 /*  Shared spec-sheet dialog                                          */
 /* ------------------------------------------------------------------ */
@@ -676,6 +733,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const hasCatalog = catalogComponents.length > 0
   // Demo: system-driven fields must never be editable; Ozalit: they follow readOnly.
   const systemRowReadOnly = variant.systemFieldsEditable ? readOnly : true
+  // View / history / printer: render each selected parça as its own classic
+  // single-column sheet (matches the printout). Editing keeps the side-by-side
+  // cards. Falls back to the single sheet when nothing is selected.
+  const readOnlyClassic = readOnly && hasCatalog && selectedComponents.length > 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -694,6 +755,22 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           </DialogTitle>
         </DialogHeader>
 
+        {readOnlyClassic ? (
+          <div className="space-y-4">
+            {selectedComponents.map((c) => (
+              <ClassicSheet
+                key={c.id}
+                project={project}
+                component={c}
+                attemptNo={attemptNo}
+                variant={variant}
+                form={form}
+                user={user}
+              />
+            ))}
+          </div>
+        ) : (
+        <>
         <div className="rounded-lg border bg-white">
           <div className="border-b px-4 py-3 text-center">
             <h2 className="text-base font-bold uppercase tracking-widest text-foreground">{project.title}</h2>
@@ -884,6 +961,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             {form.matbaaYetkilisi && <SigBox role="Matbaa Yetkilisi" name={form.matbaaYetkilisi} />}
             <SigBox role="Ekip Lideri / Onaylayan" name={form.onaylayanKisi ?? ''} />
           </div>
+        )}
+        </>
         )}
 
         <DialogFooter className="flex-wrap gap-2">
