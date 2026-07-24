@@ -6,7 +6,7 @@
  * fetched lazily by `loadHistory` so list endpoints stay light.
  */
 
-import { getPool } from '../db/pool.js'
+import { getPool, withTx } from '../db/pool.js'
 import { nanoid } from 'nanoid'
 
 const PROJECT_COLUMNS = `
@@ -333,6 +333,74 @@ export async function logHistory(client, entry, user) {
     // refetching.
     done_by_name: doneByName,
   })
+}
+
+/**
+ * Re-evaluate pending ozalit approvals after the set of active team leaders
+ * changes (e.g. a leader was deactivated). The ozalit rule is "every ACTIVE
+ * team leader + every assigned designer must approve"; that required set only
+ * gets re-checked when someone clicks Approve. So if the only outstanding
+ * approval was a leader who just got deactivated, the project would otherwise
+ * sit at ozalit_onay forever. This advances any such project to Üretime Hazır.
+ *
+ * Call it AFTER the deactivation is committed so the active-leaders query
+ * excludes the deactivated user. `actor` is stamped on the history row.
+ * Returns the number of projects advanced.
+ */
+export async function reconcileOzalitApprovals(actor) {
+  const { rows: leaderRows } = await getPool().query(
+    "SELECT id FROM users WHERE role = 'team_leader' AND is_active = TRUE",
+  )
+  const activeLeaderIds = leaderRows.map((r) => r.id)
+
+  const { rows: candidates } = await getPool().query(
+    `SELECT id FROM projects
+      WHERE stage = 'ozalit_onay'
+        AND jsonb_array_length(COALESCE(ozalit_approvals, '[]'::jsonb)) > 0`,
+  )
+
+  let advanced = 0
+  for (const { id } of candidates) {
+    // eslint-disable-next-line no-await-in-loop
+    await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, id)
+      if (!project || project.stage !== 'ozalit_onay') return
+      // Can't enter production below 100% — leave it (shouldn't happen at
+      // ozalit_onay, but stay safe).
+      if ((project.progress ?? 0) < 100) return
+
+      const assignees = await loadProjectAssignees(client, project)
+      const designerIds = assignees.map((a) => a.id)
+      const required = [...new Set([...activeLeaderIds, ...designerIds])]
+      const approvals = Array.isArray(project.ozalit_approvals) ? project.ozalit_approvals : []
+      const approvedIds = new Set(approvals.map((a) => a.id))
+      const complete = required.length > 0 && required.every((rid) => approvedIds.has(rid))
+      if (!complete) return
+
+      await patchProject(client, id, {
+        stage: 'uretime_hazir',
+        version: (project.version ?? 0) + 1,
+        ozalit_approvals: JSON.stringify([]),
+        ozalit_leader_approved: false,
+        ozalit_leader_approved_by: null,
+        ozalit_leader_approved_at: null,
+        ozalit_designer_approvals: JSON.stringify([]),
+      })
+      await logHistory(
+        client,
+        {
+          project_id: id,
+          from_stage: 'ozalit_onay',
+          to_stage: 'uretime_hazir',
+          action: 'approve',
+          note: 'Ozalit onaylandı, üretime alındı (bekleyen lider devre dışı bırakıldı)',
+        },
+        actor,
+      )
+      advanced += 1
+    })
+  }
+  return advanced
 }
 
 export async function insertProject(client, fields) {

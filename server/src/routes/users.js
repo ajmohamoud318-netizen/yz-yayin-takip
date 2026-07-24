@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid'
 import { attachUser, requireRole } from '../middleware/auth.js'
 import { badRequest, conflict, forbidden, notFound, HttpError } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
+import { reconcileOzalitApprovals } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
 import { createInvitation } from '../services/invitations.js'
 import { sendMail, renderInviteEmail } from '../services/mail.js'
@@ -163,6 +164,16 @@ export async function userRoutes(fastify) {
       [id],
     )
     if (!rows[0]) notFound('Kullanıcı bulunamadı.')
+    // Deactivating a leader shrinks the "every active leader must approve"
+    // set. Advance any pending ozalit that this now completes so it doesn't
+    // stall waiting on the person who just lost access.
+    if (rows[0].role === 'team_leader') {
+      try {
+        await reconcileOzalitApprovals(request.user)
+      } catch (err) {
+        request.log.warn({ err, userId: id }, 'ozalit reconcile after deactivate failed; continuing')
+      }
+    }
     return rows[0]
   })
 
