@@ -22,6 +22,7 @@ const MyProjects          = lazy(() => import('./pages/MyProjects.jsx'))
 const Documents           = lazy(() => import('./pages/Documents.jsx'))
 const BaskiListesi        = lazy(() => import('./pages/BaskiListesi.jsx'))
 const UrunBilgileri       = lazy(() => import('./pages/UrunBilgileri.jsx'))
+const Urunler             = lazy(() => import('./pages/Urunler.jsx'))
 const SiparisListesi      = lazy(() => import('./pages/SiparisListesi.jsx'))
 const SiparisTalepleri    = lazy(() => import('./pages/SiparisTalepleri.jsx'))
 const SiparisOnay         = lazy(() => import('./pages/SiparisOnay.jsx'))
@@ -52,7 +53,7 @@ function RoleGuard({ allow, children }) {
 
 function HomeRedirect() {
   const { user } = useAuth()
-  if (user?.role === 'satis') return <Navigate to="/siparis-talebi" replace />
+  if (user?.role === 'satis') return <Navigate to="/urunler" replace />
   return <Dashboard />
 }
 
@@ -136,6 +137,7 @@ export default function App() {
             />
             <Route path="/documents" element={<Documents />} />
             <Route path="/baski-listesi" element={<BaskiListesi />} />
+            <Route path="/urunler" element={<Urunler />} />
             <Route
               path="/urun-bilgileri"
               element={

@@ -43,9 +43,10 @@ describe('pipeline', () => {
     assert.doesNotThrow(() => assertCanEnterProduction('tasarim', 0))
   })
 
-  it('assertOrderable fires only when the project is satista', () => {
-    assert.doesNotThrow(() => assertOrderable({ stage: 'satista' }))
-    assert.throws(() => assertOrderable({ stage: 'tasarim' }), /satışta/)
+  it('assertOrderable fires unless the project is satista AND has a product_info entry', () => {
+    assert.doesNotThrow(() => assertOrderable({ stage: 'satista', has_product_info: true }))
+    assert.throws(() => assertOrderable({ stage: 'satista', has_product_info: false }), /Ürün Bilgileri/)
+    assert.throws(() => assertOrderable({ stage: 'tasarim', has_product_info: true }), /satışta/)
     // Critical parity check with the client bug we patched: undefined must throw.
     assert.throws(() => assertOrderable(undefined), /satışta/)
   })
@@ -58,8 +59,9 @@ describe('pipeline', () => {
     assert.throws(() => assertHandoverEligible({ type: 'TR', stage: 'tasarim' }), /üretimi tamamlanan/)
   })
 
-  it('canRequestOrder keeps its earlier semantics for unknown stages', () => {
-    assert.equal(canRequestOrder({ stage: 'satista' }), true)
-    assert.equal(canRequestOrder({ stage: 'tasarim' }), false)
+  it('canRequestOrder requires satista stage AND a product_info entry', () => {
+    assert.equal(canRequestOrder({ stage: 'satista', has_product_info: true }), true)
+    assert.equal(canRequestOrder({ stage: 'satista', has_product_info: false }), false)
+    assert.equal(canRequestOrder({ stage: 'tasarim', has_product_info: true }), false)
   })
 })

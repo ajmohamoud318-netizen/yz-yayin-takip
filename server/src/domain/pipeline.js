@@ -20,12 +20,12 @@ export function assertCanEnterProduction(nextStage, progress) {
 }
 
 export function canRequestOrder(project) {
-  return !!project && ORDERABLE_STAGES.has(project.stage)
+  return !!project && ORDERABLE_STAGES.has(project.stage) && !!project.has_product_info
 }
 
 export function assertOrderable(project) {
-  if (!project || !ORDERABLE_STAGES.has(project.stage)) {
-    const err = new Error('Sipariş talebi yalnızca satışta olan ürünler için oluşturulabilir.')
+  if (!project || !ORDERABLE_STAGES.has(project.stage) || !project.has_product_info) {
+    const err = new Error('Sipariş talebi yalnızca satışta olan ve Ürün Bilgileri girilmiş ürünler için oluşturulabilir.')
     err.status = 400
     throw err
   }

@@ -48,12 +48,12 @@ export async function productInfoRoutes(fastify) {
     return rows[0]
   })
 
-  // Upsert. Only the roles that author a spec may write: the team leader
-  // (project create + Ürün Bilgileri edits) and the designer (their step of
-  // the sipariş workflow can refine the spec). Matbaa / Satış never edit it.
+  // Upsert. team_leader only — this spec is what gates whether Sales can
+  // order a product (see canRequestOrder/assertOrderable), so only the
+  // role that owns the sipariş pipeline's data integrity may write it.
   fastify.put('/product-info/:projectId', { schema: schemas.productInfoUpsert }, async (request) => {
     await attachUser(request)
-    requireRole(request, 'team_leader', 'designer')
+    requireRole(request, 'team_leader')
     const { projectId } = request.params
     const { components } = request.body
 

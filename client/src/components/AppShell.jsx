@@ -26,6 +26,7 @@ import {
   PackageCheck,
   Truck,
   Factory,
+  Package,
 
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -1054,7 +1055,8 @@ const PAGE_TITLES = [
   { match: (p) => p.startsWith('/my-projects'), label: 'Projelerim' },
   { match: (p) => p.startsWith('/documents'), label: 'Dökümanlar' },
   { match: (p) => p.startsWith('/urun-bilgileri'), label: 'Ürün Bilgileri' },
-  { match: (p) => p.startsWith('/siparis-talebi'), label: 'Sipariş Talebi' },
+  { match: (p) => p.startsWith('/urunler'), label: 'Ürünler' },
+  { match: (p) => p.startsWith('/siparis-talebi'), label: 'Taleplerim' },
   { match: (p) => p.startsWith('/siparis-talepleri'), label: 'Sipariş Talepleri' },
   { match: (p) => p.startsWith('/siparis-onay'), label: 'Sipariş Onayları' },
   { match: (p) => p.startsWith('/uretime-hazir'), label: 'Üretime Hazır' },
@@ -1082,6 +1084,7 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
     { to: '/my-projects', label: 'Projelerim', icon: Briefcase, badge: counts.myProjects || designerOrders || undefined, badgeTone: designerOrders > 0 ? 'amber' : 'default', roles: ['designer'] },
     { to: '/kanban', label: 'İş Akışı', icon: Columns3, badge: counts.active, roles: ['team_leader', 'designer', 'printer'] },
     { to: '/projects', label: 'Tüm Projeler', icon: LayoutGrid, end: true, badge: counts.total, roles: ['team_leader', 'designer', 'printer'] },
+    { to: '/urunler', label: 'Ürünler', icon: Package },
     {
       to: '/baski-listesi',
       label: 'Baskı Listesi',
@@ -1092,8 +1095,7 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
     },
     { label: 'Toplantılar', icon: CalendarDays, soon: true, roles: ['team_leader', 'designer', 'printer'] },
     // Sales-only items
-    { to: '/siparis-talebi', label: 'Sipariş Talebi', icon: ClipboardPlus, roles: ['satis'] },
-    { to: '/projects', label: 'Tüm Ürünler', icon: LayoutGrid, end: true, roles: ['satis'] },
+    { to: '/siparis-talebi', label: 'Taleplerim', icon: ClipboardPlus, roles: ['satis'] },
   ].filter((i) => !i.roles || i.roles.includes(role))
 
   // ── Grup 2: Onaylar (sadece printer + team_leader) ────────────

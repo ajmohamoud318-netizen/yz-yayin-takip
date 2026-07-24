@@ -7,21 +7,23 @@ export function getPipeline(type) {
 
 /**
  * Business rule: a sipariş (order) request can only be raised for a project that
- * has reached the Satışta stage.
- * @param {{ stage: string }} project
+ * has reached the Satışta stage AND has a Ürün Bilgileri (product_info) entry —
+ * the spec sheet the order's items/quantities are checked against.
+ * @param {{ stage: string, has_product_info?: boolean }} project
  */
 export function canRequestOrder(project) {
-  return ORDERABLE_STAGES.has(project?.stage)
+  return !!project && ORDERABLE_STAGES.has(project.stage) && !!project.has_product_info
 }
 
 /**
  * Guard for the create-order use case. Throws a 400 when a request targets a
- * project that isn't in an orderable (Satışta) stage.
- * @param {{ stage: string }} project
+ * project that isn't in an orderable (Satışta) stage, or has no Ürün Bilgileri
+ * entry yet.
+ * @param {{ stage: string, has_product_info?: boolean }} project
  */
 export function assertOrderable(project) {
-  if (!project || !ORDERABLE_STAGES.has(project.stage)) {
-    const err = new Error('Sipariş talebi yalnızca satışta olan ürünler için oluşturulabilir.')
+  if (!project || !ORDERABLE_STAGES.has(project.stage) || !project.has_product_info) {
+    const err = new Error('Sipariş talebi yalnızca satışta olan ve Ürün Bilgileri girilmiş ürünler için oluşturulabilir.')
     err.status = 400
     throw err
   }

@@ -32,6 +32,7 @@ export async function listProjects() {
   const { rows } = await getPool().query(
     `SELECT ${PROJECT_COLUMNS.split(',').map((c) => 'p.' + c.trim()).join(', ')}
        , a.name AS assignee_name
+       , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = p.id) AS has_product_info
      FROM projects p
      LEFT JOIN users a ON a.id = p.assigned_to
      ORDER BY p.created_at DESC, p.id`,
@@ -176,7 +177,9 @@ export async function loadProjectAssignees(client, project) {
 
 export async function getProject(id) {
   const { rows } = await getPool().query(
-    `SELECT ${PROJECT_COLUMNS} FROM projects WHERE id = $1`, [id],
+    `SELECT ${PROJECT_COLUMNS}
+       , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id) AS has_product_info
+     FROM projects WHERE id = $1`, [id],
   )
   return rows[0] ? rowToProject(rows[0]) : null
 }
@@ -184,7 +187,9 @@ export async function getProject(id) {
 /** Same shape, but as a single `client.query` argument for use inside `withTx`. */
 export async function getProjectForUpdate(client, id) {
   const { rows } = await client.query(
-    `SELECT ${PROJECT_COLUMNS} FROM projects WHERE id = $1 FOR UPDATE`, [id],
+    `SELECT ${PROJECT_COLUMNS}
+       , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id) AS has_product_info
+     FROM projects WHERE id = $1 FOR UPDATE`, [id],
   )
   return rows[0] ? rowToProject(rows[0]) : null
 }
@@ -473,6 +478,7 @@ function rowToProject(r) {
     last_reject_type: r.last_reject_type ?? null,
     last_reject_target: r.last_reject_target ?? null,
     ozalit_approvals: r.ozalit_approvals ?? [],
+    has_product_info: r.has_product_info ?? false,
     created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
     updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at,
   }

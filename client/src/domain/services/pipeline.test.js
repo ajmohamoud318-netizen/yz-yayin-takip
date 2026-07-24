@@ -102,20 +102,24 @@ describe('assertDemoCanAdvance (approve-but-hold rule)', () => {
 })
 
 describe('canRequestOrder / assertOrderable', () => {
-  it('accepts only satışta', () => {
-    expect(canRequestOrder({ stage: 'satista' })).toBe(true)
-    expect(canRequestOrder({ stage: 'uretime_hazir' })).toBe(false)
-    expect(canRequestOrder({ stage: 'uretimde' })).toBe(false)
-    expect(canRequestOrder({ stage: 'tasarim' })).toBe(false)
+  it('requires satışta stage AND a product_info entry', () => {
+    expect(canRequestOrder({ stage: 'satista', has_product_info: true })).toBe(true)
+    expect(canRequestOrder({ stage: 'satista', has_product_info: false })).toBe(false)
+    expect(canRequestOrder({ stage: 'uretime_hazir', has_product_info: true })).toBe(false)
+    expect(canRequestOrder({ stage: 'uretimde', has_product_info: true })).toBe(false)
+    expect(canRequestOrder({ stage: 'tasarim', has_product_info: true })).toBe(false)
   })
   it('throws 400 on a non-satisfying stage with status set', () => {
     try {
-      assertOrderable({ stage: 'tasarim' })
+      assertOrderable({ stage: 'tasarim', has_product_info: true })
       throw new Error('should have thrown')
     } catch (e) {
       expect(e.status).toBe(400)
       expect(e.message).toMatch(/satışta olan/)
     }
+  })
+  it('throws when satışta but no product_info entry exists yet', () => {
+    expect(() => assertOrderable({ stage: 'satista', has_product_info: false })).toThrow(/Ürün Bilgileri/)
   })
   it('throws on missing project (defensive)', () => {
     expect(() => assertOrderable(undefined)).toThrow(/satışta olan/)
