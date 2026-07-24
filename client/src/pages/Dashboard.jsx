@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, CalendarOff } from 'lucide-react'
 import { useProjects } from '../hooks/useProjects.js'
-import { useProjectModal } from '../hooks/useProjectModal.jsx'
 import {
   STAGE_LABELS,
   STATUS_STYLES,
@@ -27,7 +27,7 @@ const LEAD_MONTHS = { TR: 3, CIN: 4 }
 
 export default function Dashboard() {
   const { projects, loading, error, refetch } = useProjects()
-  const { openProject } = useProjectModal()
+  const navigate = useNavigate()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
 
@@ -291,7 +291,7 @@ export default function Dashboard() {
                           {/* bar */}
                           <button
                             type="button"
-                            onClick={() => openProject(p.id)}
+                            onClick={() => navigate(`/projects/${p.id}`)}
                             title={`${p.title} · ${STAGE_LABELS[p.stage]} · ${TYPE_LABELS[p.type]} · ${p.assigned_name} · %${p.progress}`}
                             style={{ left: `calc(${leftPct}% + 6px)`, width: `calc(${widthPct}% - 12px)` }}
                             className={cn(
@@ -351,7 +351,7 @@ export default function Dashboard() {
                     <button
                       key={p.id}
                       type="button"
-                      onClick={() => openProject(p.id)}
+                      onClick={() => navigate(`/projects/${p.id}`)}
                       className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs transition-colors hover:border-primary/30 hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className={cn('h-1.5 w-1.5 rounded-full', meta.dot)} />

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useProjectModal } from '@/hooks/useProjectModal'
+import { useNavigate } from 'react-router-dom'
 import { Search, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react'
 
 import { useProjects } from '@/hooks/useProjects'
@@ -21,7 +21,7 @@ const GROUP_LABELS = { all: 'Tümü', yeni_proje: 'Yeni Proje', devam_eden: 'Dev
 
 export default function AllProjects() {
   const { projects, loading } = useProjects()
-  const { openProject } = useProjectModal()
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [groupFilter, setGroupFilter] = useState('all')
@@ -128,11 +128,11 @@ export default function AllProjects() {
                   tabIndex={0}
                   aria-label={`${p.title} – detayları aç`}
                   className="cursor-pointer transition-colors hover:border-primary/40 hover:bg-muted/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => openProject(p.id)}
+                  onClick={() => navigate(`/projects/${p.id}`)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault()
-                      openProject(p.id)
+                      navigate(`/projects/${p.id}`)
                     }
                   }}
                 >
@@ -178,11 +178,11 @@ export default function AllProjects() {
                       <tr
                         key={p.id}
                         tabIndex={0}
-                        onClick={() => openProject(p.id)}
+                        onClick={() => navigate(`/projects/${p.id}`)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault()
-                            openProject(p.id)
+                            navigate(`/projects/${p.id}`)
                           }
                         }}
                         className="cursor-pointer border-b border-border/60 transition-colors last:border-0 hover:bg-muted/40 focus:outline-none focus-visible:bg-muted/60"

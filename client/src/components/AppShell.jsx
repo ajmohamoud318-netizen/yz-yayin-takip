@@ -33,8 +33,6 @@ import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
 import { useProjects } from '@/hooks/useProjects'
-import { useProjectModal } from '@/hooks/useProjectModal'
-import ProjectDetail from '@/pages/ProjectDetail'
 import RouteFallback from '@/components/RouteFallback'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -66,7 +64,6 @@ export default function AppShell() {
   const { user, logout } = useAuth()
   const { projects } = useProjects()
   const navigate = useNavigate()
-  const { projectId: modalProjectId, openProject, closeProject } = useProjectModal()
   const [open, setOpen] = useState(false) // mobile drawer
   const [pendingOrders, setPendingOrders] = useState(0)    // team_leader: pending + matbaa_onay
   const [printerOrders, setPrinterOrders] = useState(0)   // printer: tasarimci_onay
@@ -175,21 +172,6 @@ export default function AppShell() {
     return () => document.documentElement.classList.remove('font-creative')
   }, [user?.role])
 
-  // Safety net: when the project detail Sheet closes, make sure Radix hasn't
-  // left `pointer-events: none` stuck on <body>. Overlapping Radix overlays
-  // (e.g. the notification dropdown handing off to this Sheet) can otherwise
-  // leave the page unclickable until a full refresh.
-  useEffect(() => {
-    if (!modalProjectId) {
-      const id = requestAnimationFrame(() => {
-        if (document.body.style.pointerEvents === 'none') {
-          document.body.style.pointerEvents = ''
-        }
-      })
-      return () => cancelAnimationFrame(id)
-    }
-  }, [modalProjectId])
-
   async function handleLogout() {
     await logout()
     navigate('/login', { replace: true })
@@ -222,7 +204,7 @@ export default function AppShell() {
           user={user}
           onLogout={handleLogout}
           onToggleCollapsed={toggleCollapsed}
-          onOpenProject={openProject}
+          onOpenProject={(id) => navigate(`/projects/${id}`)}
         />
       </aside>
 
@@ -241,7 +223,7 @@ export default function AppShell() {
               onLogout={handleLogout}
               onNavigate={() => setOpen(false)}
               onToggleCollapsed={() => setOpen(false)}
-              onOpenProject={openProject}
+              onOpenProject={(id) => navigate(`/projects/${id}`)}
             />
           </div>
         </SheetContent>
@@ -296,7 +278,7 @@ export default function AppShell() {
               projects={projects}
               user={user}
               orders={orders}
-              onOpenProject={openProject}
+              onOpenProject={(id) => navigate(`/projects/${id}`)}
             />
             <UserMenu user={user} onLogout={handleLogout} />
           </div>
@@ -320,14 +302,6 @@ export default function AppShell() {
       </div>
 
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
-      <Sheet open={!!modalProjectId} onOpenChange={(v) => !v && closeProject()}>
-        <SheetContent
-          side="right"
-          className="w-full overflow-y-auto p-4 sm:max-w-3xl 2xl:max-w-4xl 3xl:max-w-5xl"
-        >
-          {modalProjectId && <ProjectDetail projectId={modalProjectId} isModal />}
-        </SheetContent>
-      </Sheet>
     </div>
   )
 }

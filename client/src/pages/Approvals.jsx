@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useProjectModal } from '@/hooks/useProjectModal'
 import { ThumbsUp, ThumbsDown, Inbox, Send, ShoppingCart, Eye, PenLine } from 'lucide-react'
 
 import api, { ORDER_STEP_LABELS } from '@/api'
@@ -30,7 +29,6 @@ export default function Approvals({ tab = 'demo' }) {
   const [dialog, setDialog] = useState(null)
   const [demoForm, setDemoForm] = useState(null)
   const [ozalitForm, setOzalitForm] = useState(null)
-  const { openProject } = useProjectModal()
 
   // Sipariş queue (printer's sign-off step: tasarimci_onay → matbaa_onay)
   const [orders, setOrders] = useState([])
@@ -204,7 +202,7 @@ export default function Approvals({ tab = 'demo' }) {
                       <Send className="h-4 w-4" />
                       {sub === 'demo' ? "Demo'yu Teslim Et" : 'Ozaliti Teslim Et'}
                     </Button>
-                    <Button size="sm" variant="ghost" className="w-full sm:flex-1" onClick={() => openProject(p.id)}>
+                    <Button size="sm" variant="ghost" className="w-full sm:flex-1" onClick={() => navigate(`/projects/${p.id}`)}>
                       Detay
                     </Button>
                   </>
@@ -215,7 +213,7 @@ export default function Approvals({ tab = 'demo' }) {
                     <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 sm:flex-1">
                       Tasarım tamamlanmadı — tasarımcı yeni demo gönderecek
                     </span>
-                    <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={() => openProject(p.id)}>
+                    <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={() => navigate(`/projects/${p.id}`)}>
                       Detay
                     </Button>
                   </>
@@ -258,7 +256,7 @@ export default function Approvals({ tab = 'demo' }) {
                         Reddet
                       </Button>
                     )}
-                    <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={() => openProject(p.id)}>
+                    <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={() => navigate(`/projects/${p.id}`)}>
                       Detay
                     </Button>
                   </>

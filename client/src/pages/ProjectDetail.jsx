@@ -145,9 +145,8 @@ function historyLabel(entry) {
   return 'İlerletildi'
 }
 
-export default function ProjectDetail({ projectId: propId, isModal = false }) {
-  const { id: paramId } = useParams()
-  const id = propId ?? paramId
+export default function ProjectDetail() {
+  const { id } = useParams()
 
   const { user } = useAuth()
   const celebrate = useDesignerCelebration()
@@ -513,16 +512,14 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
   return (
     <>
       <div className="space-y-6">
-        {!isModal && (
-          <div>
-            <Button asChild variant="ghost" size="sm" className="-ml-2 text-muted-foreground">
-              <Link to="/">
-                <ArrowLeft className="h-4 w-4" />
-                Panele dön
-              </Link>
-            </Button>
-          </div>
-        )}
+        <div>
+          <Button asChild variant="ghost" size="sm" className="-ml-2 text-muted-foreground">
+            <Link to="/">
+              <ArrowLeft className="h-4 w-4" />
+              Panele dön
+            </Link>
+          </Button>
+        </div>
 
         {/* Header */}
         <Card>

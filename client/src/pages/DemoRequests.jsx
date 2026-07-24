@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useProjectModal } from '@/hooks/useProjectModal'
+import { useNavigate } from 'react-router-dom'
 import { Send, Plus, Clock, FileText, RefreshCw, X, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -53,7 +53,7 @@ function whereLabel(stage) {
 export default function DemoRequests() {
   const { user } = useAuth()
   const { projects, loading, refetch } = useProjects()
-  const { openProject } = useProjectModal()
+  const navigate = useNavigate()
   const [demoOpen, setDemoOpen] = useState(false)
   const [demos, setDemos] = useState([])
   const [approvalDialog, setApprovalDialog] = useState(null) // { project, mode }
@@ -176,8 +176,8 @@ export default function DemoRequests() {
                         key={p.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => openProject(p.id)}
-                        onKeyDown={(e) => e.key === 'Enter' && openProject(p.id)}
+                        onClick={() => navigate(`/projects/${p.id}`)}
+                        onKeyDown={(e) => e.key === 'Enter' && navigate(`/projects/${p.id}`)}
                         className="flex cursor-pointer items-center gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm transition-colors hover:border-primary/30 hover:bg-muted/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', meta.dot)} />
@@ -234,7 +234,7 @@ export default function DemoRequests() {
                       <div key={p.id} className="rounded-xl border bg-card shadow-sm">
                         <button
                           type="button"
-                          onClick={() => openProject(p.id)}
+                          onClick={() => navigate(`/projects/${p.id}`)}
                           className="flex w-full items-center gap-3 p-4 text-left transition-colors hover:bg-muted/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-t-xl"
                         >
                           <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', meta.dot)} />
@@ -252,7 +252,7 @@ export default function DemoRequests() {
                               size="sm"
                               variant="ghost"
                               className="flex-1 text-xs"
-                              onClick={() => openProject(p.id)}
+                              onClick={() => navigate(`/projects/${p.id}`)}
                             >
                               Detay
                             </Button>

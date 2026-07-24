@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useProjectModal } from '@/hooks/useProjectModal'
+import { useNavigate } from 'react-router-dom'
 import { Search, ShoppingCart, Package, PenLine, Eye } from 'lucide-react'
 
 import api, { ORDER_STEP_LABELS } from '@/api'
@@ -24,7 +24,7 @@ const STAGE_GROUPS = {
 export default function MyProjects() {
   const { user } = useAuth()
   const { projects, loading } = useProjects()
-  const { openProject } = useProjectModal()
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [stageGroup, setStageGroup] = useState('all')
@@ -171,11 +171,11 @@ export default function MyProjects() {
                   tabIndex={0}
                   aria-label={`${p.title} – detayları aç`}
                   className="cursor-pointer transition-colors hover:border-primary/40 hover:bg-muted/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => openProject(p.id)}
+                  onClick={() => navigate(`/projects/${p.id}`)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault()
-                      openProject(p.id)
+                      navigate(`/projects/${p.id}`)
                     }
                   }}
                 >
@@ -217,11 +217,11 @@ export default function MyProjects() {
                       <tr
                         key={p.id}
                         tabIndex={0}
-                        onClick={() => openProject(p.id)}
+                        onClick={() => navigate(`/projects/${p.id}`)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault()
-                            openProject(p.id)
+                            navigate(`/projects/${p.id}`)
                           }
                         }}
                         aria-label={`${p.title} – detayları aç`}

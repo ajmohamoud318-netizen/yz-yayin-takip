@@ -2,7 +2,6 @@ import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 
 import { useAuth } from './hooks/useAuth.js'
-import { ProjectModalProvider } from './hooks/useProjectModal.jsx'
 import { TooltipProvider } from './components/ui/tooltip.jsx'
 import AppShell from './components/AppShell.jsx'
 // Above-the-fold routes stay eager; the rest are code-split.
@@ -61,7 +60,6 @@ export default function App() {
   return (
     <TooltipProvider delayDuration={150}>
       <CelebrationProvider>
-        <ProjectModalProvider>
           <NotificationSync />
           <Routes>
 
@@ -200,7 +198,6 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
 
             </Routes>
-          </ProjectModalProvider>
       </CelebrationProvider>
     </TooltipProvider>
   )

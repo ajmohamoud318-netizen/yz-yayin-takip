@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { useProjectModal } from '@/hooks/useProjectModal'
+import { useNavigate } from 'react-router-dom'
 import { FileText, Printer, CheckCircle2, Clock, Inbox, Eye, X } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -204,7 +204,7 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
 /* ------------------------------------------------------------------ */
 
 function DocumentCard({ project, form, attemptNo, docType, approved, printerName, onView }) {
-  const { openProject } = useProjectModal()
+  const navigate = useNavigate()
 
   function handlePrint() {
     printDoc({ project, form, attemptNo, kind: docType === 'demo' ? 'demo' : 'ozalit', printerName })
@@ -280,7 +280,7 @@ function DocumentCard({ project, form, attemptNo, docType, approved, printerName
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => openProject(project.id)}
+            onClick={() => navigate(`/projects/${project.id}`)}
             title="Projeye git"
           >
             Proje

@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Inbox } from 'lucide-react'
 
 import { useProjects } from '@/hooks/useProjects'
-import { useProjectModal } from '@/hooks/useProjectModal'
 import FilterChip from '@/components/FilterChip'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -22,7 +22,7 @@ const COLUMN_PASTELS = ['#E7DBF5', '#D7F0E4', '#FDE3D1', '#D6ECF8', '#F8DCE8', '
  */
 export default function Kanban() {
   const { projects, loading } = useProjects()
-  const { openProject } = useProjectModal()
+  const navigate = useNavigate()
   const [typeFilter, setTypeFilter] = useState('all')
 
   // Build columns: pick TR or CIN pipeline
@@ -74,7 +74,7 @@ export default function Kanban() {
                 stage={stage}
                 color={COLUMN_PASTELS[i % COLUMN_PASTELS.length]}
                 items={grouped[stage] ?? []}
-                onOpen={(p) => openProject(p.id)}
+                onOpen={(p) => navigate(`/projects/${p.id}`)}
               />
             ))}
           </div>
