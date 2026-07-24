@@ -557,12 +557,11 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
   })
 
   if (toMatbaa) {
-    // Re-delivery of the SAME demo/ozalit — the design is unchanged, the matbaa
-    // just delivers it again. Do NOT bump the attempt counter here; only a
-    // reject-to-designer (a genuine redesign) starts a new numbered attempt.
-    // Bumping on every matbaa bounce is what made the "Demo N" badge climb
-    // (e.g. reach "Demo 12") without any real new demo.
-    return { project: { ...base }, history }
+    // Re-delivery to the matbaa. The design is unchanged, so subtasks/progress
+    // are left untouched — but the attempt counter advances just like a
+    // reject-to-designer, so the re-delivered demo/ozalit carries its own
+    // number (matching the project timeline, which already counts it).
+    return { project: { ...base, ...counter }, history }
   }
 
   const selected = new Set(revizeIds ?? [])

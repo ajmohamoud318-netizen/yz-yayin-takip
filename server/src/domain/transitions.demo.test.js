@@ -29,16 +29,24 @@ function demoProject(overrides = {}) {
 }
 
 describe('reject-to-matbaa numbering', () => {
-  it('does NOT bump demo_attempt (same demo re-delivered)', () => {
+  it('bumps demo_attempt like a designer reject (new numbered attempt)', () => {
     const { project: next } = computeRejection(
       demoProject(), 'matbaa yeniden bassın', [], 'matbaa', ctx,
     )
     assert.equal(next.stage, 'demo_teslim')       // back to the matbaa
     assert.equal(next.reject_target, 'matbaa')
-    assert.equal(next.demo_attempt, 5)            // unchanged — not 6
+    assert.equal(next.demo_attempt, 6)            // bumped — same as designer
   })
 
-  it('reject-to-designer still bumps demo_attempt (genuine redesign)', () => {
+  it('leaves subtasks untouched on a matbaa reject (design unchanged)', () => {
+    const { project: next } = computeRejection(
+      demoProject(), 'matbaa yeniden bassın', [], 'matbaa', ctx,
+    )
+    // No subtask was flagged for revision — the design didn't change.
+    assert.ok(!(next.subtasks ?? []).some((s) => s.needs_revize))
+  })
+
+  it('reject-to-designer also bumps demo_attempt (genuine redesign)', () => {
     const { project: next } = computeRejection(
       demoProject(), 'tasarım değişsin', ['s1'], 'designer', ctx,
     )
