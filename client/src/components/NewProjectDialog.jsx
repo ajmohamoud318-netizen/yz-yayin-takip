@@ -7,6 +7,7 @@ import {
   inferSubtasksFromTemplate,
   listCloneableProducts,
   primeProductInfoCache,
+  renameComponentsToTitle,
   seedProjectFromTemplate,
 } from '@/data/productCatalog'
 import { Button } from '@/components/ui/button'
@@ -354,7 +355,13 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         // means the template "claims" the new project immediately and any
         // edits the leader makes in Ürün Bilgileri flow through.
         if (selectedTemplate) {
-          await seedProjectFromTemplate(created.id, selectedTemplate.components)
+          // Rebrand the copied parçalar to the new project's name (keeping each
+          // part's suffix), then save them onto the new project.
+          const renamed = renameComponentsToTitle(
+            selectedTemplate.components,
+            created.title || title.trim(),
+          )
+          await seedProjectFromTemplate(created.id, renamed)
         }
         toast.success(
           selectedTemplate

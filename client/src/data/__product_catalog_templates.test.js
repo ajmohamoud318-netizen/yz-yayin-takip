@@ -22,6 +22,7 @@ import {
   inferTitleFromTemplate,
   listOrphanTemplates,
   listCloneableProducts,
+  renameComponentsToTitle,
   seedProjectFromTemplate,
   getComponentRows,
   saveEditedComponents,
@@ -212,6 +213,33 @@ describe('listCloneableProducts', () => {
     const items = listCloneableProducts([])
     expect(items.length).toBeGreaterThan(0)
     expect(items.some((x) => x.origin === 'seed')).toBe(true)
+  })
+})
+
+describe('renameComponentsToTitle', () => {
+  it('keeps each part suffix, swapping the shared base for the new title', () => {
+    const src = [
+      { component: 'RAPİDOO AİLE (3-99 YAŞ) - KARTLAR', fields: [{ k: 'İŞİN ADI', v: 'RAPİDOO AİLE (3-99 YAŞ) - KARTLAR' }] },
+      { component: 'RAPİDOO AİLE (3-99 YAŞ) - KUTU', fields: [{ k: 'İŞİN ADI', v: 'RAPİDOO AİLE (3-99 YAŞ) - KUTU' }] },
+    ]
+    const out = renameComponentsToTitle(src, 'Minik Kaşif')
+    expect(out.map((c) => c.component)).toEqual(['MİNİK KAŞİF KARTLAR', 'MİNİK KAŞİF KUTU'])
+    // İŞİN ADI field follows the component name.
+    expect(out[0].fields[0]).toEqual({ k: 'İŞİN ADI', v: 'MİNİK KAŞİF KARTLAR' })
+  })
+
+  it('renames a single-parça product to just the title', () => {
+    const out = renameComponentsToTitle(
+      [{ component: '2-4 YAŞ SETİ', fields: [{ k: 'İŞİN ADI', v: '2-4 YAŞ SETİ' }] }],
+      'Yeni Set',
+    )
+    expect(out[0].component).toBe('YENİ SET')
+  })
+
+  it('does not mutate the source components', () => {
+    const src = [{ component: 'X KUTU', fields: [{ k: 'İŞİN ADI', v: 'X KUTU' }] }]
+    renameComponentsToTitle(src, 'Y')
+    expect(src[0].component).toBe('X KUTU')
   })
 })
 

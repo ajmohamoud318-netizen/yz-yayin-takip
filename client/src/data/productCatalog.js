@@ -431,6 +431,50 @@ export function listCloneableProducts(projects = []) {
   return items
 }
 
+/**
+ * Rebrand a cloned product's parçalar to a new project title, keeping each
+ * part's distinguishing suffix. It finds the words the parça names share (the
+ * product's base name — e.g. "RAPİDOO AİLE (3-99 YAŞ) -") and replaces just
+ * that with the new title, so:
+ *   "RAPİDOO AİLE (3-99 YAŞ) - KUTU"      → "<TITLE> KUTU"
+ *   "2-4 YAŞ … SETİ KİTAPLARI"            → "<TITLE> KİTAPLARI"
+ *   single-parça product                  → "<TITLE>"
+ * The İŞİN ADI field is updated to match. If the parçalar share no common base
+ * (unrelated names), they're left untouched rather than risk garbling them.
+ * Returns NEW objects — the source is never mutated.
+ */
+export function renameComponentsToTitle(components, newTitle) {
+  const title = String(newTitle ?? '').trim()
+  if (!title || !Array.isArray(components) || components.length === 0) return components
+  const upper = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
+  const wordLists = components.map((c) => String(c.component ?? '').trim().split(/\s+/).filter(Boolean))
+
+  // Longest run of leading words common to every parça name.
+  let common = wordLists[0] ? [...wordLists[0]] : []
+  for (let i = 1; i < wordLists.length; i++) {
+    const w = wordLists[i]
+    let k = 0
+    while (k < common.length && k < w.length && upper(common[k]) === upper(w[k])) k++
+    common = common.slice(0, k)
+  }
+  if (components.length > 1 && common.length === 0) return components
+
+  const titleUpper = upper(title)
+  return components.map((c, idx) => {
+    const words = wordLists[idx]
+    const suffixWords = components.length === 1 ? [] : words.slice(common.length)
+    while (suffixWords.length && /^[-–—]$/.test(suffixWords[0])) suffixWords.shift()
+    const newName = suffixWords.length ? `${titleUpper} ${upper(suffixWords.join(' '))}` : titleUpper
+    let sawIsinAdi = false
+    const fields = (c.fields ?? []).map((f) => {
+      if (upper(f.k) === 'İŞİN ADI') { sawIsinAdi = true; return { ...f, v: newName } }
+      return { ...f }
+    })
+    if (!sawIsinAdi) fields.unshift({ k: 'İŞİN ADI', v: newName })
+    return { ...c, component: newName, fields }
+  })
+}
+
 function buildTemplateItem(id, components, origin) {
   const first = components[0]
   const title = inferTitleFromTemplate(components, id)
