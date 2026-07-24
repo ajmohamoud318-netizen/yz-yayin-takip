@@ -22,7 +22,10 @@ export async function productInfoRoutes(fastify) {
   fastify.get('/product-info', async (request) => {
     await attachUser(request)
     const { rows } = await getPool().query(
-      'SELECT project_id, components, updated_by, updated_at FROM product_info ORDER BY updated_at DESC',
+      `SELECT pi.project_id, pi.components, pi.updated_by, u.name AS updated_by_name, pi.updated_at
+         FROM product_info pi
+         LEFT JOIN users u ON u.id = pi.updated_by
+        ORDER BY pi.updated_at DESC`,
     )
     return rows
   })
@@ -30,14 +33,17 @@ export async function productInfoRoutes(fastify) {
   fastify.get('/product-info/:projectId', async (request) => {
     await attachUser(request)
     const { rows } = await getPool().query(
-      'SELECT project_id, components, updated_by, updated_at FROM product_info WHERE project_id = $1',
+      `SELECT pi.project_id, pi.components, pi.updated_by, u.name AS updated_by_name, pi.updated_at
+         FROM product_info pi
+         LEFT JOIN users u ON u.id = pi.updated_by
+        WHERE pi.project_id = $1`,
       [request.params.projectId],
     )
     // Absence is normal (a project may simply have no spec yet) — return an
     // empty component list instead of 404 so the client can treat "no spec"
     // and "empty spec" uniformly.
     if (rows.length === 0) {
-      return { project_id: request.params.projectId, components: [], updated_at: null }
+      return { project_id: request.params.projectId, components: [], updated_by_name: null, updated_at: null }
     }
     return rows[0]
   })
@@ -64,6 +70,8 @@ export async function productInfoRoutes(fastify) {
        RETURNING project_id, components, updated_by, updated_at`,
       [projectId, JSON.stringify(components ?? []), request.user.id],
     )
-    return rows[0]
+    // The updater is the caller — echo their name so the client can show
+    // "last edited by …" without a second round-trip.
+    return { ...rows[0], updated_by_name: request.user.name ?? null }
   })
 }

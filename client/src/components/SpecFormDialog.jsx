@@ -15,7 +15,7 @@ import api from '@/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
-import { getComponentsForProject, getComponentRows, primeProductInfoCache } from '@/data/productCatalog'
+import { getComponentsForProject, getComponentRows, primeProductInfoCache, saveEditedComponents } from '@/data/productCatalog'
 import { buildAdetRows } from '@/data/orderAdet'
 
 /* ------------------------------------------------------------------ */
@@ -533,6 +533,34 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   function removeCustomRow(id) {
     setCustomRows((prev) => prev.filter((r) => r.id !== id))
   }
+
+  // ── Per-component (parça) spec editing ──────────────────────────────────────
+  // Each selected component carries its own auto-filled rows. Editing them here
+  // updates the component in place; on save these are merged back into Ürün
+  // Bilgileri (see saveEditedComponents in the save handlers below).
+  function updateComponentRow(compId, rowId, field, val) {
+    setSelectedComponents((prev) =>
+      prev.map((c) =>
+        c.id !== compId
+          ? c
+          : { ...c, rows: (c.rows ?? []).map((r) => (r.id === rowId ? { ...r, [field]: val } : r)) },
+      ),
+    )
+  }
+  function addComponentRow(compId) {
+    setSelectedComponents((prev) =>
+      prev.map((c) =>
+        c.id !== compId
+          ? c
+          : { ...c, rows: [...(c.rows ?? []), { id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, label: '', value: '' }] },
+      ),
+    )
+  }
+  function removeComponentRow(compId, rowId) {
+    setSelectedComponents((prev) =>
+      prev.map((c) => (c.id !== compId ? c : { ...c, rows: (c.rows ?? []).filter((r) => r.id !== rowId) })),
+    )
+  }
   function handleChange(e) {
     const { name, value } = e.target
     setForm((prev) => ({ ...prev, [name]: value }))
@@ -571,6 +599,15 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     }).catch(() => { /* localStorage still has it; don't block the flow */ })
   }
 
+  // Write any edits made in the side-by-side parça cards back to Ürün Bilgileri
+  // (the shared, server-side catalog) so a change made while requesting a demo
+  // updates the product spec everywhere — and records who changed it. No-op in
+  // read-only mode or for projects without a catalog.
+  async function persistCatalogEdits() {
+    if (readOnly || !catalogComponents.length || !selectedComponents?.length) return
+    try { await saveEditedComponents(project.id, selectedComponents) } catch { /* non-blocking */ }
+  }
+
   async function handleAdvance() {
     if (!project) return
     setBusy(true)
@@ -586,6 +623,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       saveForm(variant, project.id, payload, customRows, selectedComponents)
       saveSnapshot(variant, project.id, attemptNo, payload, customRows, selectedComponents)
       persistServerSnapshot(attemptNo, payload)
+      await persistCatalogEdits()
       const updated = await api.advanceProject(project.id)
       updateOne(updated)
       toast.success(variant.advanceToast(project))
@@ -604,6 +642,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       saveForm(variant, project.id, form, customRows, selectedComponents)
       saveSnapshot(variant, project.id, attemptNo, form, customRows, selectedComponents)
       persistServerSnapshot(attemptNo, form)
+      await persistCatalogEdits()
       const updated = await api.approveProject(project.id)
       updateOne(updated)
       toast.success('Onaylandı — proje üretime alındı.')
@@ -614,17 +653,21 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     } finally { setBusy(false) }
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!project) return
     saveForm(variant, project.id, form, customRows, selectedComponents)
     persistServerSnapshot(attemptNo, form)
+    await persistCatalogEdits()
     toast.success(variant.saveToast)
     onOpenChange(false)
   }
 
   function handlePrint() {
     if (!project) return
-    if (!readOnly) saveForm(variant, project.id, form, customRows, selectedComponents)
+    if (!readOnly) {
+      saveForm(variant, project.id, form, customRows, selectedComponents)
+      persistCatalogEdits()
+    }
     openMultiPrint({ form, customRows, project, attemptNo, kind: variant.kind, selectedComponents })
   }
 
@@ -712,50 +755,106 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             </div>
           )}
 
-          {/* read-only: show which components were originally selected */}
-          {hasCatalog && readOnly && selectedComponents.length > 0 && (
-            <div className="border-b bg-muted/20 px-4 py-2.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Bu denemede istenen parçalar
-              </p>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {/* Selected parçalar, auto-filled side by side (scrolls horizontally).
+              Edits here flow back to Ürün Bilgileri on save. When the project
+              has a catalog but nothing is selected, or has no catalog at all,
+              we fall back to the single İŞİN ADI + custom-rows sheet below. */}
+          {hasCatalog && selectedComponents.length > 0 ? (
+            <div className="border-b bg-muted/10 px-3 py-3">
+              <div className="flex gap-3 overflow-x-auto pb-1">
                 {selectedComponents.map((c) => (
-                  <span key={c.id} className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ring-1 ring-border">
-                    <CheckSquare className="h-3 w-3 text-primary" /> {c.component}
-                  </span>
+                  <div key={c.id} className="flex w-72 shrink-0 flex-col overflow-hidden rounded-lg border bg-white">
+                    <div className="border-b bg-muted/30 px-3 py-2 text-center text-[11px] font-bold uppercase tracking-wide text-foreground">
+                      {c.component}
+                    </div>
+                    <div className="px-2 py-1">
+                      {(c.rows ?? []).length === 0 && readOnly && (
+                        <p className="px-1 py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
+                      )}
+                      {(c.rows ?? []).map((r) =>
+                        readOnly ? (
+                          <div key={r.id} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1.3fr)] items-center gap-1 border-b py-1 last:border-b-0">
+                            <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{r.label}</span>
+                            <span className="text-xs font-bold text-muted-foreground">:</span>
+                            <span className="min-w-0 text-[12px]">{r.value}</span>
+                          </div>
+                        ) : (
+                          <div key={r.id} className="flex items-center gap-1.5 border-b py-1 last:border-b-0">
+                            <input
+                              value={r.label}
+                              onChange={(e) => updateComponentRow(c.id, r.id, 'label', e.target.value)}
+                              placeholder="ALAN"
+                              className="w-24 shrink-0 bg-transparent text-[11px] font-semibold uppercase tracking-wide outline-none placeholder:text-muted-foreground/50"
+                            />
+                            <span className="text-xs font-bold text-muted-foreground">:</span>
+                            <input
+                              value={r.value}
+                              onChange={(e) => updateComponentRow(c.id, r.id, 'value', e.target.value)}
+                              placeholder="Değer"
+                              className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/50"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeComponentRow(c.id, r.id)}
+                              aria-label="Satırı sil"
+                              className="shrink-0 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ),
+                      )}
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          onClick={() => addComponentRow(c.id)}
+                          className="mt-1 inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
+                        >
+                          <Plus className="h-3 w-3" /> Satır Ekle
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
+              {!readOnly && (
+                <p className="mt-2 px-1 text-[10px] text-muted-foreground">
+                  Buradaki düzenlemeler Ürün Bilgileri'ne de kaydedilir.
+                </p>
+              )}
             </div>
-          )}
+          ) : (
+            <>
+              {/* İŞİN ADI + user-added rows (no catalog / nothing selected) */}
+              <div className="border-b px-4 py-1">
+                <Row label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly={systemRowReadOnly} />
+                {customRows.map((r) => (
+                  <CustomRow
+                    key={r.id}
+                    id={r.id}
+                    label={r.label}
+                    value={r.value}
+                    onChange={updateCustomRow}
+                    onRemove={removeCustomRow}
+                    readOnly={readOnly}
+                  />
+                ))}
+              </div>
 
-          {/* İŞİN ADI + user-added rows */}
-          <div className="border-b px-4 py-1">
-            <Row label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly={systemRowReadOnly} />
-            {customRows.map((r) => (
-              <CustomRow
-                key={r.id}
-                id={r.id}
-                label={r.label}
-                value={r.value}
-                onChange={updateCustomRow}
-                onRemove={removeCustomRow}
-                readOnly={readOnly}
-              />
-            ))}
-          </div>
-
-          {/* + Satır Ekle — hidden in read-only mode */}
-          {!readOnly && (
-            <div className="border-b px-4 py-2.5">
-              <button
-                type="button"
-                onClick={addCustomRow}
-                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-              >
-                <Plus className="h-4 w-4" />
-                Satır Ekle
-              </button>
-            </div>
+              {/* + Satır Ekle — hidden in read-only mode */}
+              {!readOnly && (
+                <div className="border-b px-4 py-2.5">
+                  <button
+                    type="button"
+                    onClick={addCustomRow}
+                    className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Satır Ekle
+                  </button>
+                </div>
+              )}
+            </>
           )}
 
           {/*

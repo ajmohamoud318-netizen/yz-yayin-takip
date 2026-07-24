@@ -127,6 +127,10 @@ export function getComponentRows(component) {
   let i = 0
   for (const f of component.fields ?? []) {
     if (!f || !f.v) continue
+    // İŞİN ADI is the component's title — the caller renders it as the header,
+    // so it must not also appear as a spec row (that duplicated it on the
+    // printed sheet and in the on-screen cards).
+    if (String(f.k ?? '').toLocaleUpperCase('tr-TR') === 'İŞİN ADI') continue
     rows.push({
       id: `seed-${i++}-${Math.random().toString(36).slice(2, 8)}`,
       label: f.k,
@@ -134,6 +138,38 @@ export function getComponentRows(component) {
     })
   }
   return rows
+}
+
+/**
+ * Merge edited components (from the Demo/Ozalit form's side-by-side cards)
+ * back into the project's full spec and persist it, so an edit made while
+ * requesting a demo also updates Ürün Bilgileri (and records who changed it).
+ *
+ * `edited` is a subset in the form's shape: [{ component, rows: [{label,value}] }].
+ * We match by component name, rebuild that component's `fields` (İŞİN ADI first,
+ * then the edited rows), and leave every other component untouched. Components
+ * the user never selected are preserved as-is.
+ */
+export async function saveEditedComponents(projectId, edited) {
+  if (!projectId || !Array.isArray(edited) || edited.length === 0) return getComponentsForProject(projectId)
+  const full = clone(getComponentsForProject(projectId))
+  const byName = new Map(full.map((c, idx) => [c.component, idx]))
+  for (const e of edited) {
+    const name = e.component
+    if (!name) continue
+    const fields = [
+      { k: 'İŞİN ADI', v: name },
+      ...(e.rows ?? [])
+        .filter((r) => (r.label ?? '').trim() || (r.value ?? '').trim())
+        .map((r) => ({ k: r.label ?? '', v: r.value ?? '' })),
+    ]
+    if (byName.has(name)) {
+      full[byName.get(name)] = { ...full[byName.get(name)], component: name, fields }
+    } else {
+      full.push({ component: name, date: '', fields })
+    }
+  }
+  return saveComponentsForProject(projectId, full)
 }
 
 /* ============================================================================

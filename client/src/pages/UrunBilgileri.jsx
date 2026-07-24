@@ -242,9 +242,13 @@ function NewProductDialog({ open, onClose, projects, onCreate }) {
 }
 
 /* ---------- product card ---------- */
-function ProductCard({ project, comps, open, onToggle, canEdit, editing, draft, onStartEdit, onCancel, onSave, onDraftComp, onDeleteProduct, onAddComponent, index }) {
+function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, draft, onStartEdit, onCancel, onSave, onDraftComp, onDeleteProduct, onAddComponent, index }) {
   const list = editing ? draft : comps
   const multi = list.length > 1
+  const updatedByName = meta?.updated_by_name
+  const updatedAtStr = meta?.updated_at
+    ? new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(meta.updated_at))
+    : null
 
   return (
     <div
@@ -269,6 +273,12 @@ function ProductCard({ project, comps, open, onToggle, canEdit, editing, draft, 
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold leading-tight text-foreground">{project.title}</p>
+          {updatedByName && (
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              Son güncelleyen: <span className="font-medium text-foreground/80">{updatedByName}</span>
+              {updatedAtStr ? ` · ${updatedAtStr}` : ''}
+            </p>
+          )}
         </div>
 
         {multi && (
@@ -382,6 +392,8 @@ export default function UrunBilgileri() {
   const [search, setSearch] = useState('')
   const [openIds, setOpenIds] = useState(() => new Set())
   const [overrides, setOverrides] = useState(loadOverrides)
+  // project_id -> { updated_by_name, updated_at } from the server.
+  const [meta, setMeta] = useState({})
   const [editingId, setEditingId] = useState(null)
   const [draft, setDraft] = useState(null)
   const [newProductOpen, setNewProductOpen] = useState(false)
@@ -396,10 +408,14 @@ export default function UrunBilgileri() {
         if (cancelled || !Array.isArray(rows)) return
         primeProductInfoCache(rows)
         const fromServer = {}
+        const metaMap = {}
         for (const r of rows) {
-          if (r?.project_id) fromServer[r.project_id] = Array.isArray(r.components) ? r.components : []
+          if (!r?.project_id) continue
+          fromServer[r.project_id] = Array.isArray(r.components) ? r.components : []
+          metaMap[r.project_id] = { updated_by_name: r.updated_by_name ?? null, updated_at: r.updated_at ?? null }
         }
         setOverrides((prev) => ({ ...prev, ...fromServer }))
+        setMeta((prev) => ({ ...prev, ...metaMap }))
       })
       .catch(() => {})
     return () => { cancelled = true }
@@ -431,6 +447,7 @@ export default function UrunBilgileri() {
       return
     }
     setOverrides((prev) => ({ ...prev, [editingId]: cleaned }))
+    setMeta((prev) => ({ ...prev, [editingId]: { updated_by_name: user?.name ?? null, updated_at: new Date().toISOString() } }))
     saveComponentsForProject(editingId, cleaned)
     setEditingId(null)
     setDraft(null)
@@ -471,6 +488,7 @@ export default function UrunBilgileri() {
       ],
     }
     setOverrides((prev) => ({ ...prev, [projectId]: [newComp] }))
+    setMeta((prev) => ({ ...prev, [projectId]: { updated_by_name: user?.name ?? null, updated_at: new Date().toISOString() } }))
     saveComponentsForProject(projectId, [newComp])
     setNewProductOpen(false)
     setOpenIds((prev) => new Set(prev).add(projectId))
@@ -634,6 +652,7 @@ export default function UrunBilgileri() {
               <ProductCard
                 project={project}
                 comps={comps}
+                meta={meta[project.id]}
                 index={idx}
                 open={openIds.has(project.id)}
                 onToggle={() => toggle(project.id)}
