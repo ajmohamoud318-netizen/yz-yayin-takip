@@ -784,144 +784,201 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
         {/* Body grid */}
         <div className="grid gap-4 lg:grid-cols-3">
           <Card className="lg:col-span-2">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle>Alt Görevler</CardTitle>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-muted-foreground">
-                  {(project.subtasks ?? []).filter((s) => subtaskChecked(s)).length} / {(project.subtasks ?? []).length} tamamlandı
-                </span>
-                {canEditSubtasks && hasSubtaskChanges && (
-                  <Button size="sm" onClick={saveSubtaskChanges} disabled={saving}>
-                    <Save className="h-4 w-4" />
-                    {saving ? 'Kaydediliyor…' : 'Değişiklikleri Kaydet'}
-                  </Button>
-                )}
-              </div>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-4 w-4" />
+                Geçmiş
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 pt-0">
-              {(project.subtasks ?? []).length === 0 ? (
-                <p className="rounded-md border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">
-                  Bu proje için alt görev tanımlanmamış.
+            <CardContent className="pt-0">
+              {(project.history ?? []).length === 0 && (
+                <p className="rounded-md border border-dashed bg-muted/30 p-4 text-center text-xs text-muted-foreground">
+                  Henüz bir aşama geçişi yok.
                 </p>
-              ) : (
-                <>
-                  {/* During a revision cycle, the leader-flagged subtasks lead the list. */}
-                  {inRevision && (
-                    <p className="pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-600">
-                      {project.last_reject_type === 'ozalit' ? 'Ozalit Revize Görevleri' : 'Demo Revize Görevleri'}
-                    </p>
-                  )}
+              )}
+              <ol className="relative">
+                {historyWithAttempts.map((h, i) => {
+                  // Pick the icon by `event` first (fine-grained) so the
+                  // timeline shows distinct dots for "subtask done" vs
+                  // "ozalit form" vs "handover confirmed", then fall back
+                  // to the coarse `action` for legacy rows.
+                  const meta = (h.event && EVENT_META[h.event])
+                    || ACTION_META[h.action]
+                    || ACTION_META.advance
+                  const Icon = meta.icon
+                  const isLast = i === historyWithAttempts.length - 1
 
-                  {(project.subtasks ?? [])
-                    .filter((s) => s.kind !== 'revize')
-                    .map((s) => {
-                      const canEdit = canEditSubtask(s)
-                      const flagged = inRevision && s.needs_revize
-                      const lockedDone = inRevision && !s.needs_revize && s.is_done
+                  // NOTE: the demo_onay / ozalit_onay branches are scoped to
+                  // approve/reject actions. Subtask changes are logged with
+                  // from_stage = the project's current stage (action:'system',
+                  // event:'subtask_*'), so completing a subtask while the
+                  // project sits at demo_onay produced a row with
+                  // from_stage='demo_onay' that wrongly got a "Demo Formu"
+                  // button. Only real demo/ozalit lifecycle rows should.
+                  const isDemoEntry =
+                    (h.action === 'advance' && (h.to_stage === 'demo_teslim' || h.to_stage === 'cin_demo_teslim')) ||
+                    (h.action === 'advance' && (h.from_stage === 'demo_teslim' || h.from_stage === 'cin_demo_teslim')) ||
+                    ((h.action === 'approve' || h.action === 'reject') && (h.from_stage === 'demo_onay' || h.from_stage === 'cin_demo_onay')) ||
+                    h.event === 'demo_form'
 
-                      if (s.kind === 'pages') {
-                        return (
-                          <PageSubtaskRow
-                            key={s.id}
-                            sub={s}
-                            canEdit={canEdit}
-                            flagged={flagged}
-                            lockedDone={lockedDone}
-                            busy={toggling === s.id}
-                            revizing={toggling === s.id}
-                            onRevize={() => handleRevize(s)}
-                            onAdd={(delta) => addPages(s, delta)}
-                          />
-                        )
-                      }
+                  const isOzalitEntry = (
+                    (h.action === 'advance' && h.to_stage === 'ozalit_teslim') ||
+                    (h.action === 'advance' && h.from_stage === 'ozalit_teslim') ||
+                    ((h.action === 'approve' || h.action === 'reject') && h.from_stage === 'ozalit_onay') ||
+                    h.event === 'ozalit_form'
+                  ) && project.type === 'TR'
 
-                      const updates = s.updates ?? []
+                  // Background ring color tracks the icon color from the
+                  // meta table; if we don't have a meta entry we fall
+                  // back to the previous coarse logic.
+                  const iconBg = (() => {
+                    if (h.event === 'subtask_done' || h.event === 'handover_confirm') {
+                      return 'bg-emerald-100 ring-emerald-200'
+                    }
+                    if (h.event === 'subtask_undone' || h.event === 'subtask_revize' || h.event === 'handover_request') {
+                      return 'bg-amber-100 ring-amber-200'
+                    }
+                    if (h.event === 'subtask_progress' || h.event === 'demo_form' || h.event === 'ozalit_form') {
+                      return 'bg-indigo-100 ring-indigo-200'
+                    }
+                    if (h.event === 'order_reject' || h.action === 'reject') {
+                      return 'bg-red-100 ring-red-200'
+                    }
+                    if (h.event === 'order_request' || h.event === 'order_transfer' || h.event === 'order_advance' || h.event === 'order_final' || h.action === 'order') {
+                      return 'bg-violet-100 ring-violet-200'
+                    }
+                    if (h.event === 'project_edit' || h.event === 'subtask_note' || h.event === 'subtask_list_update' || h.action === 'system') {
+                      return 'bg-slate-100 ring-slate-200'
+                    }
+                    return h.action === 'approve'
+                      ? 'bg-emerald-100 ring-emerald-200'
+                      : h.action === 'reject'
+                        ? 'bg-red-100 ring-red-200'
+                        : h.action === 'create'
+                          ? 'bg-primary/10 ring-primary/20'
+                          : h.action === 'order'
+                            ? 'bg-violet-100 ring-violet-200'
+                            : 'bg-muted ring-border'
+                  })()
 
-                      return (
-                        <div key={s.id} className="space-y-1.5">
-                        <label
-                          key={s.id}
-                          className={cn(
-                            'flex cursor-pointer items-center gap-3 rounded-lg border bg-background px-3 py-2.5 text-sm transition',
-                            flagged
-                              ? subtaskChecked(s)
-                                ? 'border-emerald-200 bg-emerald-50/40'
-                                : 'border-amber-200 bg-amber-50/40 hover:border-amber-300'
-                              : subtaskChecked(s)
-                                ? 'border-emerald-200 bg-emerald-50/40'
-                                : 'hover:border-primary/30',
-                            lockedDone && 'opacity-60',
-                            localDone[s.id] !== undefined && localDone[s.id] !== s.is_done &&
-                              (flagged ? 'ring-2 ring-amber-300' : 'ring-2 ring-primary/30'),
-                            !canEdit && 'cursor-default',
-                          )}
-                        >
-                          <Checkbox
-                            checked={subtaskChecked(s)}
-                            onCheckedChange={() => canEdit && !flagged && toggleSubtask(s)}
-                            disabled={!canEdit || flagged}
-                          />
-                          <span className={cn('flex-1', subtaskChecked(s) && 'text-muted-foreground line-through')}>
-                            {s.title}
+                  return (
+                    <li key={h.id ?? i} className="relative flex gap-3 pb-5 last:pb-0">
+                      {/* Vertical connector line */}
+                      {!isLast && (
+                        <span className="absolute left-[11px] top-6 bottom-0 w-px bg-border" />
+                      )}
+
+                      {/* Icon dot */}
+                      <span
+                        className={cn(
+                          'relative z-10 mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full ring-2',
+                          iconBg,
+                          meta.color,
+                        )}
+                      >
+                        <Icon className="h-3 w-3" />
+                      </span>
+
+                      {/* Content */}
+                      <div className="min-w-0 flex-1 pt-0.5">
+                        <p className="text-sm font-semibold leading-snug">
+                          {(
+                            h.action === 'order'
+                            || h.event === 'order_request'
+                            || h.event === 'order_transfer'
+                            || h.event === 'order_advance'
+                            || h.event === 'order_final'
+                            || h.event === 'order_reject'
+                          )
+                            ? `Sipariş — ${h.order_step_label ?? ''}`
+                            : historyLabel(h)}
+                        </p>
+
+                        {h.note && h.action !== 'order' && (
+                          <p className="mt-0.5 text-xs text-muted-foreground">{h.note}</p>
+                        )}
+
+                        {h.reason && (
+                          <div className="mt-1.5 flex items-start gap-1.5 rounded-md border border-destructive/20 bg-destructive/5 px-2.5 py-2">
+                            <ThumbsDown className="mt-0.5 h-3 w-3 shrink-0 text-destructive/70" />
+                            <p className="text-xs leading-relaxed text-destructive">
+                              {h.reason}
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                            <UserIcon className="h-2.5 w-2.5" />
+                            {/* The backend now LEFT JOINs users on done_by
+                                so this is populated for every row written
+                                by a route handler. Older rows (legacy
+                                data, before the JOIN was added) can have
+                                `done_by_name = null` — show 'Bilinmeyen'
+                                instead of rendering an empty label. */}
+                            {h.done_by_name ?? 'Bilinmeyen'}
                           </span>
-                          {flagged && canEdit && (
+                          <span className="text-[11px] text-muted-foreground/60">·</span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {formatDateTr(h.created_at, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          {isDemoEntry && (
                             <button
                               type="button"
-                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRevize(s) }}
-                              disabled={toggling === s.id}
-                              className="inline-flex items-center gap-1 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
+                              onClick={() => {
+                                setDemoFormAttempt(h.demoAttemptAt)
+                                setDemoFormMode('history')
+                                setDemoFormOpen(true)
+                              }}
+                              className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
                             >
-                              {toggling === s.id ? 'Kaydediliyor…' : 'Revize Et'}
+                              <FileText className="h-2.5 w-2.5" />
+                              Demo Formu
                             </button>
                           )}
-                          {flagged && !canEdit && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                              Revize bekliyor
-                            </span>
-                          )}
-                          {lockedDone && (
-                            <span className="text-[11px] font-medium text-muted-foreground">
-                              Revize gerekmiyor
-                            </span>
-                          )}
-                          {s.assigned_to && (
-                            <span
-                              className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground"
-                              title={`Bu alt görevin tasarımcısı: ${s.assigned_name ?? s.assigned_to}`}
+                          {isOzalitEntry && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOzalitFormAttempt(h.ozalitAttemptAt)
+                                setOzalitFormMode('history')
+                                setOzalitFormOpen(true)
+                              }}
+                              className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
                             >
-                              <UserIcon className="h-2.5 w-2.5" />
-                              {s.assigned_name ?? initials(s.assigned_to)}
-                            </span>
+                              <FileText className="h-2.5 w-2.5" />
+                              Ozalit Formu
+                            </button>
                           )}
-                          {localDone[s.id] !== undefined && localDone[s.id] !== s.is_done && (
-                            <span className={cn('text-[11px] font-medium', flagged ? 'text-amber-600' : 'text-primary')}>
-                              kaydedilmedi
-                            </span>
-                          )}
-                          {!flagged && !lockedDone && subtaskChecked(s) && s.is_done && s.done_at && localDone[s.id] === undefined && (
-                            <span className="text-[11px] text-muted-foreground">{formatDateTr(s.done_at)}</span>
-                          )}
-                        </label>
+                          {(
+                            h.action === 'order'
+                            || h.event === 'order_request'
+                            || h.event === 'order_transfer'
+                            || h.event === 'order_advance'
+                            || h.event === 'order_final'
+                            || h.event === 'order_reject'
+                          ) && projectOrders.length > 0 && (() => {
+                            const ord = h.order_id
+                              ? projectOrders.find((o) => o.id === h.order_id)
+                              : projectOrders[0]
+                            if (!ord) return null
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setOrderFormViewer({ order: ord, step: h.order_step })}
+                                className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-violet-400/50 hover:bg-violet-50 hover:text-violet-700"
+                              >
+                                <ShoppingCart className="h-2.5 w-2.5" />
+                                Sipariş Formu
+                              </button>
+                            )
+                          })()}
                         </div>
-                      )
-                    })}
-                </>
-              )}
-              {!canEditSubtasks && (
-                <p className="pt-2 text-[11px] text-muted-foreground">
-                  {isLeader
-                    ? 'Alt görevleri sadece atanmış tasarımcı işaretleyebilir.'
-                    : isAssigned
-                      ? 'Bu aşamada alt görev düzenlenemez.'
-                      : 'Bu projeye atanmadığınız için alt görevleri düzenleyemezsiniz.'}
-                </p>
-              )}
-              {canEditSubtasks && (project.subtasks ?? []).some((s) => s.assigned_to && s.assigned_to !== user?.id) && (
-                <p className="pt-1 text-[11px] text-muted-foreground">
-                  Size atanmayan alt görevler (
-                  <UserIcon className="inline h-2.5 w-2.5" /> ikonlu) düzenlenemez.
-                </p>
-              )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ol>
             </CardContent>
           </Card>
 
@@ -974,201 +1031,144 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <History className="h-4 w-4" />
-                  Geçmiş
-                </CardTitle>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                <CardTitle>Alt Görevler</CardTitle>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">
+                    {(project.subtasks ?? []).filter((s) => subtaskChecked(s)).length} / {(project.subtasks ?? []).length} tamamlandı
+                  </span>
+                  {canEditSubtasks && hasSubtaskChanges && (
+                    <Button size="sm" onClick={saveSubtaskChanges} disabled={saving}>
+                      <Save className="h-4 w-4" />
+                      {saving ? 'Kaydediliyor…' : 'Değişiklikleri Kaydet'}
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
-              <CardContent className="pt-0">
-                {(project.history ?? []).length === 0 && (
-                  <p className="rounded-md border border-dashed bg-muted/30 p-4 text-center text-xs text-muted-foreground">
-                    Henüz bir aşama geçişi yok.
+              <CardContent className="space-y-2 pt-0">
+                {(project.subtasks ?? []).length === 0 ? (
+                  <p className="rounded-md border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">
+                    Bu proje için alt görev tanımlanmamış.
+                  </p>
+                ) : (
+                  <>
+                    {/* During a revision cycle, the leader-flagged subtasks lead the list. */}
+                    {inRevision && (
+                      <p className="pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-600">
+                        {project.last_reject_type === 'ozalit' ? 'Ozalit Revize Görevleri' : 'Demo Revize Görevleri'}
+                      </p>
+                    )}
+
+                    {(project.subtasks ?? [])
+                      .filter((s) => s.kind !== 'revize')
+                      .map((s) => {
+                        const canEdit = canEditSubtask(s)
+                        const flagged = inRevision && s.needs_revize
+                        const lockedDone = inRevision && !s.needs_revize && s.is_done
+
+                        if (s.kind === 'pages') {
+                          return (
+                            <PageSubtaskRow
+                              key={s.id}
+                              sub={s}
+                              canEdit={canEdit}
+                              flagged={flagged}
+                              lockedDone={lockedDone}
+                              busy={toggling === s.id}
+                              revizing={toggling === s.id}
+                              onRevize={() => handleRevize(s)}
+                              onAdd={(delta) => addPages(s, delta)}
+                            />
+                          )
+                        }
+
+                        const updates = s.updates ?? []
+
+                        return (
+                          <div key={s.id} className="space-y-1.5">
+                          <label
+                            key={s.id}
+                            className={cn(
+                              'flex cursor-pointer items-center gap-3 rounded-lg border bg-background px-3 py-2.5 text-sm transition',
+                              flagged
+                                ? subtaskChecked(s)
+                                  ? 'border-emerald-200 bg-emerald-50/40'
+                                  : 'border-amber-200 bg-amber-50/40 hover:border-amber-300'
+                                : subtaskChecked(s)
+                                  ? 'border-emerald-200 bg-emerald-50/40'
+                                  : 'hover:border-primary/30',
+                              lockedDone && 'opacity-60',
+                              localDone[s.id] !== undefined && localDone[s.id] !== s.is_done &&
+                                (flagged ? 'ring-2 ring-amber-300' : 'ring-2 ring-primary/30'),
+                              !canEdit && 'cursor-default',
+                            )}
+                          >
+                            <Checkbox
+                              checked={subtaskChecked(s)}
+                              onCheckedChange={() => canEdit && !flagged && toggleSubtask(s)}
+                              disabled={!canEdit || flagged}
+                            />
+                            <span className={cn('flex-1', subtaskChecked(s) && 'text-muted-foreground line-through')}>
+                              {s.title}
+                            </span>
+                            {flagged && canEdit && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRevize(s) }}
+                                disabled={toggling === s.id}
+                                className="inline-flex items-center gap-1 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
+                              >
+                                {toggling === s.id ? 'Kaydediliyor…' : 'Revize Et'}
+                              </button>
+                            )}
+                            {flagged && !canEdit && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                                Revize bekliyor
+                              </span>
+                            )}
+                            {lockedDone && (
+                              <span className="text-[11px] font-medium text-muted-foreground">
+                                Revize gerekmiyor
+                              </span>
+                            )}
+                            {s.assigned_to && (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground"
+                                title={`Bu alt görevin tasarımcısı: ${s.assigned_name ?? s.assigned_to}`}
+                              >
+                                <UserIcon className="h-2.5 w-2.5" />
+                                {s.assigned_name ?? initials(s.assigned_to)}
+                              </span>
+                            )}
+                            {localDone[s.id] !== undefined && localDone[s.id] !== s.is_done && (
+                              <span className={cn('text-[11px] font-medium', flagged ? 'text-amber-600' : 'text-primary')}>
+                                kaydedilmedi
+                              </span>
+                            )}
+                            {!flagged && !lockedDone && subtaskChecked(s) && s.is_done && s.done_at && localDone[s.id] === undefined && (
+                              <span className="text-[11px] text-muted-foreground">{formatDateTr(s.done_at)}</span>
+                            )}
+                          </label>
+                          </div>
+                        )
+                      })}
+                  </>
+                )}
+                {!canEditSubtasks && (
+                  <p className="pt-2 text-[11px] text-muted-foreground">
+                    {isLeader
+                      ? 'Alt görevleri sadece atanmış tasarımcı işaretleyebilir.'
+                      : isAssigned
+                        ? 'Bu aşamada alt görev düzenlenemez.'
+                        : 'Bu projeye atanmadığınız için alt görevleri düzenleyemezsiniz.'}
                   </p>
                 )}
-                <ol className="relative">
-                  {historyWithAttempts.map((h, i) => {
-                    // Pick the icon by `event` first (fine-grained) so the
-                    // timeline shows distinct dots for "subtask done" vs
-                    // "ozalit form" vs "handover confirmed", then fall back
-                    // to the coarse `action` for legacy rows.
-                    const meta = (h.event && EVENT_META[h.event])
-                      || ACTION_META[h.action]
-                      || ACTION_META.advance
-                    const Icon = meta.icon
-                    const isLast = i === historyWithAttempts.length - 1
-
-                    // NOTE: the demo_onay / ozalit_onay branches are scoped to
-                    // approve/reject actions. Subtask changes are logged with
-                    // from_stage = the project's current stage (action:'system',
-                    // event:'subtask_*'), so completing a subtask while the
-                    // project sits at demo_onay produced a row with
-                    // from_stage='demo_onay' that wrongly got a "Demo Formu"
-                    // button. Only real demo/ozalit lifecycle rows should.
-                    const isDemoEntry =
-                      (h.action === 'advance' && (h.to_stage === 'demo_teslim' || h.to_stage === 'cin_demo_teslim')) ||
-                      (h.action === 'advance' && (h.from_stage === 'demo_teslim' || h.from_stage === 'cin_demo_teslim')) ||
-                      ((h.action === 'approve' || h.action === 'reject') && (h.from_stage === 'demo_onay' || h.from_stage === 'cin_demo_onay')) ||
-                      h.event === 'demo_form'
-
-                    const isOzalitEntry = (
-                      (h.action === 'advance' && h.to_stage === 'ozalit_teslim') ||
-                      (h.action === 'advance' && h.from_stage === 'ozalit_teslim') ||
-                      ((h.action === 'approve' || h.action === 'reject') && h.from_stage === 'ozalit_onay') ||
-                      h.event === 'ozalit_form'
-                    ) && project.type === 'TR'
-
-                    // Background ring color tracks the icon color from the
-                    // meta table; if we don't have a meta entry we fall
-                    // back to the previous coarse logic.
-                    const iconBg = (() => {
-                      if (h.event === 'subtask_done' || h.event === 'handover_confirm') {
-                        return 'bg-emerald-100 ring-emerald-200'
-                      }
-                      if (h.event === 'subtask_undone' || h.event === 'subtask_revize' || h.event === 'handover_request') {
-                        return 'bg-amber-100 ring-amber-200'
-                      }
-                      if (h.event === 'subtask_progress' || h.event === 'demo_form' || h.event === 'ozalit_form') {
-                        return 'bg-indigo-100 ring-indigo-200'
-                      }
-                      if (h.event === 'order_reject' || h.action === 'reject') {
-                        return 'bg-red-100 ring-red-200'
-                      }
-                      if (h.event === 'order_request' || h.event === 'order_transfer' || h.event === 'order_advance' || h.event === 'order_final' || h.action === 'order') {
-                        return 'bg-violet-100 ring-violet-200'
-                      }
-                      if (h.event === 'project_edit' || h.event === 'subtask_note' || h.event === 'subtask_list_update' || h.action === 'system') {
-                        return 'bg-slate-100 ring-slate-200'
-                      }
-                      return h.action === 'approve'
-                        ? 'bg-emerald-100 ring-emerald-200'
-                        : h.action === 'reject'
-                          ? 'bg-red-100 ring-red-200'
-                          : h.action === 'create'
-                            ? 'bg-primary/10 ring-primary/20'
-                            : h.action === 'order'
-                              ? 'bg-violet-100 ring-violet-200'
-                              : 'bg-muted ring-border'
-                    })()
-
-                    return (
-                      <li key={h.id ?? i} className="relative flex gap-3 pb-5 last:pb-0">
-                        {/* Vertical connector line */}
-                        {!isLast && (
-                          <span className="absolute left-[11px] top-6 bottom-0 w-px bg-border" />
-                        )}
-
-                        {/* Icon dot */}
-                        <span
-                          className={cn(
-                            'relative z-10 mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full ring-2',
-                            iconBg,
-                            meta.color,
-                          )}
-                        >
-                          <Icon className="h-3 w-3" />
-                        </span>
-
-                        {/* Content */}
-                        <div className="min-w-0 flex-1 pt-0.5">
-                          <p className="text-sm font-semibold leading-snug">
-                            {(
-                              h.action === 'order'
-                              || h.event === 'order_request'
-                              || h.event === 'order_transfer'
-                              || h.event === 'order_advance'
-                              || h.event === 'order_final'
-                              || h.event === 'order_reject'
-                            )
-                              ? `Sipariş — ${h.order_step_label ?? ''}`
-                              : historyLabel(h)}
-                          </p>
-
-                          {h.note && h.action !== 'order' && (
-                            <p className="mt-0.5 text-xs text-muted-foreground">{h.note}</p>
-                          )}
-
-                          {h.reason && (
-                            <div className="mt-1.5 flex items-start gap-1.5 rounded-md border border-destructive/20 bg-destructive/5 px-2.5 py-2">
-                              <ThumbsDown className="mt-0.5 h-3 w-3 shrink-0 text-destructive/70" />
-                              <p className="text-xs leading-relaxed text-destructive">
-                                {h.reason}
-                              </p>
-                            </div>
-                          )}
-
-                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                              <UserIcon className="h-2.5 w-2.5" />
-                              {/* The backend now LEFT JOINs users on done_by
-                                  so this is populated for every row written
-                                  by a route handler. Older rows (legacy
-                                  data, before the JOIN was added) can have
-                                  `done_by_name = null` — show 'Bilinmeyen'
-                                  instead of rendering an empty label. */}
-                              {h.done_by_name ?? 'Bilinmeyen'}
-                            </span>
-                            <span className="text-[11px] text-muted-foreground/60">·</span>
-                            <span className="text-[11px] text-muted-foreground">
-                              {formatDateTr(h.created_at, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                            {isDemoEntry && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDemoFormAttempt(h.demoAttemptAt)
-                                  setDemoFormMode('history')
-                                  setDemoFormOpen(true)
-                                }}
-                                className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
-                              >
-                                <FileText className="h-2.5 w-2.5" />
-                                Demo Formu
-                              </button>
-                            )}
-                            {isOzalitEntry && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOzalitFormAttempt(h.ozalitAttemptAt)
-                                  setOzalitFormMode('history')
-                                  setOzalitFormOpen(true)
-                                }}
-                                className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
-                              >
-                                <FileText className="h-2.5 w-2.5" />
-                                Ozalit Formu
-                              </button>
-                            )}
-                            {(
-                              h.action === 'order'
-                              || h.event === 'order_request'
-                              || h.event === 'order_transfer'
-                              || h.event === 'order_advance'
-                              || h.event === 'order_final'
-                              || h.event === 'order_reject'
-                            ) && projectOrders.length > 0 && (() => {
-                              const ord = h.order_id
-                                ? projectOrders.find((o) => o.id === h.order_id)
-                                : projectOrders[0]
-                              if (!ord) return null
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={() => setOrderFormViewer({ order: ord, step: h.order_step })}
-                                  className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-violet-400/50 hover:bg-violet-50 hover:text-violet-700"
-                                >
-                                  <ShoppingCart className="h-2.5 w-2.5" />
-                                  Sipariş Formu
-                                </button>
-                              )
-                            })()}
-                          </div>
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ol>
+                {canEditSubtasks && (project.subtasks ?? []).some((s) => s.assigned_to && s.assigned_to !== user?.id) && (
+                  <p className="pt-1 text-[11px] text-muted-foreground">
+                    Size atanmayan alt görevler (
+                    <UserIcon className="inline h-2.5 w-2.5" /> ikonlu) düzenlenemez.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </div>
