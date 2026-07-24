@@ -5,6 +5,7 @@ import { userRoutes } from './routes/users.js'
 import { projectRoutes } from './routes/projects.js'
 import { subtaskRoutes } from './routes/subtasks.js'
 import { demoRoutes } from './routes/demos.js'
+import { productInfoRoutes } from './routes/product-info.js'
 import { orderRoutes } from './routes/orders.js'
 import { handoverRoutes } from './routes/handovers.js'
 import { config } from './config.js'
@@ -99,6 +100,7 @@ export async function buildServer() {
   await fastify.register(projectRoutes, { prefix: '/api' })
   await fastify.register(subtaskRoutes, { prefix: '/api' })
   await fastify.register(demoRoutes, { prefix: '/api' })
+  await fastify.register(productInfoRoutes, { prefix: '/api' })
   await fastify.register(orderRoutes, { prefix: '/api' })
   await fastify.register(handoverRoutes, { prefix: '/api' })
 

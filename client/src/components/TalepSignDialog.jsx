@@ -3,7 +3,7 @@ import { PenLine, ShoppingCart, ChevronDown, ChevronLeft, Package, Pencil, Plus,
 import { toast } from 'sonner'
 
 import api, { ORDER_STEP_LABELS, ORDER_STEP_NEXT, ORDER_REJECT_TO, ORDER_REJECT_TARGETS } from '@/api'
-import { PRODUCT_INFO } from '@/data/productInfo'
+import { getComponentsForProject, saveComponentsForProject, primeProductInfoCache } from '@/data/productCatalog'
 import { buildAdetRows } from '@/data/orderAdet'
 import { useAuth } from '@/hooks/useAuth'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
@@ -20,21 +20,15 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 
-const OVERRIDES_KEY = 'yz_product_info_overrides_v1'
 const deepClone = (x) => JSON.parse(JSON.stringify(x ?? []))
+// Reads the shared, server-backed spec (cache → local mirror → seed).
 function loadProductComps(projectId) {
-  let overrides = {}
-  try { overrides = JSON.parse(localStorage.getItem(OVERRIDES_KEY)) ?? {} } catch { /* */ }
-  return overrides[projectId] ?? PRODUCT_INFO[projectId] ?? []
+  return getComponentsForProject(projectId)
 }
-// Designer edits during their step persist to the same catalog Ürün Bilgileri
-// and the Demo/Ozalit forms read from.
+// Designer edits during their step persist to the same server-side catalog
+// Ürün Bilgileri and the Demo/Ozalit forms read from.
 function saveProductComps(projectId, comps) {
-  try {
-    const all = JSON.parse(localStorage.getItem(OVERRIDES_KEY)) ?? {}
-    all[projectId] = comps
-    localStorage.setItem(OVERRIDES_KEY, JSON.stringify(all))
-  } catch { /* ignore */ }
+  return saveComponentsForProject(projectId, comps)
 }
 
 /**
@@ -80,6 +74,17 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
       setSubsOpen(true)
       setEditorOpen(false)
       let cancelled = false
+      // Pull the authoritative spec from the server (the cache may be cold on
+      // this browser) and prime the shared cache so every view agrees.
+      api.getProductInfo(order.project_id)
+        .then((comps) => {
+          if (cancelled) return
+          primeProductInfoCache([{ project_id: order.project_id, components: comps }])
+          const fresh = deepClone(comps)
+          setComps(fresh)
+          originalRef.current = JSON.stringify(fresh)
+        })
+        .catch(() => {})
       api.getProject(order.project_id)
         .then((p) => {
           if (cancelled) return
@@ -154,7 +159,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
     try {
       let signNotes = notes.trim()
       if (isDesignerStep) {
-        saveProductComps(order.project_id, comps)
+        await saveProductComps(order.project_id, comps)
         const compsChanged = JSON.stringify(comps) !== originalRef.current
         const subsChanged = JSON.stringify(subtasks) !== originalSubsRef.current
         if (subsChanged) await api.saveProjectSubtasks(order.project_id, subtasks)

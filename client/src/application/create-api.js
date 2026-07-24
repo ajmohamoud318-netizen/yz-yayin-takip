@@ -12,6 +12,7 @@ import { createHttpUserRepository } from '../infrastructure/http/repositories/ht
 import { createHttpProjectRepository } from '../infrastructure/http/repositories/http-project.repository.js'
 import { createHttpSubtaskRepository } from '../infrastructure/http/repositories/http-subtask.repository.js'
 import { createHttpDemoRepository } from '../infrastructure/http/repositories/http-demo.repository.js'
+import { createHttpProductInfoRepository } from '../infrastructure/http/repositories/http-product-info.repository.js'
 import { createHttpOrderRepository } from '../infrastructure/http/repositories/http-order.repository.js'
 import { createHttpHandoverRepository } from '../infrastructure/http/repositories/http-handover.repository.js'
 import { makeAdvanceOrderRequest } from './use-cases/orders/advance-order-request.js'
@@ -26,6 +27,7 @@ export function createApi() {
   const projectRepo = createHttpProjectRepository(userRepo)
   const subtaskRepo = createHttpSubtaskRepository()
   const demoRepo = createHttpDemoRepository()
+  const productInfoRepo = createHttpProductInfoRepository()
   const orderRepo = createHttpOrderRepository()
   const handoverRepo = createHttpHandoverRepository()
 
@@ -76,6 +78,12 @@ export function createApi() {
     // Demos
     listDemos: () => demoRepo.listDemos(),
     createDemo: (payload) => demoRepo.createDemo(payload),
+
+    // Product info (ürün bilgileri / parçalar)
+    listProductInfo: () => productInfoRepo.listProductInfo(),
+    getProductInfo: (projectId) => productInfoRepo.getProductInfo(projectId),
+    saveProductInfo: (projectId, components) =>
+      productInfoRepo.saveProductInfo(projectId, components),
 
     // Orders
     listOrderRequests: () => orderRepo.listOrderRequests(),

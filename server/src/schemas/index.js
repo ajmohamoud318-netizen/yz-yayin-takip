@@ -396,6 +396,49 @@ const demosCreate = {
   },
 }
 
+// ─── product info (ürün bilgileri / parçalar) ──────────────────────────
+
+// A component is { component, date?, fields: [{ k, v }] }. We keep the field
+// list loose (additionalProperties allowed) so the form can grow without a
+// schema change, but cap sizes so a bad client can't push unbounded JSON.
+const productInfoUpsert = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['projectId'],
+    properties: { projectId: projectId },
+  },
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['components'],
+    properties: {
+      components: {
+        type: 'array',
+        maxItems: 64,
+        items: {
+          type: 'object',
+          properties: {
+            component: { type: 'string', maxLength: 300 },
+            date: { type: 'string', maxLength: 60 },
+            fields: {
+              type: 'array',
+              maxItems: 128,
+              items: {
+                type: 'object',
+                properties: {
+                  k: { type: 'string', maxLength: 200 },
+                  v: { type: 'string', maxLength: 4000 },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+}
+
 // ─── orders ────────────────────────────────────────────────────────────
 
 const ordersCreate = {
@@ -501,6 +544,7 @@ export const schemas = {
   subtasksRevize,
   projectsSubtasksPut,
   demosCreate,
+  productInfoUpsert,
   ordersCreate,
   ordersAdvance,
   ordersReject,

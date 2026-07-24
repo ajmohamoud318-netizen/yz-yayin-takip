@@ -347,7 +347,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         // means the template "claims" the new project immediately and any
         // edits the leader makes in Ürün Bilgileri flow through.
         if (selectedTemplate) {
-          seedProjectFromTemplate(created.id, selectedTemplate.components)
+          await seedProjectFromTemplate(created.id, selectedTemplate.components)
         }
         toast.success(
           selectedTemplate

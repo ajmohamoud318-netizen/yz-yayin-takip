@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, createElement } from 'react'
 import api from '@/api'
 import { getAuthToken } from '@/infrastructure/http/client.js'
+import { hydrateProductInfo } from '@/data/productCatalog'
 
 const ProjectsContext = createContext(null)
 
@@ -14,6 +15,10 @@ export function ProjectsProvider({ children }) {
     try {
       const data = await api.listProjects()
       setProjects(data)
+      // Prime the product-info cache (and one-time-backfill any legacy
+      // localStorage specs) so the Demo/Ozalit forms and Ürün Bilgileri read
+      // the shared, server-side spec rather than a per-browser override.
+      hydrateProductInfo(data.map((p) => p.id))
     } catch (e) {
       setError(e.message || 'Projeler yüklenemedi.')
     } finally {

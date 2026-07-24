@@ -3,7 +3,20 @@
  * Locks in the inference rules so future PRODUCT_INFO edits don't silently
  * regress the auto-fill behaviour.
  */
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+
+// Product specs are now persisted server-side; stub the api so these unit
+// tests stay hermetic (no network). The localStorage mirror the assertions
+// check is written synchronously by saveComponentsForProject before the
+// (stubbed) server call, so the behaviour under test is unchanged.
+vi.mock('@/api', () => ({
+  default: {
+    saveProductInfo: vi.fn().mockResolvedValue({}),
+    listProductInfo: vi.fn().mockResolvedValue([]),
+    getProductInfo: vi.fn().mockResolvedValue([]),
+  },
+}))
+
 import {
   inferSubtasksFromTemplate,
   inferTitleFromTemplate,
@@ -179,7 +192,7 @@ describe('seedProjectFromTemplate', () => {
     clearOverrides()
   })
 
-  it('copies the components into overrides under the new project id', () => {
+  it('copies the components into overrides under the new project id', async () => {
     const components = [
       {
         component: 'X',
@@ -187,12 +200,12 @@ describe('seedProjectFromTemplate', () => {
         fields: [{ k: 'İŞİN ADI', v: 'X' }],
       },
     ]
-    seedProjectFromTemplate('new-project-id', components)
+    await seedProjectFromTemplate('new-project-id', components)
     const overrides = JSON.parse(localStorage.getItem(LS_KEY))
     expect(overrides['new-project-id']).toEqual(components)
   })
 
-  it('clones components so future edits to the template do not mutate the seed', () => {
+  it('clones components so future edits to the template do not mutate the seed', async () => {
     const components = [
       {
         component: 'X',
@@ -200,15 +213,15 @@ describe('seedProjectFromTemplate', () => {
         fields: [{ k: 'İŞİN ADI', v: 'X' }],
       },
     ]
-    seedProjectFromTemplate('new-project-id', components)
+    await seedProjectFromTemplate('new-project-id', components)
     // Mutate the seed in place — overrides should not change.
     components[0].component = 'MUTATED'
     const overrides = JSON.parse(localStorage.getItem(LS_KEY))
     expect(overrides['new-project-id'][0].component).toBe('X')
   })
 
-  it('is a no-op when components is empty', () => {
-    seedProjectFromTemplate('new-project-id', [])
+  it('is a no-op when components is empty', async () => {
+    await seedProjectFromTemplate('new-project-id', [])
     expect(localStorage.getItem(LS_KEY)).toBeNull()
   })
 })

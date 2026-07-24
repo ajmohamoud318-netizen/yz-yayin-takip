@@ -4,14 +4,18 @@ import { toast } from 'sonner'
 import { useProjects } from '@/hooks/useProjects'
 import { useAuth } from '@/hooks/useAuth'
 import { canEditProductInfo } from '@/domain'
-import { TYPE_LABELS } from '@/api'
+import api, { TYPE_LABELS } from '@/api'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import PRODUCT_INFO from '@/data/productInfo'
+import { saveComponentsForProject, primeProductInfoCache } from '@/data/productCatalog'
 
 const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
 
-/* ---- local override persistence (per browser) ---- */
+/* ---- offline mirror (server is the source of truth) ---- */
+// Specs live server-side (see productCatalog + /api/product-info). We still
+// seed initial state from the localStorage mirror so the list paints instantly
+// and works offline; the server load overlays on top once it resolves.
 const LS_KEY = 'yz_product_info_overrides_v1'
 const deepCopy = (x) => JSON.parse(JSON.stringify(x))
 function loadOverrides() {
@@ -20,14 +24,6 @@ function loadOverrides() {
     return JSON.parse(localStorage.getItem(LS_KEY)) ?? {}
   } catch {
     return {}
-  }
-}
-function saveOverrides(o) {
-  if (typeof localStorage === 'undefined') return
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(o))
-  } catch {
-    /* ignore quota */
   }
 }
 
@@ -390,6 +386,25 @@ export default function UrunBilgileri() {
   const [draft, setDraft] = useState(null)
   const [newProductOpen, setNewProductOpen] = useState(false)
 
+  // Load the server-side specs and overlay them on top of the localStorage
+  // mirror. The server is the source of truth; the mirror only covers the
+  // brief window before this resolves (and offline).
+  useEffect(() => {
+    let cancelled = false
+    api.listProductInfo()
+      .then((rows) => {
+        if (cancelled || !Array.isArray(rows)) return
+        primeProductInfoCache(rows)
+        const fromServer = {}
+        for (const r of rows) {
+          if (r?.project_id) fromServer[r.project_id] = Array.isArray(r.components) ? r.components : []
+        }
+        setOverrides((prev) => ({ ...prev, ...fromServer }))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
   const compsFor = (pid) => overrides[pid] ?? PRODUCT_INFO[pid]
 
   function toggle(id) {
@@ -415,9 +430,8 @@ export default function UrunBilgileri() {
       toast.error('En az bir parça olmalı. Ürünü silmek için "Ürünü Sil" butonunu kullanın.')
       return
     }
-    const next = { ...overrides, [editingId]: cleaned }
-    setOverrides(next)
-    saveOverrides(next)
+    setOverrides((prev) => ({ ...prev, [editingId]: cleaned }))
+    saveComponentsForProject(editingId, cleaned)
     setEditingId(null)
     setDraft(null)
     toast.success('Ürün bilgileri kaydedildi.')
@@ -440,9 +454,8 @@ export default function UrunBilgileri() {
     // have product info, an empty override hides the product. For seed
     // (orphan) entries, an empty override masks PRODUCT_INFO[pid] so the
     // catalog hides the row until the user re-saves it.
-    const next = { ...overrides, [pid]: [] }
-    setOverrides(next)
-    saveOverrides(next)
+    setOverrides((prev) => ({ ...prev, [pid]: [] }))
+    saveComponentsForProject(pid, [])
     setEditingId(null)
     setDraft(null)
     toast.success('Ürün silindi.')
@@ -457,9 +470,8 @@ export default function UrunBilgileri() {
         { k: 'EBAT', v: '' },
       ],
     }
-    const next = { ...overrides, [projectId]: [newComp] }
-    setOverrides(next)
-    saveOverrides(next)
+    setOverrides((prev) => ({ ...prev, [projectId]: [newComp] }))
+    saveComponentsForProject(projectId, [newComp])
     setNewProductOpen(false)
     setOpenIds((prev) => new Set(prev).add(projectId))
     toast.success('Yeni ürün oluşturuldu.')

@@ -15,7 +15,7 @@ import api from '@/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
-import { getComponentsForProject, getComponentRows } from '@/data/productCatalog'
+import { getComponentsForProject, getComponentRows, primeProductInfoCache } from '@/data/productCatalog'
 import { buildAdetRows } from '@/data/orderAdet'
 
 /* ------------------------------------------------------------------ */
@@ -408,9 +408,29 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const [customRows, setCustomRows] = useState([])
   const [selectedComponents, setSelectedComponents] = useState([]) // [{ id, component, rows }]
   const [busy, setBusy] = useState(false)
+  // Bumped once the server spec has been fetched for this project, so the
+  // catalog memo below recomputes with fresh data even on a cold cache.
+  const [catalogVersion, setCatalogVersion] = useState(0)
 
   const readOnly = variant.isReadOnly({ mode, user })
   const printable = variant.canPrint({ user, project, readOnly })
+
+  // Pull the authoritative spec from the server when the dialog opens. The
+  // in-memory cache is normally primed at boot, but a project created on
+  // another browser (or just created moments ago) may not be there yet — this
+  // guarantees the matbaa/designer/leader all see the same, correct parçalar.
+  useEffect(() => {
+    if (!open || !project?.id) return
+    let cancelled = false
+    api.getProductInfo(project.id)
+      .then((comps) => {
+        if (cancelled) return
+        primeProductInfoCache([{ project_id: project.id, components: comps }])
+        setCatalogVersion((v) => v + 1)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [open, project?.id])
 
   // Catalog of all components defined for this project (from Ürün Bilgileri).
   const catalogComponents = useMemo(
@@ -419,7 +439,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       component: c.component,
       rows: getComponentRows(c),
     })),
-    [project?.id]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [project?.id, catalogVersion]
   )
 
   useEffect(() => {
