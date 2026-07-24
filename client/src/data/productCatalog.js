@@ -392,6 +392,45 @@ export function listOrphanTemplates(realProjectIds = []) {
   return items
 }
 
+/**
+ * Every product a new project can be cloned from: the specs of existing
+ * projects (so you can copy a project that already has the same parçalar) PLUS
+ * the orphan catalog seeds. Unlike listOrphanTemplates this deliberately
+ * includes real projects — the whole point is "make a new project just like
+ * this existing one". The chosen template's components are deep-copied onto the
+ * new project on create (seedProjectFromTemplate), so the source is never
+ * touched.
+ *
+ * `projects` is the project list ({ id, title }). Titles come from the project
+ * itself so the picker shows the project name, not the parça name.
+ *
+ * Shape: [{ id, title, components, parcaCount, origin }] where origin is
+ * 'project' | 'seed' | 'override'.
+ */
+export function listCloneableProducts(projects = []) {
+  const items = []
+  const seen = new Set()
+
+  // 1) Existing projects that carry a spec.
+  for (const p of projects) {
+    if (!p?.id) continue
+    const components = getComponentsForProject(p.id)
+    if (!Array.isArray(components) || components.length === 0) continue
+    seen.add(p.id)
+    items.push({ ...buildTemplateItem(p.id, components, 'project'), title: p.title || buildTemplateItem(p.id, components, 'project').title })
+  }
+
+  // 2) Orphan catalog seeds not tied to a real project.
+  for (const t of listOrphanTemplates(projects.map((p) => p.id))) {
+    if (seen.has(t.id)) continue
+    seen.add(t.id)
+    items.push(t)
+  }
+
+  items.sort((a, b) => a.title.localeCompare(b.title, 'tr'))
+  return items
+}
+
 function buildTemplateItem(id, components, origin) {
   const first = components[0]
   const title = inferTitleFromTemplate(components, id)

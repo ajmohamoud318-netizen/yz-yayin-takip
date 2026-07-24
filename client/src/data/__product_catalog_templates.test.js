@@ -21,6 +21,7 @@ import {
   inferSubtasksFromTemplate,
   inferTitleFromTemplate,
   listOrphanTemplates,
+  listCloneableProducts,
   seedProjectFromTemplate,
   getComponentRows,
   saveEditedComponents,
@@ -187,6 +188,30 @@ describe('listOrphanTemplates', () => {
     })
     const orphans = listOrphanTemplates(['real-pid'])
     expect(orphans.find((t) => t.id === 'real-pid')).toBeUndefined()
+  })
+})
+
+describe('listCloneableProducts', () => {
+  beforeEach(() => {
+    clearOverrides()
+  })
+
+  it('includes an existing project that has a spec, titled by the project', () => {
+    setOverrides({
+      'proj-1': [{ component: 'KİTAP', date: '', fields: [{ k: 'İŞİN ADI', v: 'KİTAP' }] }],
+    })
+    const items = listCloneableProducts([{ id: 'proj-1', title: 'Benim Projem' }])
+    const found = items.find((x) => x.id === 'proj-1')
+    expect(found).toBeDefined()
+    // Titled by the project, not the parça name.
+    expect(found.title).toBe('Benim Projem')
+    expect(found.origin).toBe('project')
+  })
+
+  it('also includes orphan catalog seeds not tied to a project', () => {
+    const items = listCloneableProducts([])
+    expect(items.length).toBeGreaterThan(0)
+    expect(items.some((x) => x.origin === 'seed')).toBe(true)
   })
 })
 

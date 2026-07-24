@@ -5,8 +5,8 @@ import { Plus, Pencil, Sparkles, Wand2, X } from 'lucide-react'
 import api, { TYPE_LABELS, SUBTASK_LIBRARY } from '@/api'
 import {
   inferSubtasksFromTemplate,
-  inferTitleFromTemplate,
-  listOrphanTemplates,
+  listCloneableProducts,
+  primeProductInfoCache,
   seedProjectFromTemplate,
 } from '@/data/productCatalog'
 import { Button } from '@/components/ui/button'
@@ -174,9 +174,14 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
       // leader can pick one and have subtasks auto-fill. We refetch every
       // time the dialog opens so the list stays in lock-step with anything
       // the leader added/edited in Ürün Bilgileri between dialog sessions.
-      api.listProjects()
-        .then((real) => listOrphanTemplates(real.map((p) => p.id)))
-        .then(setTemplates)
+      // Offer every Ürün Bilgileri product as a clone source: existing
+      // projects' specs AND the catalog seeds. Prime the cache with the
+      // server's product-info first so real projects' parçalar are available.
+      Promise.all([api.listProjects(), api.listProductInfo()])
+        .then(([real, rows]) => {
+          primeProductInfoCache(rows)
+          setTemplates(listCloneableProducts(real))
+        })
         .catch(() => setTemplates([]))
     }
     // Always start with no template chosen. The "Ürün Bilgileri şablonu"
@@ -263,7 +268,9 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
     setSubtasks((prev) => ({ ...prev, ...suggested }))
     if (typeof pc === 'number') setPageCount(pc)
     if (typeof sc === 'number') setStickerCount(sc)
-    setTitle((prev) => (prev.trim() ? prev : inferTitleFromTemplate(tpl.components, prev)))
+    // Prefill the title from the source product only if the leader hasn't
+    // typed one — they'll usually give the new project its own name.
+    setTitle((prev) => (prev.trim() ? prev : (tpl.title ?? prev)))
   }
 
   // Drop the template — clears the picked id but keeps whatever the leader
@@ -420,7 +427,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                     selectedTemplate && 'border-primary/50 bg-primary/[0.04]',
                   )}
                 >
-                  <SelectValue placeholder="Boş başla veya bir şablon seç…" />
+                  <SelectValue placeholder="Boş başla veya mevcut bir üründen kopyala…" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">— Boş başla —</SelectItem>
@@ -439,7 +446,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                   ))}
                   {templates.length === 0 && (
                     <div className="px-2 py-2 text-xs text-muted-foreground">
-                      Ürün Bilgileri'nde henüz şablon yok — yine de boş başlayabilirsiniz.
+                      Kopyalanacak ürün yok — yine de boş başlayabilirsiniz.
                     </div>
                   )}
                 </SelectContent>
@@ -449,8 +456,8 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                   <Sparkles className="mt-px h-3 w-3 shrink-0 text-primary" />
                   <span>
                     <span className="font-semibold text-foreground">{selectedTemplate.title}</span>{' '}
-                    şablonundan otomatik dolduruldu. Alt görevleri, sayfa ve sticker sayılarını
-                    isterseniz değiştirebilirsiniz.
+                    ürününden kopyalandı — alt görevler, sayfa/sticker sayıları ve tüm parçalar
+                    (ürün bilgileri) yeni projeye aktarıldı. İsterseniz değiştirebilirsiniz.
                   </span>
                 </p>
               )}
