@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useProjectModal } from '@/hooks/useProjectModal'
 import { FileText, Printer, CheckCircle2, Clock, Inbox, Eye, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -15,7 +15,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { TYPE_LABELS } from '@/api'
+import api, { TYPE_LABELS } from '@/api'
 import { cn } from '@/lib/utils'
 import { getComponentsForProject, getComponentRows } from '@/data/productCatalog'
 import { printSpecSheets, buildSpecRows } from '@/lib/specPrint'
@@ -23,6 +23,10 @@ import { printSpecSheets, buildSpecRows } from '@/lib/specPrint'
 /* ------------------------------------------------------------------ */
 /*  localStorage helpers                                                */
 /* ------------------------------------------------------------------ */
+
+function safeJson(raw) {
+  try { return JSON.parse(raw) } catch { return null }
+}
 
 function loadDemoForm(projectId) {
   try {
@@ -311,16 +315,44 @@ export default function Documents() {
   const [docType, setDocType] = useState('demo')
   const [subTab, setSubTab] = useState('istenen')
   const [viewEntry, setViewEntry] = useState(null) // { project, form, attemptNo, docType, printerName }
+  // Server-side form snapshots keyed { [projectId]: { demo, ozalit } }. These
+  // are the source of truth (any user/browser sees them); localStorage is only
+  // an offline fallback for the browser that filled the form.
+  const [serverForms, setServerForms] = useState({})
+
+  useEffect(() => {
+    let cancelled = false
+    api.listDemos()
+      .then((rows) => {
+        if (cancelled || !Array.isArray(rows)) return
+        // rows are newest-first — keep the first (latest attempt) per project+kind.
+        const map = {}
+        for (const r of rows) {
+          const pid = r.project_id
+          const kind = r.kind ?? 'demo'
+          if (!pid) continue
+          if (!map[pid]) map[pid] = {}
+          if (map[pid][kind]) continue
+          map[pid][kind] = typeof r.payload === 'string' ? safeJson(r.payload) : (r.payload ?? null)
+        }
+        setServerForms(map)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const { demoIstenen, demoOnaylanan, ozalitIstenen, ozalitOnaylanan } = useMemo(() => {
     const demoIst = []
     const demoOnay = []
     const ozalitIst = []
     const ozalitOnay = []
+    // Prefer the server snapshot; fall back to this browser's localStorage.
+    const pickForm = (kind, pid) =>
+      serverForms[pid]?.[kind] ?? (kind === 'demo' ? loadDemoForm(pid) : loadOzalitForm(pid))
 
     for (const p of projects) {
       if (DEMO_SENT_STAGES.has(p.stage)) {
-        const form = loadDemoForm(p.id)
+        const form = pickForm('demo', p.id)
         const attemptNo = (p.demo_attempt ?? 0) + 1
         const printerEntry = (p.history ?? []).find(
           (h) => h.from_stage === 'demo_teslim' && h.action === 'advance',
@@ -332,7 +364,7 @@ export default function Documents() {
       }
 
       if (p.type === 'TR' && OZALIT_SENT_STAGES.has(p.stage)) {
-        const form = loadOzalitForm(p.id)
+        const form = pickForm('ozalit', p.id)
         const attemptNo = (p.ozalit_attempt ?? 0) + 1
         const printerEntry = (p.history ?? []).find(
           (h) => h.from_stage === 'ozalit_teslim' && h.action === 'advance',
@@ -350,7 +382,7 @@ export default function Documents() {
       ozalitIstenen: ozalitIst,
       ozalitOnaylanan: ozalitOnay,
     }
-  }, [projects])
+  }, [projects, serverForms])
 
   const isDemo = docType === 'demo'
   const items = isDemo
