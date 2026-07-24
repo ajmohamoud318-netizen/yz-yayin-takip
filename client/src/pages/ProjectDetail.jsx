@@ -163,6 +163,7 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
   const [toggling, setToggling] = useState(null)
   const [localDone, setLocalDone] = useState({})
   const [saving, setSaving] = useState(false)
+  const [receiving, setReceiving] = useState(false)
   const [updatingSubId, setUpdatingSubId] = useState(null) // per-subtask "what changed" note
   const [updateNote, setUpdateNote] = useState('')
   const [projectOrders, setProjectOrders] = useState([])
@@ -244,6 +245,27 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
   // Kept for the footer hint (true when the base condition is met).
   const canEditSubtasks = canEditBase
   const isLeader = user?.role === 'team_leader'
+
+  // Demo "Teslim Alındı" gate: at demo_onay / cin_demo_onay, an assigned
+  // designer or the team leader marks the delivered demo received; the Onay is
+  // blocked until then. Shown only while a demo is delivered and not yet acked.
+  const isDemoOnayStage = project?.stage === 'demo_onay' || project?.stage === 'cin_demo_onay'
+  const canReceiveDemo =
+    isDemoOnayStage && !project?.demo_received && (isLeader || (user?.role === 'designer' && isAssigned))
+
+  async function handleReceiveDemo() {
+    if (!project) return
+    setReceiving(true)
+    try {
+      await api.receiveDemo(project.id)
+      await refetch()
+      toast.success('Demo teslim alındı.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setReceiving(false)
+    }
+  }
 
   // Available actions depend on the role + stage
   const actions = availableActions({ project, user })
@@ -616,6 +638,19 @@ export default function ProjectDetail({ projectId: propId, isModal = false }) {
                     <Send className="h-4 w-4" />
                     {advanceLabel}
                   </Button>
+                )}
+                {/* Demo "Teslim Alındı" gate — before the Onay. */}
+                {canReceiveDemo && (
+                  <Button size="sm" variant="outline" onClick={handleReceiveDemo} disabled={receiving}>
+                    <CheckCircle2 className="h-4 w-4" />
+                    {receiving ? 'İşleniyor…' : 'Teslim Alındı'}
+                  </Button>
+                )}
+                {isDemoOnayStage && project.demo_received && (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Teslim alındı{project.demo_received_by ? ` — ${project.demo_received_by}` : ''}
+                  </span>
                 )}
                 {actions.includes('approve') && (
                   <Button

@@ -11,7 +11,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { computeAdvance, computeRejection } from './transitions.js'
+import { computeAdvance, computeApproval, computeDemoReceive, computeRejection } from './transitions.js'
 
 const leader = { id: 'u-l', role: 'team_leader', name: 'Ayşenur' }
 const ctx = { actorName: leader.name, actor: leader }
@@ -44,6 +44,49 @@ describe('reject-to-matbaa numbering', () => {
     )
     assert.equal(next.stage, 'tasarim')
     assert.equal(next.demo_attempt, 6)            // bumped
+  })
+})
+
+describe('demo "Teslim Alındı" gate before Onay', () => {
+  it('blocks the demo approve until the delivery is marked received', () => {
+    assert.throws(
+      () => computeApproval(demoProject({ demo_received: false, progress: 100 }), leader),
+      /Teslim Alındı/,
+    )
+  })
+
+  it('an assigned designer can mark the demo received', () => {
+    const designer = { id: 'u-d', role: 'designer', name: 'Aylin' }
+    const { project: next } = computeDemoReceive(
+      demoProject({ demo_received: false }), designer, { designerIds: ['u-d'] },
+    )
+    assert.equal(next.demo_received, true)
+    assert.equal(next.demo_received_by, 'Aylin')
+  })
+
+  it('a user who is neither leader nor assigned designer cannot mark it received', () => {
+    const stranger = { id: 'u-x', role: 'designer', name: 'Biri' }
+    assert.throws(
+      () => computeDemoReceive(demoProject(), stranger, { designerIds: ['u-d'] }),
+      /yalnızca ekip lideri veya atanmış tasarımcı/,
+    )
+  })
+
+  it('approves and advances once received at 100%', () => {
+    const { project: next } = computeApproval(
+      demoProject({ demo_received: true, progress: 100 }), leader,
+    )
+    assert.equal(next.stage, 'ozalit_teslim')
+  })
+
+  it('a fresh delivery resets the received flag', () => {
+    // Matbaa delivers demo_teslim → demo_onay; the ack must not carry over.
+    const printer = { id: 'u-p', role: 'printer', name: 'Oktay' }
+    const { project: next } = computeAdvance(
+      demoProject({ stage: 'demo_teslim', demo_received: true, progress: 100 }), printer,
+    )
+    assert.equal(next.stage, 'demo_onay')
+    assert.equal(next.demo_received, false)
   })
 })
 

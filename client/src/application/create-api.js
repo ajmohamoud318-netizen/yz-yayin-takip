@@ -62,6 +62,7 @@ export function createApi() {
     deleteProject: (id) => projectRepo.deleteProject(id),
     advanceProject: (id) => projectRepo.advanceProject(id),
     approveProject: (id) => projectRepo.approveProject(id),
+    receiveDemo: (id) => projectRepo.receiveDemo(id),
     rejectProject: (id, reason, revizeIds, target) => projectRepo.rejectProject(id, reason, revizeIds, target),
 
     // Subtasks

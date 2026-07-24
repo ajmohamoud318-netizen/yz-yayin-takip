@@ -10,7 +10,7 @@ import {
 import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
 import {
-  applyAdvance, applyApproval, applyRejection,
+  applyAdvance, applyApproval, applyDemoReceive, applyRejection,
 } from '../services/project-transitions.js'
 
 /**
@@ -280,6 +280,30 @@ export async function projectRoutes(fastify) {
       }
       const updated = await patchProject(client, project.id, fields)
       if (history) await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+      return updated
+    })
+    return result
+  })
+
+  // Mark a delivered demo "Teslim Alındı" (received) — the gate before Onay.
+  // Allowed for the team leader or an assigned designer, only at demo_onay /
+  // cin_demo_onay.
+  fastify.post('/projects/:id/receive', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      project.assignees = await loadProjectAssignees(client, project)
+      const designerIds = project.assignees.map((a) => a.id)
+      const { project: next, history } = applyDemoReceive(project, { user: request.user, designerIds })
+      const updated = await patchProject(client, project.id, {
+        demo_received: next.demo_received,
+        demo_received_by: next.demo_received_by ?? null,
+        demo_received_at: next.demo_received_at ?? null,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+      }
       return updated
     })
     return result

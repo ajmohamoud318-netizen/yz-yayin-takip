@@ -248,6 +248,11 @@ function computeDemoTeslimAdvance(project, actor, now, approvalStage) {
       demo_delivered_by: actor?.id ?? null,
       demo_delivered_by_name: actor?.name ?? 'Bilinmeyen',
       demo_delivered_at: now,
+      // Fresh delivery → clear any prior "received" ack; a designer/leader must
+      // acknowledge this delivery before it can be approved.
+      demo_received: false,
+      demo_received_by: null,
+      demo_received_at: null,
       reject_target: null,
       last_reject_reason: null,
       last_reject_type: null,
@@ -328,6 +333,11 @@ export function computeApproval(project, actor, ctx = {}) {
     if (!canApproveAt(project.stage, actor)) {
       badRequest('Demo onayını yalnızca ekip lideri veya matbaa yapabilir.')
     }
+    // Gate: the delivered demo must be marked "Teslim Alındı" (received) by an
+    // assigned designer or the team leader before it can be approved.
+    if (!project.demo_received) {
+      badRequest('Önce demo "Teslim Alındı" olarak işaretlenmelidir.')
+    }
     if ((project.progress ?? 0) < 100) {
       // Approve but don't advance. Designer keeps working; once they hit
       // 100% they (or the leader) send a second demo via /advance.
@@ -381,6 +391,48 @@ export function computeApproval(project, actor, ctx = {}) {
       from_stage: project.stage,
       to_stage: next,
       done_by_name: actorName,
+    }),
+  }
+}
+
+/* ============================================================================
+ *  receiveDemo(project, actor, ctx) → next project state
+ *
+ *  Marks a delivered demo as "Teslim Alındı" (received). Allowed only at
+ *  demo_onay / cin_demo_onay, and only by the team leader or an assigned
+ *  designer. Idempotent — acknowledging twice is a no-op. This is the gate the
+ *  demo approve checks (computeApproval).
+ * ========================================================================== */
+export function computeDemoReceive(project, actor, ctx = {}) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (project.stage !== 'demo_onay' && project.stage !== 'cin_demo_onay') {
+    badRequest('Teslim alma yalnızca demo onay aşamasında yapılabilir.')
+  }
+  const designerIds = ctx.designerIds ?? []
+  const isLeader = actor?.role === 'team_leader'
+  const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
+  if (!isLeader && !isAssignedDesigner) {
+    badRequest('Teslim almayı yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
+  }
+  if (project.demo_received) {
+    return { project, history: null } // already acknowledged
+  }
+  return {
+    project: {
+      ...project,
+      demo_received: true,
+      demo_received_by: actorName,
+      demo_received_at: now,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'advance',
+      event: 'demo_received',
+      from_stage: project.stage,
+      to_stage: project.stage,
+      done_by_name: actorName,
+      note: 'Demo teslim alındı',
     }),
   }
 }

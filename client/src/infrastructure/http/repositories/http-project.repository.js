@@ -192,6 +192,12 @@ export function createHttpProjectRepository(userRepo) {
       cache.set(id, data)
       return data
     },
+    // Mark a delivered demo "Teslim Alındı" (received) — the gate before Onay.
+    async receiveDemo(id) {
+      const { data } = await httpClient.post(`/projects/${id}/receive`, {})
+      cache.set(id, data)
+      return data
+    },
     async rejectProject(id, reason, revizeIds, target) {
       const cached = cache.get(id)
       if (!cached) badRequest('Proje bilinmiyor — listeyi yenileyin.')

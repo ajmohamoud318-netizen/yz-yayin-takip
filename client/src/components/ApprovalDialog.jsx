@@ -41,6 +41,10 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
   const isLeader = user?.role === 'team_leader'
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
+  const [receiving, setReceiving] = useState(false)
+  // Local mirror so the dialog reflects a "Teslim Alındı" click immediately,
+  // even before the parent re-passes the updated project.
+  const [receivedLocal, setReceivedLocal] = useState(false)
   // IDs of the subtasks the leader wants the designer to revise.
   const [revizeIds, setRevizeIds] = useState([])
   // Who the rejection is routed to: 'designer' (redesign) or 'matbaa' (re-deliver).
@@ -63,6 +67,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
       setRevizeIds([])
       setReason('')
       setRejectTarget('designer')
+      setReceivedLocal(false)
     }
   }, [open, project?.id])
 
@@ -101,6 +106,10 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
   const isDemoApproval =
     mode === 'approve' &&
     (project?.stage === 'demo_onay' || project?.stage === 'cin_demo_onay')
+  // A delivered demo must be marked "Teslim Alındı" (received) before it can be
+  // approved. `receivedLocal` reflects an inline click this session.
+  const isReceived = !!project?.demo_received || receivedLocal
+  const needsReceive = isDemoApproval && !isReceived
   const isDemoHeldApproval =
     isDemoApproval && (project?.progress ?? 0) < 100
   // Ozalit onayı at <100%: a hard gate — the project literally can't
@@ -142,6 +151,22 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
   // Ozalit approval is leader-only — block any non-leader from submitting.
   const ozalitBlockedForNonLeader =
     mode === 'approve' && isOzalitLeaderStep && !isLeader
+
+  async function handleReceive() {
+    if (!project) return
+    setReceiving(true)
+    try {
+      const updated = await api.receiveDemo(project.id)
+      updateOne(updated)
+      setReceivedLocal(true)
+      toast.success('Demo teslim alındı.')
+      onDone?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setReceiving(false)
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -208,6 +233,31 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
               Bu proje %100 tamamlanmadan Ozalit / üretim aşamasına geçemez. Lütfen önce tüm
               alt görevlerin tamamlandığından emin olun.
             </div>
+          )}
+
+          {/* Demo "Teslim Alındı" gate — must be acknowledged before Onay. */}
+          {isDemoApproval && (
+            isReceived ? (
+              <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
+                <Check className="h-4 w-4 shrink-0" />
+                <span>
+                  Demo teslim alındı{project?.demo_received_by ? ` — ${project.demo_received_by}` : ''}. Onaylayabilirsiniz.
+                </span>
+              </div>
+            ) : (
+              <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                <p>
+                  Onaydan önce demo, üretim odasına teslim edilip <strong>"Teslim Alındı"</strong> olarak
+                  işaretlenmelidir (atanmış tasarımcı veya ekip lideri).
+                </p>
+                {isLeader && (
+                  <Button type="button" size="sm" variant="outline" onClick={handleReceive} disabled={receiving}>
+                    <Check className="h-4 w-4" />
+                    {receiving ? 'İşleniyor…' : 'Teslim Alındı olarak işaretle'}
+                  </Button>
+                )}
+              </div>
+            )
           )}
 
           {/* "Matbaa" re-delivery only exists in the TR pipeline; ÇİN demos have
@@ -301,6 +351,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
                 busy ||
                 blocksUretim ||
                 ozalitBlockedForNonLeader ||
+                needsReceive ||
                 (mode === 'reject' &&
                   (!reason.trim() ||
                     (rejectTarget === 'designer' &&

@@ -18,6 +18,7 @@
 import {
   computeAdvance,
   computeApproval,
+  computeDemoReceive,
   computeRejection,
 } from '../domain/transitions.js'
 
@@ -39,6 +40,15 @@ export function applyAdvance(project, { user, note = '' }) {
  */
 export function applyApproval(project, { user, teamLeaderIds = [], designerIds = [] }) {
   return computeApproval(project, user, { teamLeaderIds, designerIds })
+}
+
+/**
+ * `POST /projects/:id/receive`. Marks a delivered demo "Teslim Alındı". Pass
+ * the assigned designer ids so the transition can authorize an assigned
+ * designer (besides the team leader).
+ */
+export function applyDemoReceive(project, { user, designerIds = [] }) {
+  return computeDemoReceive(project, user, { designerIds })
 }
 
 /** `POST /projects/:id/reject`. */
