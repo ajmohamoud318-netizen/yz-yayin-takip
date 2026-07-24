@@ -325,7 +325,7 @@ function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
   return (
     <div className="overflow-hidden rounded-lg border bg-white">
       <div className="border-b px-4 py-3 text-center">
-        <h2 className="text-base font-bold uppercase tracking-widest text-foreground">{project.title}</h2>
+        <h2 className="text-base font-bold uppercase tracking-widest text-foreground">{component.component || project.title}</h2>
       </div>
       <div className="border-b px-4 py-2 text-right">
         <span className="text-sm font-bold">{attemptNo}. {variant.attemptUpper}</span>

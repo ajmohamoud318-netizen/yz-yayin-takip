@@ -135,7 +135,7 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
             return (
               <div key={ci} className="rounded-lg border bg-white">
                 <div className="border-b px-4 py-3 text-center">
-                  <h2 className="text-base font-bold uppercase tracking-widest text-foreground">{project.title}</h2>
+                  <h2 className="text-base font-bold uppercase tracking-widest text-foreground">{c.component || project.title}</h2>
                 </div>
                 <div className="border-b px-4 py-2 text-right">
                   <span className="text-sm font-bold">{attemptLabel}</span>
