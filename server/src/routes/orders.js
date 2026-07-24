@@ -46,8 +46,15 @@ export async function orderRoutes(fastify) {
           WHERE oh.order_id = $1 ORDER BY oh.created_at`,
         [row.id],
       )
+      const { payload, ...rest } = row
       out.push({
-        ...row,
+        ...rest,
+        // The client (RequestRow, TalepHistoryViewer) reads items/quantity/notes
+        // as top-level fields — flatten them out of the JSONB payload column here
+        // rather than making every consumer reach into `.payload`.
+        items: payload?.items ?? [],
+        quantity: payload?.quantity ?? null,
+        notes: payload?.notes ?? '',
         order_history: hist.map((h) => ({
           step: h.step,
           notes: h.notes,
