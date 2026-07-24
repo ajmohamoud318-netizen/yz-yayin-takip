@@ -17,6 +17,8 @@ import {
 } from '@/components/ui/dialog'
 import { TYPE_LABELS } from '@/api'
 import { cn } from '@/lib/utils'
+import { getComponentsForProject, getComponentRows } from '@/data/productCatalog'
+import { printSpecSheets, buildSpecRows } from '@/lib/specPrint'
 
 /* ------------------------------------------------------------------ */
 /*  localStorage helpers                                                */
@@ -61,131 +63,39 @@ const OZALIT_SENT_STAGES = new Set(['ozalit_teslim', 'ozalit_onay', 'uretimde', 
 const OZALIT_APPROVED_STAGES = new Set(['uretimde', 'satista'])
 
 /* ------------------------------------------------------------------ */
-/*  Print helpers (mirrors DemoFormDialog / OzalitFormDialog logic)    */
+/*  Parça + print helpers (shared with the Demo/Ozalit dialog)         */
 /* ------------------------------------------------------------------ */
 
-function buildPrintHtml({ title, attemptLabel, rows, designerNames, onaylayanKisi, printerName }) {
-  const today = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
-
-  const tableRows = rows
-    .map(([lbl, val]) => `<tr><td class="label">${lbl}</td><td class="colon">:</td><td class="val">${val || ''}</td></tr>`)
-    .join('')
-
-  const sigBox = (role, name) => `
-    <div class="sig-box">
-      <p class="sig-role">${role}</p>
-      <p class="sig-name">${name || ''}</p>
-      <div class="sig-line"></div>
-      <p class="sig-hint">İmza</p>
-    </div>`
-
-  return `<!DOCTYPE html>
-<html lang="tr">
-<head>
-  <meta charset="UTF-8" />
-  <title>${attemptLabel} — ${title}</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #000; padding: 18mm 20mm; }
-    .doc-title { text-align: center; font-size: 15pt; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 4px; }
-    .attempt-label { text-align: right; font-size: 12pt; font-weight: 700; padding: 4px 0 8px; border-bottom: 1px solid #ccc; }
-    table { width: 100%; border-collapse: collapse; }
-    tr { border-bottom: 1px solid #ddd; }
-    td { padding: 5px 4px; vertical-align: middle; }
-    td.label { width: 44%; font-weight: 700; font-size: 9.5pt; text-transform: uppercase; letter-spacing: 0.03em; }
-    td.colon { width: 4%; font-weight: 700; text-align: center; }
-    td.val { width: 52%; font-size: 10.5pt; }
-    .date-line { margin-top: 14px; font-size: 9.5pt; text-align: right; color: #444; }
-    .sig-section { margin-top: 28px; display: flex; gap: 0; }
-    .sig-box { flex: 1; border: 1px solid #000; padding: 12px 14px 10px; margin-right: -1px; }
-    .sig-box:last-child { margin-right: 0; }
-    .sig-role { font-size: 8.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #555; margin-bottom: 4px; }
-    .sig-name { font-size: 10.5pt; font-weight: 700; min-height: 16px; margin-bottom: 28px; }
-    .sig-line { border-top: 1px solid #000; margin-bottom: 4px; }
-    .sig-hint { font-size: 8pt; color: #888; text-align: center; }
-    @media print { body { padding: 12mm 14mm; } @page { size: A4; margin: 0; } }
-  </style>
-</head>
-<body>
-  <div class="doc-title">${title}</div>
-  <div class="attempt-label">${attemptLabel}</div>
-  <table>${tableRows}</table>
-  <div class="date-line">Tarih: ${today}</div>
-  <div class="sig-section">
-    ${sigBox('Tasarımcı', designerNames)}
-    ${sigBox('Ekip Lideri / Onaylayan', onaylayanKisi)}
-    ${sigBox('Matbaa Yetkilisi', printerName)}
-  </div>
-</body>
-</html>`
-}
-
-function openPrint(html) {
-  const win = window.open('', '_blank', 'width=800,height=900')
-  if (!win) {
-    toast.error('Yazdırma penceresi açılamadı. Pop-up engelleyiciyi kontrol edin.')
-    return
+// The parçalar for a document: prefer the exact set saved with the form
+// (_selectedComponents), otherwise fall back to the project's current spec
+// from Ürün Bilgileri. Shape: [{ component, rows: [{label,value}] }].
+function parcalarFor(project, form) {
+  const saved = form?._selectedComponents
+  if (Array.isArray(saved) && saved.length > 0) {
+    return saved.map((c) => ({ component: c.component, rows: c.rows ?? [] }))
   }
-  win.document.write(html)
-  win.document.close()
-  win.focus()
-  setTimeout(() => win.print(), 300)
-}
-
-function printDemoDoc({ project, form, attemptNo, printerName }) {
-  const designerNames = (project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''
-  const rows = [
-    ['İŞİN ADI', form?.isinAdi ?? project?.title ?? ''],
-    ['SETTEKİ KİTAP SAYISI', form?.settekiKitapSayisi ?? ''],
-    ['ADET', form?.adet ?? ''],
-    ['EBAT', form?.ebat ?? ''],
-    ['SAYFA SAYISI', form?.sayfaSayisi ?? ''],
-    ['İÇ KAĞIT CİNSİ', form?.icKagitCinsi ?? ''],
-    ['KAPAK KAĞIT CİNSİ', form?.kapakKagitCinsi ?? ''],
-    ['CİLT', form?.cilt ?? ''],
-    ['LAMİNASYON', form?.laminasyon ?? ''],
-    ['KAĞIT DAHİL BİRİM FİYAT', form?.kagitDahilBirimFiyat ?? ''],
-    ['BASIM YERİ', form?.basimYeri ?? ''],
-    ['DEMO İSTEM TARİHİ', form?.demoIstemTarihi ?? ''],
-    ['DEMO İSTEYEN KİŞİ', form?.demoIsteyenKisi ?? designerNames],
-    ['ONAYLAYAN KİŞİ', form?.onaylayanKisi ?? ''],
-  ]
-  openPrint(buildPrintHtml({
-    title: project?.title ?? '',
-    attemptLabel: `${attemptNo}. DEMO`,
-    rows,
-    designerNames,
-    onaylayanKisi: form?.onaylayanKisi ?? '',
-    printerName,
+  return getComponentsForProject(project?.id).map((c) => ({
+    component: c.component,
+    rows: getComponentRows(c),
   }))
 }
 
-function printOzalitDoc({ project, form, attemptNo, printerName }) {
+// Print every parça of a document in ONE job (one classic sheet each).
+function printDoc({ project, form, attemptNo, kind, printerName }) {
   const designerNames = (project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''
-  const rows = [
-    ['İŞİN ADI', form?.isinAdi ?? project?.title ?? ''],
-    ['SETTEKİ KİTAP SAYISI', form?.settekiKitapSayisi ?? ''],
-    ['ADET', form?.adet ?? ''],
-    ['EBAT', form?.ebat ?? ''],
-    ['SAYFA SAYISI', form?.sayfaSayisi ?? ''],
-    ['İÇ KAĞIT CİNSİ', form?.icKagitCinsi ?? ''],
-    ['KAPAK KAĞIT CİNSİ', form?.kapakKagitCinsi ?? ''],
-    ['CİLT', form?.cilt ?? ''],
-    ['LAMİNASYON', form?.laminasyon ?? ''],
-    ['KAĞIT DAHİL BİRİM FİYAT', form?.kagitDahilBirimFiyat ?? ''],
-    ['BASIM YERİ', form?.basimYeri ?? ''],
-    ['OZALİT İSTEM TARİHİ', form?.ozalitIstemTarihi ?? ''],
-    ['OZALİT İSTEYEN KİŞİ', form?.ozalitIsteyenKisi ?? designerNames],
-    ['ONAYLAYAN KİŞİ', form?.onaylayanKisi ?? ''],
-  ]
-  openPrint(buildPrintHtml({
+  const attemptLabel = `${attemptNo}. ${kind === 'ozalit' ? 'OZALİT' : 'DEMO'}`
+  const comps = parcalarFor(project, form)
+  const list = comps.length > 0 ? comps : [{ component: form?.isinAdi || project?.title || '', rows: [] }]
+  const sheets = list.map((c) => ({
     title: project?.title ?? '',
-    attemptLabel: `${attemptNo}. OZALİT`,
-    rows,
+    attemptLabel,
+    rows: buildSpecRows({ component: c, form, kind }),
     designerNames,
     onaylayanKisi: form?.onaylayanKisi ?? '',
-    printerName,
+    matbaaYetkilisi: printerName || form?.matbaaYetkilisi || '',
   }))
+  const ok = printSpecSheets(sheets, { docTitle: `${attemptLabel} — ${project?.title ?? ''}` })
+  if (!ok) toast.error('Yazdırma penceresi açılamadı. Pop-up engelleyiciyi kontrol edin.')
 }
 
 /* ------------------------------------------------------------------ */
@@ -196,51 +106,14 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
   if (!project) return null
 
   const isDemo = docType === 'demo'
+  const kind = isDemo ? 'demo' : 'ozalit'
   const designerNames =
     (project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''
   const attemptLabel = `${attemptNo}. ${isDemo ? 'DEMO' : 'OZALİT'}`
 
-  const rows = isDemo
-    ? [
-        ['İŞİN ADI', form?.isinAdi ?? project.title],
-        ['SETTEKİ KİTAP SAYISI', form?.settekiKitapSayisi],
-        ['ADET', form?.adet],
-        ['EBAT', form?.ebat],
-        ['SAYFA SAYISI', form?.sayfaSayisi],
-        ['İÇ KAĞIT CİNSİ', form?.icKagitCinsi],
-        ['KAPAK KAĞIT CİNSİ', form?.kapakKagitCinsi],
-        ['CİLT', form?.cilt],
-        ['LAMİNASYON', form?.laminasyon],
-        ['KAĞIT DAHİL BİRİM FİYAT', form?.kagitDahilBirimFiyat],
-        ['BASIM YERİ', form?.basimYeri],
-        ['DEMO İSTEM TARİHİ', form?.demoIstemTarihi],
-        ['DEMO İSTEYEN KİŞİ', form?.demoIsteyenKisi ?? designerNames],
-        ['ONAYLAYAN KİŞİ', form?.onaylayanKisi],
-      ]
-    : [
-        ['İŞİN ADI', form?.isinAdi ?? project.title],
-        ['SETTEKİ KİTAP SAYISI', form?.settekiKitapSayisi],
-        ['ADET', form?.adet],
-        ['EBAT', form?.ebat],
-        ['SAYFA SAYISI', form?.sayfaSayisi],
-        ['İÇ KAĞIT CİNSİ', form?.icKagitCinsi],
-        ['KAPAK KAĞIT CİNSİ', form?.kapakKagitCinsi],
-        ['CİLT', form?.cilt],
-        ['LAMİNASYON', form?.laminasyon],
-        ['KAĞIT DAHİL BİRİM FİYAT', form?.kagitDahilBirimFiyat],
-        ['BASIM YERİ', form?.basimYeri],
-        ['OZALİT İSTEM TARİHİ', form?.ozalitIstemTarihi],
-        ['OZALİT İSTEYEN KİŞİ', form?.ozalitIsteyenKisi ?? designerNames],
-        ['ONAYLAYAN KİŞİ', form?.onaylayanKisi],
-      ]
-
-  function handlePrint() {
-    if (isDemo) {
-      printDemoDoc({ project, form, attemptNo, printerName })
-    } else {
-      printOzalitDoc({ project, form, attemptNo, printerName })
-    }
-  }
+  // One classic sheet per parça — same set the printout produces.
+  const comps = parcalarFor(project, form)
+  const list = comps.length > 0 ? comps : [{ component: form?.isinAdi || project.title, rows: [] }]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -249,70 +122,71 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
             {isDemo ? 'Demo Üretim Formu' : 'Ozalit Üretim Formu'}
+            {list.length > 1 && (
+              <span className="ml-1 text-xs font-normal text-muted-foreground">· {list.length} parça</span>
+            )}
           </DialogTitle>
         </DialogHeader>
 
-        {/* Spec sheet — read-only */}
-        <div className="rounded-lg border bg-white">
-          <div className="border-b px-4 py-3 text-center">
-            <h2 className="text-base font-bold uppercase tracking-widest text-foreground">
-              {project.title}
-            </h2>
-          </div>
-          <div className="border-b px-4 py-2 text-right">
-            <span className="text-sm font-bold">{attemptLabel}</span>
-          </div>
-          <div className="px-4 py-1">
-            {rows.map(([label, val]) => (
-              <div
-                key={label}
-                className="grid grid-cols-[1fr_auto_2fr] items-center border-b last:border-b-0"
-              >
-                <span className="py-1.5 pr-3 text-[13px] font-semibold uppercase tracking-wide text-foreground">
-                  {label}
-                </span>
-                <span className="px-2 py-1.5 text-sm font-bold">:</span>
-                <span className="py-1.5 pl-2 text-sm text-foreground">{val || <span className="text-muted-foreground/50">—</span>}</span>
+        <div className="space-y-4">
+          {list.map((c, ci) => {
+            const rows = buildSpecRows({ component: c, form, kind })
+            return (
+              <div key={ci} className="rounded-lg border bg-white">
+                <div className="border-b px-4 py-3 text-center">
+                  <h2 className="text-base font-bold uppercase tracking-widest text-foreground">{project.title}</h2>
+                </div>
+                <div className="border-b px-4 py-2 text-right">
+                  <span className="text-sm font-bold">{attemptLabel}</span>
+                </div>
+                <div className="px-4 py-1">
+                  {rows.map(([label, val], i) => (
+                    <div
+                      key={i}
+                      className="grid grid-cols-[minmax(6rem,40%)_auto_1fr] items-start gap-2 border-b py-1.5 last:border-b-0"
+                    >
+                      <span className="pt-px text-[11px] font-semibold uppercase leading-snug tracking-wide text-muted-foreground">{label}</span>
+                      <span className="text-xs font-bold text-muted-foreground">:</span>
+                      <span className="min-w-0 whitespace-pre-wrap break-words text-[13px] leading-snug text-foreground">
+                        {val || <span className="text-muted-foreground/50">—</span>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {/* Signatures for this parça */}
+                <div className="grid grid-cols-3 border-t">
+                  {[
+                    ['Tasarımcı', designerNames],
+                    ['Ekip Lideri / Onaylayan', form?.onaylayanKisi ?? ''],
+                    ['Matbaa Yetkilisi', printerName],
+                  ].map(([role, name], i) => (
+                    <div key={role} className={cn('p-3', i < 2 && 'border-r')}>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{role}</p>
+                      {name ? (
+                        <p className="mt-1 text-foreground" style={{ fontFamily: "'Parisienne', cursive", fontSize: '1.5rem', lineHeight: 1.25 }}>
+                          {name}
+                        </p>
+                      ) : (
+                        <>
+                          <div className="mb-1 mt-8 border-t" />
+                          <p className="text-center text-[10px] text-muted-foreground">İmza</p>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Signature boxes — Parisienne cursive when a name is known */}
-        <div className="grid grid-cols-3 overflow-hidden rounded-lg border">
-          {[
-            ['Tasarımcı', designerNames],
-            ['Ekip Lideri / Onaylayan', form?.onaylayanKisi ?? ''],
-            ['Matbaa Yetkilisi', printerName],
-          ].map(([role, name], i) => (
-            <div key={role} className={cn('p-3', i < 2 && 'border-r')}>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                {role}
-              </p>
-              {name ? (
-                <p
-                  className="mt-1 text-foreground"
-                  style={{ fontFamily: "'Parisienne', cursive", fontSize: '1.65rem', lineHeight: 1.25 }}
-                >
-                  {name}
-                </p>
-              ) : (
-                <>
-                  <div className="mb-1 mt-10 border-t" />
-                  <p className="text-center text-[10px] text-muted-foreground">İmza</p>
-                </>
-              )}
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Kapat
           </Button>
-          <Button variant="outline" onClick={handlePrint}>
+          <Button variant="outline" onClick={() => printDoc({ project, form, attemptNo, kind, printerName })}>
             <Printer className="h-4 w-4" />
-            Yazdır
+            {list.length > 1 ? `Yazdır (${list.length})` : 'Yazdır'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -328,11 +202,7 @@ function DocumentCard({ project, form, attemptNo, docType, approved, printerName
   const { openProject } = useProjectModal()
 
   function handlePrint() {
-    if (docType === 'demo') {
-      printDemoDoc({ project, form, attemptNo, printerName })
-    } else {
-      printOzalitDoc({ project, form, attemptNo, printerName })
-    }
+    printDoc({ project, form, attemptNo, kind: docType === 'demo' ? 'demo' : 'ozalit', printerName })
   }
 
   const requestDate = docType === 'demo' ? form?.demoIstemTarihi : form?.ozalitIstemTarihi

@@ -16,6 +16,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { getComponentsForProject, getComponentRows, primeProductInfoCache, saveEditedComponents } from '@/data/productCatalog'
+import { printSpecSheets, buildSpecRows } from '@/lib/specPrint'
 import { buildAdetRows } from '@/data/orderAdet'
 
 /* ------------------------------------------------------------------ */
@@ -206,111 +207,28 @@ function emptyForm(variant, project, user) {
 /*  Print sheet                                                       */
 /* ------------------------------------------------------------------ */
 
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
-}
-
-function buildPrintHtml({ form, customRows, project, attemptNo, kind }) {
-  const designerNames = (project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''
-  const today = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
-  const attemptSuffix = kind === 'ozalit' ? 'OZALİT' : 'DEMO'
-
-  const rows = [
-    ['İŞİN ADI', form.isinAdi],
-    ...(customRows ?? []).filter((r) => r.label).map((r) => [r.label.toUpperCase(), r.value]),
-  ]
-  if (kind === 'ozalit') {
-    rows.push(
-      ['OZALİT İSTEM TARİHİ', form.ozalitIstemTarihi],
-      ['OZALİT İSTEYEN KİŞİ', form.ozalitIsteyenKisi],
-    )
-  } else {
-    rows.push(
-      ['DEMO İSTEM TARİHİ', form.demoIstemTarihi],
-      ['DEMO İSTEYEN KİŞİ', form.demoIsteyenKisi],
-    )
-  }
-  // The matbaa (printer) delivery stamp, if it has happened, becomes a
-  // distinct pair of rows on the printout.
-  if (form.teslimTarihi || form.teslimEdenKisi) {
-    rows.push(
-      ['TESLİM TARİHİ', form.teslimTarihi],
-      ['TESLİM EDEN KİŞİ', form.teslimEdenKisi],
-    )
-  }
-  rows.push(['ONAYLAYAN KİŞİ', form.onaylayanKisi])
-
-  const tableRows = rows.map(([label, val]) => `
-    <tr><td class="label">${escapeHtml(label)}</td><td class="colon">:</td><td class="val">${escapeHtml(val || '')}</td></tr>`).join('')
-
-  const sigBox = (role, name) => `
-    <div class="sig-box">
-      <p class="sig-role">${escapeHtml(role)}</p><p class="sig-name">${escapeHtml(name || '')}</p>
-      <div class="sig-line"></div><p class="sig-hint">İmza</p>
-    </div>`
-
-  return `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"/>
-  <link href="https://fonts.googleapis.com/css2?family=Alex Brush&display=swap" rel="stylesheet"/>
-  <title>${attemptSuffix} Formu — ${escapeHtml(project?.title ?? '')} — ${escapeHtml(form.isinAdi || '')}</title>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#000;padding:18mm 20mm}
-    .doc-title{text-align:center;font-size:15pt;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:4px}
-    .attempt-label{text-align:right;font-size:12pt;font-weight:700;padding:4px 0 8px;border-bottom:1px solid #ccc}
-    table{width:100%;border-collapse:collapse}
-    tr{border-bottom:1px solid #ddd}
-    td{padding:5px 4px;vertical-align:middle}
-    td.label{width:44%;font-weight:700;font-size:9.5pt;text-transform:uppercase;letter-spacing:.03em}
-    td.colon{width:4%;font-weight:700;text-align:center}
-    td.val{width:52%;font-size:10.5pt}
-    .date-line{margin-top:14px;font-size:9.5pt;text-align:right;color:#444}
-    .sig-section{margin-top:28px;display:flex}
-    .sig-box{flex:1;border:1px solid #000;padding:12px 14px 10px;margin-right:-1px}
-    .sig-box:last-child{margin-right:0}
-    .sig-box p{margin:0}
-    .sig-role{font-size:8.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#555;margin-bottom:4px}
-    .sig-name{font-size:16pt;font-family:'Alex Brush',cursive;min-height:22px;margin-bottom:8px;color:#3d283499}
-    .sig-line{border-top:1px solid #000;margin-bottom:4px}
-    .sig-hint{font-size:8pt;color:#888;text-align:center}
-    @media print{body{padding:12mm 14mm}@page{size:A4;margin:0}}
-  </style></head><body>
-  <div class="doc-title">${escapeHtml(project?.title ?? '')}</div>
-  <div class="attempt-label">${attemptNo}. ${attemptSuffix}</div>
-  <table>${tableRows}</table>
-  <div class="date-line">Tarih: ${escapeHtml(today)}</div>
-  <div class="sig-section">
-    ${sigBox('Tasarımcı', designerNames)}
-    ${form.matbaaYetkilisi ? sigBox('Matbaa Yetkilisi', form.matbaaYetkilisi) : ''}
-    ${sigBox('Ekip Lideri / Onaylayan', form.onaylayanKisi)}
-  </div></body></html>`
-}
-
-function openPrintWindow({ form, customRows, project, attemptNo, kind }) {
-  const html = buildPrintHtml({ form, customRows, project, attemptNo, kind })
-  const win = window.open('', '_blank', 'width=800,height=900')
-  if (!win) { toast.error('Pop-up engelleyiciyi kontrol edin.'); return }
-  win.document.write(html)
-  win.document.close()
-  win.focus()
-  setTimeout(() => win.print(), 300)
-}
-
-/** Opens one print window per selected component. If none selected, prints a single window. */
+/**
+ * Print every selected parça in ONE job (one classic sheet per parça, page
+ * break between). If nothing is selected, prints the single custom-row sheet.
+ * Uses the shared specPrint helper so Dökümanlar and this dialog stay in sync.
+ */
 function openMultiPrint({ form, customRows, project, attemptNo, kind, selectedComponents }) {
+  const designerNames = (project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''
+  const attemptLabel = `${attemptNo}. ${kind === 'ozalit' ? 'OZALİT' : 'DEMO'}`
   const selected = (selectedComponents ?? []).filter(Boolean)
-  if (selected.length === 0) {
-    openPrintWindow({ form, customRows, project, attemptNo, kind })
-    return
-  }
-  for (const comp of selected) {
-    openPrintWindow({
-      form: { ...form, isinAdi: comp.component || form.isinAdi },
-      customRows: comp.rows ?? [],
-      project,
-      attemptNo,
-      kind,
-    })
-  }
+  const comps = selected.length > 0
+    ? selected
+    : [{ component: form.isinAdi || project?.title || '', rows: (customRows ?? []).filter((r) => r.label) }]
+  const sheets = comps.map((c) => ({
+    title: project?.title ?? '',
+    attemptLabel,
+    rows: buildSpecRows({ component: c, form, kind }),
+    designerNames,
+    onaylayanKisi: form?.onaylayanKisi ?? '',
+    matbaaYetkilisi: form?.matbaaYetkilisi ?? '',
+  }))
+  const ok = printSpecSheets(sheets, { docTitle: `${attemptLabel} — ${project?.title ?? ''}` })
+  if (!ok) toast.error('Pop-up engelleyiciyi kontrol edin.')
 }
 
 /* ------------------------------------------------------------------ */
