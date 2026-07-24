@@ -220,7 +220,9 @@ function openMultiPrint({ form, customRows, project, attemptNo, kind, selectedCo
     ? selected
     : [{ component: form.isinAdi || project?.title || '', rows: (customRows ?? []).filter((r) => r.label) }]
   const sheets = comps.map((c) => ({
-    title: project?.title ?? '',
+    // Each sheet's header is its own parça — otherwise the KUTU sheet would be
+    // titled with the book's name.
+    title: c.component || project?.title || '',
     attemptLabel,
     rows: buildSpecRows({ component: c, form, kind }),
     designerNames,

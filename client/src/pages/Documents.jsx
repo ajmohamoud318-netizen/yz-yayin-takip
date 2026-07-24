@@ -87,7 +87,8 @@ function printDoc({ project, form, attemptNo, kind, printerName }) {
   const comps = parcalarFor(project, form)
   const list = comps.length > 0 ? comps : [{ component: form?.isinAdi || project?.title || '', rows: [] }]
   const sheets = list.map((c) => ({
-    title: project?.title ?? '',
+    // Header = this parça's name, so the KUTU sheet isn't titled as the book.
+    title: c.component || project?.title || '',
     attemptLabel,
     rows: buildSpecRows({ component: c, form, kind }),
     designerNames,
