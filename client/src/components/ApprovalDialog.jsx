@@ -17,6 +17,7 @@ import {
 import api, { STAGE_LABELS, STAGES_REQUIRING_FULL_PROGRESS } from '@/api'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { useAuth } from '@/hooks/useAuth'
+import { isSubtaskDone } from '@/domain/services/progress'
 import { cn } from '@/lib/utils'
 
 // Where an approval sends the project, with a destination-aware button label.
@@ -58,8 +59,10 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
 
   // Only completed subtasks are revisable — you can't "revise" work that was
   // never done; incomplete subtasks simply stay pending for the designer to
-  // finish. (Drop any legacy revize-kind rows too.)
-  const revisableSubtasks = (loadedSubtasks ?? []).filter((s) => s.kind !== 'revize' && s.is_done)
+  // finish. (Drop any legacy revize-kind rows too.) Use the kind-aware
+  // isSubtaskDone: pages/sticker subtasks are "done" via pages_done/
+  // stickers_done, NOT is_done, so a raw is_done check wrongly hid Sayfa Sayısı.
+  const revisableSubtasks = (loadedSubtasks ?? []).filter((s) => s.kind !== 'revize' && isSubtaskDone(s))
 
   // Reset the picker each time the dialog is (re)opened.
   useEffect(() => {
