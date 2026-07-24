@@ -24,6 +24,19 @@ import {
  *  PATCH  /api/users/:id/reactivate
  *  DELETE /api/users/:id
  */
+
+// True when there's at least one OTHER active team_leader besides `exceptId`.
+// Used to protect the last active leader from deactivation/deletion.
+async function hasOtherActiveLeader(exceptId) {
+  const { rows } = await getPool().query(
+    `SELECT 1 FROM users
+      WHERE role = 'team_leader' AND is_active = TRUE AND id <> $1
+      LIMIT 1`,
+    [exceptId],
+  )
+  return rows.length > 0
+}
+
 export async function userRoutes(fastify) {
   fastify.get('/users', async (request) => {
     await attachUser(request)
@@ -137,6 +150,13 @@ export async function userRoutes(fastify) {
     requireRole(request, 'team_leader')
     const { id } = request.params
     if (id === request.user.id) forbidden('Kendinizi devre dışı bırakamazsınız.')
+    // Never leave the team without an active leader: block deactivating the
+    // last active team_leader (otherwise nobody can invite/manage/reactivate).
+    const target = await getPool().query('SELECT role FROM users WHERE id = $1', [id])
+    if (!target.rows[0]) notFound('Kullanıcı bulunamadı.')
+    if (target.rows[0].role === 'team_leader' && !(await hasOtherActiveLeader(id))) {
+      forbidden('Son aktif takım liderini devre dışı bırakamazsınız.')
+    }
     const { rows } = await getPool().query(
       `UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE id = $1
        RETURNING id, name, email, role, is_active`,
@@ -169,6 +189,12 @@ export async function userRoutes(fastify) {
     requireRole(request, 'team_leader')
     const { id } = request.params
     if (id === request.user.id) forbidden('Kendinizi silemezsiniz.')
+    // Same protection as deactivate: don't delete the last active team leader.
+    const target = await getPool().query('SELECT role FROM users WHERE id = $1', [id])
+    if (!target.rows[0]) return notFound('Kullanıcı bulunamadı.')
+    if (target.rows[0].role === 'team_leader' && !(await hasOtherActiveLeader(id))) {
+      forbidden('Son aktif takım liderini silemezsiniz.')
+    }
     const { rows } = await getPool().query(
       `DELETE FROM users WHERE id = $1 RETURNING id`,
       [id],

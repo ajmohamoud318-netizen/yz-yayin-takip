@@ -50,6 +50,9 @@ export default function Team() {
   const [deleting, setDeleting] = useState(false)
 
   const isLeader = user?.role === 'team_leader'
+  // How many active team leaders exist — used to protect the last one from
+  // being deactivated/deleted (which would lock everyone out of management).
+  const activeLeaderCount = users.filter((u) => u.role === 'team_leader' && u.is_active).length
 
   useEffect(() => {
     setLoading(true)
@@ -148,6 +151,9 @@ export default function Team() {
                 key={u.id}
                 user={u}
                 canManage={isLeader && u.id !== user.id}
+                isLastActiveLeader={
+                  u.role === 'team_leader' && u.is_active && activeLeaderCount <= 1
+                }
                 onToggle={toggleActive}
                 onRequestDelete={requestDelete}
               />
@@ -190,7 +196,12 @@ export default function Team() {
 }
 
 
-function UserCard({ user, canManage, onToggle, onRequestDelete }) {
+function UserCard({ user, canManage, isLastActiveLeader, onToggle, onRequestDelete }) {
+  // The last active team leader can't be deactivated or deleted (server
+  // enforces this too) — hide those actions so they aren't offered.
+  const canToggle = !user.is_active || !isLastActiveLeader // reactivate always ok
+  const canDelete = !isLastActiveLeader
+  const showMenu = canManage && (canToggle || canDelete)
   return (
     <Card>
       <CardContent className="flex items-start gap-3 p-4">
@@ -215,7 +226,7 @@ function UserCard({ user, canManage, onToggle, onRequestDelete }) {
             )}
           </div>
         </div>
-        {canManage && (
+        {showMenu && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -223,15 +234,19 @@ function UserCard({ user, canManage, onToggle, onRequestDelete }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onToggle(user)}>
-                {user.is_active ? 'Devre dışı bırak' : 'Aktifleştir'}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="text-rose-600 focus:text-rose-600"
-                onClick={() => onRequestDelete(user)}
-              >
-                Hesabı sil
-              </DropdownMenuItem>
+              {canToggle && (
+                <DropdownMenuItem onClick={() => onToggle(user)}>
+                  {user.is_active ? 'Devre dışı bırak' : 'Aktifleştir'}
+                </DropdownMenuItem>
+              )}
+              {canDelete && (
+                <DropdownMenuItem
+                  className="text-rose-600 focus:text-rose-600"
+                  onClick={() => onRequestDelete(user)}
+                >
+                  Hesabı sil
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
