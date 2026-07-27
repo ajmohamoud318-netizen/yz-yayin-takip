@@ -56,6 +56,7 @@ export function createApi() {
       userRepo.setUserCapability(id, capability, value),
     // Hard delete — backend enforces team_leader-only + no-self-delete.
     deleteUser: (id) => userRepo.deleteUser(id),
+    setMyStatus: (text) => userRepo.setMyStatus(text),
 
     // Projects
     listProjects: () => projectRepo.listProjects(),

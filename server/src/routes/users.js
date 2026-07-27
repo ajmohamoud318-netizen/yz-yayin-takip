@@ -45,11 +45,34 @@ export async function userRoutes(fastify) {
     await attachUser(request)
     const { rows } = await getPool().query(
       `SELECT id, name, email, role, is_active,
-              invited_at, joined_at, created_at
+              invited_at, joined_at, created_at,
+              CASE WHEN daily_status_date = CURRENT_DATE THEN daily_status END AS daily_status
          FROM users
         ORDER BY created_at`,
     )
     return rows
+  })
+
+  // Self-service same-day status note ("what else am I on today") — scoped
+  // to the caller's own id, same pattern as /users/me/avatar below. An
+  // empty text clears it. See migration 025__daily_status.sql for why no
+  // cleanup job is needed: stale notes just fall out of the CURRENT_DATE
+  // filter on the next read.
+  fastify.patch('/users/me/status', { schema: schemas.usersSetStatus }, async (request) => {
+    await attachUser(request)
+    const text = request.body.text.trim()
+    const { rows } = await getPool().query(
+      `UPDATE users
+          SET daily_status = $2,
+              daily_status_date = CASE WHEN $2 = '' THEN NULL ELSE CURRENT_DATE END,
+              updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, name, email, role, is_active,
+                  CASE WHEN $2 = '' THEN NULL ELSE daily_status END AS daily_status`,
+      [request.user.id, text],
+    )
+    if (!rows[0]) notFound('Kullanıcı bulunamadı.')
+    return rows[0]
   })
 
   fastify.post(

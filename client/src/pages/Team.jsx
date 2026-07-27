@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Copy, Mail, Search, Settings, UserPlus, Wand2 } from 'lucide-react'
+import { Copy, Mail, MessageSquareText, Search, Settings, UserPlus, Wand2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import api, { ROLE_LABELS } from '@/api'
@@ -225,6 +225,16 @@ function UserCard({ user, canManage, isLastActiveLeader, onToggle, onRequestDele
               <span className="text-[11px] text-amber-600">Davet bekliyor</span>
             )}
           </div>
+          {user.daily_status && (
+            <Badge
+              variant="outline"
+              className="mt-2 max-w-[220px] gap-1 border-amber-200 bg-amber-50 text-amber-700"
+              title={user.daily_status}
+            >
+              <MessageSquareText className="h-3 w-3 shrink-0" />
+              <span className="truncate">{user.daily_status}</span>
+            </Badge>
+          )}
         </div>
         {showMenu && (
           <DropdownMenu>

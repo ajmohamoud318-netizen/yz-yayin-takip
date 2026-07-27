@@ -34,6 +34,7 @@ import {
   CheckCircle2,
   Tag,
   Ship,
+  MessageSquareText,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -51,6 +52,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import api, { ROLE_LABELS, STATUS_META, statusKeyForProject, canRequestHandover } from '@/api'
 import { cn, initials } from '@/lib/utils'
@@ -280,6 +290,7 @@ export default function AppShell() {
                 <Plus className="h-4 w-4" />
               </Button>
             )}
+            <DailyStatusButton />
             <NotificationBell />
             <UserMenu user={user} onLogout={handleLogout} />
           </div>
@@ -681,6 +692,94 @@ function relativeTime(iso) {
  *               clicked (or "Tümünü okundu say"). Peeking never marks it read,
  *               so the list stays a real to-do queue.
  */
+const STATUS_MAX_LENGTH = 140
+
+/**
+ * Same-day "what else am I on today" note — self-set, independent of any
+ * project, and shown to everyone on /team (Team.jsx) so a stalled project
+ * has an explanation beyond "still at Tasarım". Resets automatically the
+ * next day (server-side CURRENT_DATE filter — see migration
+ * 025__daily_status.sql), so there's nothing to clean up here.
+ */
+function DailyStatusButton() {
+  const { user, updateUser } = useAuth()
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState(user?.daily_status ?? '')
+  const [saving, setSaving] = useState(false)
+  const hasStatus = !!user?.daily_status
+
+  function handleOpenChange(next) {
+    setOpen(next)
+    if (next) setText(user?.daily_status ?? '')
+  }
+
+  async function save(nextText) {
+    setSaving(true)
+    try {
+      const updated = await api.setMyStatus(nextText)
+      updateUser({ daily_status: updated.daily_status ?? null })
+      toast.success(nextText ? 'Durum güncellendi.' : 'Durum temizlendi.')
+      setOpen(false)
+    } catch (err) {
+      toast.error(err.message || 'Durum güncellenemedi.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Bugünkü durum"
+        title={hasStatus ? user.daily_status : 'Bugünkü durumunu paylaş'}
+        className={cn('relative', hasStatus && 'text-amber-600')}
+        onClick={() => handleOpenChange(true)}
+      >
+        <MessageSquareText className="h-4 w-4" />
+        {hasStatus && (
+          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background" />
+        )}
+      </Button>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquareText className="h-4 w-4" /> Bugünkü Durum
+            </DialogTitle>
+            <DialogDescription>
+              Bugün başka bir işle mi ilgileniyorsun? Ekip lideri bunu Takım
+              sayfasında görecek. Yarın otomatik olarak temizlenir.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Textarea
+              value={text}
+              onChange={(e) => setText(e.target.value.slice(0, STATUS_MAX_LENGTH))}
+              placeholder="Örn. Bugün pazarlama kampanyası hazırlığı yapıyorum"
+              rows={3}
+            />
+            <p className="text-right text-[11px] text-muted-foreground">
+              {text.length}/{STATUS_MAX_LENGTH}
+            </p>
+          </div>
+          <DialogFooter>
+            {hasStatus && (
+              <Button type="button" variant="ghost" disabled={saving} onClick={() => save('')}>
+                Temizle
+              </Button>
+            )}
+            <Button type="button" disabled={saving} onClick={() => save(text.trim())}>
+              {saving ? 'Kaydediliyor…' : 'Kaydet'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
 function NotificationBell() {
   const navigate = useNavigate()
   const { items, unseen, markRead, markAllRead, markSeen } = useNotifications()

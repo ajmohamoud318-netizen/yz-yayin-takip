@@ -163,6 +163,17 @@ const userIdParams = {
   },
 }
 
+// Same-day status note (see migration 025__daily_status.sql). Empty string
+// is how the client clears the status, so no minLength.
+const usersSetStatus = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['text'],
+    properties: { text: { type: 'string', maxLength: 140 } },
+  },
+}
+
 // Notification id path param (e.g. PATCH /notifications/:id/read). Bounds the
 // value so a malformed/oversized id is rejected with 400 before the DB query.
 const notificationIdParams = {
@@ -544,6 +555,7 @@ export const schemas = {
   authDevLogin,
   usersInvite,
   userIdParams,
+  usersSetStatus,
   notificationIdParams,
   projectsCreate,
   projectsPatch,
