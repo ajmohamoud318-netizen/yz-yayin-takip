@@ -164,7 +164,7 @@ export async function loadProjectAssignees(client, project) {
          FROM subtasks s
          LEFT JOIN users u ON u.id = s.assigned_to
         WHERE s.project_id = $1 AND s.assigned_to IS NOT NULL
-        ORDER BY s.created_at, s.id`,
+        ORDER BY s.position, s.created_at, s.id`,
       [projectId],
     )
     for (const r of rows) {
@@ -203,12 +203,14 @@ export async function listProjectSubtasks(client, projectId) {
   const { rows } = await client.query(
     `SELECT s.id, s.project_id, s.title, s.kind, s.is_done, s.total_pages, s.pages_done,
             s.total_stickers, s.stickers_done, s.assigned_to, s.done_at,
-            s.needs_revize, s.created_at, s.updated_at,
+            s.needs_revize, s.position, s.created_at, s.updated_at,
             u.name AS assigned_name
        FROM subtasks s
        LEFT JOIN users u ON u.id = s.assigned_to
        WHERE s.project_id = $1
-       ORDER BY s.created_at`,
+       -- position is the team leader's explicit order (migration 027);
+       -- created_at is the tiebreaker for rows written before it existed.
+       ORDER BY s.position, s.created_at`,
     [projectId],
   )
   return rows

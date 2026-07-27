@@ -81,7 +81,7 @@ export async function projectRoutes(fastify) {
         created_by: request.user.id,
       })
       const subRows = []
-      for (const s of subtasks) {
+      for (const [index, s] of subtasks.entries()) {
         // Look up the per-subtask override by either the SPA's library key
         // (e.g. "kapak") or — for custom ad-hoc subtasks — by the title the
         // team leader just typed. Falls back to the project primary so the
@@ -90,10 +90,12 @@ export async function projectRoutes(fastify) {
           subtaskAssignees?.[s.title] ??
           subtaskAssignees?.[s.key] ??
           primaryAssignee
+        // `position` stamps the order the leader chose at creation time
+        // (migration 027) rather than leaving it to created_at ties.
         const { rows } = await client.query(
-          `INSERT INTO subtasks (project_id, title, kind, total_pages, total_stickers, assigned_to)
-           VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-          [project.id, s.title, s.kind ?? 'check', s.total_pages ?? null, s.total_stickers ?? null, subAssignee],
+          `INSERT INTO subtasks (project_id, title, kind, total_pages, total_stickers, assigned_to, position)
+           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+          [project.id, s.title, s.kind ?? 'check', s.total_pages ?? null, s.total_stickers ?? null, subAssignee, index],
         )
         subRows.push(rows[0])
       }

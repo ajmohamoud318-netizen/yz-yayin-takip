@@ -374,6 +374,8 @@ CREATE TABLE subtasks (
   title         TEXT NOT NULL,              -- 'Kapak', 'Kutu', 'Ses' etc.
   is_done       BOOLEAN DEFAULT FALSE,
   pages_done    INTEGER,                     -- for 'Sayfa Sayısı'
+  needs_revize  BOOLEAN NOT NULL DEFAULT FALSE,  -- migration 017
+  position      INTEGER NOT NULL DEFAULT 0,      -- leader's explicit order, migration 027
   done_at       TIMESTAMPTZ
 );
 CREATE TABLE subtask_updates (              -- per-subtask timeline notes
@@ -383,6 +385,11 @@ CREATE TABLE subtask_updates (              -- per-subtask timeline notes
   author_id     UUID REFERENCES users(id),
   created_at    TIMESTAMPTZ DEFAULT NOW()
 );
+-- NOTE: that CASCADE is why `PUT /projects/:id/subtasks` must never
+-- delete-and-recreate the list. It reconciles in place (UPDATE survivors
+-- matched by title, INSERT new, DELETE only removed) so kept subtasks keep
+-- their id — and therefore their notes, pages_done/stickers_done and
+-- needs_revize. Ordering rides on `position`, not row creation time.
 CREATE TABLE demos (                        -- submitted demo forms
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id    UUID REFERENCES projects(id) ON DELETE CASCADE,
