@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Copy, Mail, MessageSquareText, Search, Settings, UserPlus, Wand2 } from 'lucide-react'
+import { Copy, Mail, Search, Settings, UserPlus, Wand2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import api, { ROLE_LABELS } from '@/api'
@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import WorkLogNotes, { WorkLogAvatarDot } from '@/components/WorkLogNotes'
 import { useAuth } from '@/hooks/useAuth'
 import { cn, initials } from '@/lib/utils'
 
@@ -69,7 +70,10 @@ export default function Team() {
   async function toggleActive(u) {
     try {
       const updated = await api.setUserActive(u.id, !u.is_active)
-      setUsers((prev) => prev.map((x) => (x.id === u.id ? updated : x)))
+      // Merge rather than replace: the activate/deactivate endpoints return a
+      // trimmed user row (no work_log_today / joined_at), and swapping it in
+      // wholesale would blank the card's notes until the next page load.
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, ...updated } : x)))
       toast.success(updated.is_active ? 'Kullanıcı aktifleştirildi.' : 'Kullanıcı devre dışı bırakıldı.')
     } catch (err) {
       toast.error(err.message || 'İşlem başarısız.')
@@ -202,14 +206,16 @@ function UserCard({ user, canManage, isLastActiveLeader, onToggle, onRequestDele
   const canToggle = !user.is_active || !isLastActiveLeader // reactivate always ok
   const canDelete = !isLastActiveLeader
   const showMenu = canManage && (canToggle || canDelete)
+  // Today's Çalışma Defteri, sent down with the user row by GET /users
+  // (see workLogTodaySelect in server/src/services/work-log.js) — no extra
+  // request, so the whole team's day arrives with the page.
+  const workLog = Array.isArray(user.work_log_today) ? user.work_log_today : []
   return (
     <Card>
       <CardContent className="flex items-start gap-3 p-4">
         <span className="relative inline-block shrink-0">
           <UserAvatar user={user} size="xl" />
-          {user.daily_status && (
-            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-background" />
-          )}
+          <WorkLogAvatarDot entries={workLog} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -230,15 +236,7 @@ function UserCard({ user, canManage, isLastActiveLeader, onToggle, onRequestDele
               <span className="text-[11px] text-amber-600">Davet bekliyor</span>
             )}
           </div>
-          {user.daily_status && (
-            <p
-              className="mt-1.5 flex items-center gap-1 truncate text-[11px] italic text-muted-foreground"
-              title={user.daily_status}
-            >
-              <MessageSquareText className="h-3 w-3 shrink-0" />
-              <span className="truncate">{user.daily_status}</span>
-            </p>
-          )}
+          <WorkLogNotes entries={workLog} className="mt-2.5" />
         </div>
         {showMenu && (
           <DropdownMenu>

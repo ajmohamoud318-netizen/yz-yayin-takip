@@ -163,14 +163,63 @@ const userIdParams = {
   },
 }
 
-// Same-day status note (see migration 025__daily_status.sql). Empty string
-// is how the client clears the status, so no minLength.
-const usersSetStatus = {
+// ─── work log ──────────────────────────────────────────────────────────
+//
+// See migration 026__work_log.sql. Replaces the single `usersSetStatus`
+// note from 025 — entries are typed, optionally timed, and there can be
+// many per day.
+
+const workLogKind = {
+  type: 'string',
+  enum: ['baska_proje', 'toplanti', 'idari', 'egitim', 'diger'],
+}
+// Nullable so the client can explicitly clear a duration it set earlier.
+const workLogMinutes = { type: ['integer', 'null'], minimum: 1, maximum: 1440 }
+const workLogBody = { type: 'string', minLength: 1, maxLength: 280 }
+
+const workLogListQuery = {
+  querystring: {
+    type: 'object',
+    additionalProperties: false,
+    properties: { days: { type: 'integer', minimum: 1, maximum: 90 } },
+  },
+}
+
+const workLogTeamQuery = {
+  querystring: {
+    type: 'object',
+    additionalProperties: false,
+    // YYYY-MM-DD. Pattern-checked here so a malformed value is a 400 rather
+    // than a Postgres cast error surfacing as a 500.
+    properties: { date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' } },
+  },
+}
+
+const workLogCreate = {
   body: {
     type: 'object',
     additionalProperties: false,
-    required: ['text'],
-    properties: { text: { type: 'string', maxLength: 140 } },
+    required: ['body'],
+    properties: { kind: workLogKind, body: workLogBody, minutes: workLogMinutes },
+  },
+}
+
+const workLogIdParams = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id'],
+    properties: { id: { type: 'string', minLength: 1, maxLength: 64 } },
+  },
+}
+
+const workLogUpdate = {
+  ...workLogIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    minProperties: 1,
+    properties: { kind: workLogKind, body: workLogBody, minutes: workLogMinutes },
   },
 }
 
@@ -555,7 +604,11 @@ export const schemas = {
   authDevLogin,
   usersInvite,
   userIdParams,
-  usersSetStatus,
+  workLogListQuery,
+  workLogTeamQuery,
+  workLogCreate,
+  workLogUpdate,
+  workLogIdParams,
   notificationIdParams,
   projectsCreate,
   projectsPatch,

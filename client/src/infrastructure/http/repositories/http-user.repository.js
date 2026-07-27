@@ -49,11 +49,5 @@ export function createHttpUserRepository() {
       cache.delete(id)
       raw = raw.filter((u) => u.id !== id)
     },
-    async setMyStatus(text) {
-      const { data } = await httpClient.patch('/users/me/status', { text })
-      cache.set(data.id, data)
-      raw = raw.map((u) => (u.id === data.id ? data : u))
-      return data
-    },
   }
 }

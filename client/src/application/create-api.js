@@ -16,6 +16,7 @@ import { createHttpProductInfoRepository } from '../infrastructure/http/reposito
 import { createHttpOrderRepository } from '../infrastructure/http/repositories/http-order.repository.js'
 import { createHttpHandoverRepository } from '../infrastructure/http/repositories/http-handover.repository.js'
 import { createHttpNotificationRepository } from '../infrastructure/http/repositories/http-notification.repository.js'
+import { createHttpWorkLogRepository } from '../infrastructure/http/repositories/http-work-log.repository.js'
 import { makeAdvanceOrderRequest } from './use-cases/orders/advance-order-request.js'
 import { makeCreateOrderRequest } from './use-cases/orders/create-order-request.js'
 import { makeRejectOrderRequest } from './use-cases/orders/reject-order-request.js'
@@ -32,6 +33,7 @@ export function createApi() {
   const orderRepo = createHttpOrderRepository()
   const handoverRepo = createHttpHandoverRepository()
   const notificationRepo = createHttpNotificationRepository()
+  const workLogRepo = createHttpWorkLogRepository()
 
   return {
     // Auth
@@ -56,7 +58,13 @@ export function createApi() {
       userRepo.setUserCapability(id, capability, value),
     // Hard delete — backend enforces team_leader-only + no-self-delete.
     deleteUser: (id) => userRepo.deleteUser(id),
-    setMyStatus: (text) => userRepo.setMyStatus(text),
+    // Work log ("Çalışma Defteri") — replaces the old single-line
+    // setMyStatus note. Entries are typed, timed and kept as history.
+    listWorkLog: (days) => workLogRepo.listWorkLog(days),
+    addWorkLogEntry: (entry) => workLogRepo.addWorkLogEntry(entry),
+    updateWorkLogEntry: (id, patch) => workLogRepo.updateWorkLogEntry(id, patch),
+    deleteWorkLogEntry: (id) => workLogRepo.deleteWorkLogEntry(id),
+    listTeamWorkLog: (date) => workLogRepo.listTeamWorkLog(date),
 
     // Projects
     listProjects: () => projectRepo.listProjects(),

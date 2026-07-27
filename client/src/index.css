@@ -373,6 +373,68 @@
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Scrollbars — `scrollbar-thin` for scroll regions inside popovers    */
+/*  and panels (a default-width bar eats ~15px of a 320px dropdown),    */
+/*  `scrollbar-none` for horizontal chip rails where the bar would sit  */
+/*  on top of the chips. Both keep the region scrollable — this is      */
+/*  chrome, not behaviour.                                             */
+/* ------------------------------------------------------------------ */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--border));
+  border-radius: 9999px;
+}
+.scrollbar-thin:hover::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.45);
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Work log (Çalışma Defteri) timeline rows.                          */
+/*  A new entry is written by the user, so it should arrive rather than */
+/*  blink into place — short slide from the composer's direction plus a */
+/*  fade. `both` holds the start frame so the row never flashes at full */
+/*  opacity on the first paint.                                        */
+/* ------------------------------------------------------------------ */
+.worklog-row {
+  animation: worklog-row-in 0.28s var(--ease-out) both;
+}
+
+@keyframes worklog-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .worklog-row {
+    animation: none;
+  }
+}
+
 /* Utter Butter font — applied for designer + team_leader roles */
 html.font-creative,
 html.font-creative body,

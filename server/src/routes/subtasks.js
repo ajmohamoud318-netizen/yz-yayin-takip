@@ -41,10 +41,16 @@ export async function subtaskRoutes(fastify) {
         isDoneChanged = request.body.is_done !== sub.is_done
       }
       if (Number.isFinite(request.body.pages_done)) {
+        if (sub.total_pages != null && request.body.pages_done > sub.total_pages) {
+          badRequest(`Sayfa sayısı toplam sayfa sayısını (${sub.total_pages}) aşamaz.`)
+        }
         allowed.pages_done = request.body.pages_done
         pagesChanged = request.body.pages_done !== sub.pages_done
       }
       if (Number.isFinite(request.body.stickers_done)) {
+        if (sub.total_stickers != null && request.body.stickers_done > sub.total_stickers) {
+          badRequest(`Etiket sayısı toplam etiket sayısını (${sub.total_stickers}) aşamaz.`)
+        }
         allowed.stickers_done = request.body.stickers_done
         stickersChanged = request.body.stickers_done !== sub.stickers_done
       }

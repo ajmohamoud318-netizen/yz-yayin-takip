@@ -445,6 +445,17 @@ CREATE TABLE notifications (             -- durable per-recipient feed (migratio
   seen_at       TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE work_log_entries (          -- "Çalışma Defteri" (migration 026)
+  id            TEXT PRIMARY KEY,        -- wl-<nanoid>
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  entry_date    DATE NOT NULL DEFAULT CURRENT_DATE,  -- a DATE, not derived from created_at
+  kind          TEXT NOT NULL DEFAULT 'diger'
+    CHECK (kind IN ('baska_proje','toplanti','idari','egitim','diger')),
+  body          TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 280),
+  minutes       INTEGER,                 -- optional rough duration, NULL = unsaid
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 -- Indexes
 CREATE INDEX idx_projects_stage ON projects(stage);
 CREATE INDEX idx_projects_assigned ON projects(assigned_to);
@@ -456,6 +467,8 @@ CREATE INDEX idx_orders_project ON order_requests(project_id);
 CREATE INDEX idx_handovers_status ON handovers(status);
 CREATE INDEX idx_notifications_user_created ON notifications(user_id, created_at DESC);
 CREATE INDEX idx_notifications_unread ON notifications(user_id) WHERE is_read = FALSE;
+CREATE INDEX idx_work_log_user_date ON work_log_entries(user_id, entry_date DESC, created_at DESC);
+CREATE INDEX idx_work_log_date ON work_log_entries(entry_date DESC, created_at DESC);
 ```
 ---
 ## 🔌 API Endpoints
@@ -515,10 +528,24 @@ POST   /api/notifications/seen         mark all seen (bell open; badge clear) �
 ```
 ### Users
 ```
-GET    /api/users                     [team_leader]
+GET    /api/users                     any authenticated user → { id, name, role, is_active } minimal roster
+                                       (assignee-name lookups); team_leader gets the full roster
+                                       (email, invited/joined, daily_status, work_log_today)
 POST   /api/users/invite              { name, email, role: 'designer'|'printer'|'satis' } → sends email [team_leader]
 PATCH  /api/users/:id/deactivate      [team_leader]
 PATCH  /api/users/:id/reactivate      [team_leader]
+```
+`GET /api/users` also returns, per row, `work_log_today` (today's Çalışma
+Defteri entries as a JSON array) and `daily_status` (the newest of them) —
+both derived in SQL, so /team renders everyone's day with no extra request.
+
+### Work Log (Çalışma Defteri)
+```
+GET    /api/work-log              ?days=14 → { entries, days } — the caller's own, newest first
+POST   /api/work-log              { kind, body, minutes? } → 201 entry (dated today)
+PATCH  /api/work-log/:id          { kind?, body?, minutes? } — owner-scoped
+DELETE /api/work-log/:id          → 204 — owner-scoped
+GET    /api/work-log/team         ?date=YYYY-MM-DD → { date, entries } [team_leader]
 ```
 ---
 ## 🖥️ UI Views by Role

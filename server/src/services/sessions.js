@@ -24,6 +24,7 @@
 import { nanoid } from 'nanoid'
 import { getPool } from '../db/pool.js'
 import { config } from '../config.js'
+import { dailyStatusSelect } from './work-log.js'
 
 export async function createSession({ userId }) {
   const token = nanoid(48)
@@ -47,7 +48,7 @@ export async function getSessionUser(token) {
   const { rows } = await getPool().query(
     `SELECT u.id, u.name, u.email, u.role, u.is_active,
             u.avatar_url, u.avatar_updated_at,
-            CASE WHEN u.daily_status_date = CURRENT_DATE THEN u.daily_status END AS daily_status
+            ${dailyStatusSelect('u')}
        FROM sessions s
        JOIN users u ON u.id = s.user_id
       WHERE s.token = $1

@@ -12,6 +12,7 @@ import {
   clearCookieOptions,
 } from '../services/sessions.js'
 import { config } from '../config.js'
+import { dailyStatusSelect } from '../services/work-log.js'
 import {
   consumeInvitation,
   verifyInvitation,
@@ -96,9 +97,10 @@ export async function authRoutes(fastify) {
     async (request, reply) => {
     const { email, password } = request.body
     const { rows } = await getPool().query(
-      `SELECT id, name, email, password, role, is_active, avatar_url, avatar_updated_at,
-              CASE WHEN daily_status_date = CURRENT_DATE THEN daily_status END AS daily_status
-       FROM users WHERE email = $1 LIMIT 1`,
+      `SELECT u.id, u.name, u.email, u.password, u.role, u.is_active,
+              u.avatar_url, u.avatar_updated_at,
+              ${dailyStatusSelect('u')}
+       FROM users u WHERE u.email = $1 LIMIT 1`,
       [String(email).toLowerCase().trim()],
     )
     const user = rows[0]
@@ -183,7 +185,7 @@ export async function authRoutes(fastify) {
               updated_at = NOW()
         WHERE id = $2
         RETURNING id, name, email, role, is_active,
-                  CASE WHEN daily_status_date = CURRENT_DATE THEN daily_status END AS daily_status`,
+                  ${dailyStatusSelect('users')}`,
       [hash, inv.user.id],
     )
     const user = rows[0]
@@ -275,7 +277,7 @@ export async function authRoutes(fastify) {
               updated_at = NOW()
         WHERE id = $2
         RETURNING id, name, email, role, is_active,
-                  CASE WHEN daily_status_date = CURRENT_DATE THEN daily_status END AS daily_status`,
+                  ${dailyStatusSelect('users')}`,
       [hash, reset.user.id],
     )
     const user = rows[0]

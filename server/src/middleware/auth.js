@@ -27,13 +27,14 @@ import { forbidden, unauthorized } from '../domain/errors.js'
 import { config } from '../config.js'
 import { getPool } from '../db/pool.js'
 import { getSessionUser } from '../services/sessions.js'
+import { dailyStatusSelect } from '../services/work-log.js'
 
 export async function loadUserById(id) {
   if (!id) return null
   const { rows } = await getPool().query(
-    `SELECT id, name, email, role, is_active, avatar_url, avatar_updated_at,
-            CASE WHEN daily_status_date = CURRENT_DATE THEN daily_status END AS daily_status
-     FROM users WHERE id = $1 LIMIT 1`,
+    `SELECT u.id, u.name, u.email, u.role, u.is_active, u.avatar_url, u.avatar_updated_at,
+            ${dailyStatusSelect('u')}
+     FROM users u WHERE u.id = $1 LIMIT 1`,
     [id],
   )
   // rows[0].avatar_url is intentionally left as-is — always relative.

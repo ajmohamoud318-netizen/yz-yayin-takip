@@ -7,6 +7,7 @@ import { getPool } from '../db/pool.js'
 import { reconcileOzalitApprovals } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
 import { createInvitation } from '../services/invitations.js'
+import { dailyStatusSelect, workLogTodaySelect } from '../services/work-log.js'
 import { sendMail, renderInviteEmail } from '../services/mail.js'
 import {
   MAX_AVATAR_BYTES,
@@ -41,38 +42,36 @@ async function hasOtherActiveLeader(exceptId) {
 }
 
 export async function userRoutes(fastify) {
+  // Every role needs *some* user list — it's the only source for assignee
+  // name lookups on project cards (see client's project-mapper.js), so this
+  // route can't be team_leader-gated outright without breaking those views
+  // for designer/printer/satis. Instead we scope the columns: team_leader
+  // gets the full roster (email, activity, daily status, work log) for the
+  // /team and project-creation pages; everyone else gets just enough to
+  // resolve an assignee's name, nothing that leaks PII or attendance.
   fastify.get('/users', async (request) => {
     await attachUser(request)
+    if (request.user.role !== 'team_leader') {
+      const { rows } = await getPool().query(
+        `SELECT u.id, u.name, u.role, u.is_active
+           FROM users u
+          ORDER BY u.created_at`,
+      )
+      return rows
+    }
+    // `work_log_today` is the full list of today's entries per user — the
+    // /team cards render it directly, so the leader gets everyone's day in
+    // the one request the page already makes. `daily_status` is the newest
+    // of those entries, kept for the callers that only want one line.
     const { rows } = await getPool().query(
-      `SELECT id, name, email, role, is_active,
-              invited_at, joined_at, created_at,
-              CASE WHEN daily_status_date = CURRENT_DATE THEN daily_status END AS daily_status
-         FROM users
-        ORDER BY created_at`,
+      `SELECT u.id, u.name, u.email, u.role, u.is_active,
+              u.invited_at, u.joined_at, u.created_at,
+              ${dailyStatusSelect('u')},
+              ${workLogTodaySelect('u')}
+         FROM users u
+        ORDER BY u.created_at`,
     )
     return rows
-  })
-
-  // Self-service same-day status note ("what else am I on today") — scoped
-  // to the caller's own id, same pattern as /users/me/avatar below. An
-  // empty text clears it. See migration 025__daily_status.sql for why no
-  // cleanup job is needed: stale notes just fall out of the CURRENT_DATE
-  // filter on the next read.
-  fastify.patch('/users/me/status', { schema: schemas.usersSetStatus }, async (request) => {
-    await attachUser(request)
-    const text = request.body.text.trim()
-    const { rows } = await getPool().query(
-      `UPDATE users
-          SET daily_status = $2,
-              daily_status_date = CASE WHEN $2 = '' THEN NULL ELSE CURRENT_DATE END,
-              updated_at = NOW()
-        WHERE id = $1
-        RETURNING id, name, email, role, is_active,
-                  CASE WHEN $2 = '' THEN NULL ELSE daily_status END AS daily_status`,
-      [request.user.id, text],
-    )
-    if (!rows[0]) notFound('Kullanıcı bulunamadı.')
-    return rows[0]
   })
 
   fastify.post(

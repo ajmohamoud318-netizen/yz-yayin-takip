@@ -2,6 +2,15 @@ import { Component } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 
+// Every deploy ships route chunks under new content hashes and the old
+// files are gone from the server the moment the new container is live.
+// A tab left open across a deploy still holds the old index.html, so its
+// next lazy `import()` 404s with this message. Auto-reload once (guarded
+// via sessionStorage so a genuinely broken deploy doesn't reload-loop).
+const CHUNK_ERROR_PATTERN =
+  /fetch dynamically imported module|importing a module script failed/i
+const CHUNK_RELOAD_KEY = 'yzyt:chunk-reload-attempted'
+
 /**
  * Top-level error boundary. Catches any render-time throw so a single broken
  * page can't blank the whole app. Shows a friendly reload card with the
@@ -19,11 +28,28 @@ export default class ErrorBoundary extends Component {
     return { error }
   }
 
+  componentDidMount() {
+    // Reached a working render, so this tab is on a live deploy again —
+    // let a future stale-chunk error retry the auto-reload.
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem(CHUNK_RELOAD_KEY)
+    }
+  }
+
   componentDidCatch(error, info) {
     // Surface the error to the dev console; in production this is the only
     // place future telemetry would hook in.
     // eslint-disable-next-line no-console
     console.error('[ErrorBoundary]', error, info?.componentStack)
+
+    if (
+      typeof window !== 'undefined' &&
+      CHUNK_ERROR_PATTERN.test(error?.message ?? '') &&
+      !window.sessionStorage.getItem(CHUNK_RELOAD_KEY)
+    ) {
+      window.sessionStorage.setItem(CHUNK_RELOAD_KEY, '1')
+      window.location.reload()
+    }
   }
 
   handleReload = () => {

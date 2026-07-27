@@ -1,5 +1,17 @@
 # Security Hardening Plan — YZ Yayın Takip
 
+> **Status (2026-07-27): P0–P3 all implemented.** Remaining action is
+> operational — set the production env vars listed under "Deploy switches"
+> below. See each section's ✅ notes.
+>
+> ### Deploy switches (must set in production)
+> - `TRUST_HEADER_AUTH=false` — makes auth cookie-only (closes the P0 hole).
+> - `NODE_ENV=production` — enables `secure` cookies, disables `dev-login`.
+> - `CORS_ORIGINS=https://yt.mucitkarinca.com` — explicit SPA origin.
+> - (optional) `RATE_LIMIT_STORE=redis` + `REDIS_URL=...` — only if you run
+>   more than one app instance; falls back to in-memory if Redis is down.
+
+
 > Grounded in the current `server/` code as of 2026-07-27, not the generic
 > checklist. Several items from AGENTS.md's Production Checklist are already
 > done (rate limiting, schema validation, account-enumeration protection,

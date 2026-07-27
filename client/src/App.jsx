@@ -139,7 +139,14 @@ export default function App() {
             />
             <Route path="/documents" element={<Documents />} />
             <Route path="/baski-listesi" element={<BaskiListesi />} />
-            <Route path="/urunler" element={<Urunler />} />
+            <Route
+              path="/urunler"
+              element={
+                <RoleGuard allow={['satis', 'printer', 'team_leader']}>
+                  <Urunler />
+                </RoleGuard>
+              }
+            />
             <Route
               path="/urun-bilgileri"
               element={
