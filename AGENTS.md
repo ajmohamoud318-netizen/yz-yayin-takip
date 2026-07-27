@@ -80,6 +80,7 @@ Demos are a **review checkpoint**, not a production step. The 100% gate kicks in
 - **Team leader approves or rejects.** On rejection, they pick the responsible party (`designer` | `matbaa`) and a reason.
 - **Approved demo at <100% is a "hold"**: the leader's approve is recorded, the project stays at `demo_onay`, `demo_held = true`. The designer keeps working on the held project — the UI shows a yellow "Tasarım tamamlanmadı — onay sonraki aşamaya geçirmez" hint next to the approve button.
 - **The designer (or leader) sends a second demo** via "Demo İste" at any demo stage (allowed at any progress and any held-state — the team may iterate again once a demo has been reviewed). The server's `computeAdvance` re-send branch moves the project straight to the pipeline's teslim stage (`demo_onay → demo_teslim` for TR, `cin_demo_onay → cin_demo_teslim` for ÇİN) and bumps `demo_attempt`, so the matbaa immediately receives the new demo. The full demo loop re-runs (`demo_teslim → demo_onay`); leader approves again to advance to `ozalit_teslim`.
+- **"Teslim Alınamadı" (not received)**: the counterpart to "Teslim Alındı" — if the delivered demo never actually reached the leader/designer, either can report it instead of leaving the project stuck at `demo_onay`/`cin_demo_onay` with no way forward (Onayla/Reddet stay blocked until received; see the Demo Rule above). `computeDemoNotReceived` sends it back to the matbaa's teslim stage and bumps `demo_attempt`, same as any other back-to-teslim transition. Route: `POST /api/projects/:id/demo-not-received`.
 
 Enforced by:
 - `client/src/domain/services/pipeline.js#assertCanEnterProduction` (gate at ozalit onward, not at demo)
@@ -93,6 +94,7 @@ Enforced by:
 - The `demo_attempt` / `ozalit_attempt` counter increments on each rejection (Demo 1, Demo 2, …)
 - `team_leader` can reject at any stage
 - At Özalit rejection, the leader picks the loop target: `matbaa` (Matbaa re-delivers ozalit) or `designer` (Tasarımcı reworks first)
+- **"Teslim Alınamadı" (not received)**: ozalit approval has no receipt gate (unlike demo — this is intentional, see migration `021__demo_received.sql`), but the leader or an assigned designer can still report that a delivered ozalit never reached them. `computeOzalitNotReceived` sends the project back to `ozalit_teslim` with the matbaa re-delivery lock (`reject_target: 'matbaa'`, same mechanism as reject-to-matbaa), wipes the partial multi-party approval ledger, and bumps `ozalit_attempt`. Route: `POST /api/projects/:id/ozalit-not-received`.
 
 ---
 ## 🛒 Sipariş (Order) Mini-Workflow — sales re-prints
@@ -493,6 +495,9 @@ POST   /api/projects/:id/advance      move to next stage [designer or team_leade
 POST   /api/projects/:id/approve      { stage } [printer for demo/ozalit, team_leader for cin]
 POST   /api/projects/:id/reject       { stage, reason, reject_target? } [team_leader only]
                                        reject_target ∈ { 'matbaa' | 'designer' } for ozalit_onay
+POST   /api/projects/:id/receive               mark delivered demo "Teslim Alındı" [team_leader or assigned designer]
+POST   /api/projects/:id/demo-not-received     report a delivered demo never arrived → back to matbaa [team_leader or assigned designer]
+POST   /api/projects/:id/ozalit-not-received   report a delivered ozalit never arrived → back to matbaa [team_leader or assigned designer]
 ```
 ### Subtasks
 ```

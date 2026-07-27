@@ -8,7 +8,7 @@ import { httpClient } from '../../../infrastructure/http/client.js'
 export function makeConfirmHandover() {
   return function confirmHandover(id) {
     return httpClient
-      .post(`/handovers/${id}/confirm`)
+      .patch(`/handovers/${id}/confirm`)
       .then(({ data }) => data)
   }
 }

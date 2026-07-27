@@ -437,6 +437,108 @@ export function computeDemoReceive(project, actor, ctx = {}) {
   }
 }
 
+/* ============================================================================
+ *  demoNotReceived(project, actor, ctx) → next project state
+ *
+ *  The counterpart to computeDemoReceive: the leader or an assigned designer
+ *  reports that a delivered demo never actually reached them (lost, wrong
+ *  address, matbaa mix-up, …). Only valid before it's been acknowledged —
+ *  once demo_received is true there's nothing to report. Sends the project
+ *  back to the matbaa's teslim stage so it can be redelivered; bumps
+ *  demo_attempt like every other "back to teslim" transition (re-send,
+ *  reject) so the 'Demo N' badge and form snapshot stay in sync.
+ * ========================================================================== */
+export function computeDemoNotReceived(project, actor, ctx = {}) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (project.stage !== 'demo_onay' && project.stage !== 'cin_demo_onay') {
+    badRequest('Bu işlem yalnızca demo onay aşamasında yapılabilir.')
+  }
+  const designerIds = ctx.designerIds ?? []
+  const isLeader = actor?.role === 'team_leader'
+  const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
+  if (!isLeader && !isAssignedDesigner) {
+    badRequest('Bu işlemi yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
+  }
+  if (project.demo_received) {
+    badRequest('Demo zaten teslim alındı olarak işaretlenmiş.')
+  }
+  const resendStage = project.type === 'CIN' ? 'cin_demo_teslim' : 'demo_teslim'
+  return {
+    project: {
+      ...project,
+      stage: resendStage,
+      demo_attempt: (project.demo_attempt ?? 0) + 1,
+      demo_held: false,
+      demo_held_at: null,
+      demo_held_by_name: null,
+      demo_delivered_at: null,
+      demo_delivered_by: null,
+      demo_delivered_by_name: null,
+      demo_received: false,
+      demo_received_by: null,
+      demo_received_at: null,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'advance',
+      event: 'demo_not_received',
+      from_stage: project.stage,
+      to_stage: resendStage,
+      done_by_name: actorName,
+      note: 'Demo teslim alınamadı — matbaaya geri gönderildi',
+    }),
+  }
+}
+
+/* ============================================================================
+ *  ozalitNotReceived(project, actor, ctx) → next project state
+ *
+ *  Ozalit has no receipt gate on approval (see migration 021's note — that's
+ *  intentional and unchanged here), but a leader or assigned designer still
+ *  needs a way to say "the physical proof never reached me" instead of being
+ *  stuck with only Onayla/Reddet. Sends the project back to ozalit_teslim
+ *  with the matbaa re-delivery lock (matching a reject-to-matbaa), wipes any
+ *  partial approval ledger (a new physical proof needs everyone's sign-off
+ *  again), and bumps ozalit_attempt.
+ * ========================================================================== */
+export function computeOzalitNotReceived(project, actor, ctx = {}) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (project.stage !== 'ozalit_onay') {
+    badRequest('Bu işlem yalnızca ozalit onay aşamasında yapılabilir.')
+  }
+  const designerIds = ctx.designerIds ?? []
+  const isLeader = actor?.role === 'team_leader'
+  const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
+  if (!isLeader && !isAssignedDesigner) {
+    badRequest('Bu işlemi yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
+  }
+  return {
+    project: {
+      ...project,
+      stage: 'ozalit_teslim',
+      ozalit_attempt: (project.ozalit_attempt ?? 0) + 1,
+      ozalit_requested: false,
+      reject_target: 'matbaa',
+      ozalit_leader_approved: false,
+      ozalit_leader_approved_by: null,
+      ozalit_leader_approved_at: null,
+      ozalit_designer_approvals: [],
+      ozalit_approvals: [],
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'advance',
+      event: 'ozalit_not_received',
+      from_stage: 'ozalit_onay',
+      to_stage: 'ozalit_teslim',
+      done_by_name: actorName,
+      note: 'Ozalit teslim alınamadı — matbaaya geri gönderildi',
+    }),
+  }
+}
+
 function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
   // Multi-party approval: EVERY active team leader AND every assigned designer
   // must approve before the project advances to Üretime Hazır. ctx carries the

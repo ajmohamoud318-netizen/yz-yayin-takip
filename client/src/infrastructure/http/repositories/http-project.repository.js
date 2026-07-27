@@ -198,6 +198,20 @@ export function createHttpProjectRepository(userRepo) {
       cache.set(id, data)
       return data
     },
+    // Report that a delivered demo never reached the leader/designer — sends
+    // it back to the matbaa for redelivery.
+    async reportDemoNotReceived(id) {
+      const { data } = await httpClient.post(`/projects/${id}/demo-not-received`, {})
+      cache.set(id, data)
+      return data
+    },
+    // Report that a delivered ozalit never reached the leader/designer —
+    // sends it back to the matbaa for redelivery.
+    async reportOzalitNotReceived(id) {
+      const { data } = await httpClient.post(`/projects/${id}/ozalit-not-received`, {})
+      cache.set(id, data)
+      return data
+    },
     async rejectProject(id, reason, revizeIds, target) {
       const cached = cache.get(id)
       if (!cached) badRequest('Proje bilinmiyor — listeyi yenileyin.')

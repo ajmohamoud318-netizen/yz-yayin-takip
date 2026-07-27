@@ -75,6 +75,8 @@ export function createApi() {
     advanceProject: (id) => projectRepo.advanceProject(id),
     approveProject: (id) => projectRepo.approveProject(id),
     receiveDemo: (id) => projectRepo.receiveDemo(id),
+    reportDemoNotReceived: (id) => projectRepo.reportDemoNotReceived(id),
+    reportOzalitNotReceived: (id) => projectRepo.reportOzalitNotReceived(id),
     rejectProject: (id, reason, revizeIds, target) => projectRepo.rejectProject(id, reason, revizeIds, target),
 
     // Subtasks

@@ -118,7 +118,7 @@ export async function notifyProjectTransition(client, {
     case 'cin_demo_teslim':
       return emit(client, {
         ...base, recipientIds: printers, type: 'demo_delivery_pending', tone: 'blue',
-        body: 'Demo teslimi bekleniyor', link: '/approvals/demo',
+        body: 'Demo teslimi bekleniyor', link: `/projects/${project.id}`,
       })
 
     // Demo delivered → leader + assigned designers review/approve.
@@ -126,17 +126,18 @@ export async function notifyProjectTransition(client, {
     case 'cin_demo_onay':
       return emit(client, {
         ...base, recipientIds: [...leaders, ...designers], type: 'demo_approval_pending', tone: 'amber',
-        body: 'Demo onayınızı bekliyor', link: '/approvals/demo',
+        body: 'Demo onayınızı bekliyor', link: `/projects/${project.id}`,
       })
 
     // Reaching ozalit_teslim: either the demo was just approved (designer may
-    // now request ozalit) or the designer requested ozalit (matbaa must
-    // deliver). `ozalit_requested` distinguishes the two.
+    // now request ozalit), the designer requested ozalit (matbaa must
+    // deliver), or a reject/not-received sent it back locked to the matbaa
+    // for redelivery (no fresh request needed — same as demo's teslim case).
     case 'ozalit_teslim':
-      if (project.ozalit_requested) {
+      if (project.ozalit_requested || project.reject_target === 'matbaa') {
         return emit(client, {
           ...base, recipientIds: printers, type: 'ozalit_delivery_pending', tone: 'blue',
-          body: 'Ozalit teslimi bekleniyor', link: '/approvals/ozalit',
+          body: 'Ozalit teslimi bekleniyor', link: `/projects/${project.id}`,
         })
       }
       return emit(client, {
@@ -148,7 +149,7 @@ export async function notifyProjectTransition(client, {
     case 'ozalit_onay':
       return emit(client, {
         ...base, recipientIds: [...leaders, ...designers], type: 'ozalit_approval_pending', tone: 'amber',
-        body: 'Ozalit onayınızı bekliyor', link: '/approvals/ozalit',
+        body: 'Ozalit onayınızı bekliyor', link: `/projects/${project.id}`,
       })
 
     // Production ready → matbaa can take it in.

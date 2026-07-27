@@ -10,7 +10,8 @@ import {
 import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
 import {
-  applyAdvance, applyApproval, applyDemoReceive, applyRejection,
+  applyAdvance, applyApproval, applyDemoReceive, applyDemoNotReceived,
+  applyOzalitNotReceived, applyRejection,
 } from '../services/project-transitions.js'
 import { notifyProjectCreated, notifyProjectTransition } from '../services/notifications.js'
 
@@ -212,6 +213,17 @@ export async function projectRoutes(fastify) {
       if (Object.prototype.hasOwnProperty.call(next, 'demo_held_by_name')) {
         fields.demo_held_by_name = next.demo_held_by_name
       }
+      // Who/when the matbaa delivered the current demo round — set by the
+      // printer's delivery step, nulled when a second demo is sent.
+      if (Object.prototype.hasOwnProperty.call(next, 'demo_delivered_at')) {
+        fields.demo_delivered_at = next.demo_delivered_at
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'demo_delivered_by')) {
+        fields.demo_delivered_by = next.demo_delivered_by
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'demo_delivered_by_name')) {
+        fields.demo_delivered_by_name = next.demo_delivered_by_name
+      }
       // The ozalit_teslim two-step (request → matbaa deliver) and the
       // reject-to-matbaa lock live on these flags. Without persisting them the
       // "Ozalit İste" request set ozalit_requested=true in memory only and it
@@ -319,6 +331,76 @@ export async function projectRoutes(fastify) {
       })
       if (history) {
         await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+      }
+      return updated
+    })
+    return result
+  })
+
+  // Report that a delivered demo never actually reached the leader/designer —
+  // sends it back to the matbaa's teslim stage for redelivery. Counterpart to
+  // /receive; only valid before demo_received is set.
+  fastify.post('/projects/:id/demo-not-received', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      project.assignees = await loadProjectAssignees(client, project)
+      const designerIds = project.assignees.map((a) => a.id)
+      const { project: next, history } = applyDemoNotReceived(project, { user: request.user, designerIds })
+      const updated = await patchProject(client, project.id, {
+        stage: next.stage,
+        demo_attempt: next.demo_attempt,
+        demo_held: next.demo_held,
+        demo_held_at: next.demo_held_at,
+        demo_held_by_name: next.demo_held_by_name,
+        demo_received: next.demo_received,
+        demo_received_by: next.demo_received_by,
+        demo_received_at: next.demo_received_at,
+        demo_delivered_at: next.demo_delivered_at,
+        demo_delivered_by: next.demo_delivered_by,
+        demo_delivered_by_name: next.demo_delivered_by_name,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyProjectTransition(client, {
+          project: updated, fromStage: history.from_stage, toStage: history.to_stage ?? updated.stage,
+          action: history.action, actor: request.user, assignees: project.assignees,
+        })
+      }
+      return updated
+    })
+    return result
+  })
+
+  // Report that a delivered ozalit never actually reached the leader/designer
+  // — sends it back to ozalit_teslim with the matbaa re-delivery lock, wiping
+  // any partial approval ledger (a new physical proof needs fresh sign-off).
+  fastify.post('/projects/:id/ozalit-not-received', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      project.assignees = await loadProjectAssignees(client, project)
+      const designerIds = project.assignees.map((a) => a.id)
+      const { project: next, history } = applyOzalitNotReceived(project, { user: request.user, designerIds })
+      const updated = await patchProject(client, project.id, {
+        stage: next.stage,
+        ozalit_attempt: next.ozalit_attempt,
+        ozalit_requested: next.ozalit_requested,
+        reject_target: next.reject_target,
+        ozalit_leader_approved: next.ozalit_leader_approved,
+        ozalit_leader_approved_by: next.ozalit_leader_approved_by,
+        ozalit_leader_approved_at: next.ozalit_leader_approved_at,
+        ozalit_designer_approvals: JSON.stringify(next.ozalit_designer_approvals ?? []),
+        ozalit_approvals: JSON.stringify(next.ozalit_approvals ?? []),
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyProjectTransition(client, {
+          project: updated, fromStage: history.from_stage, toStage: history.to_stage ?? updated.stage,
+          action: history.action, actor: request.user, assignees: project.assignees,
+        })
       }
       return updated
     })

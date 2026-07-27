@@ -8,7 +8,7 @@ import { httpClient } from '../../../infrastructure/http/client.js'
 export function makeRejectOrderRequest() {
   return function rejectOrderRequest(id, { reason }) {
     return httpClient
-      .post(`/order-requests/${id}/reject`, { reason })
+      .patch(`/order-requests/${id}/reject`, { reason })
       .then(({ data }) => data)
   }
 }

@@ -17,6 +17,7 @@ const PROJECT_COLUMNS = `
   ozalit_designer_approvals,
   demo_held, demo_held_at, demo_held_by_name,
   demo_received, demo_received_by, demo_received_at,
+  demo_delivered_at, demo_delivered_by, demo_delivered_by_name,
   ozalit_requested, reject_target, last_reject_type, last_reject_target,
   ozalit_approvals,
   created_at, updated_at
@@ -263,6 +264,11 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
   'demo_received',
   'demo_received_by',
   'demo_received_at',
+  // Who/when the matbaa delivered the current demo round. Set by
+  // computeDemoTeslimAdvance, nulled by a resend or "Teslim Alınamadı".
+  'demo_delivered_at',
+  'demo_delivered_by',
+  'demo_delivered_by_name',
   // ozalit_teslim two-step + reject-to-matbaa re-delivery lock. Set by the
   // ozalit transitions (computeOzalitTeslimAdvance) and computeRejection.
   'ozalit_requested',
@@ -473,6 +479,11 @@ function rowToProject(r) {
     demo_received_at: r.demo_received_at instanceof Date
       ? r.demo_received_at.toISOString()
       : r.demo_received_at,
+    demo_delivered_at: r.demo_delivered_at instanceof Date
+      ? r.demo_delivered_at.toISOString()
+      : r.demo_delivered_at,
+    demo_delivered_by: r.demo_delivered_by ?? null,
+    demo_delivered_by_name: r.demo_delivered_by_name ?? null,
     ozalit_requested: r.ozalit_requested ?? false,
     reject_target: r.reject_target ?? null,
     last_reject_type: r.last_reject_type ?? null,

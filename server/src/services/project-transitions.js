@@ -19,6 +19,8 @@ import {
   computeAdvance,
   computeApproval,
   computeDemoReceive,
+  computeDemoNotReceived,
+  computeOzalitNotReceived,
   computeRejection,
 } from '../domain/transitions.js'
 
@@ -49,6 +51,24 @@ export function applyApproval(project, { user, teamLeaderIds = [], designerIds =
  */
 export function applyDemoReceive(project, { user, designerIds = [] }) {
   return computeDemoReceive(project, user, { designerIds })
+}
+
+/**
+ * `POST /projects/:id/demo-not-received`. Reports that a delivered demo
+ * never reached the leader/designer — sends it back to the matbaa's teslim
+ * stage for redelivery.
+ */
+export function applyDemoNotReceived(project, { user, designerIds = [] }) {
+  return computeDemoNotReceived(project, user, { designerIds })
+}
+
+/**
+ * `POST /projects/:id/ozalit-not-received`. Reports that a delivered ozalit
+ * never reached the leader/designer — sends it back to ozalit_teslim with
+ * the matbaa re-delivery lock.
+ */
+export function applyOzalitNotReceived(project, { user, designerIds = [] }) {
+  return computeOzalitNotReceived(project, user, { designerIds })
 }
 
 /** `POST /projects/:id/reject`. */

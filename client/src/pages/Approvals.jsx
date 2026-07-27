@@ -171,7 +171,11 @@ export default function Approvals({ tab = 'demo' }) {
           const canApprove = sub === 'demo' ? isLeader : (isLeader || isAssignedDesigner)
           const heldDemo = sub === 'demo' && p.demo_held === true
           return (
-          <Card key={p.id}>
+          <Card
+            key={p.id}
+            className="cursor-pointer transition-colors hover:bg-muted/40"
+            onClick={() => navigate(`/projects/${p.id}`)}
+          >
             <CardContent className="space-y-3 p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -187,8 +191,13 @@ export default function Approvals({ tab = 'demo' }) {
               <div className="rounded-md border bg-muted/30 p-2.5 text-xs">
                 <span className="font-medium">Aşama:</span> {STAGE_LABELS[p.stage]}
               </div>
-              {/* Action row — stacks below sm on mobile, row on tablet+. */}
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              {/* Action row — stacks below sm on mobile, row on tablet+.
+                  stopPropagation keeps action clicks from also triggering the
+                  card's own navigate-to-detail handler. */}
+              <div
+                className="flex flex-col gap-2 sm:flex-row sm:items-center"
+                onClick={(e) => e.stopPropagation()}
+              >
                 {isPrinter ? (
                   <>
                     <Button

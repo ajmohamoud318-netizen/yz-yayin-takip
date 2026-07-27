@@ -181,7 +181,10 @@ const workLogListQuery = {
   querystring: {
     type: 'object',
     additionalProperties: false,
-    properties: { days: { type: 'integer', minimum: 1, maximum: 90 } },
+    // coerceTypes is off (see server/src/index.js), so a query string
+    // arrives as text — validate the pattern here, cast to Number in the
+    // route/service instead of relying on AJV's `integer` type.
+    properties: { days: { type: 'string', pattern: '^([1-9]|[1-8][0-9]|90)$' } },
   },
 }
 

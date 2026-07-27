@@ -6,23 +6,14 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
-  ChevronRight,
-  ClipboardEdit,
-  ClipboardList,
   FileText,
-  History,
   Lock,
-  MessageSquarePlus,
-  Package,
+  PackageX,
   Pencil,
-  Plus,
-  RotateCcw,
   Save,
   Send,
-  ShoppingCart,
   ThumbsDown,
   ThumbsUp,
-  Truck,
   Users as UsersIcon,
   User as UserIcon,
 } from 'lucide-react'
@@ -45,105 +36,11 @@ import ApprovalDialog from '@/components/ApprovalDialog'
 import NewProjectDialog from '@/components/NewProjectDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import DemoFormDialog from '@/components/DemoFormDialog'
+import ProjectHistory from '@/components/ProjectHistory'
 import { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import { cn, formatDateTr, initials } from '@/lib/utils'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { isSubtaskDone } from '@/domain/services/progress'
-
-// Event-level icon + color hints. `event` is a free-form short identifier
-// coming from the backend (`stage_history.event`); the timeline routes
-// dispatch on it BEFORE falling back to the coarser `action` if the
-// server hasn't tagged the row yet (e.g. seed data).
-const EVENT_META = {
-  // Project-shape events
-  project_created:   { icon: Plus,            color: 'text-primary' },
-  project_edit:      { icon: ClipboardEdit,   color: 'text-slate-600' },
-  // Subtask events
-  subtask_done:      { icon: CheckCircle2,    color: 'text-emerald-600' },
-  subtask_undone:    { icon: RotateCcw,       color: 'text-amber-600' },
-  subtask_revize:    { icon: RotateCcw,       color: 'text-amber-600' },
-  subtask_progress:  { icon: ClipboardList,   color: 'text-sky-600' },
-  subtask_note:      { icon: MessageSquarePlus, color: 'text-slate-600' },
-  subtask_list_update: { icon: ClipboardList, color: 'text-slate-600' },
-  // Demo + Ozalit form submissions
-  demo_form:         { icon: Send,            color: 'text-indigo-600' },
-  ozalit_form:       { icon: Send,            color: 'text-indigo-600' },
-  // Handover (Teslim)
-  handover_request:  { icon: Truck,           color: 'text-amber-600' },
-  handover_confirm:  { icon: Package,         color: 'text-emerald-600' },
-  // Order (Sipariş) workflow
-  order_request:     { icon: ShoppingCart,    color: 'text-violet-600' },
-  order_transfer:    { icon: ShoppingCart,    color: 'text-violet-600' },
-  order_advance:     { icon: ShoppingCart,    color: 'text-violet-600' },
-  order_final:       { icon: ShoppingCart,    color: 'text-violet-600' },
-  order_reject:      { icon: ShoppingCart,    color: 'text-violet-600' },
-}
-
-// Coarser fallback table used when the backend only logged the action
-// (e.g. legacy rows that don't have an `event` populated).
-const ACTION_META = {
-  create:  { icon: Plus,         color: 'text-primary' },
-  advance: { icon: ChevronRight, color: 'text-primary' },
-  approve: { icon: ThumbsUp,     color: 'text-emerald-600' },
-  reject:  { icon: ThumbsDown,   color: 'text-destructive' },
-  order:   { icon: ShoppingCart, color: 'text-violet-600' },
-  system:  { icon: Package,      color: 'text-slate-600' },
-}
-
-function historyLabel(entry) {
-  const { action, event, from_stage, to_stage } = entry
-  // Prefer the fine-grained event id when present — this is what route
-  // handlers set in 014. The `note` field already carries the human
-  // description (e.g. "Kapak — tamamlandı"), so we just title-case the
-  // event id for the heading.
-  if (event && event !== 'general') {
-    const evtLabels = {
-      project_created: 'Proje Oluşturuldu',
-      project_edit: 'Proje Düzenlendi',
-      subtask_done: 'Alt Görev Tamamlandı',
-      subtask_undone: 'Alt Görev Geri Alındı',
-      subtask_revize: 'Alt Görev Revize Edildi',
-      subtask_progress: 'Alt Görev İlerlemesi',
-      subtask_note: 'Alt Görev Notu',
-      subtask_list_update: 'Alt Görev Listesi Güncellendi',
-      demo_form: 'Demo Formu Gönderildi',
-      ozalit_form: 'Ozalit Formu Gönderildi',
-      handover_request: 'Teslim Talebi Oluşturuldu',
-      handover_confirm: 'Teslim Onaylandı',
-      order_request: 'Sipariş Talebi Oluşturuldu',
-      order_transfer: 'Tasarımcı Atandı',
-      order_advance: 'Sipariş İlerletildi',
-      order_final: 'Sipariş Onaylandı',
-      order_reject: 'Sipariş Reddedildi',
-    }
-    return evtLabels[event] ?? event
-  }
-  if (action === 'create') return 'Proje Oluşturuldu'
-  if (action === 'advance') {
-    if (to_stage === 'demo_teslim' || to_stage === 'cin_demo_teslim') return 'Demoya Gönderildi'
-    if (to_stage === 'demo_onay')     return 'Demo Teslim Edildi'
-    if (to_stage === 'cin_demo_onay') return 'Demo Teslim Edildi'
-    if (to_stage === 'ozalit_teslim') return "Ozalit'e Gönderildi"
-    if (to_stage === 'ozalit_onay')   return 'Ozalit'
-    if (to_stage === 'uretime_hazir') return 'Üretime Hazır'
-    if (to_stage === 'uretimde')      return 'Üretime Alındı (Sipariş)'
-    if (to_stage === 'gumruk')        return 'Gümrüğe Gönderildi'
-    if (to_stage === 'satista')       return 'Satışa Çıkarıldı'
-    return 'İlerletildi'
-  }
-  if (action === 'approve') {
-    if (from_stage === 'demo_onay' || from_stage === 'cin_demo_onay') return 'Demo Onaylandı'
-    if (from_stage === 'ozalit_onay') return 'Ozalit Onaylandı'
-    return 'Onaylandı'
-  }
-  if (action === 'reject') {
-    if (from_stage === 'demo_onay' || from_stage === 'cin_demo_onay') return 'Demo Reddedildi'
-    if (from_stage === 'ozalit_onay') return 'Ozalit Reddedildi'
-    return 'Reddedildi'
-  }
-  if (action === 'order') return 'Sipariş'
-  return 'İlerletildi'
-}
 
 export default function ProjectDetail() {
   const { id } = useParams()
@@ -163,6 +60,7 @@ export default function ProjectDetail() {
   const [localDone, setLocalDone] = useState({})
   const [saving, setSaving] = useState(false)
   const [receiving, setReceiving] = useState(false)
+  const [reportingNotReceived, setReportingNotReceived] = useState(false)
   const [updatingSubId, setUpdatingSubId] = useState(null) // per-subtask "what changed" note
   const [updateNote, setUpdateNote] = useState('')
   const [projectOrders, setProjectOrders] = useState([])
@@ -263,6 +161,39 @@ export default function ProjectDetail() {
       toast.error(err.message || 'İşlem tamamlanamadı.')
     } finally {
       setReceiving(false)
+    }
+  }
+
+  // The delivered demo never actually reached the leader/designer — send it
+  // back to the matbaa so it can be redelivered, instead of leaving the
+  // project stuck at demo_onay with no way forward.
+  async function handleDemoNotReceived() {
+    if (!project) return
+    setReportingNotReceived(true)
+    try {
+      await api.reportDemoNotReceived(project.id)
+      await refetch()
+      toast.success('Demo teslim alınamadı olarak işaretlendi — matbaaya geri gönderildi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setReportingNotReceived(false)
+    }
+  }
+
+  // Same escape hatch for a delivered ozalit that never reached the leader/
+  // designer — sends it back to the matbaa for redelivery.
+  async function handleOzalitNotReceived() {
+    if (!project) return
+    setReportingNotReceived(true)
+    try {
+      await api.reportOzalitNotReceived(project.id)
+      await refetch()
+      toast.success('Ozalit teslim alınamadı olarak işaretlendi — matbaaya geri gönderildi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setReportingNotReceived(false)
     }
   }
 
@@ -638,9 +569,23 @@ export default function ProjectDetail() {
                 )}
                 {/* Demo "Teslim Alındı" gate — before the Onay. */}
                 {canReceiveDemo && (
-                  <Button size="sm" onClick={handleReceiveDemo} disabled={receiving}>
+                  <Button size="sm" onClick={handleReceiveDemo} disabled={receiving || reportingNotReceived}>
                     <CheckCircle2 className="h-4 w-4" />
                     {receiving ? 'İşleniyor…' : 'Teslim Alındı'}
+                  </Button>
+                )}
+                {/* Escape hatch: the demo was delivered but never actually
+                    reached anyone — send it back to the matbaa instead of
+                    leaving the project stuck here. */}
+                {canReceiveDemo && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleDemoNotReceived}
+                    disabled={receiving || reportingNotReceived}
+                  >
+                    <PackageX className="h-4 w-4" />
+                    {reportingNotReceived ? 'İşleniyor…' : 'Teslim Alınamadı'}
                   </Button>
                 )}
                 {isDemoOnayStage && project.demo_received && (
@@ -664,6 +609,22 @@ export default function ProjectDetail() {
                   >
                     <ThumbsUp className="h-4 w-4" />
                     {approveLabel}
+                  </Button>
+                )}
+                {/* Escape hatch: the delivered ozalit never actually reached
+                    this leader/designer — send it back to the matbaa instead
+                    of being stuck choosing between Onayla/Reddet for a proof
+                    they never saw. Shown to anyone who still has a pending
+                    approve decision at this stage. */}
+                {project.stage === 'ozalit_onay' && actions.includes('approve') && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleOzalitNotReceived}
+                    disabled={reportingNotReceived}
+                  >
+                    <PackageX className="h-4 w-4" />
+                    {reportingNotReceived ? 'İşleniyor…' : 'Teslim Alınamadı'}
                   </Button>
                 )}
                 {/* Demo-hold hint: the leader has already approved the first
@@ -780,204 +741,22 @@ export default function ProjectDetail() {
 
         {/* Body grid */}
         <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <History className="h-4 w-4" />
-                Geçmiş
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              {(project.history ?? []).length === 0 && (
-                <p className="rounded-md border border-dashed bg-muted/30 p-4 text-center text-xs text-muted-foreground">
-                  Henüz bir aşama geçişi yok.
-                </p>
-              )}
-              <ol className="relative">
-                {historyWithAttempts.map((h, i) => {
-                  // Pick the icon by `event` first (fine-grained) so the
-                  // timeline shows distinct dots for "subtask done" vs
-                  // "ozalit form" vs "handover confirmed", then fall back
-                  // to the coarse `action` for legacy rows.
-                  const meta = (h.event && EVENT_META[h.event])
-                    || ACTION_META[h.action]
-                    || ACTION_META.advance
-                  const Icon = meta.icon
-                  const isLast = i === historyWithAttempts.length - 1
-
-                  // NOTE: the demo_onay / ozalit_onay branches are scoped to
-                  // approve/reject actions. Subtask changes are logged with
-                  // from_stage = the project's current stage (action:'system',
-                  // event:'subtask_*'), so completing a subtask while the
-                  // project sits at demo_onay produced a row with
-                  // from_stage='demo_onay' that wrongly got a "Demo Formu"
-                  // button. Only real demo/ozalit lifecycle rows should.
-                  const isDemoEntry =
-                    (h.action === 'advance' && (h.to_stage === 'demo_teslim' || h.to_stage === 'cin_demo_teslim')) ||
-                    (h.action === 'advance' && (h.from_stage === 'demo_teslim' || h.from_stage === 'cin_demo_teslim')) ||
-                    ((h.action === 'approve' || h.action === 'reject') && (h.from_stage === 'demo_onay' || h.from_stage === 'cin_demo_onay')) ||
-                    h.event === 'demo_form'
-
-                  const isOzalitEntry = (
-                    (h.action === 'advance' && h.to_stage === 'ozalit_teslim') ||
-                    (h.action === 'advance' && h.from_stage === 'ozalit_teslim') ||
-                    ((h.action === 'approve' || h.action === 'reject') && h.from_stage === 'ozalit_onay') ||
-                    h.event === 'ozalit_form'
-                  ) && project.type === 'TR'
-
-                  // Background ring color tracks the icon color from the
-                  // meta table; if we don't have a meta entry we fall
-                  // back to the previous coarse logic.
-                  const iconBg = (() => {
-                    if (h.event === 'subtask_done' || h.event === 'handover_confirm') {
-                      return 'bg-emerald-100 ring-emerald-200'
-                    }
-                    if (h.event === 'subtask_undone' || h.event === 'subtask_revize' || h.event === 'handover_request') {
-                      return 'bg-amber-100 ring-amber-200'
-                    }
-                    if (h.event === 'subtask_progress' || h.event === 'demo_form' || h.event === 'ozalit_form') {
-                      return 'bg-indigo-100 ring-indigo-200'
-                    }
-                    if (h.event === 'order_reject' || h.action === 'reject') {
-                      return 'bg-red-100 ring-red-200'
-                    }
-                    if (h.event === 'order_request' || h.event === 'order_transfer' || h.event === 'order_advance' || h.event === 'order_final' || h.action === 'order') {
-                      return 'bg-violet-100 ring-violet-200'
-                    }
-                    if (h.event === 'project_edit' || h.event === 'subtask_note' || h.event === 'subtask_list_update' || h.action === 'system') {
-                      return 'bg-slate-100 ring-slate-200'
-                    }
-                    return h.action === 'approve'
-                      ? 'bg-emerald-100 ring-emerald-200'
-                      : h.action === 'reject'
-                        ? 'bg-red-100 ring-red-200'
-                        : h.action === 'create'
-                          ? 'bg-primary/10 ring-primary/20'
-                          : h.action === 'order'
-                            ? 'bg-violet-100 ring-violet-200'
-                            : 'bg-muted ring-border'
-                  })()
-
-                  return (
-                    <li key={h.id ?? i} className="relative flex gap-3 pb-5 last:pb-0">
-                      {/* Vertical connector line */}
-                      {!isLast && (
-                        <span className="absolute left-[11px] top-6 bottom-0 w-px bg-border" />
-                      )}
-
-                      {/* Icon dot */}
-                      <span
-                        className={cn(
-                          'relative z-10 mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full ring-2',
-                          iconBg,
-                          meta.color,
-                        )}
-                      >
-                        <Icon className="h-3 w-3" />
-                      </span>
-
-                      {/* Content */}
-                      <div className="min-w-0 flex-1 pt-0.5">
-                        <p className="text-sm font-semibold leading-snug">
-                          {(
-                            h.action === 'order'
-                            || h.event === 'order_request'
-                            || h.event === 'order_transfer'
-                            || h.event === 'order_advance'
-                            || h.event === 'order_final'
-                            || h.event === 'order_reject'
-                          )
-                            ? `Sipariş — ${h.order_step_label ?? ''}`
-                            : historyLabel(h)}
-                        </p>
-
-                        {h.note && h.action !== 'order' && (
-                          <p className="mt-0.5 text-xs text-muted-foreground">{h.note}</p>
-                        )}
-
-                        {h.reason && (
-                          <div className="mt-1.5 flex items-start gap-1.5 rounded-md border border-destructive/20 bg-destructive/5 px-2.5 py-2">
-                            <ThumbsDown className="mt-0.5 h-3 w-3 shrink-0 text-destructive/70" />
-                            <p className="text-xs leading-relaxed text-destructive">
-                              {h.reason}
-                            </p>
-                          </div>
-                        )}
-
-                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                            <UserIcon className="h-2.5 w-2.5" />
-                            {/* The backend now LEFT JOINs users on done_by
-                                so this is populated for every row written
-                                by a route handler. Older rows (legacy
-                                data, before the JOIN was added) can have
-                                `done_by_name = null` — show 'Bilinmeyen'
-                                instead of rendering an empty label. */}
-                            {h.done_by_name ?? 'Bilinmeyen'}
-                          </span>
-                          <span className="text-[11px] text-muted-foreground/60">·</span>
-                          <span className="text-[11px] text-muted-foreground">
-                            {formatDateTr(h.created_at, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                          {isDemoEntry && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDemoFormAttempt(h.demoAttemptAt)
-                                setDemoFormMode('history')
-                                setDemoFormOpen(true)
-                              }}
-                              className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
-                            >
-                              <FileText className="h-2.5 w-2.5" />
-                              Demo Formu
-                            </button>
-                          )}
-                          {isOzalitEntry && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOzalitFormAttempt(h.ozalitAttemptAt)
-                                setOzalitFormMode('history')
-                                setOzalitFormOpen(true)
-                              }}
-                              className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
-                            >
-                              <FileText className="h-2.5 w-2.5" />
-                              Ozalit Formu
-                            </button>
-                          )}
-                          {(
-                            h.action === 'order'
-                            || h.event === 'order_request'
-                            || h.event === 'order_transfer'
-                            || h.event === 'order_advance'
-                            || h.event === 'order_final'
-                            || h.event === 'order_reject'
-                          ) && projectOrders.length > 0 && (() => {
-                            const ord = h.order_id
-                              ? projectOrders.find((o) => o.id === h.order_id)
-                              : projectOrders[0]
-                            if (!ord) return null
-                            return (
-                              <button
-                                type="button"
-                                onClick={() => setOrderFormViewer({ order: ord, step: h.order_step })}
-                                className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-violet-400/50 hover:bg-violet-50 hover:text-violet-700"
-                              >
-                                <ShoppingCart className="h-2.5 w-2.5" />
-                                Sipariş Formu
-                              </button>
-                            )
-                          })()}
-                        </div>
-                      </div>
-                    </li>
-                  )
-                })}
-              </ol>
-            </CardContent>
-          </Card>
+          <ProjectHistory
+            entries={historyWithAttempts}
+            projectType={project.type}
+            orders={projectOrders}
+            onOpenDemoForm={(attempt) => {
+              setDemoFormAttempt(attempt)
+              setDemoFormMode('history')
+              setDemoFormOpen(true)
+            }}
+            onOpenOzalitForm={(attempt) => {
+              setOzalitFormAttempt(attempt)
+              setOzalitFormMode('history')
+              setOzalitFormOpen(true)
+            }}
+            onOpenOrderForm={setOrderFormViewer}
+          />
 
           <div className="space-y-4">
             <Card>
@@ -1335,11 +1114,11 @@ function availableActions({ project, user }) {
     role === 'designer' && (project.assignees ?? []).some((a) => a.id === user.id)
 
   if ((stage === 'demo_onay' || stage === 'cin_demo_onay') && role === 'team_leader') {
-    // Hide Onayla + Reddet while the demo is held. The leader has
-    // already approved; the project is waiting for the designer to
-    // finish and re-send a second demo. There's nothing to approve
-    // or reject again until the new demo lands.
-    if (project.demo_held !== true) {
+    // Hide Onayla + Reddet until the demo has been received (Teslim Alındı)
+    // and while the demo is held. The leader can't approve/reject a demo
+    // they haven't taken delivery of yet, and once held, the project is
+    // waiting for the designer to re-send a second demo.
+    if (project.demo_received === true && project.demo_held !== true) {
       set.add('approve')
       set.add('reject')
     }
