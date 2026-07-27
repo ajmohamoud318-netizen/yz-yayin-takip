@@ -205,7 +205,12 @@ function UserCard({ user, canManage, isLastActiveLeader, onToggle, onRequestDele
   return (
     <Card>
       <CardContent className="flex items-start gap-3 p-4">
-        <UserAvatar user={user} size="xl" />
+        <span className="relative inline-block shrink-0">
+          <UserAvatar user={user} size="xl" />
+          {user.daily_status && (
+            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-background" />
+          )}
+        </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate text-sm font-semibold">{user.name}</p>
@@ -226,14 +231,13 @@ function UserCard({ user, canManage, isLastActiveLeader, onToggle, onRequestDele
             )}
           </div>
           {user.daily_status && (
-            <Badge
-              variant="outline"
-              className="mt-2 max-w-[220px] gap-1 border-amber-200 bg-amber-50 text-amber-700"
+            <p
+              className="mt-1.5 flex items-center gap-1 truncate text-[11px] italic text-muted-foreground"
               title={user.daily_status}
             >
               <MessageSquareText className="h-3 w-3 shrink-0" />
               <span className="truncate">{user.daily_status}</span>
-            </Badge>
+            </p>
           )}
         </div>
         {showMenu && (

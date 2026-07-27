@@ -96,7 +96,8 @@ export async function authRoutes(fastify) {
     async (request, reply) => {
     const { email, password } = request.body
     const { rows } = await getPool().query(
-      `SELECT id, name, email, password, role, is_active, avatar_url, avatar_updated_at
+      `SELECT id, name, email, password, role, is_active, avatar_url, avatar_updated_at,
+              CASE WHEN daily_status_date = CURRENT_DATE THEN daily_status END AS daily_status
        FROM users WHERE email = $1 LIMIT 1`,
       [String(email).toLowerCase().trim()],
     )
@@ -181,7 +182,8 @@ export async function authRoutes(fastify) {
               joined_at = COALESCE(joined_at, NOW()),
               updated_at = NOW()
         WHERE id = $2
-        RETURNING id, name, email, role, is_active`,
+        RETURNING id, name, email, role, is_active,
+                  CASE WHEN daily_status_date = CURRENT_DATE THEN daily_status END AS daily_status`,
       [hash, inv.user.id],
     )
     const user = rows[0]
@@ -272,7 +274,8 @@ export async function authRoutes(fastify) {
           SET password = $1,
               updated_at = NOW()
         WHERE id = $2
-        RETURNING id, name, email, role, is_active`,
+        RETURNING id, name, email, role, is_active,
+                  CASE WHEN daily_status_date = CURRENT_DATE THEN daily_status END AS daily_status`,
       [hash, reset.user.id],
     )
     const user = rows[0]

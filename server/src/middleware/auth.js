@@ -31,7 +31,8 @@ import { getSessionUser } from '../services/sessions.js'
 export async function loadUserById(id) {
   if (!id) return null
   const { rows } = await getPool().query(
-    `SELECT id, name, email, role, is_active, avatar_url, avatar_updated_at
+    `SELECT id, name, email, role, is_active, avatar_url, avatar_updated_at,
+            CASE WHEN daily_status_date = CURRENT_DATE THEN daily_status END AS daily_status
      FROM users WHERE id = $1 LIMIT 1`,
     [id],
   )

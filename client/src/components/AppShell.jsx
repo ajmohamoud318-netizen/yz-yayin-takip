@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -52,14 +52,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import api, { ROLE_LABELS, STATUS_META, statusKeyForProject, canRequestHandover } from '@/api'
@@ -290,7 +283,6 @@ export default function AppShell() {
                 <Plus className="h-4 w-4" />
               </Button>
             )}
-            <DailyStatusButton />
             <NotificationBell />
             <UserMenu user={user} onLogout={handleLogout} />
           </div>
@@ -692,93 +684,13 @@ function relativeTime(iso) {
  *               clicked (or "Tümünü okundu say"). Peeking never marks it read,
  *               so the list stays a real to-do queue.
  */
+// Same-day "what else am I on today" note — self-set, independent of any
+// project, and shown to everyone on /team (Team.jsx) so a stalled project
+// has an explanation beyond "still at Tasarım". Resets automatically the
+// next day (server-side CURRENT_DATE filter — see migration
+// 025__daily_status.sql), so there's nothing to clean up here. Editor UI
+// lives in UserMenu, below.
 const STATUS_MAX_LENGTH = 140
-
-/**
- * Same-day "what else am I on today" note — self-set, independent of any
- * project, and shown to everyone on /team (Team.jsx) so a stalled project
- * has an explanation beyond "still at Tasarım". Resets automatically the
- * next day (server-side CURRENT_DATE filter — see migration
- * 025__daily_status.sql), so there's nothing to clean up here.
- */
-function DailyStatusButton() {
-  const { user, updateUser } = useAuth()
-  const [open, setOpen] = useState(false)
-  const [text, setText] = useState(user?.daily_status ?? '')
-  const [saving, setSaving] = useState(false)
-  const hasStatus = !!user?.daily_status
-
-  function handleOpenChange(next) {
-    setOpen(next)
-    if (next) setText(user?.daily_status ?? '')
-  }
-
-  async function save(nextText) {
-    setSaving(true)
-    try {
-      const updated = await api.setMyStatus(nextText)
-      updateUser({ daily_status: updated.daily_status ?? null })
-      toast.success(nextText ? 'Durum güncellendi.' : 'Durum temizlendi.')
-      setOpen(false)
-    } catch (err) {
-      toast.error(err.message || 'Durum güncellenemedi.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <>
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label="Bugünkü durum"
-        title={hasStatus ? user.daily_status : 'Bugünkü durumunu paylaş'}
-        className={cn('relative', hasStatus && 'text-amber-600')}
-        onClick={() => handleOpenChange(true)}
-      >
-        <MessageSquareText className="h-4 w-4" />
-        {hasStatus && (
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background" />
-        )}
-      </Button>
-      <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <MessageSquareText className="h-4 w-4" /> Bugünkü Durum
-            </DialogTitle>
-            <DialogDescription>
-              Bugün başka bir işle mi ilgileniyorsun? Ekip lideri bunu Takım
-              sayfasında görecek. Yarın otomatik olarak temizlenir.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-1.5">
-            <Textarea
-              value={text}
-              onChange={(e) => setText(e.target.value.slice(0, STATUS_MAX_LENGTH))}
-              placeholder="Örn. Bugün pazarlama kampanyası hazırlığı yapıyorum"
-              rows={3}
-            />
-            <p className="text-right text-[11px] text-muted-foreground">
-              {text.length}/{STATUS_MAX_LENGTH}
-            </p>
-          </div>
-          <DialogFooter>
-            {hasStatus && (
-              <Button type="button" variant="ghost" disabled={saving} onClick={() => save('')}>
-                Temizle
-              </Button>
-            )}
-            <Button type="button" disabled={saving} onClick={() => save(text.trim())}>
-              {saving ? 'Kaydediliyor…' : 'Kaydet'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  )
-}
 
 function NotificationBell() {
   const navigate = useNavigate()
@@ -871,41 +783,135 @@ function NotificationBell() {
 
 
 function UserMenu({ user, onLogout }) {
+  const { updateUser } = useAuth()
+  const [statusOpen, setStatusOpen] = useState(false)
+  const [statusText, setStatusText] = useState(user?.daily_status ?? '')
+  const [statusSaving, setStatusSaving] = useState(false)
+  const hasStatus = !!user?.daily_status
+  // The dropdown's own close sequence (exit animation + focus restore)
+  // isn't instant, and it shares a trigger element with the Popover below.
+  // Opening the popover on a fixed delay would race that close sequence —
+  // whichever finishes last steals focus from the other and the popover
+  // dismisses itself. Instead, flag the intent here and actually open the
+  // popover from the dropdown's onCloseAutoFocus, which fires exactly when
+  // Radix considers the close sequence done.
+  const openStatusOnCloseRef = useRef(false)
+
+  function openStatusEditor() {
+    setStatusText(user?.daily_status ?? '')
+    openStatusOnCloseRef.current = true
+  }
+
+  function handleMenuCloseAutoFocus(e) {
+    e.preventDefault()
+    if (openStatusOnCloseRef.current) {
+      openStatusOnCloseRef.current = false
+      setStatusOpen(true)
+    }
+  }
+
+  async function saveStatus(nextText) {
+    setStatusSaving(true)
+    try {
+      const updated = await api.setMyStatus(nextText)
+      updateUser({ daily_status: updated.daily_status ?? null })
+      toast.success(nextText ? 'Durum güncellendi.' : 'Durum temizlendi.')
+      setStatusOpen(false)
+    } catch (err) {
+      toast.error(err.message || 'Durum güncellenemedi.')
+    } finally {
+      setStatusSaving(false)
+    }
+  }
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-1.5 px-1.5">
-          <UserAvatar user={user} size="sm" />
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="font-normal">
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold">{user?.name}</span>
-            <span className="text-xs text-muted-foreground">{user?.email}</span>
+    <Popover open={statusOpen} onOpenChange={setStatusOpen}>
+      <DropdownMenu>
+        <PopoverAnchor asChild>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="gap-1.5 px-1.5">
+              <span className="relative inline-block">
+                <UserAvatar user={user} size="sm" />
+                {hasStatus && (
+                  <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background" />
+                )}
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+        </PopoverAnchor>
+        <DropdownMenuContent
+          align="end"
+          className="w-56"
+          onCloseAutoFocus={handleMenuCloseAutoFocus}
+        >
+          <DropdownMenuLabel className="font-normal">
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold">{user?.name}</span>
+              <span className="text-xs text-muted-foreground">{user?.email}</span>
+            </div>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={openStatusEditor}>
+            <MessageSquareText className="h-4 w-4 shrink-0" />
+            {hasStatus ? (
+              <span className="min-w-0 flex-1 truncate">{user.daily_status}</span>
+            ) : (
+              'Bugünkü Durum'
+            )}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link to="/team">
+              <UsersRound className="h-4 w-4" />
+              Ekip
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to="/settings">
+              <Settings className="h-4 w-4" />
+              Ayarlar
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={onLogout} className="text-destructive focus:text-destructive">
+            <LogOut className="h-4 w-4" />
+            Çıkış Yap
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <PopoverContent align="end">
+        <div className="space-y-2">
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            <MessageSquareText className="h-4 w-4" /> Bugünkü Durum
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Bugün başka bir işle mi ilgileniyorsun? Ekip lideri bunu Takım
+            sayfasında görecek. Yarın otomatik olarak temizlenir.
+          </p>
+          <Textarea
+            autoFocus
+            value={statusText}
+            onChange={(e) => setStatusText(e.target.value.slice(0, STATUS_MAX_LENGTH))}
+            placeholder="Örn. Bugün pazarlama kampanyası hazırlığı yapıyorum"
+            rows={3}
+          />
+          <p className="text-right text-[11px] text-muted-foreground">
+            {statusText.length}/{STATUS_MAX_LENGTH}
+          </p>
+          <div className="flex justify-end gap-2">
+            {hasStatus && (
+              <Button type="button" size="sm" variant="ghost" disabled={statusSaving} onClick={() => saveStatus('')}>
+                Temizle
+              </Button>
+            )}
+            <Button type="button" size="sm" disabled={statusSaving} onClick={() => saveStatus(statusText.trim())}>
+              {statusSaving ? 'Kaydediliyor…' : 'Kaydet'}
+            </Button>
           </div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link to="/team">
-            <UsersRound className="h-4 w-4" />
-            Ekip
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/settings">
-            <Settings className="h-4 w-4" />
-            Ayarlar
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onLogout} className="text-destructive focus:text-destructive">
-          <LogOut className="h-4 w-4" />
-          Çıkış Yap
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 
