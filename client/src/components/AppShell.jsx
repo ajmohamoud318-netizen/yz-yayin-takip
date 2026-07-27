@@ -281,7 +281,6 @@ export default function AppShell() {
                 <Plus className="h-4 w-4" />
               </Button>
             )}
-            <WorkLogPill />
             <NotificationBell />
             <UserMenu user={user} onLogout={handleLogout} />
           </div>
@@ -318,14 +317,18 @@ function Sidebar({ collapsed, groups, pinned, counts, user, onLogout, onNavigate
       <div className="scrollbar-thin flex-1 overflow-y-auto overflow-x-hidden py-4">
         {groups.map((group) => (
           <SidebarSection key={group.id} collapsed={collapsed} label={group.label}>
-            {group.items.map((item) => (
-              <SidebarNavItem
-                key={item.label}
-                item={item}
-                collapsed={collapsed}
-                onNavigate={onNavigate}
-              />
-            ))}
+            {group.items.map((item) =>
+              item.type === 'worklog' ? (
+                <WorkLogPill key={item.label} collapsed={collapsed} />
+              ) : (
+                <SidebarNavItem
+                  key={item.label}
+                  item={item}
+                  collapsed={collapsed}
+                  onNavigate={onNavigate}
+                />
+              ),
+            )}
           </SidebarSection>
         ))}
 
@@ -774,9 +777,10 @@ function NotificationBell() {
 
 
 // Identity + navigation only. The "what else am I on today" note that used
-// to live in here as a hidden dropdown item is now the Çalışma Defteri pill
-// sitting next to the bell (components/WorkLogPill.jsx) — it was a feature
-// nobody could find two levels deep in an avatar menu.
+// to live in here as a hidden dropdown item is now the Çalışma Defteri entry
+// in the sidebar's resources group, under Ürün Bilgileri
+// (components/WorkLogPill.jsx) — it was a feature nobody could find two
+// levels deep in an avatar menu.
 function UserMenu({ user, onLogout }) {
   return (
     <DropdownMenu>
@@ -953,6 +957,7 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
     { to: '/team', label: 'Ekip', icon: UsersRound, roles: ['team_leader'] },
     { to: '/documents', label: 'Dökümanlar', icon: Files, roles: ['team_leader', 'designer', 'printer'] },
     { to: '/urun-bilgileri', label: 'Ürün Bilgileri', icon: Boxes, roles: ['team_leader', 'designer'] },
+    { type: 'worklog', label: 'Çalışma Defteri' },
   ].filter((i) => !i.roles || i.roles.includes(role))
 
   // ── Grup 4: Acil işler (kişiye göre) ─────────────────────────

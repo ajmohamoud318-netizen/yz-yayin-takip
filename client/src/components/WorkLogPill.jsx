@@ -17,18 +17,19 @@ import {
 } from '@/lib/work-log.js'
 
 /**
- * Çalışma Defteri — the header entry point for logging work that isn't the
- * project you're assigned to (see server migration 026__work_log.sql).
+ * Çalışma Defteri — the sidebar entry point for logging work that isn't the
+ * project you're assigned to (see server migration 026__work_log.sql). It
+ * lives in the sidebar's "resources" group, right under Ürün Bilgileri —
+ * moved there from the header pill next to the bell so it reads as part of
+ * the app's reference/records section rather than a transient alert.
  *
  * Composition notes, since a few things here are deliberate rather than
  * incidental:
  *
- *   • The trigger is a PILL, not another icon button. It sits next to the
- *     bell but reads as a *prompt* ("Bugün ne yaptın?") when the day is
- *     empty, which is the whole discoverability problem the old
- *     buried-in-the-avatar-menu version had. Its border is dashed while
- *     empty and solid once something is logged — the control tells you its
- *     own state before you read the text.
+ *   • The trigger looks like any other nav item (icon + label + count badge)
+ *     so it doesn't stand out as a different kind of control — it opens a
+ *     popover instead of navigating, but visually it belongs with its
+ *     neighbors.
  *   • The composer discloses progressively: category chips + writing surface
  *     first; the duration row and the Ekle button only slide in once there's
  *     text. An empty composer stays quiet instead of presenting eight
@@ -40,62 +41,53 @@ import {
 
 const MAX_ROWS_HEIGHT = 132 // ~5 lines before the textarea starts scrolling
 
-export default function WorkLogPill() {
+export default function WorkLogPill({ collapsed = false }) {
   const [open, setOpen] = useState(false)
   const { today, history, loading, busy, add, remove } = useWorkLog()
 
   const count = today.length
-  const latest = count ? today[0] : null
+  const label = 'Çalışma Defteri'
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={count ? `Çalışma defteri — bugün ${count} kayıt` : 'Çalışma defteri — bugün kayıt yok'}
-          className={cn(
-            'group relative flex h-9 shrink-0 items-center gap-2 rounded-full border pl-1.5 text-sm',
-            'transition-[background-color,border-color,box-shadow,transform] duration-200 [transition-timing-function:var(--ease-out)]',
-            'hover:bg-accent active:scale-[0.97] data-[state=open]:bg-accent',
-            count
-              ? 'border-border bg-card pr-2.5'
-              : 'border-dashed border-border/80 bg-transparent pr-2.5 md:pr-3',
-          )}
-        >
-          <span
+        {collapsed ? (
+          <button
+            type="button"
+            aria-label={count ? `${label} — bugün ${count} kayıt` : `${label} — bugün kayıt yok`}
+            title={label}
             className={cn(
-              'grid h-6 w-6 shrink-0 place-items-center rounded-full transition-colors duration-200',
-              count ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground group-hover:text-foreground',
+              'relative flex h-9 w-full items-center justify-center rounded-md transition-colors',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-primary/10 data-[state=open]:text-primary',
             )}
           >
-            <NotebookPen className="h-3.5 w-3.5" />
-          </span>
-
-          {/* Filled: the latest line, so the pill doubles as a reminder of
-              what you already said. Empty: the prompt itself. */}
-          {count ? (
-            <>
-              <span className="hidden max-w-[11rem] truncate text-[13px] text-foreground lg:block">
-                {latest.body}
-              </span>
-              <span className="hidden text-[13px] text-muted-foreground md:block lg:hidden">Defter</span>
-              <span
-                className="grid h-5 min-w-[1.25rem] place-items-center rounded-full bg-primary/10 px-1 font-medium text-[11px] leading-none text-primary"
-                aria-hidden="true"
-              >
+            <NotebookPen className="h-5 w-5" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-label={count ? `${label} — bugün ${count} kayıt` : `${label} — bugün kayıt yok`}
+            className={cn(
+              'group flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm font-medium transition-colors',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-primary/10 data-[state=open]:text-primary',
+            )}
+          >
+            <NotebookPen className="h-5 w-5" />
+            <span className="flex-1">{label}</span>
+            {count > 0 && (
+              <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground group-data-[state=open]:bg-primary/15 group-data-[state=open]:text-primary">
                 {count}
               </span>
-            </>
-          ) : (
-            <span className="hidden text-[13px] text-muted-foreground group-hover:text-foreground md:block">
-              Bugün ne yaptın?
-            </span>
-          )}
-        </button>
+            )}
+          </button>
+        )}
       </PopoverTrigger>
 
       <PopoverContent
-        align="end"
+        side="right"
+        align="start"
         sideOffset={10}
         className="flex w-[min(24rem,calc(100vw-1.5rem))] flex-col overflow-hidden p-0"
       >
