@@ -1,0 +1,136 @@
+<svg viewBox="0 0 1280 760" xmlns="http://www.w3.org/2000/svg" role="img" font-family="'Comic Sans MS','Chalkboard SE','Marker Felt',cursive">
+  <title>TR hattı: Demo ve Özalit onay kapıları ve tüm senaryolar</title>
+  <desc>El çizimi tarzı akış: küçük siyah işçi (小黑) demo paketini iki onay kapısından geçirir. Turuncu ok onay ve ileri akış; kırmızı ok ret ve Tasarım'a geri dönüş, deneme sayacı +1, sebep zorunlu; mavi notlar yan açıklama.</desc>
+
+  <defs>
+    <filter id="rough" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="7" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <marker id="arrOrange" markerWidth="12" markerHeight="12" refX="7" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 L3,5 Z" fill="#E8722A"/>
+    </marker>
+    <marker id="arrRed" markerWidth="12" markerHeight="12" refX="7" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 L3,5 Z" fill="#D63A2F"/>
+    </marker>
+    <marker id="arrInk" markerWidth="12" markerHeight="12" refX="7" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 L3,5 Z" fill="#141414"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1280" height="760" fill="#ffffff"/>
+
+  <!-- =============== INK LINE ART (rough) =============== -->
+  <g filter="url(#rough)" fill="none" stroke="#141414" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- START: Tasarim desk -->
+    <path d="M70,470 q-4,-70 60,-72 q120,-4 150,2 q10,50 2,74 q-110,8 -212,-4 Z"/>
+    <line x1="150" y1="398" x2="150" y2="470"/>
+    <path d="M96,472 l-6,40 M232,470 l8,40"/>
+    <!-- little tally board on the desk -->
+    <path d="M92,414 q60,-6 116,0 q4,26 -2,40 q-58,6 -112,0 q-4,-22 -2,-40 Z"/>
+
+    <!-- 小黑 #1 pushing DEMO package -->
+    <g>
+      <ellipse cx="300" cy="520" rx="34" ry="41"/>
+      <path d="M300,561 l-10,34 M300,561 l12,34"/>            <!-- legs -->
+      <path d="M332,512 q26,4 40,16"/>                          <!-- arm to box -->
+    </g>
+    <!-- DEMO package/crate -->
+    <path d="M372,494 q46,-4 74,2 q4,34 -2,58 q-40,6 -74,0 q-4,-30 2,-60 Z"/>
+    <path d="M372,522 q38,4 74,0 M408,496 l2,58"/>
+
+    <!-- BOOTH 1 : DEMO ONAY -->
+    <path d="M470,300 q90,-8 176,0 q6,120 -2,200 q-86,8 -172,0 q-8,-96 -2,-200 Z"/>
+    <path d="M462,300 q88,-40 192,0"/>                         <!-- roof -->
+    <path d="M508,330 q54,-6 100,0 q4,52 -2,74 q-48,6 -96,0 q-4,-40 -2,-74 Z"/> <!-- window -->
+    <!-- 小黑 operator in booth 1 pulling lever -->
+    <ellipse cx="558" cy="392" rx="24" ry="27"/>
+    <path d="M578,378 q22,-14 40,-34"/>                        <!-- arm up to lever -->
+    <!-- lever -->
+    <line x1="624" y1="338" x2="646" y2="316"/>
+    <circle cx="648" cy="313" r="7"/>
+    <line x1="624" y1="338" x2="624" y2="470"/>
+
+    <!-- BOOTH 2 : OZALIT ONAY -->
+    <path d="M880,300 q90,-8 176,0 q6,120 -2,200 q-86,8 -172,0 q-8,-96 -2,-200 Z"/>
+    <path d="M872,300 q88,-40 192,0"/>
+    <path d="M918,330 q54,-6 100,0 q4,52 -2,74 q-48,6 -96,0 q-4,-40 -2,-74 Z"/>
+    <ellipse cx="968" cy="392" rx="24" ry="27"/>
+    <path d="M988,378 q22,-14 40,-34"/>
+    <line x1="1034" y1="338" x2="1056" y2="316"/>
+    <circle cx="1058" cy="313" r="7"/>
+    <line x1="1034" y1="338" x2="1034" y2="470"/>
+
+    <!-- FINISH crate + flag : URETIME HAZIR -->
+    <path d="M1150,360 q60,-6 92,2 q4,60 -2,96 q-52,6 -90,0 q-4,-52 0,-98 Z"/>
+    <path d="M1150,404 q46,6 92,0 M1196,362 l2,94"/>
+    <line x1="1196" y1="360" x2="1196" y2="300"/>
+    <path d="M1196,300 q36,6 54,20 q-24,10 -54,10 Z"/>
+  </g>
+
+  <!-- =============== FLOW ARROWS =============== -->
+  <!-- push into booth1 (ink, designer teslim) -->
+  <path d="M452,516 q10,-2 16,-4" fill="none" stroke="#141414" stroke-width="2.6" marker-end="url(#arrInk)" filter="url(#rough)"/>
+
+  <!-- APPROVE 1 : orange forward booth1 -> booth2 -->
+  <path d="M648,470 q6,60 120,64 q80,2 108,-64" fill="none" stroke="#E8722A" stroke-width="4" marker-end="url(#arrOrange)" filter="url(#rough)"/>
+  <!-- APPROVE 2 : orange forward booth2 -> finish -->
+  <path d="M1058,470 q10,-56 84,-72" fill="none" stroke="#E8722A" stroke-width="4" marker-end="url(#arrOrange)" filter="url(#rough)"/>
+
+  <!-- REJECT 1 : red loop booth1 -> Tasarim -->
+  <path d="M540,504 q-20,150 -190,150 q-190,0 -195,-160" fill="none" stroke="#D63A2F" stroke-width="3.6" stroke-dasharray="2 9" stroke-linecap="round" marker-end="url(#arrRed)" filter="url(#rough)"/>
+  <!-- REJECT 2 : red big loop booth2 -> Tasarim -->
+  <path d="M950,506 q-30,214 -400,220 q-360,4 -395,-224" fill="none" stroke="#D63A2F" stroke-width="3.6" stroke-dasharray="2 9" stroke-linecap="round" marker-end="url(#arrRed)" filter="url(#rough)"/>
+
+  <!-- =============== TALLY MARKS (red) =============== -->
+  <g stroke="#D63A2F" stroke-width="3" stroke-linecap="round" filter="url(#rough)">
+    <line x1="112" y1="424" x2="112" y2="452"/>
+    <line x1="124" y1="424" x2="124" y2="452"/>
+    <line x1="136" y1="424" x2="136" y2="452"/>
+    <line x1="106" y1="440" x2="142" y2="436"/>
+    <line x1="160" y1="424" x2="160" y2="452"/>
+  </g>
+
+  <!-- =============== TEXT LABELS =============== -->
+  <g fill="#141414" font-size="21" text-anchor="middle">
+    <text x="150" y="392">TASARIM</text>
+    <text x="558" y="292">DEMO ONAY</text>
+    <text x="968" y="292">ÖZALİT ONAY</text>
+    <text x="1196" y="352">ÜRETİME</text>
+    <text x="1196" y="376">HAZIR</text>
+    <text x="409" y="470" font-size="16">DEMO</text>
+  </g>
+
+  <!-- start note (blue) -->
+  <g fill="#2E6DB4" font-size="16" text-anchor="middle">
+    <text x="150" y="500">tasarımcı</text>
+    <text x="150" y="520">demoyu teslim eder</text>
+  </g>
+  <text x="150" y="418" fill="#D63A2F" font-size="13" text-anchor="middle" font-style="italic">deneme sayacı</text>
+
+  <!-- approve labels (orange) -->
+  <g fill="#E8722A" font-size="17" text-anchor="middle">
+    <text x="762" y="556">Oktay ONAYLAR →</text>
+    <text x="1092" y="392" transform="rotate(-32 1092 392)">Oktay ONAYLAR →</text>
+  </g>
+
+  <!-- reject labels (red) -->
+  <g fill="#D63A2F" font-size="16.5" text-anchor="middle">
+    <text x="360" y="628">RET → Tasarım · deneme +1</text>
+    <text x="360" y="650" font-size="14" font-style="italic">sebep zorunlu (Ayşenur)</text>
+    <text x="640" y="712">RET → Tasarım · deneme +1  ·  sebep zorunlu</text>
+  </g>
+
+  <!-- corner scope note (blue) -->
+  <text x="1150" y="150" fill="#2E6DB4" font-size="15" text-anchor="end" font-style="italic">yalnız TR hattı</text>
+
+  <!-- mini legend bottom-right -->
+  <g font-size="14.5" text-anchor="start">
+    <line x1="1000" y1="600" x2="1030" y2="600" stroke="#E8722A" stroke-width="4" marker-end="url(#arrOrange)"/>
+    <text x="1040" y="605" fill="#141414">onay · ileri</text>
+    <line x1="1000" y1="626" x2="1030" y2="626" stroke="#D63A2F" stroke-width="3.4" stroke-dasharray="2 8" marker-end="url(#arrRed)"/>
+    <text x="1040" y="631" fill="#141414">ret · geri (+1)</text>
+    <text x="1000" y="657" fill="#2E6DB4">— yan not</text>
+  </g>
+</svg>
