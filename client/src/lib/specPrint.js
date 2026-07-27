@@ -30,7 +30,9 @@ export function buildSpecRows({ component, form, kind }) {
   if (form?.teslimTarihi || form?.teslimEdenKisi) {
     rows.push(['TESLİM TARİHİ', form?.teslimTarihi ?? ''], ['TESLİM EDEN KİŞİ', form?.teslimEdenKisi ?? ''])
   }
-  rows.push(['ONAYLAYAN KİŞİ', form?.onaylayanKisi ?? ''])
+  // Only shown once an approval has actually stamped it — otherwise an
+  // unapproved sheet prints as if the team leader already signed off.
+  if (form?.onaylayanKisi) rows.push(['ONAYLAYAN KİŞİ', form.onaylayanKisi])
   return rows
 }
 
@@ -48,7 +50,7 @@ function sheetSection({ title, attemptLabel, rows, designerNames, onaylayanKisi,
     <div class="date-line">Tarih: ${esc(today)}</div>
     <div class="sig-section">
       ${sig('Tasarımcı', designerNames)}
-      ${sig('Ekip Lideri / Onaylayan', onaylayanKisi)}
+      ${onaylayanKisi ? sig('Ekip Lideri / Onaylayan', onaylayanKisi) : ''}
       ${matbaaYetkilisi ? sig('Matbaa Yetkilisi', matbaaYetkilisi) : ''}
     </div>
   </section>`

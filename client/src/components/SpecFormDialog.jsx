@@ -182,11 +182,45 @@ function saveSnapshot(variant, id, attempt, data, customRows, selectedComponents
   }))
 }
 
+/**
+ * The ozalit-revision resubmit (ProjectDetail: tasarim + last_reject_type ===
+ * 'ozalit') advances straight back to ozalit_teslim via a bare confirm dialog
+ * (ApprovalDialog), bypassing this form entirely — the spec itself doesn't
+ * change on a resend. But per the server's canRequestOzalit rule, that resend
+ * IS the designer (re-)requesting the ozalit (the server sets
+ * ozalit_requested=true in the same step), so "OZALİT İSTEYEN KİŞİ" must
+ * reflect whoever actually resent it — not whoever requested the very first
+ * attempt, which is what was left stamped otherwise. Called from
+ * ApprovalDialog right after that advance succeeds.
+ */
+export async function restampOzalitRequester(projectId, attempt, requesterName) {
+  const variant = VARIANTS.ozalit
+  const existing =
+    loadSaved(variant, projectId) ??
+    (await fetchServerSnapshot(api, variant, projectId, null)) ??
+    { form: {}, customRows: [], selectedComponents: null }
+  const form = { ...existing.form, [variant.personField]: requesterName ?? '' }
+  saveForm(variant, projectId, form, existing.customRows ?? [], existing.selectedComponents ?? null)
+  if (attempt != null) {
+    saveSnapshot(variant, projectId, attempt, form, existing.customRows ?? [], existing.selectedComponents ?? null)
+  }
+  try {
+    await api.createDemo({
+      project_id: projectId,
+      kind: variant.kind,
+      attempt: attempt ?? null,
+      silent: true,
+      payload: {
+        ...form,
+        _customRows: existing.customRows ?? [],
+        _selectedComponents: existing.selectedComponents ?? null,
+      },
+    })
+  } catch { /* localStorage still has it; don't block the flow */ }
+}
+
 function emptyForm(variant, project, user) {
   const today = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
-  const teamLeaderName = user?.role === 'team_leader'
-    ? (user?.name ?? '')
-    : ((project?.history ?? []).find((h) => h.from_stage === null)?.done_by_name ?? project?.created_by_name ?? '')
   return {
     isinAdi: project?.title ?? '',
     [variant.dateField]: today,
@@ -198,7 +232,11 @@ function emptyForm(variant, project, user) {
       (project?.assignees ?? []).map((a) => a.name).join(', ') ||
       project?.assigned_name ||
       '',
-    onaylayanKisi: teamLeaderName,
+    // Left blank until the team leader actually approves (stamped in
+    // handleApprove) — pre-filling this here made every unapproved sheet
+    // (still at ozalit_teslim/ozalit_onay, still pending) show a filled
+    // "Ekip Lideri / Onaylayan" signature before any approval had happened.
+    onaylayanKisi: '',
     matbaaYetkilisi: user?.role === 'printer' ? (user?.name ?? '') : '',
   }
 }
@@ -349,12 +387,12 @@ function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
           </>
         )}
         {form.matbaaYetkilisi && <ClassicRow label="MATBAA YETKİLİSİ" value={form.matbaaYetkilisi} />}
-        <ClassicRow label="ONAYLAYAN KİŞİ" value={form.onaylayanKisi ?? ''} />
+        {form.onaylayanKisi && <ClassicRow label="ONAYLAYAN KİŞİ" value={form.onaylayanKisi} />}
       </div>
       <div className="flex divide-x">
         <SigBox role="Tasarımcı" name={designerNames} />
         {form.matbaaYetkilisi && <SigBox role="Matbaa Yetkilisi" name={form.matbaaYetkilisi} />}
-        <SigBox role="Ekip Lideri / Onaylayan" name={form.onaylayanKisi ?? ''} />
+        {form.onaylayanKisi && <SigBox role="Ekip Lideri / Onaylayan" name={form.onaylayanKisi} />}
       </div>
     </div>
   )
@@ -616,9 +654,12 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     if (!project) return
     setBusy(true)
     try {
-      saveForm(variant, project.id, form, customRows, selectedComponents)
-      saveSnapshot(variant, project.id, attemptNo, form, customRows, selectedComponents)
-      persistServerSnapshot(attemptNo, form)
+      // Stamp the real approver at the moment approval actually happens —
+      // this is the only point where "onaylayanKisi" should get a value.
+      const approvedForm = { ...form, onaylayanKisi: user?.name ?? '' }
+      saveForm(variant, project.id, approvedForm, customRows, selectedComponents)
+      saveSnapshot(variant, project.id, attemptNo, approvedForm, customRows, selectedComponents)
+      persistServerSnapshot(attemptNo, approvedForm)
       await persistCatalogEdits()
       const updated = await api.approveProject(project.id)
       updateOne(updated)
@@ -871,7 +912,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               </>
             )}
             {form.matbaaYetkilisi && <Row label="MATBAA YETKİLİSİ" name="matbaaYetkilisi" value={form.matbaaYetkilisi} onChange={handleChange} readOnly />}
-            <Row label="ONAYLAYAN KİŞİ" name="onaylayanKisi" value={form.onaylayanKisi ?? ''} onChange={handleChange} readOnly />
+            {form.onaylayanKisi && <Row label="ONAYLAYAN KİŞİ" name="onaylayanKisi" value={form.onaylayanKisi} onChange={handleChange} readOnly />}
           </div>
         </div>
 
@@ -879,7 +920,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           <div className="flex divide-x overflow-hidden rounded-lg border bg-white">
             <SigBox role="Tasarımcı" name={(project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''} />
             {form.matbaaYetkilisi && <SigBox role="Matbaa Yetkilisi" name={form.matbaaYetkilisi} />}
-            <SigBox role="Ekip Lideri / Onaylayan" name={form.onaylayanKisi ?? ''} />
+            {form.onaylayanKisi && <SigBox role="Ekip Lideri / Onaylayan" name={form.onaylayanKisi} />}
           </div>
         )}
         </>

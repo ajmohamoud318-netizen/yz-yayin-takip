@@ -19,6 +19,7 @@ import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { useAuth } from '@/hooks/useAuth'
 import { isSubtaskDone } from '@/domain/services/progress'
 import { cn } from '@/lib/utils'
+import { restampOzalitRequester } from '@/components/SpecFormDialog'
 
 // Where an approval sends the project, with a destination-aware button label.
 // NOTE: özalit and çin-demo approval land the project on `uretime_hazir`
@@ -192,7 +193,17 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
           rejectTarget === 'designer' ? revizeIds : [],
           rejectTarget,
         )
-      else updated = await api.advanceProject(project.id)
+      else {
+        updated = await api.advanceProject(project.id)
+        // This bare confirm is also how a designer resubmits an ozalit after
+        // an ozalit-targeted rejection (tasarim -> ozalit_teslim in one step,
+        // see transitions.js) — that resend IS a fresh ozalit request, so
+        // re-stamp the requester instead of leaving the original attempt's
+        // name on the form.
+        if (project.stage === 'tasarim' && project.last_reject_type === 'ozalit') {
+          restampOzalitRequester(project.id, updated.ozalit_attempt, user?.name).catch(() => {})
+        }
+      }
       updateOne(updated)
       toast.success(
         mode === 'approve' ? 'Onaylandı.' : mode === 'reject' ? 'Reddedildi.' : 'İlerletildi.',

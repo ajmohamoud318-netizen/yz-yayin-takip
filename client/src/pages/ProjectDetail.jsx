@@ -638,7 +638,7 @@ export default function ProjectDetail() {
                 )}
                 {/* Demo "Teslim Alındı" gate — before the Onay. */}
                 {canReceiveDemo && (
-                  <Button size="sm" variant="outline" onClick={handleReceiveDemo} disabled={receiving}>
+                  <Button size="sm" onClick={handleReceiveDemo} disabled={receiving}>
                     <CheckCircle2 className="h-4 w-4" />
                     {receiving ? 'İşleniyor…' : 'Teslim Alındı'}
                   </Button>
