@@ -17,7 +17,10 @@ export const STAGE_PIPELINE = {
   CIN: ['tasarim', 'cin_demo_teslim', 'cin_demo_onay', 'uretime_hazir', 'uretimde', 'gumruk', 'satista'],
 }
 
-export const ORDERABLE_STAGES = new Set(['satista'])
+// Mirrors client/src/domain/constants/stages.js — orderable from "Üretime
+// Hazır" onward (Üretimde, Gümrük, Satışta), not just once fully sold
+// through. See that file for the full rationale.
+export const ORDERABLE_STAGES = new Set(['uretime_hazir', 'uretimde', 'gumruk', 'satista'])
 
 export const HANDOVER_ELIGIBLE_STAGE = { TR: 'uretimde', CIN: 'gumruk' }
 

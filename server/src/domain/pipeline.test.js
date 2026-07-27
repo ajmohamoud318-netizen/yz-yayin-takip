@@ -43,12 +43,15 @@ describe('pipeline', () => {
     assert.doesNotThrow(() => assertCanEnterProduction('tasarim', 0))
   })
 
-  it('assertOrderable fires unless the project is satista AND has a product_info entry', () => {
+  it('assertOrderable fires unless the project has reached an orderable stage AND has a product_info entry', () => {
     assert.doesNotThrow(() => assertOrderable({ stage: 'satista', has_product_info: true }))
+    assert.doesNotThrow(() => assertOrderable({ stage: 'uretime_hazir', has_product_info: true }))
+    assert.doesNotThrow(() => assertOrderable({ stage: 'uretimde', has_product_info: true }))
+    assert.doesNotThrow(() => assertOrderable({ stage: 'gumruk', has_product_info: true }))
     assert.throws(() => assertOrderable({ stage: 'satista', has_product_info: false }), /Ürün Bilgileri/)
-    assert.throws(() => assertOrderable({ stage: 'tasarim', has_product_info: true }), /satışta/)
+    assert.throws(() => assertOrderable({ stage: 'tasarim', has_product_info: true }), /üretime hazır/)
     // Critical parity check with the client bug we patched: undefined must throw.
-    assert.throws(() => assertOrderable(undefined), /satışta/)
+    assert.throws(() => assertOrderable(undefined), /üretime hazır/)
   })
 
   it('handover eligibility depends on pipeline type', () => {
@@ -59,9 +62,12 @@ describe('pipeline', () => {
     assert.throws(() => assertHandoverEligible({ type: 'TR', stage: 'tasarim' }), /üretimi tamamlanan/)
   })
 
-  it('canRequestOrder requires satista stage AND a product_info entry', () => {
+  it('canRequestOrder allows Üretime Hazır onward, given a product_info entry', () => {
     assert.equal(canRequestOrder({ stage: 'satista', has_product_info: true }), true)
     assert.equal(canRequestOrder({ stage: 'satista', has_product_info: false }), false)
+    assert.equal(canRequestOrder({ stage: 'uretime_hazir', has_product_info: true }), true)
+    assert.equal(canRequestOrder({ stage: 'uretimde', has_product_info: true }), true)
+    assert.equal(canRequestOrder({ stage: 'gumruk', has_product_info: true }), true)
     assert.equal(canRequestOrder({ stage: 'tasarim', has_product_info: true }), false)
   })
 })

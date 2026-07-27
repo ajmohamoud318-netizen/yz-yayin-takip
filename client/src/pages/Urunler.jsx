@@ -1,17 +1,24 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, AlertTriangle, Plus } from 'lucide-react'
 
-import api, { TYPE_LABELS, ORDERABLE_STAGES, canRequestOrder } from '@/api'
+import api, {
+  TYPE_LABELS, STAGE_LABELS, ORDERABLE_STAGES, STATUS_STYLES,
+  canRequestOrder, statusKeyForProject,
+} from '@/api'
 import { useAuth } from '@/hooks/useAuth'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import OrderRequestDialog from '@/components/OrderRequestDialog'
+import { cn } from '@/lib/utils'
 
 /**
- * Catalog of every product that has reached Satışta — visible to all roles
- * for reference, but only Sales (satis) can actually raise an order from it.
+ * Catalog of every product Sales can raise an order (sipariş) against —
+ * everything from "Üretime Hazır" onward (Üretime Hazır, Üretimde, Gümrük,
+ * Satışta), grouped into "ready for order" (production finished, not yet
+ * fully sold) and "already made" (Satışta). Visible to all roles for
+ * reference, but only Sales (satis) can actually raise an order from it.
  * A product missing its Ürün Bilgileri spec is still shown (so nothing
  * silently disappears) but its order action is disabled until the team
  * leader fills that in.
@@ -49,6 +56,13 @@ export default function Urunler() {
 
   const orderableProducts = products.filter((p) => canRequestOrder(p))
 
+  // Two buckets sales thinks in: work that's finished but not yet sold
+  // through (still worth reordering ahead of running out) vs. products
+  // that have already reached Satışta. Both are orderable; the split is
+  // purely about scanability.
+  const readyProducts = products.filter((p) => p.stage !== 'satista')
+  const madeProducts = products.filter((p) => p.stage === 'satista')
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -67,7 +81,7 @@ export default function Urunler() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Ürünler</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Satışa ulaşmış tüm ürünler — {products.length} ürün
+              Sipariş verilebilecek tüm ürünler — {products.length} ürün
             </p>
           </div>
           {canOrderRole && (
@@ -81,22 +95,26 @@ export default function Urunler() {
         {products.length === 0 ? (
           <Card>
             <CardContent className="p-10 text-center text-sm text-muted-foreground">
-              Şu anda satışta ürün bulunmuyor.
+              Şu anda sipariş verilebilecek ürün bulunmuyor.
             </CardContent>
           </Card>
         ) : (
-          <ol className="divide-y overflow-hidden rounded-lg border bg-white">
-            {products.map((p, i) => (
-              <ProductRow
-                key={p.id}
-                project={p}
-                index={i + 1}
-                showOrderAction={canOrderRole}
-                canOrder={canRequestOrder(p)}
-                onOrder={() => openOrderFor(p.id)}
-              />
-            ))}
-          </ol>
+          <div className="space-y-6">
+            <ProductGroup
+              title="Sipariş İçin Hazır"
+              hint="Üretimi tamamlanmış, henüz satışı bitmemiş"
+              products={readyProducts}
+              canOrderRole={canOrderRole}
+              onOrder={openOrderFor}
+            />
+            <ProductGroup
+              title="Halihazırda Satışta"
+              hint="Daha önce üretilmiş, satışa çıkmış"
+              products={madeProducts}
+              canOrderRole={canOrderRole}
+              onOrder={openOrderFor}
+            />
+          </div>
         )}
       </div>
 
@@ -115,8 +133,36 @@ export default function Urunler() {
   )
 }
 
+function ProductGroup({ title, hint, products, canOrderRole, onOrder }) {
+  if (products.length === 0) return null
+  return (
+    <section className="space-y-2">
+      <div className="flex items-baseline gap-2 px-1">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {title} · {products.length}
+        </h2>
+        <span className="text-xs text-muted-foreground/70">{hint}</span>
+      </div>
+      <ol className="divide-y overflow-hidden rounded-lg border bg-white">
+        {products.map((p, i) => (
+          <ProductRow
+            key={p.id}
+            project={p}
+            index={i + 1}
+            showOrderAction={canOrderRole}
+            canOrder={canRequestOrder(p)}
+            onOrder={() => onOrder(p.id)}
+          />
+        ))}
+      </ol>
+    </section>
+  )
+}
+
 function ProductRow({ project, index, onOrder, canOrder, showOrderAction }) {
   const typeLabel = TYPE_LABELS[project.type] ?? project.type
+  const stageLabel = STAGE_LABELS[project.stage] ?? project.stage
+  const stageStyle = STATUS_STYLES[statusKeyForProject(project)]
   const hasSpec = !!project.has_product_info
 
   return (
@@ -136,6 +182,11 @@ function ProductRow({ project, index, onOrder, canOrder, showOrderAction }) {
         <span className="hidden items-center gap-1.5 text-xs text-amber-600 sm:flex" title="Sipariş verilmeden önce takım lideri Ürün Bilgileri'ni doldurmalı">
           <AlertTriangle className="h-3.5 w-3.5" />
           Ürün bilgisi eksik
+        </span>
+      )}
+      {stageStyle && (
+        <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset', stageStyle.badge)}>
+          {stageLabel}
         </span>
       )}
       <Badge variant="outline" className="shrink-0 text-[10px]">{typeLabel}</Badge>

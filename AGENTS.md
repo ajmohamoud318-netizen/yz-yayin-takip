@@ -96,7 +96,7 @@ Enforced by:
 
 ---
 ## 🛒 Sipariş (Order) Mini-Workflow — sales re-prints
-Separate from the main pipeline. Satış Ekibi raises an order for a project that has already reached `satista`; the project cycles through the team, designer, and matbaa again. Defined in `client/src/domain/constants/orders.js`.
+Separate from the main pipeline. Satış Ekibi raises an order for a project that has reached `uretime_hazir` or any later stage (`uretimde`, `gumruk`, `satista`) — production doesn't need to be fully sold through, just finished; the project cycles through the team, designer, and matbaa again. Defined in `client/src/domain/constants/orders.js`.
 
 ```
 pending (team_leader)        Talep Gönderildi
@@ -112,7 +112,8 @@ onaylandi                    Üretime Alındı
 
 - `ORDER_STEP_OWNER` maps each step to the role that must act on it
 - `ORDER_REJECT_TARGETS.matbaa_onay` = `{ designer, matbaa }` — mirrors the main pipeline's ozalit rejection target choice
-- `canRequestOrder` (and the throwing `assertOrderable`) gate the create-order use case to projects whose `stage ∈ { 'satista' }` only — `ORDERABLE_STAGES` set
+- `canRequestOrder` (and the throwing `assertOrderable`) gate the create-order use case to projects whose `stage ∈ ORDERABLE_STAGES = { 'uretime_hazir', 'uretimde', 'gumruk', 'satista' }` AND that have a saved `has_product_info` entry
+- The Ürünler catalog page (`pages/Urunler.jsx`) splits this pool into two groups for Sales: "Sipariş İçin Hazır" (production finished, not yet fully sold — `uretime_hazir`/`uretimde`/`gumruk`) and "Halihazırda Satışta" (`satista`)
 
 ---
 ## 📦 Teslim (Physical Handover) Workflow
@@ -474,7 +475,7 @@ POST   /api/demos                     { project_id, payload } [designer]
 ### Orders (Sipariş Talep workflow)
 ```
 GET    /api/orders                    filter by status; per-role defaults applied
-POST   /api/orders                    { project_id, payload } [satis] — project must be in 'satista'
+POST   /api/orders                    { project_id, payload } [satis] — project must be in an ORDERABLE_STAGES stage (uretime_hazir/uretimde/gumruk/satista)
 PATCH  /api/orders/:id/advance        [role per ORDER_STEP_OWNER]
 PATCH  /api/orders/:id/reject         { reason, reject_target } [team_leader]
 ```
@@ -498,7 +499,7 @@ PATCH  /api/users/:id/reactivate      [team_leader]
 | `team_leader`| Dashboard (`/`)   | Everything — Dashboard, All Projects, Kanban, Yıllık Plan, Demo Requests, Baskı Listesi, Onaylar (Demo/Ozalit), Sipariş Talepleri, Ekip, Ürün Bilgileri, Dökümanlar, Ayarlar |
 | `designer`   | My Projects       | My Projects, All Projects (filtered to mine), Kanban, Demo Requests, Sipariş Onayları (orders at `goruldu`), Baskı Listesi, Dökümanlar, Ayarlar |
 | `printer`    | Onaylar (Demo)    | Onaylar (Demo / Ozalit / Sipariş), Üretime Hazır, Teslim Talepleri, Kanban, Baskı Listesi, Dökümanlar, Ayarlar |
-| `satis`      | Sipariş Talebi    | Sipariş Talebi (raise new orders for `satista` projects), Teslim Onayları (confirm Alındı → moves to `satista`), Tüm Ürünler (read-only catalog), Ayarlar |
+| `satis`      | Sipariş Talebi    | Sipariş Talebi (raise new orders for projects at `uretime_hazir`/`uretimde`/`gumruk`/`satista`), Teslim Onayları (confirm Alındı → moves to `satista`), Tüm Ürünler (catalog, order entry point), Ayarlar |
 
 Sidebar grouping is computed in `AppShell.navGroups()` and groups items into:
 1. **Ana menü** — Dashboard, Projelerim / Tüm Projeler, İş Akışı, Baskı Listesi, Toplantılar (yakında), Satış-only: Sipariş Talebi, Tüm Ürünler
@@ -527,7 +528,7 @@ A persistent per-user log (capped at 50, stored in `localStorage` under `yz_noti
 - Rejection always requires `reason` field — backend enforces this
 - Redis keys: `session:{id}` (TTL 7d), `cache:projects` (TTL 30s), `notify:{userId}` (pub-sub)
 - Production gate: `assertCanEnterProduction(nextStage, progress)` throws 400 if a project tries to enter Ozalit+ with progress < 100%
-- Order eligibility: `assertOrderable(project)` throws 400 if `project.stage ∉ { 'satista' }`
+- Order eligibility: `assertOrderable(project)` throws 400 if `project.stage ∉ ORDERABLE_STAGES` (`uretime_hazir`/`uretimde`/`gumruk`/`satista`) or `has_product_info` isn't set yet
 - Handover eligibility: `assertHandoverEligible(project)` throws 400 if the project is not at `uretimde` (TR) / `gumruk` (ÇİN)
 - Mock/Infra seam: `infrastructure/config.js` exposes `USE_MOCK`; flipping it to `false` switches repositories from `mock/*` to `http/*` without changing the application or presentation layer.
 ---

@@ -18,11 +18,15 @@ export const STAGE_PIPELINE = {
 }
 
 /**
- * Business rule: Sales can only raise a sipariş (order) request once a project
- * has reached the Satışta stage. Earlier production stages (uretime_hazir,
- * uretimde, gumruk) are no longer orderable.
+ * Business rule: Sales can raise a sipariş (order) request once a project has
+ * reached "Üretime Hazır" or any stage after it (Üretimde, Gümrük, Satışta) —
+ * i.e. once production work is actually finished, not only once it has fully
+ * sold through. This lets Sales queue a reorder ahead of the first batch
+ * selling out, while still covering already-sold (Satışta) products. The
+ * project still needs a Ürün Bilgileri entry (`has_product_info`) before an
+ * order can actually be placed — see `canRequestOrder` / `assertOrderable`.
  */
-export const ORDERABLE_STAGES = new Set(['satista'])
+export const ORDERABLE_STAGES = new Set(['uretime_hazir', 'uretimde', 'gumruk', 'satista'])
 
 /**
  * The final production stage a project rests in before Sales confirms the

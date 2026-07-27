@@ -102,12 +102,14 @@ describe('assertDemoCanAdvance (approve-but-hold rule)', () => {
 })
 
 describe('canRequestOrder / assertOrderable', () => {
-  it('requires satışta stage AND a product_info entry', () => {
+  it('allows Üretime Hazır and every stage after it, given a product_info entry', () => {
     expect(canRequestOrder({ stage: 'satista', has_product_info: true })).toBe(true)
     expect(canRequestOrder({ stage: 'satista', has_product_info: false })).toBe(false)
-    expect(canRequestOrder({ stage: 'uretime_hazir', has_product_info: true })).toBe(false)
-    expect(canRequestOrder({ stage: 'uretimde', has_product_info: true })).toBe(false)
+    expect(canRequestOrder({ stage: 'uretime_hazir', has_product_info: true })).toBe(true)
+    expect(canRequestOrder({ stage: 'uretimde', has_product_info: true })).toBe(true)
+    expect(canRequestOrder({ stage: 'gumruk', has_product_info: true })).toBe(true)
     expect(canRequestOrder({ stage: 'tasarim', has_product_info: true })).toBe(false)
+    expect(canRequestOrder({ stage: 'ozalit_teslim', has_product_info: true })).toBe(false)
   })
   it('throws 400 on a non-satisfying stage with status set', () => {
     try {
@@ -115,14 +117,15 @@ describe('canRequestOrder / assertOrderable', () => {
       throw new Error('should have thrown')
     } catch (e) {
       expect(e.status).toBe(400)
-      expect(e.message).toMatch(/satışta olan/)
+      expect(e.message).toMatch(/üretime hazır/)
     }
   })
-  it('throws when satışta but no product_info entry exists yet', () => {
+  it('throws when in an orderable stage but no product_info entry exists yet', () => {
     expect(() => assertOrderable({ stage: 'satista', has_product_info: false })).toThrow(/Ürün Bilgileri/)
+    expect(() => assertOrderable({ stage: 'uretime_hazir', has_product_info: false })).toThrow(/Ürün Bilgileri/)
   })
   it('throws on missing project (defensive)', () => {
-    expect(() => assertOrderable(undefined)).toThrow(/satışta olan/)
+    expect(() => assertOrderable(undefined)).toThrow(/üretime hazır/)
   })
 })
 
