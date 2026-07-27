@@ -28,15 +28,39 @@ export const config = {
   // when running multiple app instances against the same database.
   migrateOnBoot: boolEnv('MIGRATE_ON_BOOT', true),
   seedOnBoot: boolEnv('SEED_ON_BOOT', false),
-  // CORS allowlist for the SPA. Comma-separated env var; falls back to a
-  // dev default that matches the Vite dev server.
+  // CORS allowlist for the SPA. Comma-separated env var. Falls back to the
+  // Vite dev origins in dev, and to the known production SPA origin in prod
+  // — so a missing CORS_ORIGINS in production fails safe (locked to the real
+  // host) rather than silently allowing localhost. Always set CORS_ORIGINS
+  // explicitly in prod; this default is only a backstop.
   corsOrigins:
     process.env.CORS_ORIGINS?.split(',').map((s) => s.trim()).filter(Boolean) ??
-    ['http://localhost:5173', 'http://localhost:4173'],
-  // When true, the server trusts the X-User-Id header as the authenticated
-  // user (this pass). When false, real OAuth/cookie session validation kicks
-  // in (next pass, not built yet).
+    (process.env.NODE_ENV === 'production'
+      ? ['https://yt.mucitkarinca.com']
+      : ['http://localhost:5173', 'http://localhost:4173']),
+  // When true, the server ALSO accepts the legacy `X-User-Id` header as a
+  // fallback identity (dev/test convenience). Cookie sessions are always
+  // tried first. MUST be false in production so auth is cookie-only and
+  // the header can't be used to impersonate a user. See SECURITY_PLAN.md P0.
   trustHeaderAuth: boolEnv('TRUST_HEADER_AUTH', true),
+
+  // Session cookie settings. The cookie holds an opaque server-side session
+  // token (see services/sessions.js) — the real replacement for header auth.
+  session: {
+    cookieName: process.env.SESSION_COOKIE_NAME ?? 'yz_session',
+    ttlDays: intEnv('SESSION_TTL_DAYS', 7),
+    // Secure (HTTPS-only) defaults on in production, off in dev so the
+    // cookie is accepted over http://localhost. Override with
+    // SESSION_COOKIE_SECURE if needed.
+    secure: boolEnv('SESSION_COOKIE_SECURE', process.env.NODE_ENV === 'production'),
+    // 'lax' works across subdomains of the same site (yt. → api.) while
+    // still blocking cross-site CSRF. Override to 'strict' or 'none' per env.
+    sameSite: process.env.SESSION_COOKIE_SAMESITE ?? 'lax',
+    // Leave unset for a host-only cookie (recommended). Set to
+    // '.mucitkarinca.com' only if you need the cookie shared across
+    // sibling subdomains beyond the API host.
+    domain: process.env.SESSION_COOKIE_DOMAIN?.trim() || undefined,
+  },
 
   // SMTP for invitation emails + (future) stage notifications. If SMTP_HOST
   // is unset, the server falls back to a console transport so local dev
@@ -57,6 +81,14 @@ export const config = {
     (process.env.NODE_ENV === 'production'
       ? 'https://yt.mucitkarinca.com'
       : 'http://localhost:5173'),
+
+  // Rate limiter backend. 'memory' (default) is a per-process Map — correct
+  // for a single container. Set RATE_LIMIT_STORE=redis to share limits across
+  // instances via Redis (uses `redisUrl` below); the limiter falls back to
+  // in-memory automatically if Redis is unreachable, so it never hard-fails.
+  rateLimit: {
+    store: (process.env.RATE_LIMIT_STORE ?? 'memory').toLowerCase(),
+  },
 
   // Redis connection string. In Dokploy this is the internal URL of the
   // managed Redis service (e.g. redis://default:<pw>@yz-redis:6379). In

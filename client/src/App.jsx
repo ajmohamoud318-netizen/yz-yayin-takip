@@ -36,8 +36,12 @@ import { CelebrationProvider } from './hooks/useCelebration.jsx'
    and the fallback component itself must not live in either file). */
 
 function RequireAuth({ children }) {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, bootstrapping } = useAuth()
   const location = useLocation()
+  // While the initial cookie-session check is in flight and we have no
+  // cached user yet, render nothing rather than bouncing to /login — a
+  // valid httpOnly session may be about to rehydrate us.
+  if (!isAuthenticated && bootstrapping) return null
   if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location }} />
   return children
 }

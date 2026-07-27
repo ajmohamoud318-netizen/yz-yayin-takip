@@ -31,6 +31,15 @@ export function createHttpAuthRepository() {
       return { ok: true }
     },
     /**
+     * Return the currently-authenticated user based on the session cookie,
+     * or throw 401 if there is no valid session. Used on app load to
+     * rehydrate the session from the httpOnly cookie (which JS can't read).
+     */
+    async me() {
+      const { data } = await httpClient.get('/auth/me')
+      return data
+    },
+    /**
      * Look up an invitation by token so the AcceptInvite page can show the
      * invitee's name without consuming the token. Returns
      * { name, email, role, expiresAt }.

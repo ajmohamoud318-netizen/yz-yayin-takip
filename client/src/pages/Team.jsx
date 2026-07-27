@@ -305,6 +305,7 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
         toast.warning('E-posta gönderilemedi. Davet linkini elle paylaşabilirsiniz.')
       } else {
         toast.success('Davet e-postası gönderildi.')
+        onOpenChange?.(false)
       }
       onInvited?.(created)
       setName('')

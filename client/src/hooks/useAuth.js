@@ -40,12 +40,46 @@ function persistAuth(token, user) {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => loadAuth()?.user ?? null)
   const [loading, setLoading] = useState(false)
+  // True until the initial cookie-session check resolves. The session now
+  // lives in an httpOnly cookie the JS can't read, so on load we ask the
+  // server who we are via GET /auth/me. Guards wait on this to avoid a
+  // flash to /login when a valid cookie session exists but nothing is
+  // cached in localStorage.
+  const [bootstrapping, setBootstrapping] = useState(true)
 
-  // Restore the auth header on first load if a session was saved.
   useEffect(() => {
     const saved = loadAuth()
-    if (!saved?.token) return
-    setAuthToken(saved.token)
+    // Legacy header mirror — harmless in prod (server ignores it) and keeps
+    // dev header-auth working while TRUST_HEADER_AUTH is on.
+    if (saved?.token) setAuthToken(saved.token)
+
+    let cancelled = false
+    api.me()
+      .then(({ user: u }) => {
+        if (cancelled || !u) return
+        setUser(u)
+        // Refresh the cached user for a remembered session without touching
+        // its original expiry.
+        if (saved?.token) {
+          try {
+            localStorage.setItem(
+              AUTH_KEY,
+              JSON.stringify({ token: saved.token, user: u, expires_at: saved.expires_at }),
+            )
+          } catch { /* ignore storage errors */ }
+        }
+      })
+      .catch(() => {
+        // No valid cookie session — drop any stale cached user so the app
+        // shows the login screen instead of a phantom session.
+        if (cancelled) return
+        setUser(null)
+        setAuthToken(null)
+        try { localStorage.removeItem(AUTH_KEY) } catch { /* ignore */ }
+      })
+      .finally(() => { if (!cancelled) setBootstrapping(false) })
+
+    return () => { cancelled = true }
   }, [])
 
   const login = useCallback(async (email, password, { remember = false } = {}) => {
@@ -123,7 +157,7 @@ export function AuthProvider({ children }) {
     })
   }, [])
 
-  const value = { user, loading, login, loginAsUser, logout, updateUser, isAuthenticated: !!user }
+  const value = { user, loading, bootstrapping, login, loginAsUser, logout, updateUser, isAuthenticated: !!user }
 
   // JSX is avoided here so the file can stay .js; createElement keeps it simple.
   return createElement(AuthContext.Provider, { value }, children)

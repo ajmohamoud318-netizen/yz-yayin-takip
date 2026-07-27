@@ -427,6 +427,24 @@ CREATE TABLE invitations (
   expires_at    TIMESTAMPTZ NOT NULL,
   used_at       TIMESTAMPTZ
 );
+CREATE TABLE notifications (             -- durable per-recipient feed (migration 022)
+  id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,  -- recipient
+  type          TEXT NOT NULL,           -- event key (assignment, demo_approval_pending, order_step, …)
+  title         TEXT NOT NULL DEFAULT '',
+  body          TEXT NOT NULL DEFAULT '',
+  tone          TEXT NOT NULL DEFAULT 'blue'
+    CHECK (tone IN ('amber','green','rose','blue','pink')),
+  project_id    TEXT REFERENCES projects(id) ON DELETE CASCADE,
+  order_id      TEXT,
+  link          TEXT,                    -- SPA route to open on click
+  actor_id      TEXT REFERENCES users(id) ON DELETE SET NULL,  -- suppresses self-notify
+  is_read       BOOLEAN NOT NULL DEFAULT FALSE,  -- per-item bold (cleared on click)
+  read_at       TIMESTAMPTZ,
+  seen          BOOLEAN NOT NULL DEFAULT FALSE,  -- bell badge (cleared on open) — migration 024
+  seen_at       TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 -- Indexes
 CREATE INDEX idx_projects_stage ON projects(stage);
 CREATE INDEX idx_projects_assigned ON projects(assigned_to);
@@ -436,6 +454,8 @@ CREATE INDEX idx_history_project ON stage_history(project_id);
 CREATE INDEX idx_orders_status ON order_requests(status);
 CREATE INDEX idx_orders_project ON order_requests(project_id);
 CREATE INDEX idx_handovers_status ON handovers(status);
+CREATE INDEX idx_notifications_user_created ON notifications(user_id, created_at DESC);
+CREATE INDEX idx_notifications_unread ON notifications(user_id) WHERE is_read = FALSE;
 ```
 ---
 ## 🔌 API Endpoints
@@ -485,6 +505,14 @@ GET    /api/handovers                 per-role list
 POST   /api/handovers                 { project_id } [printer] — project must be in handover-eligible stage
 PATCH  /api/handovers/:id/confirm     [satis] — moves project to 'satista'
 ```
+### Notifications
+```
+GET    /api/notifications             → { items: [...50], unread, unseen } for the current user
+GET    /api/notifications/unread-count → { count, unseen }
+PATCH  /api/notifications/:id/read     mark one read (also seen; owner-scoped)
+POST   /api/notifications/read-all     mark all read (also seen) → { count }
+POST   /api/notifications/seen         mark all seen (bell open; badge clear) → { count }
+```
 ### Users
 ```
 GET    /api/users                     [team_leader]
@@ -509,12 +537,20 @@ Sidebar grouping is computed in `AppShell.navGroups()` and groups items into:
 
 Each entry can be role-restricted via the `roles: [...]` field on the nav item and is hidden when the user role isn't in the allow-list.
 
-### Notification bell
-A persistent per-user log (capped at 50, stored in `localStorage` under `yz_notif_log_{userId}`) is built from live project + order state. Each role gets a tailored feed:
-- `team_leader` — items needing approval, design 100% complete, attempt-counter alerts
-- `printer` — incoming demo / ozalit teslim
-- `designer` — new assignment, rejection ("Revizyon gerekiyor"), ozalit designer-approval
-- `satis` — green "Talebiniz onaylandı — üretime alındı" when their own order reaches `onaylandi`
+### Notifications (server-backed feed)
+Notifications are **durable rows in the `notifications` table**, written server-side in the same transaction as the `stage_history` row that caused them (see `server/src/services/notifications.js#emit`, called from the transition routes). This replaced the old client-derived model (localStorage `yz_notif_log_{userId}` log + project-diffing toasts), which was best-effort, per-browser, and lost on refresh. Read-state, ordering and the unread count now live on the server, so the feed is consistent across devices.
+
+Delivery is **polling** (the SPA authenticates with a trusted `X-User-Id` header, which EventSource/WebSocket can't attach cleanly): `useNotifications` (`client/src/hooks/useNotifications.jsx`) polls `GET /api/notifications` every 15s and is the single source for both the bell (`NotificationBell` in `AppShell.jsx`) and the arrival toasts (`NotificationSync.jsx`).
+
+**Seen vs read (migration 024).** Two independent states, so the badge behaves like a real app without losing the to-do signal: `seen` drives the red **badge** and is cleared the moment the bell dropdown opens (a glance counts); `is_read` drives the per-item **bold** styling and is only cleared when the item is clicked (or "Tümünü okundu say"). Invariant: reading implies seeing (the service sets `seen` wherever it sets `is_read`). The bell shows a per-`type` icon in a tone-tinted circle (`TYPE_ICON` / `NotifIcon` in `AppShell.jsx`).
+
+Recipient rules live once, in the service (`notifyProjectTransition`, `notifyProjectCreated`, `notifyOrderTransition`, `notifyOrderRejected`, `notifyHandoverRequested`, `notifyHandoverConfirmed`). The actor is never notified of their own action; recipients are resolved against the **active** user set. Per role the feed surfaces:
+- `team_leader` — demo/ozalit approvals pending, production-ready, new sipariş talep steps
+- `printer` — demo/ozalit delivery pending, production-ready, sipariş ozalit steps
+- `designer` — new assignment, rejection ("Revizyon gerekiyor"), ozalit-requestable, assigned-order steps
+- `satis` — handover confirmation pending, "Talebiniz onaylandı — üretime alındı", on-sale
+
+Endpoints: `GET /api/notifications`, `GET /api/notifications/unread-count`, `PATCH /api/notifications/:id/read`, `POST /api/notifications/read-all` (all owner-scoped).
 ---
 ## 📐 Conventions
 - Backend: Node.js + Fastify, ES modules, async/await, errors as `{ status, message }`

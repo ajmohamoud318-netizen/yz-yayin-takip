@@ -23,7 +23,10 @@ export const API_ORIGIN = baseURL.replace(/\/api\/?$/, '')
 
 const client = axios.create({
   baseURL,
-  withCredentials: false,
+  // Send the httpOnly session cookie on every request (incl. cross-origin
+  // SPA→API). Required now that auth is cookie-based, not the X-User-Id
+  // header. The API echoes Access-Control-Allow-Credentials: true.
+  withCredentials: true,
 })
 
 // Token storage. We keep both a module-level mirror (for the fast path

@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import { AuthProvider } from './hooks/useAuth.js'
 import { ProjectsProvider } from './hooks/useProjectsStore.jsx'
+import { NotificationsProvider } from './hooks/useNotifications.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import './index.css'
 
@@ -12,9 +13,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <ErrorBoundary>
       <BrowserRouter>
         <AuthProvider>
-          <ProjectsProvider>
-            <App />
-          </ProjectsProvider>
+          <NotificationsProvider>
+            <ProjectsProvider>
+              <App />
+            </ProjectsProvider>
+          </NotificationsProvider>
         </AuthProvider>
       </BrowserRouter>
     </ErrorBoundary>

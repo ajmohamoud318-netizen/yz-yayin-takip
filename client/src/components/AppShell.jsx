@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -27,7 +27,13 @@ import {
   Truck,
   Factory,
   Package,
-
+  UserPlus,
+  RotateCcw,
+  Send,
+  FileText,
+  CheckCircle2,
+  Tag,
+  Ship,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -49,7 +55,7 @@ import { Sheet, SheetContent } from '@/components/ui/sheet'
 import api, { ROLE_LABELS, STATUS_META, statusKeyForProject, canRequestHandover } from '@/api'
 import { cn, initials } from '@/lib/utils'
 import NewProjectDialog from '@/components/NewProjectDialog'
-import { loadSeen, addSeen } from '@/components/notification-seen'
+import { useNotifications } from '@/hooks/useNotifications'
 
 const COLLAPSE_KEY = 'yz-sidebar-collapsed'
 const YZ_LOGO_WHITE = '/yz_whitelogo.svg'
@@ -69,7 +75,6 @@ export default function AppShell() {
   const [printerOrders, setPrinterOrders] = useState(0)   // printer: tasarimci_onay
   const [designerOrders, setDesignerOrders] = useState(0) // designer: goruldu (for their projects)
   const [pendingHandovers, setPendingHandovers] = useState(0) // satis: teslim onay bekleyen
-  const [orders, setOrders] = useState([])                // full talep list, fed to the bell
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(COLLAPSE_KEY) === '1'
@@ -146,7 +151,8 @@ export default function AppShell() {
     const role = user?.role
     if (!role) return
     api.listOrderRequests().then((orders) => {
-      setOrders(orders) // full list — the bell derives per-role notifications from it
+      // Sidebar badge counts. (The notification bell no longer derives from
+      // this list — it reads the server-backed feed via useNotifications.)
       if (role === 'team_leader') {
         setPendingOrders(orders.filter((o) => o.status === 'pending' || o.status === 'matbaa_onay').length)
       } else if (role === 'printer') {
@@ -274,12 +280,7 @@ export default function AppShell() {
                 <Plus className="h-4 w-4" />
               </Button>
             )}
-                        <NotificationBell
-              projects={projects}
-              user={user}
-              orders={orders}
-              onOpenProject={(id) => navigate(`/projects/${id}`)}
-            />
+            <NotificationBell />
             <UserMenu user={user} onLogout={handleLogout} />
           </div>
         </header>
@@ -609,264 +610,113 @@ function SidebarFooter({ user, onLogout, collapsed }) {
 
 /* ----------------------------- notifications ----------------------------- */
 
-const TONE_DOT = {
-  amber: 'bg-amber-500',
-  green: 'bg-emerald-500',
-  rose: 'bg-rose-500',
-  blue: 'bg-blue-500',
-  pink: 'bg-pink-500',
+// Tone → tinted circle behind the per-type icon. Keeps the colour semantics
+// of the old dot while adding a glanceable icon.
+const TONE_ICON_STYLE = {
+  amber: 'bg-amber-100 text-amber-600',
+  green: 'bg-emerald-100 text-emerald-600',
+  rose: 'bg-rose-100 text-rose-600',
+  blue: 'bg-blue-100 text-blue-600',
+  pink: 'bg-pink-100 text-pink-600',
 }
 
-/**
- * Derive the notification list from the live project state, tailored to the
- * current user's role. Team leaders see what needs their approval / attention,
- * the printer sees incoming teslim items, designers see their rejected work.
- */
-const ORDER_STEP_TEXT = {
-  pending: 'Yeni sipariş talebi — onayınızı bekliyor',
-  goruldu: 'Sipariş kontrolünüzü bekliyor',
-  tasarimci_onay: 'Sipariş ozalit isteniyor',
-  matbaa_onay: 'Sipariş ozalit onayınızı bekliyor',
+// Notification type → icon. Types come from server/services/notifications.js.
+// Falls back to a bell for anything unmapped so a new type never breaks render.
+const TYPE_ICON = {
+  assignment: UserPlus,
+  rejection: RotateCcw,
+  demo_delivery_pending: Send,
+  demo_approval_pending: BadgeCheck,
+  ozalit_requestable: FileText,
+  ozalit_delivery_pending: Send,
+  ozalit_approval_pending: BadgeCheck,
+  production_ready: Factory,
+  in_production: Factory,
+  in_customs: Ship,
+  on_sale: Tag,
+  order_step: ClipboardList,
+  order_approved: CheckCircle2,
+  order_rejected: RotateCcw,
+  handover_request: Truck,
+  handover_confirmed: PackageCheck,
 }
 
-/**
- * Talep (order) notifications, layered on top of the project ones. Each role
- * is alerted about the step it must act on; the sales requester (Esra) is
- * alerted when her talep is finally approved and sent to production.
- */
-function buildOrderNotifications(orders, projects, user) {
-  if (!user || !Array.isArray(orders)) return []
-  const role = user.role
-  const items = []
-  const cleanTitle = (t) => String(t ?? '').replace(/ \/ /g, ' ')
-  const myProjectIds = new Set(
-    projects.filter((p) => (p.assignees ?? []).some((a) => a.id === user.id)).map((p) => p.id),
+function NotifIcon({ type, tone }) {
+  const Icon = TYPE_ICON[type] ?? Bell
+  return (
+    <span
+      className={cn(
+        'grid h-8 w-8 shrink-0 place-items-center rounded-full',
+        TONE_ICON_STYLE[tone] ?? TONE_ICON_STYLE.blue,
+      )}
+    >
+      <Icon className="h-4 w-4" />
+    </span>
   )
-
-  for (const o of orders) {
-    const ts = o.updated_at ? new Date(o.updated_at).getTime() : 0
-    const base = { projectId: o.project_id, title: cleanTitle(o.project_title), _updatedAt: ts, kind: 'order' }
-
-    // Sales requester — her own talep was approved → production.
-    if (role === 'satis' && o.requested_by === user.id && o.status === 'onaylandi') {
-      items.push({ ...base, id: `ord-${o.id}-onaylandi`, tone: 'green', text: 'Talebiniz onaylandı — üretime alındı', to: '/siparis-talebi' })
-      continue
-    }
-    // Staff — alert on the step this role must advance.
-    if (role === 'team_leader' && (o.status === 'pending' || o.status === 'matbaa_onay')) {
-      items.push({ ...base, id: `ord-${o.id}-${o.status}`, tone: 'amber', text: ORDER_STEP_TEXT[o.status], to: '/siparis-onay' })
-    } else if (role === 'printer' && o.status === 'tasarimci_onay') {
-      items.push({ ...base, id: `ord-${o.id}-${o.status}`, tone: 'blue', text: ORDER_STEP_TEXT[o.status], to: '/approvals/siparis' })
-    } else if (role === 'designer' && o.status === 'goruldu' && myProjectIds.has(o.project_id)) {
-      items.push({ ...base, id: `ord-${o.id}-${o.status}`, tone: 'green', text: ORDER_STEP_TEXT[o.status], to: '/siparis-onay' })
-    }
-  }
-  return items
 }
 
-function buildNotifications(projects, user, orders = []) {
-  if (!user) return []
-  const role = user.role
-  const items = buildOrderNotifications(orders, projects, user)
-
-  for (const p of projects) {
-    const ts = p.updated_at ? new Date(p.updated_at).getTime() : 0
-    if (role === 'team_leader') {
-      if (p.stage === 'demo_onay' || p.stage === 'ozalit_onay' || p.stage === 'cin_demo_onay') {
-        const attempt = p.stage === 'ozalit_onay' ? (p.ozalit_attempt ?? 0) : (p.demo_attempt ?? 0)
-        items.push({ id: `${p.id}-onay-${p.stage}-${attempt}`, projectId: p.id, tone: 'amber', title: p.title, text: 'Onayınızı bekliyor', _updatedAt: ts })
-      }
-      if (p.stage === 'tasarim' && p.progress === 100) {
-        items.push({ id: `${p.id}-ready-${p.demo_attempt ?? 0}`, projectId: p.id, tone: 'green', title: p.title, text: 'Tasarım tamamlandı, demoya hazır', _updatedAt: ts })
-      }
-      if ((p.demo_attempt ?? 0) >= 1) {
-        items.push({ id: `${p.id}-att-${p.demo_attempt}`, projectId: p.id, tone: 'rose', title: p.title, text: `${p.demo_attempt + 1}. demo denemesinde`, _updatedAt: ts })
-      }
-      if ((p.ozalit_attempt ?? 0) >= 1) {
-        items.push({ id: `${p.id}-oatt-${p.ozalit_attempt}`, projectId: p.id, tone: 'blue', title: p.title, text: `${p.ozalit_attempt + 1}. ozalit denemesinde`, _updatedAt: ts })
-      }
-    } else if (role === 'printer') {
-      if (p.type === 'TR' && p.stage === 'demo_teslim') {
-        const attempt = (p.demo_attempt ?? 0) + 1
-        items.push({ id: `${p.id}-teslim-demo-${p.demo_attempt}`, projectId: p.id, tone: 'blue', title: p.title, text: `${attempt}. Demo isteniyor`, _updatedAt: ts })
-      } else if (p.type === 'TR' && p.stage === 'ozalit_teslim' && (p.ozalit_requested || p.reject_target === 'matbaa')) {
-        const attempt = (p.ozalit_attempt ?? 0) + 1
-        items.push({ id: `${p.id}-teslim-ozalit-${p.ozalit_attempt}`, projectId: p.id, tone: 'blue', title: p.title, text: `${attempt}. Ozalit isteniyor`, _updatedAt: ts })
-      }
-    } else if (role === 'designer') {
-      const mine = (p.assignees ?? []).some((a) => a.id === user.id)
-      if (mine) {
-        items.push({ id: `${p.id}-assigned`, kind: 'assignment', projectId: p.id, tone: 'green', title: p.title, text: 'Bu projeye eklendiniz', _updatedAt: ts })
-      }
-      if (mine && p.stage === 'tasarim' && ((p.demo_attempt ?? 0) > 0 || (p.ozalit_attempt ?? 0) > 0)) {
-        items.push({ id: `${p.id}-rej-${p.demo_attempt ?? 0}-${p.ozalit_attempt ?? 0}`, projectId: p.id, tone: 'rose', title: p.title, text: 'Revizyon gerekiyor — tasarıma geri döndü', _updatedAt: ts })
-      }
-    }
-  }
-  return items.sort((a, b) => {
-    // Sort newest first using the stored updatedAt on each item (falls back to 0).
-    return (b._updatedAt ?? 0) - (a._updatedAt ?? 0)
-  })
+// Compact Turkish relative time for the bell ("az önce", "5 dk", "3 sa", "2 gün").
+function relativeTime(iso) {
+  if (!iso) return ''
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return ''
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000))
+  if (secs < 45) return 'az önce'
+  const mins = Math.round(secs / 60)
+  if (mins < 60) return mins + ' dk'
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24) return hrs + ' sa'
+  const days = Math.round(hrs / 24)
+  if (days < 7) return days + ' gün'
+  return new Date(iso).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })
 }
 
-// Persistent notification log — newest entry first, capped at 50.
-const MAX_NOTIF_LOG = 50
-
-function loadNotifLog(userId) {
-  if (!userId || typeof localStorage === 'undefined') return []
-  try {
-    return JSON.parse(localStorage.getItem(`yz_notif_log_${userId}`)) ?? []
-  } catch {
-    return []
-  }
-}
-
-function saveNotifLog(userId, log) {
-  if (!userId || typeof localStorage === 'undefined') return
-  try {
-    localStorage.setItem(`yz_notif_log_${userId}`, JSON.stringify(log.slice(0, MAX_NOTIF_LOG)))
-  } catch {
-    /* ignore */
-  }
-}
-
-function NotificationBell({ projects, user, orders, onOpenProject }) {
+/**
+ * Notification bell — reads the shared, server-backed feed (useNotifications).
+ *
+ * Two states, deliberately split (see migration 024):
+ *   • unseen  → the red BADGE. Cleared the moment the dropdown OPENS (a glance
+ *               counts) so the bell doesn't nag.
+ *   • is_read → per-item BOLD / to-do styling. Only cleared when the item is
+ *               clicked (or "Tümünü okundu say"). Peeking never marks it read,
+ *               so the list stays a real to-do queue.
+ */
+function NotificationBell() {
   const navigate = useNavigate()
-  const allItems = useMemo(() => buildNotifications(projects, user, orders), [projects, user, orders])
-  const [log, setLog] = useState(() => loadNotifLog(user?.id))
+  const { items, unseen, markRead, markAllRead, markSeen } = useNotifications()
   const [menuOpen, setMenuOpen] = useState(false)
 
-  // Designer "unread assignments" — projects assigned to this designer that
-  // haven't been acknowledged via the bell card yet. Drives the auto-open
-  // effect and the rose-tinted panel at the top of the dropdown.
-  const unreadAssignments = useMemo(() => {
-    if (!user || user.role !== 'designer' || !Array.isArray(projects)) return []
-    const seen = loadSeen(user.id)
-    return projects
-      .filter((p) => (p.assignees ?? []).some((a) => a.id === user.id))
-      .filter((p) => !seen.has(p.id))
-  }, [projects, user])
-
-  // One-shot auto-open for the designer backlog. Tracks the last key we
-  // surfaced so polling / store ticks don't re-open the dropdown on every
-  // refresh. User-scoped: logging in as a different user resets the ref.
-  const lastBellOpenRef = useRef({ userId: null, key: '' })
-  useEffect(() => {
-    if (!user || user.role !== 'designer') return
-    if (lastBellOpenRef.current.userId !== user.id) {
-      lastBellOpenRef.current = { userId: user.id, key: '' }
-    }
-    const nextKey = unreadAssignments.map((p) => p.id).sort().join(',')
-    if (unreadAssignments.length === 0) {
-      lastBellOpenRef.current.key = nextKey
-      return
-    }
-    if (lastBellOpenRef.current.key === nextKey) return
-    lastBellOpenRef.current.key = nextKey
-    setMenuOpen(true)
-  }, [unreadAssignments, user])
-
-  // Whenever the derived item list changes, prepend any genuinely new IDs to
-  // the top of the persistent log. Existing entries are never removed so old
-  // notifications stay visible even after the project moves to another stage.
-  useEffect(() => {
-    if (!allItems.length) return
-    setLog((prev) => {
-      const existingIds = new Set(prev.map((n) => n.id))
-      const incoming = allItems.filter((n) => !existingIds.has(n.id))
-      if (!incoming.length) return prev
-      const stamped = incoming.map((n) => ({ ...n, createdAt: Date.now(), isRead: false }))
-      const next = [...stamped, ...prev]
-      saveNotifLog(user?.id, next)
-      return next
-    })
-  }, [allItems, user?.id])
-
-  const unreadCount = log.filter((n) => !n.isRead).length
-
-  function markRead(id) {
-    setLog((prev) => {
-      const next = prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-      saveNotifLog(user?.id, next)
-      return next
-    })
+  function handleOpenChange(open) {
+    setMenuOpen(open)
+    // Opening the bell clears the badge (seen) but not the bold (is_read).
+    if (open && unseen > 0) markSeen()
   }
 
-  function markAllRead() {
-    setLog((prev) => {
-      const next = prev.map((n) => ({ ...n, isRead: true }))
-      saveNotifLog(user?.id, next)
-      return next
-    })
-  }
-
-  // Drop the badge for the bell-log entries that mirror the dismissed
-  // assignments so the red unread counter reflects the designer's "Tamam".
-  function markAssignedReadInLog(projectIds) {
-    if (!projectIds.length) return
-    const idSet = new Set(projectIds)
-    setLog((prev) => {
-      const next = prev.map((n) =>
-        n.projectId && idSet.has(n.projectId) && String(n.id).endsWith('-assigned')
-          ? { ...n, isRead: true }
-          : n,
-      )
-      saveNotifLog(user?.id, next)
-      return next
-    })
-  }
-
-  function dismissAssignmentBacklog() {
-    if (!user || !unreadAssignments.length) return
-    const ids = unreadAssignments.map((p) => p.id)
-    addSeen(user.id, ids)
-    markAssignedReadInLog(ids)
-    // Avoid re-opening on the next store tick by recording the dismissed key.
-    lastBellOpenRef.current.key = ids.slice().sort().join(',')
-    setMenuOpen(false)
-  }
-
-  function openMyProjectsFromBell() {
-    if (!user || !unreadAssignments.length) return
-    const ids = unreadAssignments.map((p) => p.id)
-    addSeen(user.id, ids)
-    markAssignedReadInLog(ids)
-    lastBellOpenRef.current.key = ids.slice().sort().join(',')
-    // Close the dropdown first, then navigate on the next tick so Radix's
-    // pointer-events lock is gone before the route changes.
-    setMenuOpen(false)
-    setTimeout(() => navigate('/my-projects'), 0)
-  }
-
-  // Close dropdown FIRST, then open the Sheet on the next tick.
-  // Both are Radix overlays that lock pointer-events on <body>; overlapping
-  // them leaves the page unclickable until a refresh.
   function handleItemClick(n) {
-    markRead(n.id)
+    if (!n.is_read) markRead(n.id)
     setMenuOpen(false)
-    // Order notifications route to a page; project ones open the detail sheet.
-    setTimeout(() => {
-      if (n.to) navigate(n.to)
-      else onOpenProject(n.projectId)
-    }, 0)
+    const to = n.link || (n.project_id ? `/projects/${n.project_id}` : null)
+    // Defer navigation one tick so Radix's pointer-events lock is released
+    // before the route changes.
+    if (to) setTimeout(() => navigate(to), 0)
   }
+
+  // Per-item bold counts as the to-do total for the "mark all read" affordance.
+  const unreadInView = items.reduce((n, it) => n + (it.is_read ? 0 : 1), 0)
 
   return (
-    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+    <DropdownMenu open={menuOpen} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
           aria-label="Bildirimler"
-          className={cn(
-            'relative',
-            unreadAssignments.length > 0 && !menuOpen && 'bell-pulse',
-          )}
+          className={cn('relative', unseen > 0 && !menuOpen && 'bell-pulse')}
         >
           <BellRing className="h-4 w-4" />
-          {unreadCount > 0 && (
+          {unseen > 0 && (
             <span className="absolute right-1 top-1 grid h-4 min-w-[1rem] place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-background">
-              {unreadCount > 9 ? '9+' : unreadCount}
+              {unseen > 9 ? '9+' : unseen}
             </span>
           )}
         </Button>
@@ -874,7 +724,7 @@ function NotificationBell({ projects, user, orders, onOpenProject }) {
       <DropdownMenuContent align="end" className="w-80 p-0">
         <div className="flex items-center justify-between px-3 py-2.5">
           <span className="text-sm font-semibold">Bildirimler</span>
-          {unreadCount > 0 && (
+          {unreadInView > 0 && (
             <button
               type="button"
               onClick={markAllRead}
@@ -884,38 +734,32 @@ function NotificationBell({ projects, user, orders, onOpenProject }) {
             </button>
           )}
         </div>
-        {unreadAssignments.length > 0 && (
-          <AssignAlertCard
-            items={unreadAssignments}
-            onDismiss={dismissAssignmentBacklog}
-            onOpenAll={openMyProjectsFromBell}
-          />
-        )}
         <DropdownMenuSeparator className="my-0" />
-        {log.length === 0 ? (
+        {items.length === 0 ? (
           <div className="px-3 py-8 text-center">
             <BellRing className="mx-auto mb-2 h-5 w-5 text-muted-foreground/40" />
             <p className="text-xs text-muted-foreground">Henüz bildirim yok</p>
           </div>
         ) : (
           <div className="scrollbar-thin max-h-80 overflow-y-auto py-1">
-            {log.map((n) => (
+            {items.map((n) => (
               <button
                 key={n.id}
                 type="button"
                 onClick={() => handleItemClick(n)}
                 className={cn(
                   'flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted focus:outline-none focus-visible:bg-muted',
-                  n.isRead && 'opacity-50',
+                  n.is_read && 'opacity-60',
                 )}
               >
-                <span className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', TONE_DOT[n.tone])} />
+                <NotifIcon type={n.type} tone={n.tone} />
                 <span className="min-w-0 flex-1">
-                  <span className={cn('block truncate text-sm', n.isRead ? 'font-normal text-foreground' : 'font-semibold text-foreground')}>{n.title}</span>
-                  <span className="block text-xs text-muted-foreground">{n.text}</span>
+                  <span className={cn('block truncate text-sm', n.is_read ? 'font-normal text-foreground' : 'font-semibold text-foreground')}>{n.title}</span>
+                  <span className="block text-xs text-muted-foreground">{n.body}</span>
+                  <span className="mt-0.5 block text-[10px] text-muted-foreground/70">{relativeTime(n.created_at)}</span>
                 </span>
-                {!n.isRead && (
-                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-rose-500" />
+                {!n.is_read && (
+                  <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-rose-500" />
                 )}
               </button>
             ))}
@@ -923,56 +767,6 @@ function NotificationBell({ projects, user, orders, onOpenProject }) {
         )}
       </DropdownMenuContent>
     </DropdownMenu>
-  )
-}
-
-const MAX_ALERT_TITLES = 3
-
-/**
- * Inline card at the top of the bell dropdown for designers with unread
- * project assignments. Replaces the old floating sonner toast so the
- * acknowledgement lives inside the bell itself. The bell auto-opens on
- * login when this card has content (see NotificationBell auto-open effect).
- */
-function AssignAlertCard({ items, onDismiss, onOpenAll }) {
-  if (!items || !items.length) return null
-  const titles = items.slice(0, MAX_ALERT_TITLES).map((p) => p.title)
-  const overflow = items.length - titles.length
-  const titleList = titles.join(', ') + (overflow > 0 ? ` ve ${overflow} daha` : '')
-
-  return (
-    <div
-      data-testid="unread-assignments-card"
-      className="border-b border-rose-200/40 bg-rose-50 px-3 py-3"
-    >
-      <div className="flex items-start gap-3">
-        <BellRing className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-foreground">
-            {items.length} okunmamış proje atamanız var
-          </div>
-          <div className="mt-1 truncate text-xs text-muted-foreground">{titleList}</div>
-        </div>
-      </div>
-      <div className="mt-2.5 flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant="default"
-          onClick={onOpenAll}
-          className="h-7 px-2.5 text-xs"
-        >
-          Projeleri Gör
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={onDismiss}
-          className="h-7 px-2.5 text-xs"
-        >
-          Tamam
-        </Button>
-      </div>
-    </div>
   )
 }
 

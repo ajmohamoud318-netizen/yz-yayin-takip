@@ -9,6 +9,7 @@ import {
 } from '../services/project-repository.js'
 import { assertCanEnterProduction, assertOrderable } from '../domain/pipeline.js'
 import { schemas } from '../schemas/index.js'
+import { notifyOrderTransition, notifyOrderRejected } from '../services/notifications.js'
 
 /**
  * Sipariş talep workflow.
@@ -111,6 +112,11 @@ export async function orderRoutes(fastify) {
         },
         request.user,
       )
+      // New talep at 'pending' → the team leader must act on it.
+      await notifyOrderTransition(client, {
+        order, project, newStatus: 'pending', actor: request.user,
+        requesterId: order.requested_by,
+      })
       return order
     })
     return result
@@ -235,7 +241,16 @@ export async function orderRoutes(fastify) {
           )
         }
       }
-      return updated[0]
+      // Notify whoever owns the new step (or the requester on final approval).
+      const nextOrder = updated[0]
+      const assigneeIds = Array.isArray(assignees) && assignees.length > 0
+        ? assignees
+        : (Array.isArray(nextOrder.assignee_ids) ? nextOrder.assignee_ids : [])
+      await notifyOrderTransition(client, {
+        order: nextOrder, newStatus: next, actor: request.user,
+        requesterId: order.requested_by, assigneeIds,
+      })
+      return nextOrder
     })
     return result
   })
@@ -289,6 +304,17 @@ export async function orderRoutes(fastify) {
           request.user,
         )
       }
+      // Tell the sales requester it bounced, and re-notify the owner of the
+      // step the talep was sent back to so they can act.
+      await notifyOrderRejected(client, {
+        order: updated[0], project: proj, actor: request.user,
+        requesterId: order.requested_by, reason,
+      })
+      await notifyOrderTransition(client, {
+        order: updated[0], project: proj, newStatus: targetStatus, actor: request.user,
+        requesterId: order.requested_by,
+        assigneeIds: Array.isArray(updated[0].assignee_ids) ? updated[0].assignee_ids : [],
+      })
       return updated[0]
     })
     return result

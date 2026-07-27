@@ -26,6 +26,7 @@
 import { forbidden, unauthorized } from '../domain/errors.js'
 import { config } from '../config.js'
 import { getPool } from '../db/pool.js'
+import { getSessionUser } from '../services/sessions.js'
 
 export async function loadUserById(id) {
   if (!id) return null
@@ -43,27 +44,39 @@ export async function loadUserById(id) {
 }
 
 export async function attachUser(request) {
-  if (!config.trustHeaderAuth) {
-    // Real auth path is intentionally stubbed in this pass. Fail closed
-    // when TRUST_HEADER_AUTH is off — prevents accidental prod exposure.
-    unauthorized('Header auth disabled — wire OAuth before using this server')
+  // 1. Cookie session — the real, unforgeable identity. The token is an
+  //    opaque random key stored server-side (services/sessions.js); the
+  //    client can neither read it (httpOnly) nor fabricate a valid one.
+  const token = request.cookies?.[config.session.cookieName]
+  if (token) {
+    const user = await getSessionUser(token)
+    if (user) {
+      if (user.is_active === false) forbidden('Hesabınız devre dışı bırakılmış.')
+      request.user = user
+      return
+    }
+    // Token present but not active (expired / revoked / logged out) —
+    // fall through; the header fallback (dev only) or the 401 below apply.
   }
-  const userId = request.headers['x-user-id']
-  if (!userId) unauthorized('X-User-Id header is required')
-  const user = await loadUserById(userId)
-  if (!user) {
-    // The SPA always sends the header value it cached from the last
-    // successful login. When that user no longer exists in the DB
-    // (seed reset, deletion, re-run of `npm run seed`), the SPA can't
-    // tell the difference between "no header" and "stale header" — the
-    // old message hid this and made the client flash the
-    // 'X-User-Id header is required' error on every cold-load. Surface
-    // the actual cause so the response interceptor in client.js can
-    // drop the cached token and bounce to /login cleanly.
-    unauthorized('Oturum geçersiz — lütfen yeniden giriş yapın')
+
+  // 2. Legacy `X-User-Id` header — accepted ONLY when TRUST_HEADER_AUTH is
+  //    on (dev/test). It is INSECURE (any client can assert any id), so it
+  //    must be off in production, where step 1 is the only accepted path.
+  if (config.trustHeaderAuth) {
+    const userId = request.headers['x-user-id']
+    if (userId) {
+      const user = await loadUserById(userId)
+      if (user) {
+        if (user.is_active === false) forbidden('Hesabınız devre dışı bırakılmış.')
+        request.user = user
+        return
+      }
+    }
   }
-  if (user.is_active === false) forbidden('Hesabınız devre dışı bırakılmış.')
-  request.user = user
+
+  // Neither a valid session nor (in dev) a valid header. Surface a clean
+  // 401 the client.js response interceptor turns into a /login bounce.
+  unauthorized('Oturum geçersiz — lütfen yeniden giriş yapın')
 }
 
 /** Convenience: assert the attached user is in `roles`. */

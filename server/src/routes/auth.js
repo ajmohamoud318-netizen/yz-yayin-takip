@@ -1,9 +1,17 @@
 import bcrypt from 'bcryptjs'
-import { attachUser } from '../middleware/auth.js'
+import { attachUser, loadUserById } from '../middleware/auth.js'
 import { rateLimit } from '../middleware/rate-limit.js'
 import { badRequest, forbidden, unauthorized } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
 import { schemas } from '../schemas/index.js'
+import {
+  createSession,
+  deleteSession,
+  deleteUserSessions,
+  sessionCookieOptions,
+  clearCookieOptions,
+} from '../services/sessions.js'
+import { config } from '../config.js'
 import {
   consumeInvitation,
   verifyInvitation,
@@ -48,6 +56,16 @@ import { sendMail, renderResetEmail } from '../services/mail.js'
 
 export async function authRoutes(fastify) {
   /**
+   * Mint a session for `userId` and attach it as the httpOnly session
+   * cookie on `reply`. Shared by login, dev-login, accept-invite, and
+   * reset-password (the last two auto-sign-in after setting a password).
+   */
+  async function issueSession(reply, userId) {
+    const session = await createSession({ userId })
+    reply.setCookie(config.session.cookieName, session.token, sessionCookieOptions())
+  }
+
+  /**
    * Login is the single most attacked endpoint on any app. We limit
    * by both IP and email so that:
    *   • one IP can't burn through 1000s of attempts against one email
@@ -75,7 +93,7 @@ export async function authRoutes(fastify) {
         message: 'Çok fazla giriş denemesi. Lütfen 5 dakika sonra tekrar deneyin.',
       }),
     },
-    async (request) => {
+    async (request, reply) => {
     const { email, password } = request.body
     const { rows } = await getPool().query(
       `SELECT id, name, email, password, role, is_active, avatar_url, avatar_updated_at
@@ -89,13 +107,20 @@ export async function authRoutes(fastify) {
     const ok = bcrypt.compareSync(String(password), user.password)
     if (!ok) unauthorized('E-posta veya şifre hatalı.')
     const { password: _pw, ...safe } = user
-    // Drop the password column, keep avatar_url. Stored value is already
-    // a relative path so the SPA can rewrite against the live backend host.
+    // Establish a server-side session and hand it back as an httpOnly
+    // cookie. `token` is kept in the body for backward-compat with older
+    // SPA builds (harmless — the server no longer trusts it in prod).
+    await issueSession(reply, user.id)
     return { token: user.id, user: safe }
     },
   )
 
-  fastify.post('/auth/logout', async () => ({ ok: true }))
+  fastify.post('/auth/logout', async (request, reply) => {
+    const token = request.cookies?.[config.session.cookieName]
+    await deleteSession(token)
+    reply.clearCookie(config.session.cookieName, clearCookieOptions())
+    return { ok: true }
+  })
 
   fastify.get('/auth/me', async (request) => {
     await attachUser(request)
@@ -146,10 +171,10 @@ export async function authRoutes(fastify) {
         message: 'Çok fazla deneme. Lütfen 15 dakika sonra tekrar deneyin.',
       }),
     },
-    async (request) => {
+    async (request, reply) => {
     const { token, password } = request.body
     const inv = await verifyInvitation(token)
-    const hash = bcrypt.hashSync(password, 10)
+    const hash = bcrypt.hashSync(password, 12)
     const { rows } = await getPool().query(
       `UPDATE users
           SET password = $1,
@@ -161,6 +186,7 @@ export async function authRoutes(fastify) {
     )
     const user = rows[0]
     await consumeInvitation(inv.invitationId)
+    await issueSession(reply, user.id)
     return { token: user.id, user }
     },
   )
@@ -237,10 +263,10 @@ export async function authRoutes(fastify) {
         message: 'Çok fazla deneme. Lütfen 15 dakika sonra tekrar deneyin.',
       }),
     },
-    async (request) => {
+    async (request, reply) => {
     const { token, password } = request.body
     const reset = await verifyPasswordReset(token)
-    const hash = bcrypt.hashSync(password, 10)
+    const hash = bcrypt.hashSync(password, 12)
     const { rows } = await getPool().query(
       `UPDATE users
           SET password = $1,
@@ -251,6 +277,11 @@ export async function authRoutes(fastify) {
     )
     const user = rows[0]
     await consumePasswordReset(reset.resetId)
+    // Invalidate any other live sessions for this account — a password
+    // reset should log out sessions the (possibly compromised) old
+    // credential established — then sign the user in fresh.
+    await deleteUserSessions(user.id)
+    await issueSession(reply, user.id)
     return { token: user.id, user }
     },
   )
@@ -282,7 +313,7 @@ export async function authRoutes(fastify) {
     if (row.password && !bcrypt.compareSync(currentPassword, row.password)) {
       unauthorized('Mevcut şifre yanlış.')
     }
-    const hash = bcrypt.hashSync(newPassword, 10)
+    const hash = bcrypt.hashSync(newPassword, 12)
     await getPool().query(
       `UPDATE users SET password = $1, updated_at = NOW() WHERE id = $2`,
       [hash, request.user.id],
@@ -293,7 +324,7 @@ export async function authRoutes(fastify) {
   // Dev-only "log in as" endpoint. Lets the SPA drive the backend end to
   // end without going through email + password (the seed rows don't carry
   // a bcrypt hash yet). Disabled in production via NODE_ENV.
-  fastify.post('/auth/dev-login', { schema: schemas.authDevLogin }, async (request) => {
+  fastify.post('/auth/dev-login', { schema: schemas.authDevLogin }, async (request, reply) => {
     if (process.env.NODE_ENV === 'production') {
       unauthorized('Dev login disabled in production')
     }
@@ -301,6 +332,7 @@ export async function authRoutes(fastify) {
     const user = await loadUserById(userId)
     if (!user) unauthorized('Unknown user')
     if (user.is_active === false) forbidden('Hesabınız devre dışı bırakılmış.')
+    await issueSession(reply, user.id)
     return { token: user.id, user }
   })
 }

@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs'
 import { nanoid } from 'nanoid'
 import { attachUser, requireRole } from '../middleware/auth.js'
+import { rateLimit } from '../middleware/rate-limit.js'
 import { badRequest, conflict, forbidden, notFound, HttpError } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
 import { reconcileOzalitApprovals } from '../services/project-repository.js'
@@ -14,6 +15,7 @@ import {
   isAllowedMime,
   readAvatar,
   saveAvatar,
+  sniffImageMime,
 } from '../services/avatars.js'
 
 /**
@@ -50,7 +52,21 @@ export async function userRoutes(fastify) {
     return rows
   })
 
-  fastify.post('/users/invite', { schema: schemas.usersInvite }, async (request) => {
+  fastify.post(
+    '/users/invite',
+    {
+      schema: schemas.usersInvite,
+      // Throttle invite creation per IP. A compromised leader session (or a
+      // buggy client loop) shouldn't be able to fire off unbounded invite
+      // emails and burn SMTP quota. 30 per hour is well above any real use.
+      preHandler: rateLimit({
+        keys: [(req) => `users-invite:ip:${req.ip}`],
+        limit: 30,
+        windowMs: 60 * 60_000,
+        message: 'Çok fazla davet isteği. Lütfen biraz sonra tekrar deneyin.',
+      }),
+    },
+    async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
     const { name, email, role } = request.body
@@ -259,6 +275,15 @@ export async function userRoutes(fastify) {
       chunks.push(chunk)
     }
     const buffer = Buffer.concat(chunks, total)
+
+    // Content sniff — the declared multipart mimetype is attacker-controlled,
+    // so verify the actual file bytes are a real image of an allowed type and
+    // match what was declared. Blocks a renamed script/HTML/SVG smuggled in
+    // under an image content-type.
+    const sniffed = sniffImageMime(buffer)
+    if (!sniffed || sniffed !== file.mimetype) {
+      badRequest('Dosya içeriği geçerli bir görüntü değil (JPEG, PNG veya WebP).')
+    }
 
     const ext = extForMime(file.mimetype)
     let url

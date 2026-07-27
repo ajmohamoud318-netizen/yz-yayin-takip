@@ -1,5 +1,7 @@
 import Fastify from 'fastify'
 import multipart from '@fastify/multipart'
+import cookie from '@fastify/cookie'
+import helmet from '@fastify/helmet'
 import { authRoutes } from './routes/auth.js'
 import { userRoutes } from './routes/users.js'
 import { projectRoutes } from './routes/projects.js'
@@ -8,6 +10,7 @@ import { demoRoutes } from './routes/demos.js'
 import { productInfoRoutes } from './routes/product-info.js'
 import { orderRoutes } from './routes/orders.js'
 import { handoverRoutes } from './routes/handovers.js'
+import { notificationRoutes } from './routes/notifications.js'
 import { config } from './config.js'
 import { HttpError } from './domain/errors.js'
 import { up as migrateUp } from './services/migrate.js'
@@ -37,13 +40,32 @@ export async function buildServer() {
     ajv: { customOptions: { removeAdditional: false, useDefaults: true, coerceTypes: false } },
   })
 
-  // CORS — explicit allowlist (config.corsOrigins). Hand-rolled because the
-  // SPA never sends cookies in this pass (we use a header). A future pass
-  // swaps to @fastify/cors with credentials=true once cookie sessions land.
+  // Security response headers. This service returns JSON + avatar images
+  // (never HTML documents), so:
+  //   - contentSecurityPolicy is disabled here — CSP governs document/script
+  //     loading and belongs on the SPA host (serve.cjs), not the JSON API.
+  //   - crossOriginResourcePolicy is set to 'cross-origin' so the SPA on a
+  //     different origin can load avatar <img> responses (the default
+  //     'same-origin' would block them).
+  //   - COEP is left off for the same cross-origin embedding reason.
+  // Everything else (HSTS, X-Content-Type-Options: nosniff, frameguard,
+  // Referrer-Policy, X-DNS-Prefetch-Control, etc.) applies with helmet's
+  // secure defaults.
+  await fastify.register(helmet, {
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginEmbedderPolicy: false,
+  })
+
+  // CORS — explicit allowlist (config.corsOrigins). Credentials are enabled
+  // so the browser sends the httpOnly session cookie on cross-origin XHR
+  // (SPA host → API host). Note: with credentials the allowed origin MUST
+  // be a specific value, never '*' — we reflect the matched allowlist entry.
   fastify.addHook('onRequest', async (request, reply) => {
     const origin = request.headers.origin
     if (origin && config.corsOrigins.includes(origin)) {
       reply.header('Access-Control-Allow-Origin', origin)
+      reply.header('Access-Control-Allow-Credentials', 'true')
       reply.header('Vary', 'Origin')
       reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS')
       reply.header(
@@ -57,6 +79,10 @@ export async function buildServer() {
       return reply.send()
     }
   })
+
+  // Cookie parser — makes `request.cookies` + `reply.setCookie/clearCookie`
+  // available. Must be registered before routes and the auth middleware.
+  await fastify.register(cookie)
 
   // Multipart body parser (avatar uploads). Must be registered before
   // any route module that calls `request.file()`.
@@ -103,6 +129,7 @@ export async function buildServer() {
   await fastify.register(productInfoRoutes, { prefix: '/api' })
   await fastify.register(orderRoutes, { prefix: '/api' })
   await fastify.register(handoverRoutes, { prefix: '/api' })
+  await fastify.register(notificationRoutes, { prefix: '/api' })
 
   // Health — used by Dokploy's container probe AND for human-readable
   // "is this the new build?" checks. The `commit` field is sourced from

@@ -8,6 +8,7 @@ import {
   getProject, getProjectForUpdate, patchProject, logHistory,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
+import { notifyHandoverRequested, notifyHandoverConfirmed } from '../services/notifications.js'
 
 /**
  * Teslim (handover) API: matbaa raises, satis confirms.
@@ -73,6 +74,7 @@ export async function handoverRoutes(fastify) {
         },
         request.user,
       )
+      await notifyHandoverRequested(client, { project, actor: request.user })
       return rows[0]
     })
     return result
@@ -110,6 +112,9 @@ export async function handoverRoutes(fastify) {
         },
         request.user,
       )
+      await notifyHandoverConfirmed(client, {
+        project: updated, actor: request.user, raisedBy: handover.raised_by,
+      })
       return { handover: rows[0], project: updated }
     })
     return result

@@ -12,6 +12,7 @@ import { subtaskProgress } from '../domain/progress.js'
 import {
   applyAdvance, applyApproval, applyDemoReceive, applyRejection,
 } from '../services/project-transitions.js'
+import { notifyProjectCreated, notifyProjectTransition } from '../services/notifications.js'
 
 /**
  * Projects + stage transition API.
@@ -109,6 +110,9 @@ export async function projectRoutes(fastify) {
         },
         request.user,
       )
+      // Notify the assigned designer(s). Subtasks were just inserted in this
+      // same tx, so loadProjectAssignees (called inside the helper) sees them.
+      await notifyProjectCreated(client, { project: updated, actor: request.user })
       return { ...updated, subtasks: subRows, history: [] }
     })
     return result
@@ -226,7 +230,13 @@ export async function projectRoutes(fastify) {
         fields.last_reject_target = next.last_reject_target
       }
       const updated = await patchProject(client, project.id, fields)
-      if (history) await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyProjectTransition(client, {
+          project: updated, fromStage: history.from_stage, toStage: history.to_stage ?? updated.stage,
+          action: history.action, actor: request.user, assignees: project.assignees,
+        })
+      }
       return updated
     })
     return result
@@ -279,7 +289,13 @@ export async function projectRoutes(fastify) {
         fields.demo_held_by_name = next.demo_held_by_name
       }
       const updated = await patchProject(client, project.id, fields)
-      if (history) await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyProjectTransition(client, {
+          project: updated, fromStage: history.from_stage, toStage: history.to_stage ?? updated.stage,
+          action: history.action, actor: request.user, assignees: project.assignees,
+        })
+      }
       return updated
     })
     return result
@@ -357,6 +373,12 @@ export async function projectRoutes(fastify) {
         }
       }
       await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+      // Rejection → designers must rework. assignees aren't preloaded on this
+      // route (only subtasks are), so the helper resolves them itself.
+      await notifyProjectTransition(client, {
+        project: updated, fromStage: history.from_stage, toStage: history.to_stage ?? updated.stage,
+        action: history.action ?? 'reject', actor: request.user,
+      })
       return updated
     })
     return result

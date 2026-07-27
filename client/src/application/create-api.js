@@ -15,6 +15,7 @@ import { createHttpDemoRepository } from '../infrastructure/http/repositories/ht
 import { createHttpProductInfoRepository } from '../infrastructure/http/repositories/http-product-info.repository.js'
 import { createHttpOrderRepository } from '../infrastructure/http/repositories/http-order.repository.js'
 import { createHttpHandoverRepository } from '../infrastructure/http/repositories/http-handover.repository.js'
+import { createHttpNotificationRepository } from '../infrastructure/http/repositories/http-notification.repository.js'
 import { makeAdvanceOrderRequest } from './use-cases/orders/advance-order-request.js'
 import { makeCreateOrderRequest } from './use-cases/orders/create-order-request.js'
 import { makeRejectOrderRequest } from './use-cases/orders/reject-order-request.js'
@@ -30,12 +31,14 @@ export function createApi() {
   const productInfoRepo = createHttpProductInfoRepository()
   const orderRepo = createHttpOrderRepository()
   const handoverRepo = createHttpHandoverRepository()
+  const notificationRepo = createHttpNotificationRepository()
 
   return {
     // Auth
     login: (email, password) => authRepo.login(email, password),
     loginAsUser: (userId) => authRepo.loginAsUser(userId),
     logout: () => authRepo.logout(),
+    me: () => authRepo.me(),
     previewInvite: (token) => authRepo.previewInvite(token),
     acceptInvite: (token, password) => authRepo.acceptInvite(token, password),
     forgotPassword: (email) => authRepo.forgotPassword(email),
@@ -96,5 +99,11 @@ export function createApi() {
     listHandovers: () => handoverRepo.listHandovers(),
     createHandover: makeCreateHandover(),
     confirmHandover: makeConfirmHandover(),
+
+    // Notifications (server-backed feed)
+    listNotifications: () => notificationRepo.listNotifications(),
+    markNotificationRead: (id) => notificationRepo.markNotificationRead(id),
+    markAllNotificationsRead: () => notificationRepo.markAllNotificationsRead(),
+    markNotificationsSeen: () => notificationRepo.markNotificationsSeen(),
   }
 }

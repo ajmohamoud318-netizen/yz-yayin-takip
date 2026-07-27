@@ -163,6 +163,17 @@ const userIdParams = {
   },
 }
 
+// Notification id path param (e.g. PATCH /notifications/:id/read). Bounds the
+// value so a malformed/oversized id is rejected with 400 before the DB query.
+const notificationIdParams = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id'],
+    properties: { id: { type: 'string', minLength: 1, maxLength: 64 } },
+  },
+}
+
 // ─── projects ──────────────────────────────────────────────────────────
 
 const projectsCreate = {
@@ -533,6 +544,7 @@ export const schemas = {
   authDevLogin,
   usersInvite,
   userIdParams,
+  notificationIdParams,
   projectsCreate,
   projectsPatch,
   projectsIdParams,
