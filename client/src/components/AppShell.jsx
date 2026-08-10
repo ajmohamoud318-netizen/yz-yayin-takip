@@ -645,6 +645,7 @@ const TYPE_ICON = {
   order_rejected: RotateCcw,
   handover_request: Truck,
   handover_confirmed: PackageCheck,
+  project_deleted: Trash2,
 }
 
 function NotifIcon({ type, tone }) {

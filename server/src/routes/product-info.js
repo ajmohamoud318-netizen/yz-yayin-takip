@@ -57,7 +57,7 @@ export async function productInfoRoutes(fastify) {
     const { projectId } = request.params
     const { components } = request.body
 
-    const proj = await getPool().query('SELECT id FROM projects WHERE id = $1', [projectId])
+    const proj = await getPool().query('SELECT id FROM projects WHERE id = $1 AND deleted_at IS NULL', [projectId])
     if (proj.rowCount === 0) notFound('Proje bulunamadı.')
 
     const { rows } = await getPool().query(

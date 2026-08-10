@@ -14,7 +14,7 @@ import {
   applyAdvance, applyApproval, applyDemoReceive, applyDemoNotReceived,
   applyOzalitNotReceived, applyRejection,
 } from '../services/project-transitions.js'
-import { notifyProjectCreated, notifyProjectTransition } from '../services/notifications.js'
+import { notifyProjectCreated, notifyProjectTransition, notifyProjectDeleted } from '../services/notifications.js'
 
 /**
  * Projects + stage transition API.
@@ -185,8 +185,15 @@ export async function projectRoutes(fastify) {
   fastify.delete('/projects/:id', { schema: schemas.projectsIdParams }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
-    await deleteProject(request.params.id, request.user)
-    return { ok: true }
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      const assignees = await loadProjectAssignees(client, project)
+      await deleteProject(client, project.id, request.user)
+      await notifyProjectDeleted(client, { project, actor: request.user, assignees })
+      return { ok: true }
+    })
+    return result
   })
 
   fastify.post('/projects/:id/restore', { schema: schemas.projectsIdParams }, async (request) => {

@@ -32,7 +32,7 @@ export async function orderRoutes(fastify) {
               o.version, o.created_at, o.updated_at, p.title AS project_title,
               u.name AS requested_by_name
        FROM order_requests o
-       JOIN projects p ON p.id = o.project_id
+       JOIN projects p ON p.id = o.project_id AND p.deleted_at IS NULL
        LEFT JOIN users u ON u.id = o.requested_by
        ORDER BY o.created_at DESC`,
     )

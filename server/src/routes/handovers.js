@@ -29,7 +29,7 @@ export async function handoverRoutes(fastify) {
               h.created_at, h.confirmed_at, p.title AS project_title, p.type AS project_type,
               rb.name AS raised_by_name, cb.name AS confirmed_by_name
        FROM handovers h
-       JOIN projects p ON p.id = h.project_id
+       JOIN projects p ON p.id = h.project_id AND p.deleted_at IS NULL
        LEFT JOIN users rb ON rb.id = h.raised_by
        LEFT JOIN users cb ON cb.id = h.confirmed_by
        ORDER BY h.created_at DESC`,

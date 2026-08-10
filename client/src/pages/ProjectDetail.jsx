@@ -22,7 +22,7 @@ import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
 import { useProject } from '@/hooks/useProjects'
-import api, { STAGE_LABELS, TYPE_LABELS } from '@/api'
+import api, { STAGE_LABELS, TYPE_LABELS, IN_FLIGHT_DEMO_OZALIT_STAGES } from '@/api'
 import StageBar from '@/components/StageBar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -1023,7 +1023,14 @@ export default function ProjectDetail() {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Projeyi sil"
-        description={project ? `"${project.title}" silinecek ve "Silinen Projeler" sayfasına taşınacak. İstediğiniz zaman geri yükleyebilirsiniz.` : ''}
+        description={project
+          ? [
+              `"${project.title}" silinecek ve "Silinen Projeler" sayfasına taşınacak. İstediğiniz zaman geri yükleyebilirsiniz.`,
+              IN_FLIGHT_DEMO_OZALIT_STAGES.has(project.stage)
+                ? `Bu projede bekleyen bir ${STAGE_LABELS[project.stage]} süreci var — silindiğinde ilgili kişilerin kuyruğundan kaybolacak.`
+                : null,
+            ].filter(Boolean).join(' ')
+          : ''}
         confirmLabel="Sil"
         cancelLabel="Vazgeç"
         variant="destructive"

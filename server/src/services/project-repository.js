@@ -310,9 +310,10 @@ export async function patchProject(client, id, fields) {
 
 // Soft-delete: the row stays put (and out of `listProjects`/`getProject`)
 // so a misclick is recoverable from the "Silinen Projeler" page instead of
-// being gone for good.
-export async function deleteProject(id, actor) {
-  await getPool().query(
+// being gone for good. Takes a tx `client` (not the pool) so the route can
+// commit it atomically with the "project deleted" notification fan-out.
+export async function deleteProject(client, id, actor) {
+  await client.query(
     'UPDATE projects SET deleted_at = NOW(), deleted_by = $2, deleted_by_name = $3 WHERE id = $1',
     [id, actor?.id ?? null, actor?.name ?? null],
   )

@@ -12,6 +12,17 @@ export const STAGE_LABELS = {
   satista: 'Satışta',
 }
 
+/**
+ * Stages where a demo or ozalit round is actively in flight — someone
+ * (matbaa or leader/designer) has a delivery or approval pending. Used to
+ * warn the team leader before deleting a project that would otherwise just
+ * vanish from that person's queue mid-process.
+ */
+export const IN_FLIGHT_DEMO_OZALIT_STAGES = new Set([
+  'demo_teslim', 'demo_onay', 'ozalit_teslim', 'ozalit_onay',
+  'cin_demo_teslim', 'cin_demo_onay',
+])
+
 export const STAGE_PIPELINE = {
   TR: ['tasarim', 'demo_teslim', 'demo_onay', 'ozalit_teslim', 'ozalit_onay', 'uretime_hazir', 'uretimde', 'satista'],
   CIN: ['tasarim', 'cin_demo_teslim', 'cin_demo_onay', 'uretime_hazir', 'uretimde', 'gumruk', 'satista'],

@@ -28,7 +28,7 @@ export async function demoRoutes(fastify) {
     await attachUser(request)
     const { project_id, kind = 'demo', payload = {}, attempt, silent = false } = request.body
     const proj = await getPool().query(
-      'SELECT id, demo_attempt, ozalit_attempt FROM projects WHERE id = $1', [project_id],
+      'SELECT id, demo_attempt, ozalit_attempt FROM projects WHERE id = $1 AND deleted_at IS NULL', [project_id],
     )
     if (proj.rowCount === 0) notFound('Proje bulunamadı.')
     // The attempt stamps which demo/ozalit round this form belongs to, so

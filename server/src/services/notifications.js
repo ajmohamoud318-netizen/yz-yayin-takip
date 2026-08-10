@@ -182,6 +182,31 @@ export async function notifyProjectTransition(client, {
   }
 }
 
+/**
+ * A project was soft-deleted. Whoever might have it queued — the assigned
+ * designer(s), active printers (a demo/ozalit delivery could be sitting in
+ * their queue), and the other active team leaders — get told it's gone,
+ * instead of just finding it silently missing from their lists next time
+ * they act on it.
+ *
+ * Designers/printers get no `link`: the project detail 404s once deleted
+ * and they have no access to "Silinen Projeler" to recover it, so a link
+ * would just be a dead click. Team leaders get a link there since they're
+ * the ones who can restore it.
+ */
+export async function notifyProjectDeleted(client, { project, actor, assignees }) {
+  const designers = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
+  const printers = await activeUserIdsByRole(client, 'printer')
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  const base = {
+    actorId: actor?.id, title: project.title, projectId: project.id,
+    type: 'project_deleted', tone: 'rose', body: 'Proje silindi',
+  }
+  const a = await emit(client, { ...base, recipientIds: [...designers, ...printers] })
+  const b = await emit(client, { ...base, recipientIds: leaders, link: '/deleted-projects' })
+  return a + b
+}
+
 /* ------------------------------- orders ---------------------------------- */
 
 const ORDER_STEP_BODY = {
