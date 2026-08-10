@@ -54,8 +54,6 @@ export function createApi() {
     listUsers: () => userRepo.listUsers(),
     inviteUser: (payload) => userRepo.inviteUser(payload),
     setUserActive: (id, isActive) => userRepo.setUserActive(id, isActive),
-    setUserCapability: (id, capability, value) =>
-      userRepo.setUserCapability(id, capability, value),
     // Hard delete — backend enforces team_leader-only + no-self-delete.
     deleteUser: (id) => userRepo.deleteUser(id),
     // Work log ("Çalışma Defteri") — replaces the old single-line
@@ -64,7 +62,6 @@ export function createApi() {
     addWorkLogEntry: (entry) => workLogRepo.addWorkLogEntry(entry),
     updateWorkLogEntry: (id, patch) => workLogRepo.updateWorkLogEntry(id, patch),
     deleteWorkLogEntry: (id) => workLogRepo.deleteWorkLogEntry(id),
-    listTeamWorkLog: (date) => workLogRepo.listTeamWorkLog(date),
 
     // Projects
     listProjects: () => projectRepo.listProjects(),

@@ -533,7 +533,6 @@ PATCH  /api/handovers/:id/confirm     [satis] — moves project to 'satista'
 ### Notifications
 ```
 GET    /api/notifications             → { items: [...50], unread, unseen } for the current user
-GET    /api/notifications/unread-count → { count, unseen }
 PATCH  /api/notifications/:id/read     mark one read (also seen; owner-scoped)
 POST   /api/notifications/read-all     mark all read (also seen) → { count }
 POST   /api/notifications/seen         mark all seen (bell open; badge clear) → { count }
@@ -557,7 +556,6 @@ GET    /api/work-log              ?days=14 → { entries, days } — the caller'
 POST   /api/work-log              { kind, body, minutes? } → 201 entry (dated today)
 PATCH  /api/work-log/:id          { kind?, body?, minutes? } — owner-scoped
 DELETE /api/work-log/:id          → 204 — owner-scoped
-GET    /api/work-log/team         ?date=YYYY-MM-DD → { date, entries } [team_leader]
 ```
 ---
 ## 🖥️ UI Views by Role
@@ -589,7 +587,7 @@ Recipient rules live once, in the service (`notifyProjectTransition`, `notifyPro
 - `designer` — new assignment, rejection ("Revizyon gerekiyor"), ozalit-requestable, assigned-order steps
 - `satis` — handover confirmation pending, "Talebiniz onaylandı — üretime alındı", on-sale
 
-Endpoints: `GET /api/notifications`, `GET /api/notifications/unread-count`, `PATCH /api/notifications/:id/read`, `POST /api/notifications/read-all` (all owner-scoped).
+Endpoints: `GET /api/notifications`, `PATCH /api/notifications/:id/read`, `POST /api/notifications/read-all` (all owner-scoped).
 ---
 ## 📐 Conventions
 - Backend: Node.js + Fastify, ES modules, async/await, errors as `{ status, message }`
@@ -607,20 +605,31 @@ Endpoints: `GET /api/notifications`, `GET /api/notifications/unread-count`, `PAT
 - Handover eligibility: `assertHandoverEligible(project)` throws 400 if the project is not at `uretimde` (TR) / `gumruk` (ÇİN)
 - Mock/Infra seam: `infrastructure/config.js` exposes `USE_MOCK`; flipping it to `false` switches repositories from `mock/*` to `http/*` without changing the application or presentation layer.
 ---
-## 🚀 Deploy (Dokploy + Nixpacks)
+## 🚀 Deploy (Dokploy + Dockerfiles)
 
-The app runs as **two services**: a Fastify API (Postgres-backed) and a static
-Vite SPA. The repo root is a workspace (`client/` + `server/`) so each deploys
-with its own Nixpacks config and `start` command.
+The app runs as **two services**, each built from its own Dockerfile (Dokploy
+Build Pack = Dockerfile) — no Nixpacks. `docker-compose.yml` at the repo root
+builds from these same two Dockerfiles for local parity.
 
-- **`client/` SPA**: built from `client/` root (`cd client && npm run build`),
-  served by `serve.cjs` (in-repo zero-dep Node http server with SPA fallback +
-  cache headers). Exposes `/api/health` reverse-proxy upstream in production.
-- **`server/` API**: built from `server/` root (`npm start` runs
-  `node src/index.js`). On boot it auto-applies pending migrations and
-  optionally seeds when `SEED_ON_BOOT=true`. Hangs on `PORT` (default 4000).
-- **Dokploy pairing**: deploy twice — once for the static SPA, once for the
-  API — and point the SPA's `VITE_API_BASE_URL` at the API URL. The SPA
+- **Frontend** (root [`Dockerfile`](Dockerfile), Build Path `/`): two-stage
+  build — installs full workspace deps (incl. devDeps, since Vite needs
+  `rollup`), runs `npm run build` to produce `client/dist`, then a slim
+  `node:20-alpine` runtime serves it with `serve.cjs` (in-repo zero-dep Node
+  http server with SPA fallback + cache headers) on port 3000. Takes
+  `VITE_API_BASE_URL` as a **build-time** ARG (Vite only inlines env vars
+  present at build time) — Dokploy must pass this as a build arg or the
+  bundle ships with no API base URL.
+- **Backend** ([`server/Dockerfile`](server/Dockerfile), Build Path
+  `/server`): two-stage build — `npm ci --omit=dev` for prod-only deps, then
+  a slim runtime copies in the source tree and runs via
+  `docker-entrypoint.sh`. The entrypoint starts as root just long enough to
+  chown the persistent upload dir, then `exec`s into the unprivileged `node`
+  user so Fastify never runs as root and still receives SIGTERM as PID 1.
+  Binds `PORT` (default 4000); on boot it auto-applies pending migrations and
+  optionally seeds when `SEED_ON_BOOT=true`. Ships a container `HEALTHCHECK`
+  against `GET /api/health`.
+- **Dokploy pairing**: deploy twice — once per Dockerfile — and point the
+  frontend's `VITE_API_BASE_URL` build arg at the backend's URL. The SPA
   always talks to its own `/api` prefix; Vite proxies to `localhost:4000`
   in dev.
 - **Env vars**: see `.env.example` for both surfaces.
