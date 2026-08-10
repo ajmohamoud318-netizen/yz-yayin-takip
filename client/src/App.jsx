@@ -32,6 +32,7 @@ const UretimeHazir        = lazy(() => import('./pages/UretimeHazir.jsx'))
 const Settings            = lazy(() => import('./pages/Settings.jsx'))
 import NotificationSync from './components/NotificationSync.jsx'
 import { CelebrationProvider } from './hooks/useCelebration.jsx'
+import RouteFallback from './components/RouteFallback.jsx'
 /* RouteFallback lives in its own module to avoid the AppShell↔App.jsx
    circular import (AppShell wraps <Outlet /> in <Suspense fallback=…>,
    and the fallback component itself must not live in either file). */
@@ -70,9 +71,30 @@ export default function App() {
 
 
           <Route path="/login" element={<Login />} />
-          <Route path="/accept-invite" element={<AcceptInvite />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route
+            path="/accept-invite"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <AcceptInvite />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/forgot-password"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <ForgotPassword />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/reset-password"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <ResetPassword />
+              </Suspense>
+            }
+          />
 
           <Route
             element={
