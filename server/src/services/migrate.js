@@ -41,13 +41,23 @@ async function ensureMigrationsTable() {
 
 async function listMigrationFiles() {
   const entries = await fs.readdir(MIGRATIONS_DIR)
-  return entries
+  const files = entries
     .filter((name) => MIGRATION_FILE.test(name))
     .map((name) => {
       const [, id, label] = name.match(MIGRATION_FILE)
       return { id, label, file: name, path: path.join(MIGRATIONS_DIR, name) }
     })
     .sort((a, b) => a.id.localeCompare(b.id))
+  // `id` is the PRIMARY KEY in `_migrations` — two files sharing an id would
+  // make the second one look "already applied" and silently never run.
+  const seen = new Map()
+  for (const m of files) {
+    if (seen.has(m.id)) {
+      throw new Error(`Duplicate migration id ${m.id}: ${seen.get(m.id)} and ${m.file}`)
+    }
+    seen.set(m.id, m.file)
+  }
+  return files
 }
 
 async function appliedIds() {
