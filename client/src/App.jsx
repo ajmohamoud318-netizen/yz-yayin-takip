@@ -12,6 +12,7 @@ const AllProjects         = lazy(() => import('./pages/AllProjects.jsx'))
 const YearPlan            = lazy(() => import('./pages/YearPlan.jsx'))
 const DemoRequests        = lazy(() => import('./pages/DemoRequests.jsx'))
 const Team                = lazy(() => import('./pages/Team.jsx'))
+const DeletedProjects     = lazy(() => import('./pages/DeletedProjects.jsx'))
 const Kanban              = lazy(() => import('./pages/Kanban.jsx'))
 const Approvals           = lazy(() => import('./pages/Approvals.jsx'))
 const AcceptInvite        = lazy(() => import('./pages/AcceptInvite.jsx'))
@@ -98,6 +99,14 @@ export default function App() {
               element={
                 <RoleGuard allow={['team_leader']}>
                   <Team />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/deleted-projects"
+              element={
+                <RoleGuard allow={['team_leader']}>
+                  <DeletedProjects />
                 </RoleGuard>
               }
             />

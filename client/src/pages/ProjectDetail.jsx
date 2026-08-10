@@ -1023,8 +1023,8 @@ export default function ProjectDetail() {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Projeyi sil"
-        description={project ? `"${project.title}" kalıcı olarak silinecek. Bu işlem geri alınamaz.` : ''}
-        confirmLabel="Kalıcı olarak sil"
+        description={project ? `"${project.title}" silinecek ve "Silinen Projeler" sayfasına taşınacak. İstediğiniz zaman geri yükleyebilirsiniz.` : ''}
+        confirmLabel="Sil"
         cancelLabel="Vazgeç"
         variant="destructive"
         busy={deleting}

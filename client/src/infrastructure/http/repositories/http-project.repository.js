@@ -180,6 +180,15 @@ export function createHttpProjectRepository(userRepo) {
       cache.delete(id)
       return { ok: true }
     },
+    async listDeletedProjects() {
+      const { data } = await httpClient.get('/projects/deleted')
+      return data
+    },
+    async restoreProject(id) {
+      const { data } = await httpClient.post(`/projects/${id}/restore`, {})
+      cache.set(id, data)
+      return data
+    },
     async advanceProject(id) {
       const { data } = await httpClient.post(`/projects/${id}/advance`, {})
       cache.set(id, data)

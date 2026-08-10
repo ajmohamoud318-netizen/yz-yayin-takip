@@ -6,6 +6,7 @@ import {
   listProjectSubtasks, listProjectHistory,
   loadProjectAssignees,
   patchProject, deleteProject, insertProject, logHistory,
+  listDeletedProjects, restoreProject,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
@@ -22,7 +23,9 @@ import { notifyProjectCreated, notifyProjectTransition } from '../services/notif
  * GET    /api/projects/:id           — returns project + subtasks + history
  * POST   /api/projects
  * PATCH  /api/projects/:id
- * DELETE /api/projects/:id
+ * DELETE /api/projects/:id           — soft delete (team_leader only)
+ * GET    /api/projects/deleted       — list soft-deleted projects (team_leader only)
+ * POST   /api/projects/:id/restore   — undo a soft delete (team_leader only)
  * POST   /api/projects/:id/advance
  * POST   /api/projects/:id/approve
  * POST   /api/projects/:id/reject
@@ -43,6 +46,12 @@ export async function projectRoutes(fastify) {
   fastify.get('/projects', async (request) => {
     await attachUser(request)
     return listProjects()
+  })
+
+  fastify.get('/projects/deleted', async (request) => {
+    await attachUser(request)
+    requireRole(request, 'team_leader')
+    return listDeletedProjects()
   })
 
   fastify.get('/projects/:id', async (request) => {
@@ -176,8 +185,16 @@ export async function projectRoutes(fastify) {
   fastify.delete('/projects/:id', { schema: schemas.projectsIdParams }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
-    await deleteProject(request.params.id)
+    await deleteProject(request.params.id, request.user)
     return { ok: true }
+  })
+
+  fastify.post('/projects/:id/restore', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    requireRole(request, 'team_leader')
+    const restored = await restoreProject(request.params.id)
+    if (!restored) notFound('Silinmiş proje bulunamadı.')
+    return restored
   })
 
   fastify.post('/projects/:id/advance', { schema: schemas.projectsAdvance }, async (request) => {

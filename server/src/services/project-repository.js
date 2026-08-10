@@ -36,6 +36,7 @@ export async function listProjects() {
        , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = p.id) AS has_product_info
      FROM projects p
      LEFT JOIN users a ON a.id = p.assigned_to
+     WHERE p.deleted_at IS NULL
      ORDER BY p.created_at DESC, p.id`,
   )
   // Build a per-project `assignees` array (`[{id, name}, ...]`) from BOTH
@@ -180,7 +181,7 @@ export async function getProject(id) {
   const { rows } = await getPool().query(
     `SELECT ${PROJECT_COLUMNS}
        , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id) AS has_product_info
-     FROM projects WHERE id = $1`, [id],
+     FROM projects WHERE id = $1 AND deleted_at IS NULL`, [id],
   )
   return rows[0] ? rowToProject(rows[0]) : null
 }
@@ -190,7 +191,7 @@ export async function getProjectForUpdate(client, id) {
   const { rows } = await client.query(
     `SELECT ${PROJECT_COLUMNS}
        , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id) AS has_product_info
-     FROM projects WHERE id = $1 FOR UPDATE`, [id],
+     FROM projects WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, [id],
   )
   return rows[0] ? rowToProject(rows[0]) : null
 }
@@ -307,8 +308,49 @@ export async function patchProject(client, id, fields) {
   return rows[0] ? rowToProject(rows[0]) : null
 }
 
-export async function deleteProject(id) {
-  await getPool().query('DELETE FROM projects WHERE id = $1', [id])
+// Soft-delete: the row stays put (and out of `listProjects`/`getProject`)
+// so a misclick is recoverable from the "Silinen Projeler" page instead of
+// being gone for good.
+export async function deleteProject(id, actor) {
+  await getPool().query(
+    'UPDATE projects SET deleted_at = NOW(), deleted_by = $2, deleted_by_name = $3 WHERE id = $1',
+    [id, actor?.id ?? null, actor?.name ?? null],
+  )
+}
+
+export async function listDeletedProjects() {
+  const { rows } = await getPool().query(
+    `SELECT p.id, p.title, p.type, p.stage, p.target_month, p.created_at,
+            p.deleted_at, p.deleted_by, p.deleted_by_name,
+            a.name AS assignee_name
+       FROM projects p
+       LEFT JOIN users a ON a.id = p.assigned_to
+      WHERE p.deleted_at IS NOT NULL
+      ORDER BY p.deleted_at DESC, p.id`,
+  )
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    type: r.type,
+    stage: r.stage,
+    target_month: r.target_month,
+    assigned_name: r.assignee_name ?? null,
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
+    deleted_at: r.deleted_at instanceof Date ? r.deleted_at.toISOString() : r.deleted_at,
+    deleted_by: r.deleted_by,
+    deleted_by_name: r.deleted_by_name,
+  }))
+}
+
+export async function restoreProject(id) {
+  const { rows } = await getPool().query(
+    `UPDATE projects
+        SET deleted_at = NULL, deleted_by = NULL, deleted_by_name = NULL
+      WHERE id = $1 AND deleted_at IS NOT NULL
+      RETURNING ${PROJECT_COLUMNS}`,
+    [id],
+  )
+  return rows[0] ? rowToProject(rows[0]) : null
 }
 
 export async function insertHistory(client, entry) {

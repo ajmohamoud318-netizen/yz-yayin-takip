@@ -69,6 +69,8 @@ export function createApi() {
     createProject: (payload) => projectRepo.createProject(payload),
     updateProject: (id, patch) => projectRepo.updateProject(id, patch),
     deleteProject: (id) => projectRepo.deleteProject(id),
+    listDeletedProjects: () => projectRepo.listDeletedProjects(),
+    restoreProject: (id) => projectRepo.restoreProject(id),
     advanceProject: (id) => projectRepo.advanceProject(id),
     approveProject: (id) => projectRepo.approveProject(id),
     receiveDemo: (id) => projectRepo.receiveDemo(id),

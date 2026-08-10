@@ -34,6 +34,7 @@ import {
   CheckCircle2,
   Tag,
   Ship,
+  Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -828,6 +829,7 @@ const PAGE_TITLES = [
   { match: (p) => p.startsWith('/approvals/siparis'), label: 'Sipariş Onayı' },
   { match: (p) => p.startsWith('/approvals'), label: 'Onaylar' },
   { match: (p) => p.startsWith('/team'), label: 'Ekip' },
+  { match: (p) => p.startsWith('/deleted-projects'), label: 'Silinen Projeler' },
   { match: (p) => p.startsWith('/plan'), label: 'Yıllık Plan' },
   { match: (p) => p.startsWith('/demo'), label: 'Demo' },
   { match: (p) => p.startsWith('/my-projects'), label: 'Projelerim' },
@@ -957,6 +959,7 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
     { to: '/team', label: 'Ekip', icon: UsersRound, roles: ['team_leader'] },
     { to: '/documents', label: 'Dökümanlar', icon: Files, roles: ['team_leader', 'designer', 'printer'] },
     { to: '/urun-bilgileri', label: 'Ürün Bilgileri', icon: Boxes, roles: ['team_leader', 'designer'] },
+    { to: '/deleted-projects', label: 'Silinen Projeler', icon: Trash2, roles: ['team_leader'] },
     { type: 'worklog', label: 'Çalışma Defteri' },
   ].filter((i) => !i.roles || i.roles.includes(role))
 
