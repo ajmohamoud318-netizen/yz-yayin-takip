@@ -20,7 +20,8 @@ const PROJECT_COLUMNS = `
   demo_delivered_at, demo_delivered_by, demo_delivered_by_name,
   ozalit_requested, reject_target, last_reject_type, last_reject_target,
   ozalit_approvals,
-  created_at, updated_at
+  created_at, updated_at,
+  deleted_at, deleted_by, deleted_by_name
 `
 
 export async function listProjects() {
@@ -182,6 +183,23 @@ export async function getProject(id) {
     `SELECT ${PROJECT_COLUMNS}
        , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id) AS has_product_info
      FROM projects WHERE id = $1 AND deleted_at IS NULL`, [id],
+  )
+  return rows[0] ? rowToProject(rows[0]) : null
+}
+
+/**
+ * Same as `getProject` but does NOT filter out soft-deleted rows. Used only
+ * by the detail GET route: someone who had this project open (or clicked a
+ * "project deleted" notification) should still be able to see what it was —
+ * read-only — rather than hitting a bare 404 that throws away all context.
+ * Every mutation route keeps using `getProject`/`getProjectForUpdate` (which
+ * DO filter), so a deleted project stays fully frozen either way.
+ */
+export async function getProjectIncludingDeleted(id) {
+  const { rows } = await getPool().query(
+    `SELECT ${PROJECT_COLUMNS}
+       , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id) AS has_product_info
+     FROM projects WHERE id = $1`, [id],
   )
   return rows[0] ? rowToProject(rows[0]) : null
 }
@@ -537,5 +555,8 @@ function rowToProject(r) {
     has_product_info: r.has_product_info ?? false,
     created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
     updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at,
+    deleted_at: r.deleted_at instanceof Date ? r.deleted_at.toISOString() : r.deleted_at,
+    deleted_by: r.deleted_by ?? null,
+    deleted_by_name: r.deleted_by_name ?? null,
   }
 }

@@ -55,6 +55,7 @@ export default function ProjectDetail() {
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [restoring, setRestoring] = useState(false)
   const [ozalitFormOpen, setOzalitFormOpen] = useState(false)
   const [ozalitFormMode, setOzalitFormMode] = useState('approve') // 'approve' | 'view'
   const [demoFormOpen, setDemoFormOpen] = useState(false)
@@ -147,6 +148,11 @@ export default function ProjectDetail() {
   // Kept for the footer hint (true when the base condition is met).
   const canEditSubtasks = canEditBase
   const isLeader = user?.role === 'team_leader'
+  // A deleted project stays viewable (see the server's getProjectIncludingDeleted)
+  // so anyone who had it open — or clicked the "project deleted" notification —
+  // still has context, but every mutation route 404s while it's deleted. Gate
+  // the action buttons on this instead of letting each one fail individually.
+  const isDeleted = !!project?.deleted_at
 
   // Demo "Teslim Alındı" gate: at demo_onay / cin_demo_onay, an assigned
   // designer or the team leader marks the delivered demo received; the Onay is
@@ -179,6 +185,20 @@ export default function ProjectDetail() {
     } catch (err) {
       toast.error(err.message || 'Proje silinemedi.')
       setDeleting(false)
+    }
+  }
+
+  async function handleRestore() {
+    if (!project) return
+    setRestoring(true)
+    try {
+      await api.restoreProject(project.id)
+      await refetch()
+      toast.success('Proje geri yüklendi.')
+    } catch (err) {
+      toast.error(err.message || 'Proje geri yüklenemedi.')
+    } finally {
+      setRestoring(false)
     }
   }
 
@@ -470,6 +490,23 @@ export default function ProjectDetail() {
           </Button>
         </div>
 
+        {isDeleted && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-rose-800">
+            <div className="flex items-start gap-2">
+              <Trash2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <p className="text-sm">
+                Bu proje silindi{project.deleted_by_name ? ` — ${project.deleted_by_name} tarafından` : ''}
+                {project.deleted_at ? `, ${formatDateTr(project.deleted_at)}` : ''}. Sadece görüntülenebilir.
+              </p>
+            </div>
+            {isLeader && (
+              <Button size="sm" variant="outline" onClick={handleRestore} disabled={restoring} loading={restoring}>
+                {restoring ? 'Geri yükleniyor…' : 'Geri Yükle'}
+              </Button>
+            )}
+          </div>
+        )}
+
         {/* Header */}
         <Card>
           <CardContent className="space-y-5 p-5">
@@ -515,6 +552,7 @@ export default function ProjectDetail() {
                 </div>
               </div>
 
+              {!isDeleted && (
               <div className="flex flex-wrap items-center gap-2">
                 {isLeader && (
                   <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
@@ -680,6 +718,7 @@ export default function ProjectDetail() {
                   </Button>
                 )}
               </div>
+              )}
             </div>
 
             {/* Ozalit requested — handed to the matbaa, waiting for delivery */}

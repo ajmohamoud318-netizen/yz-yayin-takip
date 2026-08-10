@@ -2,7 +2,7 @@ import { attachUser, requireRole } from '../middleware/auth.js'
 import { badRequest, notFound } from '../domain/errors.js'
 import { withTx, getPool } from '../db/pool.js'
 import {
-  listProjects, getProject, getProjectForUpdate,
+  listProjects, getProject, getProjectForUpdate, getProjectIncludingDeleted,
   listProjectSubtasks, listProjectHistory,
   loadProjectAssignees,
   patchProject, deleteProject, insertProject, logHistory,
@@ -56,7 +56,12 @@ export async function projectRoutes(fastify) {
 
   fastify.get('/projects/:id', async (request) => {
     await attachUser(request)
-    const project = await getProject(request.params.id)
+    // Unfiltered read: a deleted project should still open (read-only) —
+    // e.g. from the "project deleted" notification — instead of just
+    // 404ing on whoever had it open. Every mutation route below still
+    // uses getProject/getProjectForUpdate, which DO filter, so nothing
+    // can actually be changed on it while it's deleted.
+    const project = await getProjectIncludingDeleted(request.params.id)
     if (!project) notFound('Proje bulunamadı.')
     const [subtasks, history, assignees] = await Promise.all([
       listProjectSubtasks(getPool(), project.id),
