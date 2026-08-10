@@ -7,8 +7,7 @@ import { badRequest, notFound } from '../domain/errors.js'
  *
  * Everything here is owner-scoped by `user_id` in the WHERE clause rather
  * than by a read-then-check, so a caller can never touch someone else's row
- * even if they guess an id. The one exception is `listForDate`, which is
- * gated by `requireRole(request, 'team_leader')` at the route.
+ * even if they guess an id.
  */
 
 export const WORK_LOG_KINDS = ['baska_proje', 'toplanti', 'idari', 'egitim', 'diger']
@@ -56,21 +55,6 @@ export async function listMine(pool, userId, days = WORK_LOG_DEFAULT_DAYS) {
         AND entry_date > CURRENT_DATE - $2::int
       ORDER BY entry_date DESC, created_at DESC`,
     [userId, days],
-  )
-  return rows
-}
-
-/** Every active member's entries for one date — the leader's /team view. */
-export async function listForDate(pool, date) {
-  const { rows } = await pool.query(
-    `SELECT w.id, w.user_id, w.entry_date, w.kind, w.body, w.minutes,
-            w.created_at, w.updated_at,
-            u.name AS user_name, u.role AS user_role
-       FROM work_log_entries w
-       JOIN users u ON u.id = w.user_id
-      WHERE w.entry_date = $1::date
-      ORDER BY u.name, w.created_at`,
-    [date],
   )
   return rows
 }

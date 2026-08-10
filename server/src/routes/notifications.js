@@ -2,14 +2,13 @@ import { attachUser } from '../middleware/auth.js'
 import { getPool } from '../db/pool.js'
 import { schemas } from '../schemas/index.js'
 import {
-  listForUser, unreadCount, unseenCount, markRead, markAllRead, markAllSeen,
+  listForUser, markRead, markAllRead, markAllSeen,
 } from '../services/notifications.js'
 
 /**
  * Per-user notification feed.
  *
  * GET   /api/notifications              → newest 50 + { unread, unseen }
- * GET   /api/notifications/unread-count → { count, unseen }
  * PATCH /api/notifications/:id/read     → mark one read (owner-scoped)
  * POST  /api/notifications/read-all     → mark all read, returns { count }
  * POST  /api/notifications/seen         → mark all seen (badge), returns { count }
@@ -33,15 +32,6 @@ export async function notificationRoutes(fastify) {
       if (!it.seen) unseen += 1
     }
     return { items, unread, unseen }
-  })
-
-  fastify.get('/notifications/unread-count', async (request) => {
-    await attachUser(request)
-    const [count, unseen] = await Promise.all([
-      unreadCount(getPool(), request.user.id),
-      unseenCount(getPool(), request.user.id),
-    ])
-    return { count, unseen }
   })
 
   fastify.patch('/notifications/:id/read', { schema: schemas.notificationIdParams }, async (request) => {

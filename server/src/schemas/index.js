@@ -188,16 +188,6 @@ const workLogListQuery = {
   },
 }
 
-const workLogTeamQuery = {
-  querystring: {
-    type: 'object',
-    additionalProperties: false,
-    // YYYY-MM-DD. Pattern-checked here so a malformed value is a 400 rather
-    // than a Postgres cast error surfacing as a 500.
-    properties: { date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' } },
-  },
-}
-
 const workLogCreate = {
   body: {
     type: 'object',
@@ -608,7 +598,6 @@ export const schemas = {
   usersInvite,
   userIdParams,
   workLogListQuery,
-  workLogTeamQuery,
   workLogCreate,
   workLogUpdate,
   workLogIdParams,

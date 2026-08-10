@@ -287,24 +287,6 @@ export async function listForUser(client, userId, { limit = 50 } = {}) {
   return rows
 }
 
-/** Count of not-yet-read rows (per-item to-do total). */
-export async function unreadCount(client, userId) {
-  const { rows } = await client.query(
-    `SELECT COUNT(*)::int AS n FROM notifications WHERE user_id = $1 AND is_read = FALSE`,
-    [userId],
-  )
-  return rows[0]?.n ?? 0
-}
-
-/** Count of not-yet-seen rows — drives the bell badge. */
-export async function unseenCount(client, userId) {
-  const { rows } = await client.query(
-    `SELECT COUNT(*)::int AS n FROM notifications WHERE user_id = $1 AND seen = FALSE`,
-    [userId],
-  )
-  return rows[0]?.n ?? 0
-}
-
 /**
  * Mark one notification read — scoped to the owner. Reading implies seeing,
  * so we set `seen` too (keeps the is_read ⇒ seen invariant).

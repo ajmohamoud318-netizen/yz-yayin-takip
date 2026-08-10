@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -14,6 +14,7 @@ import {
   Send,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
   Users as UsersIcon,
   User as UserIcon,
 } from 'lucide-react'
@@ -33,6 +34,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import ApprovalDialog from '@/components/ApprovalDialog'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import NewProjectDialog from '@/components/NewProjectDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import DemoFormDialog from '@/components/DemoFormDialog'
@@ -44,12 +46,15 @@ import { isSubtaskDone } from '@/domain/services/progress'
 
 export default function ProjectDetail() {
   const { id } = useParams()
+  const navigate = useNavigate()
 
   const { user } = useAuth()
   const celebrate = useDesignerCelebration()
   const { project, loading, refetch, setProject } = useProject(id)
   const [dialog, setDialog] = useState(null) // 'approve' | 'reject' | 'advance'
   const [editOpen, setEditOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [ozalitFormOpen, setOzalitFormOpen] = useState(false)
   const [ozalitFormMode, setOzalitFormMode] = useState('approve') // 'approve' | 'view'
   const [demoFormOpen, setDemoFormOpen] = useState(false)
@@ -161,6 +166,19 @@ export default function ProjectDetail() {
       toast.error(err.message || 'İşlem tamamlanamadı.')
     } finally {
       setReceiving(false)
+    }
+  }
+
+  async function confirmDeleteProject() {
+    if (!project) return
+    setDeleting(true)
+    try {
+      await api.deleteProject(project.id)
+      toast.success('Proje silindi.')
+      navigate('/')
+    } catch (err) {
+      toast.error(err.message || 'Proje silinemedi.')
+      setDeleting(false)
     }
   }
 
@@ -655,6 +673,12 @@ export default function ProjectDetail() {
                     {sentStatus}
                   </span>
                 )}
+                {isLeader && (
+                  <Button size="sm" variant="destructive" onClick={() => setDeleteOpen(true)}>
+                    <Trash2 className="h-4 w-4" />
+                    Sil
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -993,6 +1017,19 @@ export default function ProjectDetail() {
         initialStep={orderFormViewer?.step}
         open={!!orderFormViewer}
         onOpenChange={(v) => !v && setOrderFormViewer(null)}
+      />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Projeyi sil"
+        description={project ? `"${project.title}" kalıcı olarak silinecek. Bu işlem geri alınamaz.` : ''}
+        confirmLabel="Kalıcı olarak sil"
+        cancelLabel="Vazgeç"
+        variant="destructive"
+        busy={deleting}
+        busyLabel="Siliniyor…"
+        onConfirm={confirmDeleteProject}
       />
     </>
   )
