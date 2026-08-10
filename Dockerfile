@@ -1,7 +1,8 @@
 # Production image for the YZ Yayın Takip SPA (Dokploy frontend app).
 #
-# Mirrors the Nixpacks flow (root nixpacks.toml): build the Vite SPA from
-# client/, then serve client/dist with the zero-dep serve.cjs shim.
+# Build the Vite SPA from client/, then serve client/dist with the zero-dep
+# serve.cjs shim. This is the only build path for the SPA — the old
+# Nixpacks configs were dropped once Dokploy moved to Dockerfile builds.
 #
 # Two-stage build:
 #   1. build   — install all workspace deps (incl. devDeps) and run vite build

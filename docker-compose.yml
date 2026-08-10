@@ -13,7 +13,7 @@
 # The .env file (root) is read by the server container (DATABASE_URL,
 # etc.). The client uses Vite's own .env loading at the project root.
 #
-# In production we deploy the client as a static SPA (see nixpacks.toml)
+# In production we deploy the client as a static SPA (see the root Dockerfile)
 # and the server separately on Dokploy — this compose is for dev parity.
 services:
   postgres:

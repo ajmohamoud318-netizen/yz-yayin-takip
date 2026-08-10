@@ -62,11 +62,15 @@ client/dist/
 *.timestamp-*.mjs
 server/server/
 
+# Upload-dir writability probes dropped by the server at boot
+.yz-fallback/
+
+# cloudflared tunnel logs
+.tunnel/
+
 # Source spreadsheets (read-only inputs — regenerated into productInfo.js
 # via `node generate-product-info.js`). Keep these out of the repo so the
 # canonical data stays in the design team's drive.
-"REÇETE.xlsx"
-"REÇETE.xls"
-"*.xlsx"
-"*.xls"
+*.xlsx
+*.xls
 generate-product-info.js

@@ -4,8 +4,8 @@ import { httpClient } from '../client.js'
  * Work log repo — "Çalışma Defteri" (see server migration 026__work_log.sql).
  *
  * Owner-scoped by the server: none of these calls carry a user id, the
- * backend resolves it from the session. `listTeamWorkLog` is the one
- * cross-user read and 403s for anyone who isn't a team_leader.
+ * backend resolves it from the session. Cross-user reads don't live here —
+ * the Ekip page gets each user's `work_log_today` inlined on `GET /users`.
  */
 export function createHttpWorkLogRepository() {
   return {
@@ -31,15 +31,6 @@ export function createHttpWorkLogRepository() {
     },
     async deleteWorkLogEntry(id) {
       await httpClient.delete(`/work-log/${id}`)
-    },
-    async listTeamWorkLog(date) {
-      const { data } = await httpClient.get('/work-log/team', {
-        params: date ? { date } : undefined,
-      })
-      return {
-        date: data?.date ?? null,
-        entries: Array.isArray(data?.entries) ? data.entries : [],
-      }
     },
   }
 }
