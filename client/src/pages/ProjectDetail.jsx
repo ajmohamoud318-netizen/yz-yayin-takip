@@ -1023,14 +1023,17 @@ export default function ProjectDetail() {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Projeyi sil"
-        description={project
-          ? [
-              `"${project.title}" silinecek ve "Silinen Projeler" sayfasına taşınacak. İstediğiniz zaman geri yükleyebilirsiniz.`,
-              IN_FLIGHT_DEMO_OZALIT_STAGES.has(project.stage)
-                ? `Bu projede bekleyen bir ${STAGE_LABELS[project.stage]} süreci var — silindiğinde ilgili kişilerin kuyruğundan kaybolacak.`
-                : null,
-            ].filter(Boolean).join(' ')
-          : ''}
+        description={project && (
+          <span className="block space-y-2.5">
+            <span className="block">"{project.title}" Silinen Projeler'e taşınacak. İstediğiniz zaman geri yükleyebilirsiniz.</span>
+            {IN_FLIGHT_DEMO_OZALIT_STAGES.has(project.stage) && (
+              <span className="flex items-start gap-1.5 rounded-md bg-amber-50 px-2.5 py-2 text-amber-800">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{STAGE_LABELS[project.stage]} bekleniyor — silinirse kuyruktan kaybolur.</span>
+              </span>
+            )}
+          </span>
+        )}
         confirmLabel="Sil"
         cancelLabel="Vazgeç"
         variant="destructive"
