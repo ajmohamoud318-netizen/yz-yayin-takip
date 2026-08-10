@@ -119,14 +119,17 @@ export default function ProjectDetail() {
   // Base condition: the assigned designer can edit during tasarım, or during a
   // demo stage while the project is still under 100%.
   const canEditBase =
+    !project?.deleted_at &&
     user?.role === 'designer' &&
     isAssigned &&
     (project?.stage === 'tasarim' ||
       (DEMO_STAGES.includes(project?.stage) && (project?.progress ?? 0) < 100))
 
   // The "Güncelle" (what-changed) log is an additive record, so the assigned
-  // designer may add updates at any stage — not only during tasarım.
-  const canLogUpdate = user?.role === 'designer' && isAssigned
+  // designer may add updates at any stage — not only during tasarım. Still
+  // blocked once the project is deleted — a deleted project is fully
+  // frozen/view-only (see `isDeleted` below).
+  const canLogUpdate = !project?.deleted_at && user?.role === 'designer' && isAssigned
 
   // Revision mode: the project is back in tasarım after a rejection and the
   // leader has flagged specific subtasks to revise. Flagged subtasks are
