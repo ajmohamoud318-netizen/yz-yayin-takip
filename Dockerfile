@@ -15,6 +15,13 @@ WORKDIR /app
 
 # NODE_ENV=production would make npm skip devDeps (rollup is a devDep and vite
 # needs it) — keep it unset during install so the build has everything.
+#
+# This applies to `npm install` ONLY. `vite build` must NOT inherit it: Vite
+# inlines process.env.NODE_ENV into the bundle from this variable (not from
+# the build mode), so NODE_ENV=development ships React's *development* build
+# — dev warnings, no prod optimisations, ~280 kB of extra JS, and StrictMode
+# double-invoking every mount effect (which fired GET /auth/me twice on load).
+# The build step below overrides it back to production.
 ENV NODE_ENV=development
 
 # Vite only inlines env vars that are explicitly exposed at build time.
@@ -35,8 +42,10 @@ COPY server/package.json ./server/package.json
 RUN npm install --no-audit --no-fund --include=dev
 
 # Now the rest of the source and build the SPA (outputs to client/dist).
+# NODE_ENV=production is set per-command (not via ENV) so it only affects the
+# build, leaving the install layer above — and its devDeps — untouched.
 COPY . .
-RUN npm run build
+RUN NODE_ENV=production npm run build
 
 FROM node:20-alpine AS runtime
 WORKDIR /app
