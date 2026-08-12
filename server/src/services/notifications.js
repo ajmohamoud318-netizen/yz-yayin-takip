@@ -22,7 +22,6 @@
 import { loadProjectAssignees } from './project-repository.js'
 import { ORDER_STEP_OWNER } from '../domain/orders.js'
 import { isPushEnabled, sendToUsers } from './push.js'
-import { getPool } from '../db/pool.js'
 
 /** Active user ids for the given role(s). */
 export async function activeUserIdsByRole(client, ...roles) {
@@ -72,10 +71,9 @@ export async function emit(client, {
     values,
   )
 
-  // Deliver to registered devices as well as the in-app feed. Scheduled
-  // AFTER the caller's transaction resolves — see dispatchPush.
-  dispatchPush({
-    notificationIds: rows.map((r) => r.id),
+  // Deliver to registered devices as well as the in-app feed. Runs only
+  // after the caller's transaction commits — see dispatchPush.
+  dispatchPush(client, {
     recipientIds: clean,
     payload: { type, title, body, tone, link, projectId, notificationId: rows[0]?.id },
   })
@@ -93,34 +91,42 @@ export async function emit(client, {
  *     with the same client that wrote stage_history, mid-transaction. Awaiting
  *     an HTTPS round-trip to Apple/Google there would hold a Postgres
  *     transaction (and a pool connection) open for the duration — under
- *     concurrent teslim/onay traffic that exhausts the pool. So we detach
- *     with setImmediate and use the POOL, not the transaction client.
+ *     concurrent teslim/onay traffic that exhausts the pool.
  *
- *  2. It must not push for a rolled-back transaction. Detaching introduces
- *     the opposite risk: the transaction may still ROLL BACK after emit()
- *     returned, and a push for an approval that never happened is worse than
- *     a missed one. The guard is cheap and exact — re-read the notification
- *     ids through the pool. Uncommitted rows are invisible to a separate
- *     connection, so "the rows are there" IS "the transaction committed".
+ *  2. It must not push for a transaction that later rolls back. A push for an
+ *     approval that never happened is worse than a missed one.
  *
- * Never throws: it runs detached, so an escaping rejection would be an
- * unhandled rejection rather than a request failure.
+ * `client.afterCommit` (see db/pool.js#withTx) satisfies both exactly: the
+ * callback is queued now and invoked only once COMMIT succeeds, outside the
+ * transaction.
+ *
+ * ⚠️ The obvious-looking alternative — `setImmediate` plus a "are the rows
+ * visible yet?" probe — is WRONG and shipped broken once. `setImmediate`
+ * fires on the next event-loop check phase, which arrives well before `fn`
+ * resolves and COMMIT is issued, so the probe always found nothing and every
+ * push for a real pipeline event was silently dropped. Only `/api/push/test`
+ * worked, because it calls sendToUsers directly. Do not reintroduce timing
+ * guesses here.
+ *
+ * When `emit` is called with a plain pool client (no transaction, e.g. from a
+ * future non-transactional caller) there is nothing to wait for, so the send
+ * is scheduled immediately.
  */
-function dispatchPush({ notificationIds, recipientIds, payload }) {
-  if (!isPushEnabled() || notificationIds.length === 0) return
-  setImmediate(async () => {
-    try {
-      const { rows: committed } = await getPool().query(
-        'SELECT 1 FROM notifications WHERE id = ANY($1) LIMIT 1',
-        [notificationIds],
-      )
-      if (committed.length === 0) return // transaction rolled back — stay quiet
-      await sendToUsers(recipientIds, payload)
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[notifications] push dispatch failed:', err?.message)
-    }
-  })
+function dispatchPush(client, { recipientIds, payload }) {
+  if (!isPushEnabled()) return
+  const send = () => sendToUsers(recipientIds, payload)
+  if (typeof client?.afterCommit === 'function') {
+    client.afterCommit(send)
+  } else {
+    setImmediate(() => {
+      Promise.resolve()
+        .then(send)
+        .catch((err) => {
+          // eslint-disable-next-line no-console
+          console.error('[notifications] push dispatch failed:', err?.message)
+        })
+    })
+  }
 }
 
 /* --------------------------- project pipeline ---------------------------- */
