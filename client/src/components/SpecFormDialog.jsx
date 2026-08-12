@@ -143,6 +143,27 @@ function loadSaved(variant, id)             { return parseSaved(variant, localSt
 function loadSnapshot(variant, id, attempt) { return parseSaved(variant, localStorage.getItem(SNAPSHOT_KEY(variant, id, attempt))) }
 
 /**
+ * Fields that record a specific EVENT on a specific attempt — the matbaa
+ * delivered it, the team leader approved it. Unlike the spec itself (rows,
+ * parça selection, İŞİN ADI) these must never be inherited by a later
+ * attempt.
+ *
+ * Both non-attempt-scoped sources are "latest wins": STORAGE_KEY is a single
+ * blob per project overwritten on every save, and fetchServerSnapshot(…, null)
+ * returns the newest demos row for the project+kind. So once ANY attempt was
+ * approved, its onaylayanKisi got layered back onto every subsequent open —
+ * printing a signed "ONAYLAYAN KİŞİ" on a fresh, unapproved sheet.
+ */
+const STAMP_FIELDS = ['onaylayanKisi', 'teslimTarihi', 'teslimEdenKisi']
+
+function stripStamps(data) {
+  if (!data) return data
+  const form = { ...(data.form ?? {}) }
+  for (const f of STAMP_FIELDS) delete form[f]
+  return { ...data, form }
+}
+
+/**
  * Server-side snapshots (demos table). localStorage only exists on the
  * browser that filled the form — the matbaa or the leader opening the same
  * project on another computer saw an empty sheet. Every save/submit also
@@ -195,9 +216,12 @@ function saveSnapshot(variant, id, attempt, data, customRows, selectedComponents
  */
 export async function restampOzalitRequester(projectId, attempt, requesterName) {
   const variant = VARIANTS.ozalit
+  // A resend is a NEW attempt: carry the spec forward but drop the previous
+  // round's teslim/onay stamps, otherwise they'd be written into this
+  // attempt's snapshot and shown as if they happened on this round.
   const existing =
-    loadSaved(variant, projectId) ??
-    (await fetchServerSnapshot(api, variant, projectId, null)) ??
+    stripStamps(loadSaved(variant, projectId)) ??
+    stripStamps(await fetchServerSnapshot(api, variant, projectId, null)) ??
     { form: {}, customRows: [], selectedComponents: null }
   const form = { ...existing.form, [variant.personField]: requesterName ?? '' }
   saveForm(variant, projectId, form, existing.customRows ?? [], existing.selectedComponents ?? null)
@@ -375,15 +399,20 @@ function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
         ))}
       </div>
       <div className="border-b px-4 py-1">
-        {user?.role === 'printer' ? (
+        {/* Who asked for this sheet, and when — shown to EVERY role including
+            the matbaa, who otherwise had no way to see how long the job had
+            been waiting (the teslim rows used to replace these). */}
+        <ClassicRow label={variant.dateLabel} value={form[variant.dateField]} />
+        <ClassicRow label={variant.personLabel} value={form[variant.personField]} />
+        {/* Delivery rows. Left BLANK until the matbaa actually advances
+            (handleAdvance stamps them) — same rule as onaylayanKisi below.
+            They used to fall back to the İSTEM date/person, which printed the
+            requester's date under a "TESLİM TARİHİ" label before anything had
+            been delivered. */}
+        {(user?.role === 'printer' || form.teslimTarihi || form.teslimEdenKisi) && (
           <>
-            <ClassicRow label="TESLİM TARİHİ" value={form.teslimTarihi ?? form[variant.dateField] ?? ''} />
-            <ClassicRow label="TESLİM EDEN KİŞİ" value={form.teslimEdenKisi ?? form[variant.personField] ?? ''} />
-          </>
-        ) : (
-          <>
-            <ClassicRow label={variant.dateLabel} value={form[variant.dateField]} />
-            <ClassicRow label={variant.personLabel} value={form[variant.personField]} />
+            <ClassicRow label="TESLİM TARİHİ" value={form.teslimTarihi ?? ''} />
+            <ClassicRow label="TESLİM EDEN KİŞİ" value={form.teslimEdenKisi ?? ''} />
           </>
         )}
         {form.matbaaYetkilisi && <ClassicRow label="MATBAA YETKİLİSİ" value={form.matbaaYetkilisi} />}
@@ -477,18 +506,29 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         return
       }
 
-      const data =
+      // Attempt-scoped snapshot first: the stamps recorded on THIS attempt are
+      // the only ones this sheet may show. Only if there's no snapshot for the
+      // current attempt do we fall back to the project-level blob — and then
+      // strictly for the spec, with the event stamps stripped (see
+      // STAMP_FIELDS). Without that strip, a previously approved attempt's
+      // ONAYLAYAN KİŞİ reappeared on the next, unapproved attempt.
+      const current =
+        (await fetchServerSnapshot(api, variant, project.id, attemptNo)) ??
+        loadSnapshot(variant, project.id, attemptNo)
+      if (cancelled) return
+      const carried =
         loadSaved(variant, project.id) ??
         (await fetchServerSnapshot(api, variant, project.id, null))
       if (cancelled) return
+      const data = current ?? stripStamps(carried)
       const fresh = emptyForm(variant, project, user)
       if (readOnly || variant.restoreSavedOnEdit) {
-        // Read-only viewers (printer, history) must see the values that were
+        // Read-only viewers (printer, leader) must see the values that were
         // actually saved at submission time — otherwise the form would show
-        // today's date, the matbaa's own name as the requester, and the
-        // leader as "onaylayan" even before approval. Layer the saved form
-        // back on top so İŞİN ADI, İSTEM TARİHİ, İSTEYEN KİŞİ and
-        // ONAYLAYAN KİŞİ all reflect what was stamped.
+        // today's date and the matbaa's own name as the requester. Layer the
+        // saved form back on top so İŞİN ADI, İSTEM TARİHİ and İSTEYEN KİŞİ
+        // reflect what was stamped. The teslim/onay stamps come through only
+        // when `current` supplied them, i.e. they really happened.
         setForm({ ...fresh, ...(data?.form ?? {}) })
       } else {
         // Active editing: start from fresh, then keep only the printer-signed
@@ -900,15 +940,16 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             These are system-driven (today / signed-in user / assigned approver).
           */}
           <div className="px-4 py-1">
-            {user?.role === 'printer' ? (
+            {/* İSTEM rows are shown to every role — the matbaa needs to know
+                who requested the demo/ozalit and when, not just its own
+                delivery stamp. */}
+            <Row label={variant.dateLabel}   name={variant.dateField}   value={form[variant.dateField]}   onChange={handleChange} readOnly={systemRowReadOnly} />
+            <Row label={variant.personLabel} name={variant.personField} value={form[variant.personField]} onChange={handleChange} readOnly />
+            {/* Blank until handleAdvance stamps them at the moment of teslimat. */}
+            {(user?.role === 'printer' || form.teslimTarihi || form.teslimEdenKisi) && (
               <>
-                <Row label="TESLİM TARİHİ"    name="teslimTarihi"   value={form.teslimTarihi   ?? form[variant.dateField] ?? ''} onChange={handleChange} readOnly={systemRowReadOnly} />
-                <Row label="TESLİM EDEN KİŞİ" name="teslimEdenKisi" value={form.teslimEdenKisi ?? form[variant.personField] ?? ''} onChange={handleChange} readOnly />
-              </>
-            ) : (
-              <>
-                <Row label={variant.dateLabel}   name={variant.dateField}   value={form[variant.dateField]}   onChange={handleChange} readOnly={systemRowReadOnly} />
-                <Row label={variant.personLabel} name={variant.personField} value={form[variant.personField]} onChange={handleChange} readOnly />
+                <Row label="TESLİM TARİHİ"    name="teslimTarihi"   value={form.teslimTarihi   ?? ''} onChange={handleChange} readOnly={systemRowReadOnly} />
+                <Row label="TESLİM EDEN KİŞİ" name="teslimEdenKisi" value={form.teslimEdenKisi ?? ''} onChange={handleChange} readOnly />
               </>
             )}
             {form.matbaaYetkilisi && <Row label="MATBAA YETKİLİSİ" name="matbaaYetkilisi" value={form.matbaaYetkilisi} onChange={handleChange} readOnly />}
