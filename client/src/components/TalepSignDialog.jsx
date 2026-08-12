@@ -16,6 +16,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DIALOG_MOBILE_SHEET,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -307,7 +308,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className={cn('max-w-md max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none', isDesignerStep && 'max-w-lg max-h-[90vh] overflow-y-auto')}>
+      <DialogContent className={cn('max-w-md', DIALOG_MOBILE_SHEET, isDesignerStep && 'max-w-lg')}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PenLine className="h-4 w-4" />
@@ -686,7 +687,7 @@ export function TalepHistoryViewer({ order, open, onOpenChange, initialStep = nu
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
+      <DialogContent className={cn('max-w-xl', DIALOG_MOBILE_SHEET)}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShoppingCart className="h-4 w-4" />

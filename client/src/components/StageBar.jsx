@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+
 import { STAGE_LABELS, STAGE_PIPELINE } from '../api.js'
 
 // Single source of truth for stage order — keep StageBar in sync with the
@@ -14,6 +16,20 @@ export function stagesForType(type) {
 export default function StageBar({ type, stage, compact = false }) {
   const stages = stagesForType(type)
   const currentIndex = Math.max(0, stages.indexOf(stage))
+  const currentRef = useRef(null)
+
+  // The 8-stage pipeline is ~600px wide, so on a phone the bar opens showing
+  // steps 1–4 — i.e. a project at "Üretimde" looks like it hasn't started
+  // until you think to swipe. Bring the current step into view instead.
+  // `scrollLeft` on the scroll parent, not scrollIntoView: the latter also
+  // scrolls the page vertically to reach the element.
+  useEffect(() => {
+    const el = currentRef.current
+    const scroller = el?.parentElement?.parentElement // <li> → <ol> → scroll container
+    if (!el || !scroller || scroller.scrollWidth <= scroller.clientWidth) return
+    const target = el.offsetLeft - (scroller.clientWidth - el.offsetWidth) / 2
+    scroller.scrollLeft = Math.max(0, target)
+  }, [currentIndex, type])
 
   if (compact) {
     return (
@@ -41,7 +57,11 @@ export default function StageBar({ type, stage, compact = false }) {
         const done = i < currentIndex
         const current = i === currentIndex
         return (
-          <li key={s} className="flex min-w-[68px] shrink-0 items-center justify-center">
+          <li
+            key={s}
+            ref={current ? currentRef : undefined}
+            className="flex min-w-[68px] shrink-0 items-center justify-center"
+          >
             <div className="flex flex-col items-center">
               <span
                 className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold transition-[background-color,color,box-shadow] duration-300 ease-out motion-reduce:transition-none ${

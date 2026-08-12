@@ -145,7 +145,7 @@ export default function Approvals({ tab = 'demo' }) {
   function renderQueue(queue, sub) {
     if (loading) {
       return (
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {[0, 1].map((i) => (
             <Skeleton key={i} className="h-32" />
           ))}
@@ -164,7 +164,7 @@ export default function Approvals({ tab = 'demo' }) {
       )
     }
     return (
-      <div className="stagger-children grid gap-3 md:grid-cols-2">
+      <div className="stagger-children grid grid-cols-1 gap-3 md:grid-cols-2">
         {queue.map((p) => {
           const isAssignedDesigner = (p.assignees ?? []).some((a) => a.id === user?.id)
           const alreadyApproved = sub === 'ozalit' && (p.ozalit_approvals ?? []).some((a) => a.id === user?.id)

@@ -21,6 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DIALOG_MOBILE_SHEET,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
@@ -425,7 +426,7 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md sm:max-w-md max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-l-0">
+      <DialogContent className={cn('max-w-md', DIALOG_MOBILE_SHEET)}>
 
         {/* ── STEP 1: Pick products / upload Excel ───────────────────────── */}
         {step === 'select' && (

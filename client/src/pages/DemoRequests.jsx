@@ -18,6 +18,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DIALOG_MOBILE_SHEET,
 } from '@/components/ui/dialog'
 import ApprovalDialog from '@/components/ApprovalDialog'
 import DemoFormDialog from '@/components/DemoFormDialog'
@@ -220,7 +221,7 @@ export default function DemoRequests() {
               {inFlow.length === 0 ? (
                 <EmptyNote>Süreçte bekleyen demo yok.</EmptyNote>
               ) : (
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   {inFlow.map((p) => {
                     const meta = STATUS_META[statusKeyForProject(p)]
                     const canTeslim =
@@ -383,7 +384,7 @@ function CreateDemoDialog({ open, onOpenChange, onCreated }) {
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="max-w-md max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
+      <DialogContent className={cn('max-w-md', DIALOG_MOBILE_SHEET)}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-4 w-4 text-primary" />

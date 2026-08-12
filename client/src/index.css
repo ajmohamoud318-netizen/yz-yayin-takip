@@ -128,10 +128,29 @@
   /* iOS minimum tap target — Apple HIG: 44x44. Many of our buttons render at
      32–36px (h-8/h-9). We pad the touch surface without changing the visual
      size, by reserving the hit area on raw <button> elements. shadcn Button
-     already enforces 36px+; this rule covers the long tail. */
+     already enforces 36px+; this rule covers the long tail.
+
+     Radix renders checkboxes/radios/switches as <button role="checkbox">, and
+     those are sized as squares (h-4 w-4). Stretching them to 36px turned every
+     tick box in Yeni Proje / Alt Görevler into a tall pink pill. They are
+     excluded here — their <label> is the real touch target and is already
+     tall enough. */
   @media (pointer: coarse) {
-    button:not([data-no-min-target]) {
+    button:not([data-no-min-target]):not([role='checkbox']):not([role='radio']):not([role='switch']) {
       min-height: 36px;
+    }
+  }
+
+  /* iOS Safari zooms the whole page in when a focused form control has a
+     font-size below 16px — and it never zooms back out, so the user is left
+     panning a page that no longer fits. Our controls are `text-sm` (14px) by
+     design on desktop; on touch devices they must be 16px. Only the rendered
+     size changes, not the layout language. */
+  @media (pointer: coarse) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']),
+    select,
+    textarea {
+      font-size: 16px;
     }
   }
 

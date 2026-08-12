@@ -808,6 +808,15 @@ Endpoints: `GET /api/push/public-key`, `POST /api/push/subscribe`, `DELETE /api/
 - Order eligibility: `assertOrderable(project)` throws 400 if `project.stage ∉ ORDERABLE_STAGES` (`uretime_hazir`/`uretimde`/`gumruk`/`satista`), `has_product_info` isn't set yet, or the product was delisted (`catalog_hidden` — distinct message, see "Kaldırma")
 - Handover eligibility: `assertHandoverEligible(project)` throws 400 if the project is not at `uretimde` (TR) / `gumruk` (ÇİN)
 - Mock/Infra seam: `infrastructure/config.js` exposes `USE_MOCK`; flipping it to `false` switches repositories from `mock/*` to `http/*` without changing the application or presentation layer.
+
+### Phone layout (the app is used on an iPhone, not only at a desk)
+Four rules, each of which was a shipped bug before it was a rule:
+- **A single-column grid needs an explicit `grid-cols-1`.** Bare `grid gap-3 md:grid-cols-2` gives the phone an `auto` track, whose floor is the content's *min-content* width — one long project title then pushes the entire page sideways and iOS Safari zooms the whole app out to fit. `grid-cols-1` emits `minmax(0, 1fr)`, which can shrink. Same idea as `min-w-0` on a flex child.
+- **Never `w-full` on a flex sibling.** It means 100% of the row *plus* whatever sits beside it. Use `min-w-0 flex-1`.
+- **Form controls are 16px on touch (`index.css`, `pointer: coarse`).** Below 16px iOS Safari zooms in on focus and does not zoom back out. Don't "fix" a cramped mobile input by shrinking its font.
+- **Full-screen dialogs use `DIALOG_MOBILE_SHEET`** (`components/ui/dialog.jsx`), never a hand-written `max-sm:` chain: `100dvh` (not `h-screen` — `100vh` on iOS excludes the URL bar, so the footer hides behind it) plus the `--safe-top` / `--safe-bottom` insets. The base `DialogContent` is already viewport-capped and scrollable, so short dialogs need nothing.
+
+Bleed utilities (`-mx-*`) must match `<main>`'s gutter, which is `px-3` on phones and `px-4` from `sm`. A horizontal-scroll rail (Kanban) or a `min-w-[860px]` timeline (Yıllık Plan, Dashboard) is fine — page-level horizontal scroll is not. Verify at 390×664 with touch emulation on; note that a Playwright `fullPage` screenshot resets the device-metrics override and silently turns `pointer: coarse` off for every later assertion.
 ---
 ## 🚀 Deploy (Dokploy + Dockerfiles)
 

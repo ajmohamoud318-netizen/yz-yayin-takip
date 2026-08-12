@@ -1,0 +1,17 @@
+import { chromium, devices } from 'playwright'
+const BASE = 'http://localhost:5173'
+const browser = await chromium.launch()
+const ctx = await browser.newContext({ ...devices['iPhone 13'], locale: 'tr-TR' })
+const page = await ctx.newPage()
+page.on('console', (m) => console.log('[console]', m.type(), m.text().slice(0, 300)))
+page.on('pageerror', (e) => console.log('[pageerror]', e.message.slice(0, 300)))
+page.on('response', (r) => { if (r.url().includes('/api/')) console.log('[api]', r.status(), r.url()) })
+await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' })
+await page.fill('input[type=email]', 'aysenur.kanak@yukselenzeka.com')
+await page.fill('input[type=password]', '123456')
+await page.click('button[type=submit]')
+await page.waitForTimeout(4000)
+await page.goto(BASE + '/projects', { waitUntil: 'domcontentloaded' })
+await page.waitForTimeout(4000)
+console.log('BODY TEXT:', (await page.textContent('#main-content')).slice(0, 400))
+await browser.close()

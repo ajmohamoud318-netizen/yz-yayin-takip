@@ -10,7 +10,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DIALOG_MOBILE_SHEET,
 } from '@/components/ui/dialog'
+import { cn } from '@/lib/utils'
 import api from '@/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
@@ -838,7 +840,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         // so the sheet opened with the title looking "highlighted". Keep
         // focus on the dialog itself instead.
         onOpenAutoFocus={(e) => e.preventDefault()}
-        className="max-h-[90vh] max-w-2xl overflow-y-auto max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
+        className={cn('max-w-2xl', DIALOG_MOBILE_SHEET)}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
@@ -895,7 +897,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                   </button>
                 </div>
               </div>
-              <div className="grid gap-1.5 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                 {catalogComponents.map((c) => {
                   const checked = selectedComponents.some((s) => s.id === c.id)
                   return (

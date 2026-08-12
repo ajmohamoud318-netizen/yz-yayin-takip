@@ -143,13 +143,13 @@ export default function Team() {
         </Card>
 
         {loading ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {[0, 1, 2, 3].map((i) => (
               <Skeleton key={i} className="h-28" />
             ))}
           </div>
         ) : (
-          <div className="stagger-children grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="stagger-children grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((u) => (
               <UserCard
                 key={u.id}

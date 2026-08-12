@@ -281,11 +281,14 @@ function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, d
             />
           </label>
         )}
+      {/* `flex-1`, not `w-full`: with the select-mode tick box showing, a
+          `w-full` button is 100% of the row *plus* the checkbox, which pushed
+          the whole list ~36px past the right edge of a phone screen. */}
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full items-center gap-3.5 rounded-2xl p-4 text-left outline-none transition active:scale-[0.997] focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex min-w-0 flex-1 items-center gap-3.5 rounded-2xl p-4 text-left outline-none transition active:scale-[0.997] focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className={cn(
           'hidden w-7 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground/60',

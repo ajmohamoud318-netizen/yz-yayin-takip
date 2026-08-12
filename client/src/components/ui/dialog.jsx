@@ -20,19 +20,43 @@ const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
 ))
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
+/**
+ * Full-screen-sheet preset for the long form dialogs (Yeni Proje, Sipariş,
+ * Demo/Ozalit formu, Talep imzası). It used to be a ~150-character `max-sm:`
+ * chain pasted into each of them, which is how two dialogs (Onay, Üye Davet)
+ * ended up without it — and how every copy inherited `h-screen`.
+ *
+ *   • `100dvh`, not `h-screen`: `100vh` on iOS Safari is the height *without*
+ *     the URL bar, so an `h-screen` sheet hides its own footer underneath it.
+ *   • safe-area insets so the title clears the notch and the footer clears the
+ *     home indicator (both matter once installed to the iOS Home Screen).
+ *
+ * Short dialogs don't need it — the base DialogContent below already keeps
+ * itself inside the viewport and scrolls.
+ */
+export const DIALOG_MOBILE_SHEET =
+  'max-sm:left-0 max-sm:top-0 max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-x-0 max-sm:p-4 max-sm:pt-[max(1rem,var(--safe-top))] max-sm:pb-[max(1rem,var(--safe-bottom))]'
+
 const DialogContent = React.forwardRef(({ className, children, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'motion-pop fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg data-[state=open]:duration-200 data-[state=closed]:duration-150 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:rounded-lg',
+        // Phone-safe by default: never taller than the visible viewport (dvh,
+        // so the iOS URL bar is accounted for), never wider than it, and
+        // scrollable when the content doesn't fit. Before this, a dialog that
+        // outgrew the screen simply ran off it — the buttons at the bottom
+        // were unreachable.
+        'motion-pop fixed left-[50%] top-[50%] z-50 grid max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto overscroll-contain border bg-background p-4 shadow-lg data-[state=open]:duration-200 data-[state=closed]:duration-150 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:w-full sm:max-h-[90vh] sm:rounded-lg sm:p-6',
         className,
       )}
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
+      {/* h-9 w-9 hit area (the 16px glyph alone was well under the 44px HIG
+          minimum and sat in the corner where a thumb reaches for it). */}
+      <DialogPrimitive.Close className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-md opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none sm:right-3 sm:top-3">
         <X className="h-4 w-4" />
         <span className="sr-only">Kapat</span>
       </DialogPrimitive.Close>

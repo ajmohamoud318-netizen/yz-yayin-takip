@@ -61,13 +61,13 @@ export default function Kanban() {
         {loading ? (
           /* Skeletons match the column-scroll container below so the loading
              state doesn't flash as a stacked grid on mobile. */
-          <div className="scrollbar-thin -mx-4 flex gap-3 overflow-x-auto px-4 pb-2">
+          <div className="scrollbar-thin -mx-3 flex gap-3 overflow-x-auto px-3 pb-2 sm:-mx-4 sm:px-4">
             {pipeline.map((s) => (
               <Skeleton key={s} className="h-64 w-72 shrink-0 rounded-xl sm:w-64" />
             ))}
           </div>
         ) : (
-          <div className="scrollbar-thin -mx-4 flex gap-3 overflow-x-auto px-4 pb-2">
+          <div className="scrollbar-thin -mx-3 flex gap-3 overflow-x-auto px-3 pb-2 sm:-mx-4 sm:px-4">
             {pipeline.map((stage, i) => (
               <KanbanColumn
                 key={stage}

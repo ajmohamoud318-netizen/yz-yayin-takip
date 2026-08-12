@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DIALOG_MOBILE_SHEET,
 } from '@/components/ui/dialog'
 import api, { TYPE_LABELS } from '@/api'
 import { cn } from '@/lib/utils'
@@ -122,7 +123,7 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
+      <DialogContent className={cn('max-w-2xl', DIALOG_MOBILE_SHEET)}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
@@ -476,7 +477,7 @@ export default function Documents() {
 
       {/* Document grid */}
       {loading ? (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-36" />
           ))}
@@ -484,7 +485,7 @@ export default function Documents() {
       ) : items.length === 0 ? (
         <EmptyState text={emptyText} />
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {items.map((entry) => (
             <DocumentCard
               key={entry.project.id}

@@ -229,7 +229,14 @@ export default function AppShell() {
           <Menu /> button toggle, and the onNavigate handler on every link. */}
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="left" showCloseButton={false} className="w-[min(20rem,calc(100vw-3rem))] p-0 sm:w-72">
-          <div className="flex h-full flex-col">
+          {/* The drawer spans the full screen height, so on a notched iPhone
+              the logo would sit under the status bar and the user/logout row
+              under the home indicator. Only visible once installed to the Home
+              Screen — in a browser tab the chrome covers those bands. */}
+          <div
+            className="flex h-full flex-col"
+            style={{ paddingTop: 'var(--safe-top, 0px)', paddingBottom: 'var(--safe-bottom, 0px)' }}
+          >
             <Sidebar
               collapsed={false}
               groups={groups}
@@ -295,11 +302,16 @@ export default function AppShell() {
           </div>
         </header>
 
+        {/* The bottom padding carries the safe-area inset: without it the last
+            row of every list sits under the iPhone's home indicator once the
+            app is installed to the Home Screen (there is no browser chrome
+            below the page to absorb it). The header does the same for the
+            notch at the top. */}
         <main
           key={location.pathname}
           id="main-content"
           tabIndex={-1}
-          className="page-enter min-w-0 flex-1 px-3 py-4 sm:px-4 sm:py-6 lg:px-8 2xl:px-10 3xl:px-16"
+          className="page-enter min-w-0 flex-1 px-3 py-4 pb-[calc(1rem+var(--safe-bottom,0px))] sm:px-4 sm:py-6 sm:pb-[calc(1.5rem+var(--safe-bottom,0px))] lg:px-8 2xl:px-10 3xl:px-16"
         >
           {/* Suspense wraps the matched route so the AppShell chrome
               (sidebar + topbar + skip link) stays visible while the

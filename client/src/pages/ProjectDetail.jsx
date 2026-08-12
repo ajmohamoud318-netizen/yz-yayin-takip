@@ -459,7 +459,7 @@ export default function ProjectDetail() {
           <Skeleton className="h-24 w-full rounded-xl" />
           {/* 1-col on mobile/tablet, 3-col only on lg+ — subtasks + history
               stack vertically below desktop. */}
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Skeleton className="h-64 lg:col-span-2" />
             <Skeleton className="h-64" />
           </div>
@@ -806,7 +806,7 @@ export default function ProjectDetail() {
         </Card>
 
         {/* Body grid */}
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <ProjectHistory
             entries={historyWithAttempts}
             projectType={project.type}

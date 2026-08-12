@@ -14,6 +14,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DIALOG_MOBILE_SHEET,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -305,7 +306,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         onOpenChange(v)
       }}
     >
-      <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none">
+      <DialogContent className={cn('max-w-xl', DIALOG_MOBILE_SHEET)}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isEdit ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
