@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
+import { isOrderAssignedToDesigner } from '@/domain/constants/orders'
 import { cn } from '@/lib/utils'
 
 export default function SiparisOnay() {
@@ -32,7 +33,8 @@ export default function SiparisOnay() {
     }
   }
 
-  // Projects assigned to this designer
+  // Fallback only — see isOrderAssignedToDesigner. Orders carry their own
+  // assignee list; this covers legacy rows written before that was populated.
   const myProjectIds = useMemo(
     () => new Set(projects.filter((p) => (p.assignees ?? []).some((a) => a.id === user?.id)).map((p) => p.id)),
     [projects, user?.id],
@@ -41,10 +43,12 @@ export default function SiparisOnay() {
   useEffect(() => {
     api.listOrderRequests()
       .then((reqs) => {
-        setOrders(reqs.filter((r) => r.status === 'goruldu' && myProjectIds.has(r.project_id)))
+        setOrders(reqs.filter(
+          (r) => r.status === 'goruldu' && isOrderAssignedToDesigner(r, user?.id, myProjectIds),
+        ))
       })
       .finally(() => setLoading(false))
-  }, [myProjectIds])
+  }, [myProjectIds, user?.id])
 
   function handleSigned(updated) {
     setOrders((prev) => prev.filter((r) => r.id !== updated.id))

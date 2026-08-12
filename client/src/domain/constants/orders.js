@@ -51,3 +51,33 @@ export const ORDER_REJECT_TARGETS = {
 export const ORDER_REJECT_TO = {
   matbaa_onay: 'tasarimci_onay',
 }
+
+/**
+ * Is this order sitting on `designerId`'s desk?
+ *
+ * The authoritative record of who the team leader picked at the assign step is
+ * the order's OWN `assignee_ids` — the server persists the full selection there
+ * (`UPDATE order_requests SET assignee_ids = ...`). Read that first.
+ *
+ * Both designer-facing views used to derive ownership from the linked project's
+ * `assignees` instead, which silently hid orders for two compounding reasons:
+ *
+ *   1. The assign step writes only `assigned_to: assignees[0]` on the project,
+ *      so the 2nd..8th designer of a multi-select never appeared there at all.
+ *   2. `project.assignees` is built server-side from SUBTASK owners, and admits
+ *      the project primary only if they also own a subtask. A sipariş transfer
+ *      creates no subtask, so even the first designer was usually absent.
+ *
+ * Net effect: the designer got the "Sipariş kontrolünüzü bekliyor" notification,
+ * clicked through to /siparis-onay, and found an empty list.
+ *
+ * `fallbackProjectIds` keeps legacy orders visible — rows written before
+ * `assignee_ids` was populated have no selection to read, so for those (and
+ * only those) we still fall back to project assignment.
+ */
+export function isOrderAssignedToDesigner(order, designerId, fallbackProjectIds) {
+  if (!order || !designerId) return false
+  const ids = Array.isArray(order.assignee_ids) ? order.assignee_ids : []
+  if (ids.length > 0) return ids.includes(designerId)
+  return fallbackProjectIds?.has?.(order.project_id) ?? false
+}

@@ -58,6 +58,7 @@ import { cn, initials } from '@/lib/utils'
 import NewProjectDialog from '@/components/NewProjectDialog'
 import WorkLogPill from '@/components/WorkLogPill'
 import { useNotifications } from '@/hooks/useNotifications'
+import { isOrderAssignedToDesigner } from '@/domain/constants/orders'
 
 const COLLAPSE_KEY = 'yz-sidebar-collapsed'
 const YZ_LOGO_WHITE = '/yz_whitelogo.svg'
@@ -160,9 +161,13 @@ export default function AppShell() {
       } else if (role === 'printer') {
         setPrinterOrders(orders.filter((o) => o.status === 'tasarimci_onay').length)
       } else if (role === 'designer') {
-        // Only orders where the project is assigned to this designer
+        // Orders assigned to this designer. Must match /siparis-onay's filter
+        // exactly — a badge counting differently than the page it points at is
+        // how "3 bekliyor" ends up opening an empty list (or vice versa).
         const myIds = new Set(projects.filter((p) => (p.assignees ?? []).some((a) => a.id === user.id)).map((p) => p.id))
-        setDesignerOrders(orders.filter((o) => o.status === 'goruldu' && myIds.has(o.project_id)).length)
+        setDesignerOrders(orders.filter(
+          (o) => o.status === 'goruldu' && isOrderAssignedToDesigner(o, user.id, myIds),
+        ).length)
       }
     }).catch(() => {})
 
