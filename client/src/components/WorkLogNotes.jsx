@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
-import { formatClock, formatMinutes, kindMeta } from '@/lib/work-log.js'
+import { WORK_LOG_ENABLED, formatClock, formatMinutes, kindMeta } from '@/lib/work-log.js'
 
 /**
  * Read-only render of one person's Çalışma Defteri for today — used on the
@@ -22,7 +22,10 @@ const PREVIEW_COUNT = 2
 
 export default function WorkLogNotes({ entries, className }) {
   const [expanded, setExpanded] = useState(false)
-  if (!entries?.length) return null
+  // Gated here rather than at the /team call site so every consumer — now and
+  // later — goes dark from the one flag. Hook stays above the return so the
+  // order is identical whether the feature is on or off.
+  if (!WORK_LOG_ENABLED || !entries?.length) return null
 
   const hidden = entries.length - PREVIEW_COUNT
   const visible = expanded ? entries : entries.slice(0, PREVIEW_COUNT)
@@ -77,7 +80,7 @@ export default function WorkLogNotes({ entries, className }) {
  * than a generic "has something" marker.
  */
 export function WorkLogAvatarDot({ entries, className }) {
-  if (!entries?.length) return null
+  if (!WORK_LOG_ENABLED || !entries?.length) return null
   const meta = kindMeta(entries[0].kind)
   return (
     <span

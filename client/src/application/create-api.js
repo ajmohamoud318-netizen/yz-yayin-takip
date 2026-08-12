@@ -76,6 +76,9 @@ export function createApi() {
     deleteProject: (id) => projectRepo.deleteProject(id),
     listDeletedProjects: () => projectRepo.listDeletedProjects(),
     restoreProject: (id) => projectRepo.restoreProject(id),
+    // Ürünler catalog "kaldır" / "geri al" — hides a finished product from
+    // Sales without touching the project itself. See AGENTS.md → "Ürünler".
+    setProductCatalogHidden: (id, hidden) => projectRepo.setProductCatalogHidden(id, hidden),
     advanceProject: (id) => projectRepo.advanceProject(id),
     approveProject: (id) => projectRepo.approveProject(id),
     receiveDemo: (id) => projectRepo.receiveDemo(id),

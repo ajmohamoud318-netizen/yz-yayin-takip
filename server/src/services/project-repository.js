@@ -21,6 +21,7 @@ const PROJECT_COLUMNS = `
   ozalit_requested, reject_target, last_reject_type, last_reject_target,
   ozalit_approvals,
   origin,
+  catalog_hidden, catalog_hidden_at, catalog_hidden_by,
   created_at, updated_at,
   deleted_at, deleted_by, deleted_by_name
 `
@@ -74,7 +75,12 @@ export async function listProjects() {
     `SELECT ${PROJECT_COLUMNS.split(',').map((c) => 'p.' + c.trim()).join(', ')}
        , ${deliveredByNameSql('p')}
        , a.name AS assignee_name
-       , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = p.id) AS has_product_info
+       -- The components check is not redundant with EXISTS: Ürün Bilgileri's
+       -- "Ürünü Sil" clears a product's spec by saving an EMPTY components
+       -- array, so the row keeps existing. A bare EXISTS reported
+       -- has_product_info=true for those, and Sales could still raise an order
+       -- against a product with a blank spec sheet.
+       , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = p.id AND pi.components <> '[]'::jsonb) AS has_product_info
      FROM projects p
      LEFT JOIN users a ON a.id = p.assigned_to
      WHERE p.deleted_at IS NULL
@@ -222,7 +228,7 @@ export async function getProject(id) {
   const { rows } = await getPool().query(
     `SELECT ${PROJECT_COLUMNS}
        , ${deliveredByNameSql('projects')}
-       , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id) AS has_product_info
+       , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id AND pi.components <> '[]'::jsonb) AS has_product_info
      FROM projects WHERE id = $1 AND deleted_at IS NULL`, [id],
   )
   return rows[0] ? rowToProject(rows[0]) : null
@@ -240,7 +246,7 @@ export async function getProjectIncludingDeleted(id) {
   const { rows } = await getPool().query(
     `SELECT ${PROJECT_COLUMNS}
        , ${deliveredByNameSql('projects')}
-       , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id) AS has_product_info
+       , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id AND pi.components <> '[]'::jsonb) AS has_product_info
      FROM projects WHERE id = $1`, [id],
   )
   return rows[0] ? rowToProject(rows[0]) : null
@@ -251,7 +257,7 @@ export async function getProjectForUpdate(client, id) {
   const { rows } = await client.query(
     `SELECT ${PROJECT_COLUMNS}
        , ${deliveredByNameSql('projects')}
-       , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id) AS has_product_info
+       , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id AND pi.components <> '[]'::jsonb) AS has_product_info
      FROM projects WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, [id],
   )
   return rows[0] ? rowToProject(rows[0]) : null
@@ -384,6 +390,32 @@ export async function deleteProject(client, id, actor) {
     'UPDATE projects SET deleted_at = NOW(), deleted_by = $2, deleted_by_name = $3 WHERE id = $1',
     [id, actor?.id ?? null, actor?.name ?? null],
   )
+}
+
+/**
+ * "Kaldır" / "Geri Al" — delist a product from the Ürünler catalog, or put it
+ * back (migration 033).
+ *
+ * Deliberately NOT a soft delete: the project keeps its stage, history,
+ * assignees and dashboard presence, and only drops out of the sipariş catalog.
+ * The stamp columns are cleared on re-listing so "kaldıran / tarih" always
+ * describes the CURRENT hidden state rather than the last one.
+ *
+ * Returns the updated project, or null when the id doesn't exist (or is
+ * soft-deleted — a deleted project isn't in the catalog to begin with).
+ */
+export async function setProjectCatalogHidden(client, id, hidden, actor) {
+  const { rows } = await client.query(
+    `UPDATE projects
+        SET catalog_hidden = $2,
+            catalog_hidden_at = CASE WHEN $2 THEN NOW() ELSE NULL END,
+            catalog_hidden_by = CASE WHEN $2 THEN $3::text ELSE NULL END,
+            updated_at = NOW()
+      WHERE id = $1 AND deleted_at IS NULL
+      RETURNING ${PROJECT_COLUMNS}, ${deliveredByNameSql('projects')}`,
+    [id, hidden, actor?.id ?? null],
+  )
+  return rows[0] ? rowToProject(rows[0]) : null
 }
 
 export async function listDeletedProjects() {
@@ -626,6 +658,13 @@ function rowToProject(r) {
     // 'pipeline' | 'legacy'. The client's projects store filters `legacy` out of
     // every pipeline view (Kanban, Tüm Projeler, counts) — see migration 031.
     origin: r.origin ?? 'pipeline',
+    // Delisted from the Ürünler catalog by the team leader (migration 033).
+    // The project is otherwise untouched — this only hides it from Sales.
+    catalog_hidden: r.catalog_hidden ?? false,
+    catalog_hidden_at: r.catalog_hidden_at instanceof Date
+      ? r.catalog_hidden_at.toISOString()
+      : r.catalog_hidden_at ?? null,
+    catalog_hidden_by: r.catalog_hidden_by ?? null,
     created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
     updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at,
     deleted_at: r.deleted_at instanceof Date ? r.deleted_at.toISOString() : r.deleted_at,

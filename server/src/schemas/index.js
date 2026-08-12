@@ -410,6 +410,22 @@ const projectsAdvance = {
   },
 }
 
+// "Kaldır" / "Geri Al" — delist a product from the Ürünler catalog or put it
+// back. `hidden` is required and explicit rather than a toggle so a double
+// click (or a retried request) can't flip the product back into the catalog.
+const projectsCatalog = {
+  ...projectsIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['hidden'],
+    properties: {
+      hidden: { type: 'boolean' },
+      note: { type: 'string', maxLength: 1000 },
+    },
+  },
+}
+
 const projectsApprove = {
   ...projectsIdParams,
   body: {
@@ -736,6 +752,7 @@ export const schemas = {
   projectsImport,
   projectsPatch,
   projectsIdParams,
+  projectsCatalog,
   projectsAdvance,
   projectsApprove,
   projectsReject,

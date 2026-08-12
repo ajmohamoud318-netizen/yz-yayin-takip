@@ -131,7 +131,51 @@ function dispatchPush(client, { recipientIds, payload }) {
 
 /* --------------------------- project pipeline ---------------------------- */
 
-/** New project created → tell the assigned designer(s). */
+/**
+ * Greetings for a fresh project assignment, picked at random.
+ *
+ * This is the only notification in the app that OPENS someone's work rather
+ * than chasing it, so the copy is deliberately warmer than everything else
+ * (the rest stay terse on purpose — "Ozalit teslimi bekleniyor" is a task,
+ * not a greeting). Rotating the wording keeps it from going stale for people
+ * who get assigned several books a month.
+ *
+ * Rules for anything added here:
+ *  • Never repeat the project title — it is already the bold line directly
+ *    above this text in both the bell and the phone lock screen.
+ *  • Keep it under ~45 characters. iOS truncates the body to roughly two
+ *    short lines on the lock screen, and the punchline must survive.
+ *  • Warm, not cutesy. These go to colleagues at work, every single time.
+ */
+export const ASSIGNMENT_GREETINGS = Object.freeze([
+  'Yeni proje sizde ✨ Hadi başlayalım!',
+  'Yeni bir kitap sizi bekliyor 📚',
+  'Bu kitap size emanet 📖',
+  'Yeni proje elinizde — kolay gelsin! 💪',
+  'Sıradaki kitap sizin, başarılar! 🌟',
+  'Yeni bir sayfa açılıyor ✨',
+  'Taze bir proje geldi — sıra sizde! 🎨',
+  'Yeni bir tasarım başlıyor ✏️',
+  'Güzel işler çıkaralım! 🎯',
+  'Yeni proje hazır, ilham dolu olsun 🌱',
+])
+
+/** Pick one greeting. Exported so tests can stub the randomness. */
+export function pickAssignmentGreeting(rand = Math.random) {
+  const i = Math.floor(rand() * ASSIGNMENT_GREETINGS.length)
+  // Guard the edges: a rand() that returns exactly 1 (or anything out of
+  // range) would index past the end and emit an empty notification body.
+  return ASSIGNMENT_GREETINGS[Math.min(Math.max(i, 0), ASSIGNMENT_GREETINGS.length - 1)]
+}
+
+/**
+ * New project created → tell the assigned designer(s).
+ *
+ * The greeting is chosen once, here, and stored on the notification row — so
+ * it stays put across refreshes and matches whatever the push already
+ * delivered. Picking at render time instead would make the same notification
+ * say something different every poll.
+ */
 export async function notifyProjectCreated(client, { project, actor, assignees }) {
   const designerIds = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
   return emit(client, {
@@ -139,7 +183,7 @@ export async function notifyProjectCreated(client, { project, actor, assignees }
     actorId: actor?.id,
     type: 'assignment',
     title: project.title,
-    body: 'Yeni proje atandı',
+    body: pickAssignmentGreeting(),
     tone: 'green',
     projectId: project.id,
     link: `/projects/${project.id}`,
@@ -265,6 +309,37 @@ export async function notifyProjectDeleted(client, { project, actor, assignees }
   const a = await emit(client, { ...base, recipientIds: [...designers, ...printers] })
   const b = await emit(client, { ...base, recipientIds: leaders, link: '/deleted-projects' })
   return a + b
+}
+
+/**
+ * A product was taken out of the Ürünler catalog ("kaldırıldı"), or put back.
+ *
+ * Sales is the audience that actually loses/regains something here: the product
+ * simply stops appearing in their catalog, and an order they were about to
+ * raise now 400s. Telling them beats letting the row vanish silently.
+ *
+ * Other team leaders are copied because catalog membership is shared state —
+ * the same reason `notifyProjectDeleted` copies them. Designers and printers
+ * are NOT: delisting changes nothing about the production work they own.
+ *
+ * The link goes to /urunler either way; a delisted product still shows there
+ * for the leader, and for Sales the page is where they'd notice the change.
+ */
+export async function notifyProductCatalogChanged(client, { project, actor, hidden }) {
+  const sales = await activeUserIdsByRole(client, 'satis')
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  return emit(client, {
+    recipientIds: [...sales, ...leaders],
+    actorId: actor?.id,
+    title: project.title,
+    projectId: project.id,
+    type: hidden ? 'product_delisted' : 'product_relisted',
+    tone: hidden ? 'amber' : 'green',
+    body: hidden
+      ? 'Ürün katalogdan kaldırıldı — sipariş verilemez'
+      : 'Ürün katalogda tekrar yayında',
+    link: '/urunler',
+  })
 }
 
 /* ------------------------------- orders ---------------------------------- */

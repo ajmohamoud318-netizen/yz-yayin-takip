@@ -6,7 +6,7 @@ import {
   listProjectSubtasks, listProjectHistory,
   loadProjectAssignees,
   patchProject, deleteProject, insertProject, logHistory,
-  listDeletedProjects, restoreProject,
+  listDeletedProjects, restoreProject, setProjectCatalogHidden,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
@@ -14,7 +14,10 @@ import {
   applyAdvance, applyApproval, applyDemoReceive, applyDemoNotReceived,
   applyOzalitNotReceived, applyRejection,
 } from '../services/project-transitions.js'
-import { notifyProjectCreated, notifyProjectTransition, notifyProjectDeleted } from '../services/notifications.js'
+import {
+  notifyProjectCreated, notifyProjectTransition, notifyProjectDeleted,
+  notifyProductCatalogChanged,
+} from '../services/notifications.js'
 import { ORDERABLE_STAGES } from '../domain/stages.js'
 // Blocks main-pipeline transitions on imported backlist products — see the
 // helper's own docblock for why this is destructive rather than just useless.
@@ -31,6 +34,7 @@ import { assertNotLegacy } from '../domain/pipeline.js'
  * DELETE /api/projects/:id           — soft delete (team_leader only)
  * GET    /api/projects/deleted       — list soft-deleted projects (team_leader only)
  * POST   /api/projects/:id/restore   — undo a soft delete (team_leader only)
+ * POST   /api/projects/:id/catalog   — kaldır / geri al in Ürünler (team_leader only)
  * POST   /api/projects/:id/advance
  * POST   /api/projects/:id/approve
  * POST   /api/projects/:id/reject
@@ -356,6 +360,56 @@ export async function projectRoutes(fastify) {
     const restored = await restoreProject(request.params.id)
     if (!restored) notFound('Silinmiş proje bulunamadı.')
     return restored
+  })
+
+  /**
+   * "Kaldır" / "Geri Al" — take a product out of the Ürünler catalog, or put
+   * it back (migration 033).
+   *
+   * Deliberately separate from DELETE /projects/:id: a discontinued or
+   * out-of-print book is still a real project with real history, so soft-
+   * deleting it to stop Sales ordering it would also strip it from every
+   * pipeline view and the timeline. This flips one flag and nothing else.
+   *
+   * team_leader only — same owner as the rest of the catalog's data integrity
+   * (Ürün Bilgileri, archive imports).
+   */
+  fastify.post('/projects/:id/catalog', { schema: schemas.projectsCatalog }, async (request) => {
+    await attachUser(request)
+    requireRole(request, 'team_leader')
+    const hidden = request.body.hidden
+    const note = request.body.note?.trim() || ''
+
+    await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      // Only orderable-stage projects are in the catalog at all, so hiding
+      // anything earlier would be a no-op flag the leader could never see or
+      // undo from the Ürünler page.
+      if (hidden && !ORDERABLE_STAGES.has(project.stage)) {
+        badRequest('Yalnızca katalogdaki (üretime hazır ve sonrası) ürünler kaldırılabilir.')
+      }
+      // Idempotent: re-sending the same state is a no-op rather than a second
+      // history row + notification for a change that didn't happen.
+      if (!!project.catalog_hidden === hidden) return
+
+      await setProjectCatalogHidden(client, project.id, hidden, request.user)
+      await logHistory(client, {
+        project_id: project.id,
+        action: 'system',
+        event: hidden ? 'catalog_delist' : 'catalog_relist',
+        from_stage: project.stage,
+        to_stage: project.stage,
+        pass_number: project.pass_number ?? 1,
+        note: note || (hidden ? 'Ürün katalogdan kaldırıldı.' : 'Ürün katalogda tekrar yayında.'),
+      }, request.user)
+      await notifyProductCatalogChanged(client, { project, actor: request.user, hidden })
+    })
+
+    // Re-read outside the tx: `setProjectCatalogHidden` returns the raw column
+    // set, which has no `has_product_info` — the Ürünler row needs it to decide
+    // between the "Sipariş" action and the "ürün bilgisi eksik" warning.
+    return getProject(request.params.id)
   })
 
   fastify.post('/projects/:id/advance', { schema: schemas.projectsAdvance }, async (request) => {

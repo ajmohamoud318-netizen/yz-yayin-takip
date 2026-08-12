@@ -114,7 +114,7 @@ onaylandi                    Üretime Alındı
 
 - `ORDER_STEP_OWNER` maps each step to the role that must act on it
 - `ORDER_REJECT_TARGETS.matbaa_onay` = `{ designer, matbaa }` — mirrors the main pipeline's ozalit rejection target choice
-- `canRequestOrder` (and the throwing `assertOrderable`) gate the create-order use case to projects whose `stage ∈ ORDERABLE_STAGES = { 'uretime_hazir', 'uretimde', 'gumruk', 'satista' }` AND that have a saved `has_product_info` entry
+- `canRequestOrder` (and the throwing `assertOrderable`) gate the create-order use case to projects whose `stage ∈ ORDERABLE_STAGES = { 'uretime_hazir', 'uretimde', 'gumruk', 'satista' }`, that have a non-empty `has_product_info` entry, and that the team leader hasn't delisted (`catalog_hidden` — see "Kaldırma")
 - The Ürünler catalog page (`pages/Urunler.jsx`) splits this pool into two groups for Sales: "Sipariş İçin Hazır" (production finished, not yet fully sold — `uretime_hazir`/`uretimde`/`gumruk`) and "Halihazırda Satışta" (`satista`)
 - `components/OrderRequestDialog.jsx` has three entry paths, all ending in the same `POST /api/orders` calls:
   - **row click** — the per-product "Sipariş" button passes `initialProductId` and jumps straight to the quantity form
@@ -181,6 +181,48 @@ Rules that are not obvious and must not be re-litigated:
 - Titles **not** among the 93 seeds use the existing "Yeni Ürün" flow. A CSV
   importer is a later phase if the backlist grows beyond REÇETE.xlsx; the
   endpoint is already generic enough to serve one.
+
+### Kaldırma — taking a product out of the catalog
+
+The inverse of promoting. A book goes out of print, a title shouldn't be
+reordered this period — Sales must stop seeing it, but the project itself is
+still real work with real history. `catalog_hidden` (migration 033) is that
+middle ground, driven by the "Kaldır" button on each Ürünler row
+(`POST /api/projects/:id/catalog`, team_leader only).
+
+- **Not a soft delete.** `DELETE /api/projects/:id` (029) removes the project
+  from every pipeline view, the timeline and the dashboards. Delisting touches
+  nothing but catalog membership: same stage, same history, same assignees.
+- **Enforced server-side, not just hidden.** `assertOrderable` throws its own
+  message ("Bu ürün katalogdan kaldırıldı") so a stale Sales tab can't post an
+  order for a delisted product — and so the copy doesn't tell Sales to wait for
+  production that already finished. `isCatalogListed` is the shared predicate
+  (`domain/pipeline.js`, mirrored client-side).
+- **Reversible, and visibly so.** Delisted rows stay on the Ürünler page for the
+  leader in a "Katalogdan Kaldırıldı" section with a "Geri Al" button; every
+  other role, Sales included, sees a catalog that simply lacks them. That's why
+  there's no confirm dialog — undo is one click away in the section below.
+- **Hiding is restricted to catalog stages.** The route 400s when `hidden` is
+  requested for a project outside `ORDERABLE_STAGES`: such a flag would be
+  invisible and un-undoable from the only page that can clear it. Re-listing is
+  always allowed.
+- **Idempotent.** Re-sending the state a product is already in is a no-op, so a
+  retry can't produce a second history row or a second notification. `hidden` is
+  explicit in the body rather than a server-side toggle for the same reason.
+- History: `event: 'catalog_delist'` / `'catalog_relist'`, rendered as
+  "Katalogdan Kaldırıldı" / "Katalogda Tekrar Yayında" and grouped under
+  **Sipariş** in the timeline filter — the stage never moved; what changed is
+  whether Sales can order.
+- Notifies `satis` + the other team leaders (`product_delisted` /
+  `product_relisted`). Designers and printers are not told: delisting changes
+  nothing about the production work they own.
+
+> **"Ürünü Sil" in Ürün Bilgileri is a different thing** and does not delist.
+> There is no `DELETE /api/product-info/:projectId`; that button saves an empty
+> `components` array, which clears the spec sheet only. It does now make the
+> product unorderable — `has_product_info` tests `components <> '[]'` rather
+> than the row's mere existence — but the product stays in Ürünler, flagged
+> "Ürün bilgisi eksik". Use Kaldır to remove it from the catalog.
 
 ---
 ## 📦 Teslim (Physical Handover) Workflow
@@ -432,6 +474,9 @@ CREATE TABLE projects (
   progress      INTEGER DEFAULT 0,           -- 0-100, auto-calculated
   origin        TEXT NOT NULL DEFAULT 'pipeline'  -- migration 031
     CHECK (origin IN ('pipeline','legacy')), -- 'legacy' = backlist import, see Arşiv products
+  catalog_hidden    BOOLEAN NOT NULL DEFAULT FALSE, -- migration 033, "kaldırıldı"
+  catalog_hidden_at TIMESTAMPTZ,                    -- cleared on re-listing
+  catalog_hidden_by TEXT REFERENCES users(id) ON DELETE SET NULL,
   created_at    TIMESTAMPTZ DEFAULT NOW(),
   updated_at    TIMESTAMPTZ DEFAULT NOW()
 );
@@ -575,6 +620,9 @@ GET    /api/projects/:id              → project + subtasks + stage history
 POST   /api/projects                  { title, type, assigned_to, target_month, subtasks[] } [team_leader]
 PATCH  /api/projects/:id              { title, assigned_to, target_month } [team_leader]
 DELETE /api/projects/:id              [team_leader]
+POST   /api/projects/:id/catalog      { hidden, note? } [team_leader]
+                                       "kaldır"/"geri al" — delist a product from Ürünler
+                                       without touching the project. See "Kaldırma".
 POST   /api/projects/import           { dryRun?, items[] } [team_leader]
                                        item: { id?, title, type, stage?, pass_kind?, components? }
                                        stage ∈ ORDERABLE_STAGES (default 'satista'); creates
@@ -608,7 +656,16 @@ The team leader flags rework a different way, by rejecting a stage, which goes
 through `computeRejection` rather than this endpoint.
 
 The leader edits the list from **Ürün Bilgileri** (each product card carries an
-Alt Görevler section). Send each row's `id` — the PUT reconciles on id and falls
+Alt Görevler section) and from **Ürünler** (each catalog row expands into the
+same editor) — one shared `components/ProductSubtaskEditor.jsx`, leader-gated by
+`canEditProductInfo` and mounted only once its card/row is open, so a catalog of
+90 products doesn't fire 90 `getProject` calls on load. The catalog placement is
+there because a sipariş hands the designer whatever alt görevler the product
+already has, and an imported backlist product (`origin='legacy'`) arrives with
+none. Adding rows to a product at an orderable stage does NOT drop its progress
+bar: `progressFor` pins every stage in `STAGES_REQUIRING_FULL_PROGRESS` at 100.
+
+Send each row's `id` — the PUT reconciles on id and falls
 back to title, so a RENAME keeps the original row. That matters because
 `subtask_updates` FKs `ON DELETE CASCADE`: a title-only match turned every
 rename into delete + insert and took the designer's notes with it. Echo each
@@ -677,6 +734,11 @@ Defteri entries as a JSON array) and `daily_status` (the newest of them) —
 both derived in SQL, so /team renders everyone's day with no extra request.
 
 ### Work Log (Çalışma Defteri)
+> **Disabled in the UI.** `WORK_LOG_ENABLED` in `client/src/lib/work-log.js`
+> is `false`: no sidebar entry, no notes/dot on the /team cards, and nothing
+> calls these routes. The endpoints, the `work_log_entries` table and the
+> derived `work_log_today` / `daily_status` columns are all untouched — flip
+> the flag to `true` to bring the feature back with its history intact.
 ```
 GET    /api/work-log              ?days=14 → { entries, days } — the caller's own, newest first
 POST   /api/work-log              { kind, body, minutes? } → 201 entry (dated today)
@@ -695,7 +757,7 @@ DELETE /api/work-log/:id          → 204 — owner-scoped
 Sidebar grouping is computed in `AppShell.navGroups()` and groups items into:
 1. **Ana menü** — Dashboard, Projelerim / Tüm Projeler, İş Akışı, Baskı Listesi, Toplantılar (yakında), Satış-only: Sipariş Talebi, Tüm Ürünler
 2. **Onaylar** (printer + team_leader; satis only sees Teslim Onayları)
-3. **Yönetim / kaynaklar** — Ekip (team_leader only), Dökümanlar, Ürün Bilgileri (team_leader only)
+3. **Yönetim / kaynaklar** — Ekip (team_leader only), Dökümanlar, Ürün Bilgileri (team_leader only). Çalışma Defteri used to sit here; it is off behind `WORK_LOG_ENABLED`
 4. **Acil İşler** (yakında) — pinned projects sorted by attempt counter
 
 Each entry can be role-restricted via the `roles: [...]` field on the nav item and is hidden when the user role isn't in the allow-list.
@@ -743,7 +805,7 @@ Endpoints: `GET /api/push/public-key`, `POST /api/push/subscribe`, `DELETE /api/
 - Rejection always requires `reason` field — backend enforces this
 - Redis keys: `session:{id}` (TTL 7d), `cache:projects` (TTL 30s), `notify:{userId}` (pub-sub)
 - Production gate: `assertCanEnterProduction(nextStage, progress)` throws 400 if a project tries to enter Ozalit+ with progress < 100%
-- Order eligibility: `assertOrderable(project)` throws 400 if `project.stage ∉ ORDERABLE_STAGES` (`uretime_hazir`/`uretimde`/`gumruk`/`satista`) or `has_product_info` isn't set yet
+- Order eligibility: `assertOrderable(project)` throws 400 if `project.stage ∉ ORDERABLE_STAGES` (`uretime_hazir`/`uretimde`/`gumruk`/`satista`), `has_product_info` isn't set yet, or the product was delisted (`catalog_hidden` — distinct message, see "Kaldırma")
 - Handover eligibility: `assertHandoverEligible(project)` throws 400 if the project is not at `uretimde` (TR) / `gumruk` (ÇİN)
 - Mock/Infra seam: `infrastructure/config.js` exposes `USE_MOCK`; flipping it to `false` switches repositories from `mock/*` to `http/*` without changing the application or presentation layer.
 ---

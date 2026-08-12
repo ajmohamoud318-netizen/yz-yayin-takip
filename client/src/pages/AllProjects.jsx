@@ -152,7 +152,7 @@ export default function AllProjects() {
                       <span className="font-mono text-xs tabular-nums">{p.progress}%</span>
                     </div>
                     {p.target_month && (
-                      <p className="text-[11px] text-muted-foreground/80">Hedef: {p.target_month}</p>
+                      <p className="text-[11px] text-muted-foreground/80">Hedef: {formatTargetDate(p.target_month)}</p>
                     )}
                   </CardContent>
                 </Card>

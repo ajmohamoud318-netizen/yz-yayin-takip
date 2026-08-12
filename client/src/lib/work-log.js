@@ -14,6 +14,15 @@ import { CircleDashed, ClipboardList, GraduationCap, Layers, Users } from 'lucid
  * family the stage chips use, and 'diger' stays deliberately neutral so an
  * uncategorised note doesn't shout louder than a categorised one.
  */
+/**
+ * Master switch for the whole feature. Off = the sidebar entry disappears,
+ * the /team cards drop the notes block and the avatar dot, and nothing ever
+ * calls /api/work-log. The routes, the service and migration 026's data all
+ * stay exactly as they are, so flipping this back to `true` restores the
+ * feature with every past entry intact.
+ */
+export const WORK_LOG_ENABLED = false
+
 export const WORK_LOG_KINDS = [
   {
     value: 'baska_proje',

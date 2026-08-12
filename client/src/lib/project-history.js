@@ -3,6 +3,7 @@ import {
   ChevronRight,
   ClipboardEdit,
   ClipboardList,
+  EyeOff,
   MessageSquarePlus,
   Package,
   PackageCheck,
@@ -97,6 +98,11 @@ const EVENTS = {
   // product (POST /api/projects/import). Its timeline starts here — there is no
   // tasarım/demo/ozalit history to show, because the book predates the system.
   legacy_import: { icon: Package, tone: 'neutral', weight: 'major', group: 'stage', label: 'Arşivden Ürün Olarak Eklendi' },
+  // "Kaldır" / "Geri Al" on the Ürünler page (migration 033). Grouped under
+  // 'order' rather than 'stage': the stage never moves, what changes is whether
+  // Sales can order the product.
+  catalog_delist: { icon: EyeOff, tone: 'pending', weight: 'major', group: 'order', label: 'Katalogdan Kaldırıldı' },
+  catalog_relist: { icon: PackageCheck, tone: 'positive', weight: 'major', group: 'order', label: 'Katalogda Tekrar Yayında' },
 
   subtask_done: { icon: CheckCircle2, tone: 'positive', weight: 'minor', group: 'subtask', label: 'Alt Görev Tamamlandı' },
   subtask_undone: { icon: RotateCcw, tone: 'pending', weight: 'minor', group: 'subtask', label: 'Alt Görev Geri Alındı' },

@@ -19,11 +19,29 @@ export function assertCanEnterProduction(nextStage, progress) {
   }
 }
 
+/**
+ * True when a product is listed in the Ürünler catalog at all.
+ *
+ * `catalog_hidden` is the team leader's "kaldır" (migration 033): the project
+ * stays exactly as it is everywhere else, it just leaves the sipariş catalog.
+ */
+export function isCatalogListed(project) {
+  return !!project && ORDERABLE_STAGES.has(project.stage) && !project.catalog_hidden
+}
+
 export function canRequestOrder(project) {
-  return !!project && ORDERABLE_STAGES.has(project.stage) && !!project.has_product_info
+  return isCatalogListed(project) && !!project.has_product_info
 }
 
 export function assertOrderable(project) {
+  // Separate branch from the generic message below: a delisted product looks
+  // perfectly orderable to Sales (finished stage, spec filled in), so the
+  // generic "üretime hazır olmalı" text would be actively misleading.
+  if (project && project.catalog_hidden) {
+    const err = new Error('Bu ürün katalogdan kaldırıldı; sipariş talebi oluşturulamaz.')
+    err.status = 400
+    throw err
+  }
   if (!project || !ORDERABLE_STAGES.has(project.stage) || !project.has_product_info) {
     const err = new Error('Sipariş talebi yalnızca üretime hazır aşamasına ulaşmış ve Ürün Bilgileri girilmiş ürünler için oluşturulabilir.')
     err.status = 400

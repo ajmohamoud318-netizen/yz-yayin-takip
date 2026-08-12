@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, AlertTriangle, Plus } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, Plus, ListChecks, ChevronDown, EyeOff, Undo2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 import api, {
   TYPE_LABELS, STAGE_LABELS, ORDERABLE_STAGES, STATUS_STYLES,
@@ -12,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import OrderRequestDialog from '@/components/OrderRequestDialog'
 import PromoteArchiveDialog from '@/components/PromoteArchiveDialog'
+import ProductSubtaskEditor from '@/components/ProductSubtaskEditor'
 import { listArchiveSeeds } from '@/data/productCatalog'
 import { cn } from '@/lib/utils'
 
@@ -24,6 +26,12 @@ import { cn } from '@/lib/utils'
  * A product missing its Ürün Bilgileri spec is still shown (so nothing
  * silently disappears) but its order action is disabled until the team
  * leader fills that in.
+ *
+ * The team leader can also "kaldır" a product (`catalog_hidden`, migration
+ * 033): it leaves this catalog and Sales can no longer order it, while the
+ * project itself — stage, history, dashboards — is untouched. Delisted rows
+ * stay visible to the leader in their own section so the action is reversible;
+ * every other role simply doesn't see them.
  */
 export default function Urunler() {
   const { user } = useAuth()
@@ -43,6 +51,20 @@ export default function Urunler() {
   // The team leader owns the catalog's data integrity (same gate as editing
   // Ürün Bilgileri), so they're the one who can add archive products here.
   const canAddArchive = canEditProductInfo(user)
+  // ...and the one who owns the SHAPE of each product's alt görev list. Same
+  // editor as Ürün Bilgileri: a product ordered off this page hands its
+  // subtasks to the designer the leader assigns, and an imported backlist
+  // product starts with none, so this is where that gets fixed.
+  const canManageSubtasks = canAddArchive
+  // ...and who may pull a product out of the catalog. Mirrors the server's
+  // `requireRole(team_leader)` on POST /projects/:id/catalog.
+  const canManageCatalog = canAddArchive
+  // Designer roster for the alt görev assignment dropdown. Fetched once for
+  // the page rather than per row, and only for the role that can see it.
+  const [designers, setDesigners] = useState([])
+  // Ids currently in flight through the kaldır/geri al call, so the row's
+  // button can disable itself instead of queueing duplicate requests.
+  const [catalogBusy, setCatalogBusy] = useState(() => new Set())
 
   useEffect(() => {
     api.listProjects()
@@ -52,6 +74,17 @@ export default function Urunler() {
       })
       .finally(() => setLoading(false))
   }, [refreshTick])
+
+  useEffect(() => {
+    if (!canManageSubtasks) return
+    let cancelled = false
+    api.listUsers()
+      .then((users) => {
+        if (!cancelled) setDesigners(users.filter((u) => u.role === 'designer' && u.is_active !== false))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [canManageSubtasks])
 
   // Archive (REÇETE.xlsx) specs with no project behind them yet. These are what
   // the "Arşivden Ürün Ekle" button offers; once promoted they drop out of this
@@ -76,14 +109,42 @@ export default function Urunler() {
     setDialogOpen(true)
   }
 
-  const orderableProducts = products.filter((p) => canRequestOrder(p))
+  /**
+   * Kaldır / geri al. Optimistic-free on purpose: the server response is the
+   * updated project (with a fresh `has_product_info`), so we drop it straight
+   * into state and the row re-renders into the right section — no refetch of
+   * the whole catalog, and no risk of the two views disagreeing.
+   */
+  async function setCatalogHidden(project, hidden) {
+    setCatalogBusy((prev) => new Set(prev).add(project.id))
+    try {
+      const updated = await api.setProductCatalogHidden(project.id, hidden)
+      setProducts((prev) => prev.map((p) => (p.id === project.id ? { ...p, ...updated } : p)))
+      toast.success(hidden ? 'Ürün katalogdan kaldırıldı.' : 'Ürün katalogda tekrar yayında.')
+    } catch (err) {
+      toast.error(err?.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setCatalogBusy((prev) => {
+        const next = new Set(prev)
+        next.delete(project.id)
+        return next
+      })
+    }
+  }
+
+  // Delisted products are catalog rows only the leader still sees. Everyone
+  // else — Sales included — gets a catalog that simply doesn't contain them.
+  const listedProducts = products.filter((p) => !p.catalog_hidden)
+  const hiddenProducts = canManageCatalog ? products.filter((p) => p.catalog_hidden) : []
+
+  const orderableProducts = listedProducts.filter((p) => canRequestOrder(p))
 
   // Two buckets sales thinks in: work that's finished but not yet sold
   // through (still worth reordering ahead of running out) vs. products
   // that have already reached Satışta. Both are orderable; the split is
   // purely about scanability.
-  const readyProducts = products.filter((p) => p.stage !== 'satista')
-  const madeProducts = products.filter((p) => p.stage === 'satista')
+  const readyProducts = listedProducts.filter((p) => p.stage !== 'satista')
+  const madeProducts = listedProducts.filter((p) => p.stage === 'satista')
 
   if (loading) {
     return (
@@ -103,7 +164,10 @@ export default function Urunler() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Ürünler</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {products.length} ürün
+              {listedProducts.length} ürün
+              {hiddenProducts.length > 0 && (
+                <span className="text-muted-foreground/70"> · {hiddenProducts.length} kaldırıldı</span>
+              )}
             </p>
           </div>
           <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto">
@@ -131,7 +195,7 @@ export default function Urunler() {
           </div>
         </header>
 
-        {products.length === 0 ? (
+        {listedProducts.length === 0 && hiddenProducts.length === 0 ? (
           <Card>
             <CardContent className="p-10 text-center text-sm text-muted-foreground">
               Şu anda sipariş verilebilecek ürün bulunmuyor.
@@ -145,6 +209,11 @@ export default function Urunler() {
               products={readyProducts}
               canOrderRole={canOrderRole}
               onOrder={openOrderFor}
+              canManageSubtasks={canManageSubtasks}
+              designers={designers}
+              canManageCatalog={canManageCatalog}
+              onDelist={(p) => setCatalogHidden(p, true)}
+              catalogBusy={catalogBusy}
             />
             <ProductGroup
               title="Halihazırda Satışta"
@@ -152,6 +221,27 @@ export default function Urunler() {
               products={madeProducts}
               canOrderRole={canOrderRole}
               onOrder={openOrderFor}
+              canManageSubtasks={canManageSubtasks}
+              designers={designers}
+              canManageCatalog={canManageCatalog}
+              onDelist={(p) => setCatalogHidden(p, true)}
+              catalogBusy={catalogBusy}
+            />
+            {/* Leader-only. Kept on the page rather than behind a separate
+                route so "kaldır" reads as reversible at the moment you do it —
+                the row moves down here instead of disappearing. */}
+            <ProductGroup
+              title="Katalogdan Kaldırıldı"
+              hint="Satış ekibi göremez, sipariş veremez"
+              products={hiddenProducts}
+              canOrderRole={false}
+              onOrder={openOrderFor}
+              canManageSubtasks={canManageSubtasks}
+              designers={designers}
+              canManageCatalog={canManageCatalog}
+              onRelist={(p) => setCatalogHidden(p, false)}
+              catalogBusy={catalogBusy}
+              muted
             />
           </div>
         )}
@@ -181,7 +271,10 @@ export default function Urunler() {
   )
 }
 
-function ProductGroup({ title, hint, products, canOrderRole, onOrder }) {
+function ProductGroup({
+  title, hint, products, canOrderRole, onOrder, canManageSubtasks, designers,
+  canManageCatalog, onDelist, onRelist, catalogBusy, muted,
+}) {
   if (products.length === 0) return null
   return (
     <section className="space-y-2">
@@ -191,7 +284,11 @@ function ProductGroup({ title, hint, products, canOrderRole, onOrder }) {
         </h2>
         <span className="text-xs text-muted-foreground/70">{hint}</span>
       </div>
-      <ol className="divide-y overflow-hidden rounded-lg border bg-white">
+      <ol className={cn(
+        'divide-y overflow-hidden rounded-lg border bg-white',
+        // Delisted rows read as "parked", not as live catalog entries.
+        muted && 'border-dashed bg-muted/20',
+      )}>
         {products.map((p, i) => (
           <ProductRow
             key={p.id}
@@ -200,6 +297,13 @@ function ProductGroup({ title, hint, products, canOrderRole, onOrder }) {
             showOrderAction={canOrderRole}
             canOrder={canRequestOrder(p)}
             onOrder={() => onOrder(p.id)}
+            canManageSubtasks={canManageSubtasks}
+            designers={designers}
+            canManageCatalog={canManageCatalog}
+            onDelist={onDelist ? () => onDelist(p) : null}
+            onRelist={onRelist ? () => onRelist(p) : null}
+            busy={!!catalogBusy?.has(p.id)}
+            muted={muted}
           />
         ))}
       </ol>
@@ -207,56 +311,123 @@ function ProductGroup({ title, hint, products, canOrderRole, onOrder }) {
   )
 }
 
-function ProductRow({ project, index, onOrder, canOrder, showOrderAction }) {
+function ProductRow({
+  project, index, onOrder, canOrder, showOrderAction,
+  canManageSubtasks, designers,
+  canManageCatalog, onDelist, onRelist, busy, muted,
+}) {
   const typeLabel = TYPE_LABELS[project.type] ?? project.type
   const stageLabel = STAGE_LABELS[project.stage] ?? project.stage
   const stageStyle = STATUS_STYLES[statusKeyForProject(project)]
   const hasSpec = !!project.has_product_info
+  // Collapsed by default, and the editor is mounted only while open: it fetches
+  // the project's subtasks on mount, so a 90-product catalog would otherwise
+  // fire 90 requests on page load.
+  const [subtasksOpen, setSubtasksOpen] = useState(false)
 
   return (
-    <li className="flex items-center gap-3 px-4 py-3">
-      <span className="w-6 shrink-0 text-right text-xs font-semibold tabular-nums text-muted-foreground">
-        {index}.
-      </span>
-      <span className="min-w-0 flex-1 truncate text-sm font-semibold leading-snug">
-        {project.title.replace(/ \/ /g, ' ')}
-      </span>
-      {hasSpec ? (
-        <span className="hidden items-center gap-1.5 text-xs text-emerald-600 sm:flex">
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          Ürün bilgisi var
+    <li className="px-4 py-3">
+      <div className="flex items-center gap-3">
+        <span className="w-6 shrink-0 text-right text-xs font-semibold tabular-nums text-muted-foreground">
+          {index}.
         </span>
-      ) : (
-        <span className="hidden items-center gap-1.5 text-xs text-amber-600 sm:flex" title="Sipariş verilmeden önce takım lideri Ürün Bilgileri'ni doldurmalı">
-          <AlertTriangle className="h-3.5 w-3.5" />
-          Ürün bilgisi eksik
+        <span className={cn(
+          'min-w-0 flex-1 truncate text-sm font-semibold leading-snug',
+          muted && 'text-muted-foreground',
+        )}>
+          {project.title.replace(/ \/ /g, ' ')}
         </span>
-      )}
-      {stageStyle && (
-        <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset', stageStyle.badge)}>
-          {stageLabel}
-        </span>
-      )}
-      <Badge variant="outline" className="shrink-0 text-[10px]">{typeLabel}</Badge>
-      {showOrderAction && (
-        canOrder ? (
+        {hasSpec ? (
+          <span className="hidden items-center gap-1.5 text-xs text-emerald-600 sm:flex">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Ürün bilgisi var
+          </span>
+        ) : (
+          <span className="hidden items-center gap-1.5 text-xs text-amber-600 sm:flex" title="Sipariş verilmeden önce takım lideri Ürün Bilgileri'ni doldurmalı">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Ürün bilgisi eksik
+          </span>
+        )}
+        {stageStyle && (
+          <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset', stageStyle.badge)}>
+            {stageLabel}
+          </span>
+        )}
+        <Badge variant="outline" className="shrink-0 text-[10px]">{typeLabel}</Badge>
+        {showOrderAction && (
+          canOrder ? (
+            <button
+              type="button"
+              onClick={onOrder}
+              title="Sipariş talebi oluştur"
+              className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+            >
+              <Plus className="h-3 w-3" />
+              Sipariş
+            </button>
+          ) : (
+            <span
+              className="shrink-0 cursor-not-allowed rounded-md bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground"
+              title="Sipariş verilmeden önce Ürün Bilgileri'nde kaydı olmalı"
+            >
+              Sipariş veremezsiniz
+            </span>
+          )
+        )}
+        {/* Alt görevler — team leader only. This is the checklist the designer
+            works from once Sales orders the product and the leader assigns them
+            (PATCH /order-requests/:id/advance), and an imported backlist product
+            arrives with none, so it's editable straight from the catalog rather
+            than only from Ürün Bilgileri. */}
+        {canManageSubtasks && (
           <button
             type="button"
-            onClick={onOrder}
-            title="Sipariş talebi oluştur"
-            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+            onClick={() => setSubtasksOpen((v) => !v)}
+            aria-expanded={subtasksOpen}
+            title="Bu ürünün alt görevlerini düzenle"
+            className={cn(
+              'inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-colors',
+              subtasksOpen
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-primary/10 hover:text-primary',
+            )}
           >
-            <Plus className="h-3 w-3" />
-            Sipariş
+            <ListChecks className="h-3 w-3" />
+            Alt Görevler
+            <ChevronDown className={cn('h-3 w-3 transition-transform', subtasksOpen && 'rotate-180')} />
           </button>
-        ) : (
-          <span
-            className="shrink-0 cursor-not-allowed rounded-md bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground"
-            title="Sipariş verilmeden önce Ürün Bilgileri'nde kaydı olmalı"
+        )}
+        {/* Kaldır / Geri Al — team leader only. No confirm dialog: the action is
+            reversible in one click from the section right below, so a modal would
+            cost more than the misclick it prevents. */}
+        {canManageCatalog && onDelist && (
+          <button
+            type="button"
+            onClick={onDelist}
+            disabled={busy}
+            title="Ürünü katalogdan kaldır — satış ekibi artık sipariş veremez"
+            className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
           >
-            Sipariş veremezsiniz
-          </span>
-        )
+            <EyeOff className="h-3 w-3" />
+            Kaldır
+          </button>
+        )}
+        {canManageCatalog && onRelist && (
+          <button
+            type="button"
+            onClick={onRelist}
+            disabled={busy}
+            title="Ürünü katalogda tekrar yayına al"
+            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground disabled:opacity-50"
+          >
+            <Undo2 className="h-3 w-3" />
+            Geri Al
+          </button>
+        )}
+      </div>
+
+      {canManageSubtasks && subtasksOpen && (
+        <ProductSubtaskEditor projectId={project.id} designers={designers} />
       )}
     </li>
   )

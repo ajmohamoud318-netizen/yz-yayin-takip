@@ -15,6 +15,7 @@ import {
   assertDemoCanAdvance,
   canRequestOrder,
   assertOrderable,
+  isCatalogListed,
   handoverStageFor,
   canRequestHandover,
   assertHandoverEligible,
@@ -128,6 +129,31 @@ describe('canRequestOrder / assertOrderable', () => {
   })
   it('throws on missing project (defensive)', () => {
     expect(() => assertOrderable(undefined)).toThrow(/üretime hazır/)
+  })
+})
+
+describe('isCatalogListed (kaldırma, migration 033)', () => {
+  const listed = { stage: 'satista', has_product_info: true }
+  const delisted = { ...listed, catalog_hidden: true }
+
+  it('a delisted product leaves the catalog', () => {
+    expect(isCatalogListed(listed)).toBe(true)
+    expect(isCatalogListed(delisted)).toBe(false)
+  })
+  it('rows predating the column are still listed', () => {
+    expect(isCatalogListed({ stage: 'uretime_hazir' })).toBe(true)
+  })
+  it('a stage before Üretime Hazır is never listed', () => {
+    expect(isCatalogListed({ stage: 'tasarim' })).toBe(false)
+    expect(isCatalogListed(undefined)).toBe(false)
+  })
+  it('blocks ordering, with its own message rather than the not-ready one', () => {
+    expect(canRequestOrder(delisted)).toBe(false)
+    expect(() => assertOrderable(delisted)).toThrow(/katalogdan kaldırıldı/)
+    expect(() => assertOrderable(delisted)).not.toThrow(/üretime hazır/)
+  })
+  it('re-listing restores orderability', () => {
+    expect(canRequestOrder({ ...delisted, catalog_hidden: false })).toBe(true)
   })
 })
 

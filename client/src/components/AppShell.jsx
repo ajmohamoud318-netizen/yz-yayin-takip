@@ -35,6 +35,7 @@ import {
   Tag,
   Ship,
   Trash2,
+  EyeOff,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -57,6 +58,7 @@ import api, { ROLE_LABELS, STATUS_META, statusKeyForProject, canRequestHandover 
 import { cn, initials } from '@/lib/utils'
 import NewProjectDialog from '@/components/NewProjectDialog'
 import WorkLogPill from '@/components/WorkLogPill'
+import { WORK_LOG_ENABLED } from '@/lib/work-log.js'
 import PushToggle from '@/components/PushToggle.jsx'
 import { useNotifications } from '@/hooks/useNotifications'
 import { isOrderAssignedToDesigner } from '@/domain/constants/orders'
@@ -652,6 +654,8 @@ const TYPE_ICON = {
   handover_request: Truck,
   handover_confirmed: PackageCheck,
   project_deleted: Trash2,
+  product_delisted: EyeOff,
+  product_relisted: PackageCheck,
 }
 
 function NotifIcon({ type, tone }) {
@@ -969,7 +973,10 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
     { to: '/documents', label: 'Dökümanlar', icon: Files, roles: ['team_leader', 'designer', 'printer'] },
     { to: '/urun-bilgileri', label: 'Ürün Bilgileri', icon: Boxes, roles: ['team_leader', 'designer'] },
     { to: '/deleted-projects', label: 'Silinen Projeler', icon: Trash2, roles: ['team_leader'] },
-    { type: 'worklog', label: 'Çalışma Defteri' },
+    // Çalışma Defteri — behind WORK_LOG_ENABLED (client/src/lib/work-log.js).
+    // Dropping the item is what keeps the feature off: WorkLogPill is the only
+    // caller of useWorkLog, so with no pill there is no GET /work-log either.
+    ...(WORK_LOG_ENABLED ? [{ type: 'worklog', label: 'Çalışma Defteri' }] : []),
   ].filter((i) => !i.roles || i.roles.includes(role))
 
   // ── Grup 4: Acil işler (kişiye göre) ─────────────────────────

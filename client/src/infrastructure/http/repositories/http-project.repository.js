@@ -202,6 +202,14 @@ export function createHttpProjectRepository(userRepo) {
       cache.set(id, data)
       return data
     },
+    // Delist ("kaldır") a product from the Ürünler catalog, or re-list it.
+    // `hidden` is sent explicitly rather than toggled server-side so a retry
+    // can't flip the product back into the catalog.
+    async setProductCatalogHidden(id, hidden) {
+      const { data } = await httpClient.post(`/projects/${id}/catalog`, { hidden: !!hidden })
+      cache.set(id, data)
+      return data
+    },
     async advanceProject(id) {
       const { data } = await httpClient.post(`/projects/${id}/advance`, {})
       cache.set(id, data)

@@ -9,7 +9,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   getPipeline, getNextStage, assertCanEnterProduction,
-  canRequestOrder, assertOrderable,
+  canRequestOrder, assertOrderable, isCatalogListed,
   canRequestHandover, assertHandoverEligible,
   isLegacyProject, assertNotLegacy,
 } from './pipeline.js'
@@ -70,6 +70,36 @@ describe('pipeline', () => {
     assert.equal(canRequestOrder({ stage: 'uretimde', has_product_info: true }), true)
     assert.equal(canRequestOrder({ stage: 'gumruk', has_product_info: true }), true)
     assert.equal(canRequestOrder({ stage: 'tasarim', has_product_info: true }), false)
+  })
+})
+
+describe('catalog delisting (kaldırma, migration 033)', () => {
+  const listed = { stage: 'satista', has_product_info: true }
+  const delisted = { ...listed, catalog_hidden: true }
+
+  it('isCatalogListed follows the flag, not the stage alone', () => {
+    assert.equal(isCatalogListed(listed), true)
+    assert.equal(isCatalogListed(delisted), false)
+    // Rows written before 033 have no column value at all — still listed.
+    assert.equal(isCatalogListed({ stage: 'uretime_hazir' }), true)
+    assert.equal(isCatalogListed({ stage: 'tasarim' }), false)
+    assert.equal(isCatalogListed(undefined), false)
+  })
+
+  it('a delisted product cannot be ordered even when otherwise perfect', () => {
+    assert.equal(canRequestOrder(delisted), false)
+    assert.throws(() => assertOrderable(delisted), /katalogdan kaldırıldı/)
+  })
+
+  it('re-listing restores orderability', () => {
+    assert.equal(canRequestOrder({ ...delisted, catalog_hidden: false }), true)
+    assert.doesNotThrow(() => assertOrderable({ ...delisted, catalog_hidden: false }))
+  })
+
+  it('the delisted message is distinct from the not-ready one', () => {
+    // A delisted product IS at a finished stage with a spec, so reusing the
+    // generic text would tell Sales to wait for something already done.
+    assert.throws(() => assertOrderable(delisted), (err) => !/üretime hazır/.test(err.message))
   })
 })
 

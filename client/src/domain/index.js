@@ -11,6 +11,7 @@ export {
   assertCanEnterProduction,
   assertDemoCanAdvance,
   STAGES_REQUIRING_FULL_PROGRESS,
+  isCatalogListed,
   canRequestOrder,
   assertOrderable,
   isLegacyProject,

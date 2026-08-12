@@ -6,23 +6,43 @@ export function getPipeline(type) {
 }
 
 /**
- * Business rule: a sipariş (order) request can only be raised for a project that
- * has reached an orderable stage (Üretime Hazır or later — see ORDERABLE_STAGES)
- * AND has a Ürün Bilgileri (product_info) entry — the spec sheet the order's
- * items/quantities are checked against.
- * @param {{ stage: string, has_product_info?: boolean }} project
+ * True when a product belongs in the Ürünler catalog: it reached an orderable
+ * stage AND the team leader hasn't delisted it ("kaldır", `catalog_hidden` —
+ * migration 033). Delisting leaves the project untouched everywhere else; it
+ * only takes the product away from Sales.
+ *
+ * Mirrors `isCatalogListed` in server/src/domain/pipeline.js.
+ * @param {{ stage: string, catalog_hidden?: boolean }} project
+ */
+export function isCatalogListed(project) {
+  return !!project && ORDERABLE_STAGES.has(project.stage) && !project.catalog_hidden
+}
+
+/**
+ * Business rule: a sipariş (order) request can only be raised for a product
+ * that is listed in the catalog (see `isCatalogListed`) AND has a Ürün
+ * Bilgileri (product_info) entry — the spec sheet the order's items/quantities
+ * are checked against.
+ * @param {{ stage: string, has_product_info?: boolean, catalog_hidden?: boolean }} project
  */
 export function canRequestOrder(project) {
-  return !!project && ORDERABLE_STAGES.has(project.stage) && !!project.has_product_info
+  return isCatalogListed(project) && !!project.has_product_info
 }
 
 /**
  * Guard for the create-order use case. Throws a 400 when a request targets a
- * project that hasn't reached an orderable stage yet, or has no Ürün Bilgileri
- * entry yet.
- * @param {{ stage: string, has_product_info?: boolean }} project
+ * project that hasn't reached an orderable stage yet, has been delisted from
+ * the catalog, or has no Ürün Bilgileri entry yet.
+ * @param {{ stage: string, has_product_info?: boolean, catalog_hidden?: boolean }} project
  */
 export function assertOrderable(project) {
+  // Delisted gets its own message: such a product looks perfectly orderable
+  // (finished stage, spec filled in), so the generic text would mislead.
+  if (project && project.catalog_hidden) {
+    const err = new Error('Bu ürün katalogdan kaldırıldı; sipariş talebi oluşturulamaz.')
+    err.status = 400
+    throw err
+  }
   if (!project || !ORDERABLE_STAGES.has(project.stage) || !project.has_product_info) {
     const err = new Error('Sipariş talebi yalnızca üretime hazır aşamasına ulaşmış ve Ürün Bilgileri girilmiş ürünler için oluşturulabilir.')
     err.status = 400
