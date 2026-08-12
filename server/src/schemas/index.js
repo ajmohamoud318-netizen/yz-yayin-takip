@@ -632,11 +632,13 @@ const handoversConfirm = {
     required: ['id'],
     properties: { id: { type: 'string', minLength: 1, maxLength: 64 } },
   },
-  body: {
-    type: 'object',
-    additionalProperties: false,
-    properties: {}, // no body — accepts any empty/missing object
-  },
+  // Deliberately NO body schema. The confirm carries no payload — who
+  // confirmed comes from the session user, never the client. Declaring
+  // `body: { type: 'object' }` here does NOT mean "an empty body is fine":
+  // Fastify runs the validator against `request.body`, which is undefined
+  // when the client sends no body at all, and `undefined` fails
+  // `type: 'object'` with a 400 "body must be object". That 400 fired on
+  // every single "Alındı" click, since the SPA sends a bodyless PATCH.
 }
 
 // ─── exports ───────────────────────────────────────────────────────────

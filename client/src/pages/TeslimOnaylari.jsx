@@ -3,7 +3,6 @@ import { ClipboardCheck, PackageCheck, CheckCircle2, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 
 import api from '@/api'
-import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -21,7 +20,6 @@ const fmtDate = (iso) =>
  * confirmation moves the linked project to Satışta.
  */
 export default function TeslimOnaylari() {
-  const { user } = useAuth()
   const [handovers, setHandovers] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('pending')
@@ -41,10 +39,13 @@ export default function TeslimOnaylari() {
   async function confirm(h) {
     setSavingId(h.id)
     try {
-      const updated = await api.confirmHandover(h.id, {
-        actor: user ? { id: user.id, name: user.name, role: user.role } : null,
-      })
-      setHandovers((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
+      // The endpoint takes no body — the confirming user is read from the
+      // session header server-side. It answers { handover, project }, and
+      // that `handover` carries only the base columns, so merge it over the
+      // existing row instead of replacing it (the list rows also hold the
+      // joined project_title / raised_by_name, which the reply omits).
+      const { handover: updated } = await api.confirmHandover(h.id)
+      setHandovers((prev) => prev.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)))
       setConfirmH(null)
       toast.success(`${cleanTitle(h.project_title)} teslim alındı — satışa çıktı.`)
     } catch (err) {
@@ -140,7 +141,7 @@ function ApprovalRow({ handover: h, saving, onConfirm }) {
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold leading-snug">{cleanTitle(h.project_title)}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Matbaa: {h.created_by_name} · {fmtDate(h.created_at)}
+            Matbaa: {h.raised_by_name ?? '—'} · {fmtDate(h.created_at)}
           </p>
         </div>
         {received ? (
