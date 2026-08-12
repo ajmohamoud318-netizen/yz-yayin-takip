@@ -116,6 +116,19 @@ export async function subtaskRoutes(fastify) {
         allowed.stickers_done = request.body.stickers_done
         stickersChanged = request.body.stickers_done !== sub.stickers_done
       }
+      // Rework flag. Same ownership rules as POST /subtasks/:id/revize: this
+      // is the designer's own judgement about their own work, so the team
+      // leader and matbaa cannot set it from here (the leader flags rework by
+      // rejecting, which routes through computeRejection instead).
+      if (typeof request.body.needs_revize === 'boolean') {
+        if (request.user.role !== 'designer') {
+          badRequest('Revize işaretini yalnızca tasarımcı değiştirebilir.')
+        }
+        if (sub.assigned_to && sub.assigned_to !== request.user.id) {
+          badRequest('Bu alt görev size atanmadı.')
+        }
+        allowed.needs_revize = request.body.needs_revize
+      }
       if (Object.keys(allowed).length === 0) badRequest('Geçerli alan yok.')
       const cols = Object.keys(allowed)
       const setSql = cols.map((c, i) => `${c} = $${i + 2}`).join(', ')
@@ -288,10 +301,25 @@ export async function subtaskRoutes(fastify) {
         [project.id],
       )
 
-      // Matched by title — the payload carries no ids. Consumed on match so
-      // two incoming rows with the same title can't both claim one survivor.
-      const survivors = new Map()
-      for (const p of previous) if (!survivors.has(p.title)) survivors.set(p.title, p)
+      // Match by id first, falling back to title for payloads that carry no
+      // ids (and for rows the leader just added). Title-only matching made a
+      // RENAME look like "delete + create": the new row lost the designer's
+      // counters and, because subtask_updates FKs ON DELETE CASCADE, every
+      // note on that subtask went with it. Consumed on match so two incoming
+      // rows can't both claim one survivor.
+      const byId = new Map()
+      const byTitle = new Map()
+      for (const p of previous) {
+        byId.set(p.id, p)
+        if (!byTitle.has(p.title)) byTitle.set(p.title, p)
+      }
+      const claim = (s) => {
+        const hit = (s.id && byId.get(s.id)) || byTitle.get(s.title)
+        if (!hit) return null
+        byId.delete(hit.id)
+        if (byTitle.get(hit.title) === hit) byTitle.delete(hit.title)
+        return hit
+      }
 
       const finalRows = []
       const keptIds = []
@@ -300,7 +328,7 @@ export async function subtaskRoutes(fastify) {
         // Per-subtask designer override from the editor. Falls back to the
         // project's primary `assigned_to` so a subtask is never ownerless.
         const subAssignee = s.assigned_to ?? project.assigned_to ?? null
-        const existing = survivors.get(s.title)
+        const existing = claim(s)
         const params = [
           s.title,
           s.kind ?? 'check',
@@ -312,7 +340,6 @@ export async function subtaskRoutes(fastify) {
         ]
 
         if (existing) {
-          survivors.delete(s.title)
           const { rows } = await client.query(
             `UPDATE subtasks
                 SET title = $2, kind = $3, total_pages = $4, total_stickers = $5,

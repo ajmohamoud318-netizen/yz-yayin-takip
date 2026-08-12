@@ -540,7 +540,20 @@ CREATE INDEX idx_subtasks_project ON subtasks(project_id);
 CREATE INDEX idx_history_project ON stage_history(project_id);
 CREATE INDEX idx_orders_status ON order_requests(status);
 CREATE INDEX idx_orders_project ON order_requests(project_id);
+CREATE TABLE push_subscriptions (         -- web push devices (migration 032)
+  id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint      TEXT NOT NULL UNIQUE,     -- push service URL; UNIQUE so re-subscribe upserts
+  p256dh        TEXT NOT NULL,            -- payload encryption key (from PushSubscription.getKey)
+  auth          TEXT NOT NULL,
+  user_agent    TEXT NOT NULL DEFAULT '', -- diagnostics only ("Oktay's iPhone" vs laptop)
+  last_used_at  TIMESTAMPTZ,
+  failed_at     TIMESTAMPTZ,              -- set on 404/410; row is then pruned
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX idx_handovers_status ON handovers(status);
+CREATE INDEX idx_push_subscriptions_user ON push_subscriptions(user_id);
 CREATE INDEX idx_notifications_user_created ON notifications(user_id, created_at DESC);
 CREATE INDEX idx_notifications_unread ON notifications(user_id) WHERE is_read = FALSE;
 CREATE INDEX idx_work_log_user_date ON work_log_entries(user_id, entry_date DESC, created_at DESC);
@@ -581,10 +594,27 @@ POST   /api/projects/:id/ozalit-not-received   report a delivered ozalit never a
 ```
 ### Subtasks
 ```
-PATCH  /api/subtasks/:id              { is_done, pages_done? } [designer]
+PATCH  /api/subtasks/:id              { is_done, pages_done?, stickers_done?, needs_revize? } [designer]
+POST   /api/subtasks/:id/revize       clear needs_revize — "revize edildi" [assigned designer]
 POST   /api/subtasks/:id/updates      { note } — append a timeline update
-PUT    /api/projects/:id/subtasks     replace subtask list [team_leader]
+PUT    /api/projects/:id/subtasks     replace subtask list [team_leader] — rows carry `id`
 ```
+Who owns what on a subtask: the **team leader** owns the list's SHAPE (which
+subtasks exist, their titles/kinds/totals/assignment) via the PUT; the
+**designer** owns per-row STATE (done, counters, `needs_revize`) via the PATCH.
+`needs_revize` is settable only by the subtask's assigned designer — it is how
+the sipariş (reprint) check records which parts had to be redone for that run.
+The team leader flags rework a different way, by rejecting a stage, which goes
+through `computeRejection` rather than this endpoint.
+
+The leader edits the list from **Ürün Bilgileri** (each product card carries an
+Alt Görevler section). Send each row's `id` — the PUT reconciles on id and falls
+back to title, so a RENAME keeps the original row. That matters because
+`subtask_updates` FKs `ON DELETE CASCADE`: a title-only match turned every
+rename into delete + insert and took the designer's notes with it. Echo each
+row's current `is_done` back too, since the endpoint writes that column and
+omitting it would reset designer progress. Valid `kind` values are
+`check` / `pages` / `sticker-count` — matching migration 003's CHECK constraint.
 ### Demos
 ```
 GET    /api/demos                     → all submitted demo forms
@@ -592,17 +622,40 @@ POST   /api/demos                     { project_id, payload } [designer]
 ```
 ### Orders (Sipariş Talep workflow)
 ```
-GET    /api/orders                    filter by status; per-role defaults applied
-POST   /api/orders                    { project_id, payload } [satis] — project must be in an ORDERABLE_STAGES stage (uretime_hazir/uretimde/gumruk/satista)
-PATCH  /api/orders/:id/advance        [role per ORDER_STEP_OWNER]
-PATCH  /api/orders/:id/reject         { reason, reject_target } [team_leader]
+GET    /api/order-requests            all orders, each with its order_history
+POST   /api/order-requests            { projectId, quantity?, notes?, items?, payload? } [satis] — project must be in an ORDERABLE_STAGES stage (uretime_hazir/uretimde/gumruk/satista)
+PATCH  /api/order-requests/:id/advance  { notes?, assignees?, expectedVersion? } [role per ORDER_STEP_OWNER]
+PATCH  /api/order-requests/:id/reject   { reason, rejectTarget?, revizeIds? } [team_leader]
 ```
+The route is `/api/order-requests`, not `/api/orders` — the client's use cases
+and every repository call use the former.
+
+`assignees` is REQUIRED on the `pending → goruldu` advance ("Tasarımcıya Aktar")
+and is the authoritative record of who the order went to: it is stored on
+`order_requests.assignee_ids`, while the project only ever receives
+`assignees[0]` as its primary. Designer-facing views must filter orders on
+`assignee_ids` (see `isOrderAssignedToDesigner`), never on project assignment.
+
+`revizeIds` names the alt görevler that have to be redone, mirroring the main
+pipeline's demo/ozalit rejection. It applies only when `rejectTarget` is
+`'designer'` (a 'matbaa' reject re-delivers the same design; 'reassign' hands
+the work to a new team), and sets `needs_revize` while leaving `is_done` and
+progress untouched — the work was done, it just needs a touch-up. The designer
+clears each flag via `POST /api/subtasks/:id/revize`.
 ### Handovers (Teslim)
 ```
 GET    /api/handovers                 per-role list
 POST   /api/handovers                 { project_id } [printer] — project must be in handover-eligible stage
 PATCH  /api/handovers/:id/confirm     [satis] — moves project to 'satista'
 ```
+### Web Push (device registration)
+```
+GET    /api/push/public-key           → { enabled, key } — VAPID key for PushManager.subscribe
+POST   /api/push/subscribe            store this device (upsert on endpoint) → { ok, id }
+DELETE /api/push/subscribe            forget this device (owner-scoped)      → { ok }
+POST   /api/push/test                 push yourself one                      → { sent, pruned }
+```
+
 ### Notifications
 ```
 GET    /api/notifications             → { items: [...50], unread, unseen } for the current user
@@ -661,6 +714,21 @@ Recipient rules live once, in the service (`notifyProjectTransition`, `notifyPro
 - `satis` — handover confirmation pending, "Talebiniz onaylandı — üretime alındı", on-sale
 
 Endpoints: `GET /api/notifications`, `PATCH /api/notifications/:id/read`, `POST /api/notifications/read-all` (all owner-scoped).
+
+### Web push (migration 032)
+Polling only works while a tab is open — useless for the matbaa team, who are on the print floor rather than at a desk. **Web push** adds a second delivery channel for the same feed: free, no third party, works on Android and on iOS 16.4+ once installed to the Home Screen.
+
+WhatsApp was the original ask and was rejected on cost: Meta's Cloud API bills per business-initiated message, and its exemption for in-window utility messages ends **2026-10-01**. Unofficial WhatsApp libraries (Baileys, whatsapp-web.js) were rejected on risk — they violate Meta's ToS and get numbers banned without warning.
+
+- **Storage**: `push_subscriptions`, one row per browser-on-device, `UNIQUE(endpoint)` so re-subscribing upserts instead of duplicating (duplicates = double notifications).
+- **Fan-out**: `services/push.js#sendToUsers`, invoked from `services/notifications.js#dispatchPush` at the end of `emit()` — so **every existing `notify*` helper gained push with zero call-site changes**.
+- **Transaction discipline**: `dispatchPush` detaches via `setImmediate` and uses the **pool**, never the caller's transaction client — awaiting an HTTPS round-trip inside `withTx` would pin a pool connection per request. It then re-reads the notification ids through the pool before sending: uncommitted rows are invisible to a separate connection, so "rows visible" *is* "transaction committed". This is what stops a push firing for a rolled-back approval.
+- **Dead subscriptions**: a 404/410 from the push service means permanently gone (permission revoked, site data cleared, PWA deleted) → row deleted immediately. Other errors are transient and leave the row alone.
+- **Client**: `hooks/usePushNotifications.js` collapses the whole support chain into one `status` (`unsupported` / `needs-install` / `disabled` / `denied` / `default` / `subscribed`); `components/PushToggle.jsx` renders it in the bell footer and **only ever prompts from a click** (unprompted permission requests get auto-denied by Chrome, and a denial is unrecoverable without system settings). `components/PushBridge.jsx` routes notification taps through React Router. `public/sw.js` is push-only — deliberately **no offline cache**, since a stale pipeline stage shown to a printer is worse than nothing.
+- **iOS specifics**: push requires Home Screen install, so `status: 'needs-install'` shows the 4-step install instructions instead of a dead toggle. `apple-touch-icon.png` must be flat RGB (iOS renders alpha as black); `apple-mobile-web-app-capable` and the manifest live in `client/index.html`.
+- **Config**: `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`. Absent → push self-disables with one warning and the bell feed carries on (the dev default; no keys needed locally). **Rotating the keypair invalidates every stored subscription** — all devices must re-subscribe.
+
+Endpoints: `GET /api/push/public-key`, `POST /api/push/subscribe`, `DELETE /api/push/subscribe`, `POST /api/push/test` (all owner-scoped; `/test` sends the caller a push and returns `{ sent, pruned }`, which is the only practical way to debug a silent delivery chain).
 ---
 ## 📐 Conventions
 - Backend: Node.js + Fastify, ES modules, async/await, errors as `{ status, message }`
@@ -717,6 +785,9 @@ builds from these same two Dockerfiles for local parity.
 - [x] Local dev parity (`docker-compose.yml`)
 - [x] Migration runner (idempotent, plain SQL files)
 - [x] Seed with the same data the SPA was built around
+- [x] Web push delivery (migration 032) — server + SW + client toggle shipped
+- [ ] `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` set in Dokploy (push is inert until then)
+- [ ] Push verified on a real iPhone (Home Screen install) and a real Android device
 - [ ] OAuth app registered in Google Cloud Console (client ID + secret in .env)
 - [ ] Session cookie: httpOnly, sameSite=strict, secure=true in production
 - [ ] Redis session TTL set to 7 days; auto-refresh on activity

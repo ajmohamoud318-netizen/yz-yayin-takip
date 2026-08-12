@@ -258,7 +258,7 @@ export async function orderRoutes(fastify) {
   fastify.patch('/order-requests/:id/reject', { schema: schemas.ordersReject }, async (request) => {
     await attachUser(request)
     if (request.user.role !== 'team_leader') forbidden('Yalnızca takım lideri reddedebilir.')
-    const { reason, rejectTarget = 'matbaa' } = request.body
+    const { reason, rejectTarget = 'matbaa', revizeIds = [] } = request.body
     const orderId = request.params.id
     const result = await withTx(async (client) => {
       const { rows: orderRows } = await client.query(
@@ -284,6 +284,25 @@ export async function orderRoutes(fastify) {
          VALUES ($1,$2,$3,$4)`,
         [orderId, `reject→${rejectTarget}`, request.user.id, reason],
       )
+      // Flag the alt görevler the leader named, so the designer sees exactly
+      // which parts to redo rather than just "reddedildi". Same contract as
+      // the main pipeline's `applyRevize`: set needs_revize and leave is_done /
+      // progress ALONE — the design work was done, it only needs a touch-up.
+      // The designer clears each flag via POST /subtasks/:id/revize.
+      //
+      // Only on the 'designer' route: a 'matbaa' rejection re-delivers the same
+      // design untouched, and 'reassign' hands the whole thing to a new team.
+      // Scoped by project_id so an id from another project can't be flagged.
+      let revized = []
+      if (rejectTarget === 'designer' && revizeIds.length > 0) {
+        const { rows } = await client.query(
+          `UPDATE subtasks SET needs_revize = TRUE, updated_at = NOW()
+            WHERE project_id = $1 AND id = ANY($2::text[])
+            RETURNING title`,
+          [order.project_id, revizeIds],
+        )
+        revized = rows.map((r) => r.title)
+      }
       const proj = await getProjectForUpdate(client, order.project_id)
       if (proj) {
         await patchProject(client, proj.id, {
@@ -299,7 +318,9 @@ export async function orderRoutes(fastify) {
             event: 'order_reject',
             reason,
             reject_target: rejectTarget,
-            note: `Sipariş reddedildi (${rejectTarget})`,
+            note: revized.length > 0
+              ? `Sipariş reddedildi (${rejectTarget}) — revize: ${revized.join(', ')}`
+              : `Sipariş reddedildi (${rejectTarget})`,
           },
           request.user,
         )

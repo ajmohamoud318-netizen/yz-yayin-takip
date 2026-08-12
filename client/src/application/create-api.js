@@ -16,6 +16,7 @@ import { createHttpProductInfoRepository } from '../infrastructure/http/reposito
 import { createHttpOrderRepository } from '../infrastructure/http/repositories/http-order.repository.js'
 import { createHttpHandoverRepository } from '../infrastructure/http/repositories/http-handover.repository.js'
 import { createHttpNotificationRepository } from '../infrastructure/http/repositories/http-notification.repository.js'
+import { createHttpPushRepository } from '../infrastructure/http/repositories/http-push.repository.js'
 import { createHttpWorkLogRepository } from '../infrastructure/http/repositories/http-work-log.repository.js'
 import { makeAdvanceOrderRequest } from './use-cases/orders/advance-order-request.js'
 import { makeCreateOrderRequest } from './use-cases/orders/create-order-request.js'
@@ -33,6 +34,7 @@ export function createApi() {
   const orderRepo = createHttpOrderRepository()
   const handoverRepo = createHttpHandoverRepository()
   const notificationRepo = createHttpNotificationRepository()
+  const pushRepo = createHttpPushRepository()
   const workLogRepo = createHttpWorkLogRepository()
 
   return {
@@ -118,5 +120,11 @@ export function createApi() {
     markNotificationRead: (id) => notificationRepo.markNotificationRead(id),
     markAllNotificationsRead: () => notificationRepo.markAllNotificationsRead(),
     markNotificationsSeen: () => notificationRepo.markNotificationsSeen(),
+
+    // Web push (device registration for the same feed)
+    getPushPublicKey: () => pushRepo.getPushPublicKey(),
+    savePushSubscription: (sub) => pushRepo.savePushSubscription(sub),
+    deletePushSubscription: (endpoint) => pushRepo.deletePushSubscription(endpoint),
+    sendTestPush: () => pushRepo.sendTestPush(),
   }
 }

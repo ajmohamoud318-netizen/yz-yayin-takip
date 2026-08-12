@@ -8,6 +8,28 @@ import { NotificationsProvider } from './hooks/useNotifications.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import './index.css'
 
+/**
+ * Register the push service worker.
+ *
+ * Registered unconditionally at boot (not on the permission toggle) because
+ * `navigator.serviceWorker.ready` must already resolve by the time the user
+ * clicks — and on iOS the registration has to predate the permission prompt
+ * or subscribe() throws.
+ *
+ * Dev is excluded: Vite serves modules unbundled and a stale worker from a
+ * previous session interferes with HMR. Push is verified against a real build.
+ */
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => {
+      // Non-fatal: the SPA works fine without push, notifications just stay
+      // in-app. Logged rather than surfaced so it doesn't alarm users.
+      // eslint-disable-next-line no-console
+      console.warn('[push] service worker registration failed:', err?.message)
+    })
+  })
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary>

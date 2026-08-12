@@ -460,6 +460,13 @@ const subtasksPatch = {
       is_done: { type: 'boolean' },
       pages_done: { type: 'integer', minimum: 0, maximum: 100000 },
       stickers_done: { type: 'integer', minimum: 0, maximum: 100000 },
+      // Designer-set rework flag. Setting it is the reprint (sipariş) check:
+      // the work is already complete, and the designer marks which subtasks
+      // they had to redo for this run. Clearing it is also what
+      // `POST /subtasks/:id/revize` does — that route stays as the explicit
+      // "revize edildi" acknowledgment with its own timeline entry.
+      // Guarded in the handler: assigned designer only.
+      needs_revize: { type: 'boolean' },
     },
   },
 }
@@ -503,8 +510,18 @@ const projectsSubtasksPut = {
           additionalProperties: false,
           required: ['title', 'kind'],
           properties: {
+            // Identity of an existing row. Renaming a subtask must keep its
+            // id — the row carries the designer's counters and its
+            // subtask_updates notes cascade on delete, so a title-only match
+            // would silently destroy both on every rename. Omitted for rows
+            // the leader is adding.
+            id: { type: 'string', minLength: 1, maxLength: 64 },
             title: { type: 'string', minLength: 1, maxLength: 200 },
-            kind: { type: 'string', enum: ['check', 'pages', 'sticker-count', 'normal'] },
+            // Must stay in step with the DB: migration 003 constrains this to
+            // CHECK (kind IN ('check','pages','sticker-count')). 'normal' was
+            // accepted here but rejected there, turning a would-be 400 into a
+            // 500 on insert. No caller ever sent it.
+            kind: { type: 'string', enum: ['check', 'pages', 'sticker-count'] },
             total_pages: { type: ['integer', 'null'], minimum: 1, maximum: 100000 },
             total_stickers: { type: ['integer', 'null'], minimum: 1, maximum: 100000 },
             is_done: { type: 'boolean' },
@@ -610,6 +627,15 @@ const ordersReject = {
     properties: {
       reason: { type: 'string', minLength: 1, maxLength: 2000 },
       rejectTarget,
+      // Which alt görevler have to be redone for this reprint. Mirrors the
+      // main pipeline's demo/ozalit rejection (`projectsReject.revizeIds`) so
+      // a sipariş rejection can name the guilty part, not just the guilty
+      // role. Only meaningful when rejectTarget is 'designer'.
+      revizeIds: {
+        type: 'array',
+        maxItems: 64,
+        items: { type: 'string', minLength: 1, maxLength: 64 },
+      },
     },
   },
 }
@@ -641,9 +667,57 @@ const handoversConfirm = {
   // every single "Alındı" click, since the SPA sends a bodyless PATCH.
 }
 
+// ─── web push ──────────────────────────────────────────────────────────
+
+// Shape handed back by PushSubscription.toJSON() in the browser. `endpoint`
+// is a push-service URL and can be long (FCM's run ~200 chars, Apple's more),
+// so the cap is generous — but bounded, since it lands in a UNIQUE index.
+const pushSubscribe = {
+  body: {
+    type: 'object',
+    required: ['subscription'],
+    additionalProperties: false,
+    properties: {
+      subscription: {
+        type: 'object',
+        required: ['endpoint', 'keys'],
+        // The browser also includes `expirationTime` (almost always null).
+        // Allowed through rather than rejected so a spec-compliant
+        // `subscription.toJSON()` can be posted verbatim.
+        additionalProperties: true,
+        properties: {
+          endpoint: { type: 'string', minLength: 1, maxLength: 2000 },
+          keys: {
+            type: 'object',
+            required: ['p256dh', 'auth'],
+            additionalProperties: false,
+            properties: {
+              p256dh: { type: 'string', minLength: 1, maxLength: 200 },
+              auth: { type: 'string', minLength: 1, maxLength: 200 },
+            },
+          },
+        },
+      },
+    },
+  },
+}
+
+const pushUnsubscribe = {
+  body: {
+    type: 'object',
+    required: ['endpoint'],
+    additionalProperties: false,
+    properties: {
+      endpoint: { type: 'string', minLength: 1, maxLength: 2000 },
+    },
+  },
+}
+
 // ─── exports ───────────────────────────────────────────────────────────
 
 export const schemas = {
+  pushSubscribe,
+  pushUnsubscribe,
   authLogin,
   authInvitePreview,
   authAcceptInvite,

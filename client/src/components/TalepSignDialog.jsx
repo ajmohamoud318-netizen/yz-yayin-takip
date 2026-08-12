@@ -7,6 +7,7 @@ import { getComponentsForProject, saveComponentsForProject, primeProductInfoCach
 import { buildAdetRows } from '@/data/orderAdet'
 import { useAuth } from '@/hooks/useAuth'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
+import { isSubtaskDone } from '@/domain/services/progress'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -29,6 +30,45 @@ function loadProductComps(projectId) {
 // Ürün Bilgileri and the Demo/Ozalit forms read from.
 function saveProductComps(projectId, comps) {
   return saveComponentsForProject(projectId, comps)
+}
+
+// Per-subtask fields PATCH /api/subtasks/:id accepts from the designer.
+const SUBTASK_PATCH_FIELDS = ['needs_revize', 'is_done', 'pages_done', 'stickers_done']
+
+/**
+ * Persist the designer's Revize flags by PATCHing only the rows that actually
+ * changed.
+ *
+ * This deliberately does NOT use `PUT /projects/:id/subtasks`. That endpoint
+ * replaces the whole list and belongs to the team leader, who owns the list's
+ * SHAPE (titles, kinds, totals, assignment). Sending this dialog's rows there
+ * failed three ways: the rows carry server-side fields (`id`, `position`,
+ * `assigned_name`, timestamps) that its additionalProperties:false schema
+ * rejects with a 400; the route is team_leader-only, so a designer got a 403;
+ * and it never persisted `needs_revize` anyway — the one field this editor
+ * exists to set. The net effect was that a designer who touched alt görevler
+ * could not sign at all, while their ürün bilgileri edit (saved just above)
+ * had already gone through.
+ */
+async function saveSubtaskFlags(subtasks, originalJson) {
+  const before = new Map(JSON.parse(originalJson).map((s) => [s.id, s]))
+  for (const s of subtasks) {
+    const prev = before.get(s.id)
+    // Rows with no id were never persisted; the list shape is the leader's to
+    // change, so this dialog only ever updates existing subtasks.
+    if (!s.id || !prev) continue
+    const patch = {}
+    for (const f of SUBTASK_PATCH_FIELDS) {
+      if (s[f] === prev[f]) continue
+      // `pages_done`/`stickers_done` are integers server-side; a null (a
+      // counter that was never started) is not a value the schema accepts.
+      if (f === 'pages_done' || f === 'stickers_done') {
+        if (!Number.isFinite(s[f])) continue
+      }
+      patch[f] = s[f]
+    }
+    if (Object.keys(patch).length > 0) await api.updateSubtask(s.id, patch)
+  }
 }
 
 /**
@@ -56,8 +96,18 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
   // (→ tasarımcı onayı / re-delivery), or 'reassign' (→ back to pending so the
   // leader can pick a new team). Only shown when the step offers a choice.
   const [rejectRoute, setRejectRoute] = useState('matbaa')
+  // Which alt görevler the designer has to redo, when rejecting to 'designer'.
+  // Optional: an empty selection still rejects — it just says "send it back"
+  // without naming a part.
+  const [revizeIds, setRevizeIds] = useState([])
+  const [rejectSubtasks, setRejectSubtasks] = useState([])
   // Assign step (pending → görüldü): team leader picks the designer(s) for the check.
   const isAssignStep = user?.role === 'team_leader' && order?.status === 'pending'
+  // Only the team leader can reject, and only at a step that offers a route.
+  // Declared up here (not next to the other derived labels below) because the
+  // reject-picker effect depends on it, and effects must run before this
+  // component's `if (!order) return null` guard.
+  const canReject = !!ORDER_REJECT_TO[order?.status] && user?.role === 'team_leader'
   const [designers, setDesigners] = useState([])
   const [assignIds, setAssignIds] = useState([])
   const [subtasks, setSubtasks] = useState([])
@@ -97,6 +147,19 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
     }
   }, [open, order?.id, isDesignerStep])
 
+  // Load the project's alt görevler for the leader's reject picker, and reset
+  // the selection each time the dialog reopens so a previous rejection's
+  // choices can't leak into the next one.
+  useEffect(() => {
+    if (!(open && order && canReject)) return
+    setRevizeIds([])
+    let cancelled = false
+    api.getProject(order.project_id)
+      .then((p) => { if (!cancelled) setRejectSubtasks(p.subtasks ?? []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [open, order?.id, order?.project_id, canReject])
+
   // Load designers + default selection (the project's current designers) when
   // the team leader is on the assign step.
   useEffect(() => {
@@ -128,10 +191,12 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
   const nextStep = ORDER_STEP_NEXT[order.status]
   const nextLabel = ORDER_STEP_LABELS[nextStep] ?? 'Onayla'
   const currentStepLabel = ORDER_STEP_LABELS[order.status] ?? order.status
-  // Only the team leader can reject, and only at the ozalit approval step.
-  const canReject = !!ORDER_REJECT_TO[order.status] && user?.role === 'team_leader'
 
   const items = normalizeItems(order.items, order.quantity)
+  // Only completed alt görevler can be sent back for revision — an unfinished
+  // one is already on the designer's plate. Kind-aware: a Sayfa Sayısı subtask
+  // is "done" via pages_done, not is_done.
+  const revisableSubtasks = rejectSubtasks.filter((s) => s.kind !== 'revize' && isSubtaskDone(s))
 
   async function handleSign(e) {
     e.preventDefault()
@@ -162,7 +227,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
         await saveProductComps(order.project_id, comps)
         const compsChanged = JSON.stringify(comps) !== originalRef.current
         const subsChanged = JSON.stringify(subtasks) !== originalSubsRef.current
-        if (subsChanged) await api.saveProjectSubtasks(order.project_id, subtasks)
+        if (subsChanged) await saveSubtaskFlags(subtasks, originalSubsRef.current)
         const parts = []
         if (compsChanged) parts.push('ürün bilgileri')
         if (subsChanged) parts.push('alt görevler')
@@ -205,17 +270,21 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
         actor: { id: user.id, name: user.name, role: user.role },
         reason: rejectReason.trim(),
         routeTo: rejectRoute,
+        revizeIds: rejectRoute === 'designer' ? revizeIds : [],
         expectedVersion: order.version ?? null,
       })
       toast.success(
         rejectRoute === 'designer'
-          ? 'Sipariş ozaliti reddedildi — tasarımcıya geri gönderildi.'
+          ? revizeIds.length > 0
+            ? `Sipariş ozaliti reddedildi — ${revizeIds.length} alt görev revize için tasarımcıya gönderildi.`
+            : 'Sipariş ozaliti reddedildi — tasarımcıya geri gönderildi.'
           : rejectRoute === 'reassign'
           ? 'Sipariş reddedildi — tasarımcı kadrosu yeniden seçilecek.'
           : 'Sipariş ozaliti reddedildi — matbaaya geri gönderildi.',
       )
       setRejectReason('')
       setRejectRoute('matbaa')
+      setRevizeIds([])
       setShowReject(false)
       onOpenChange(false)
       onSigned?.(updated)
@@ -474,6 +543,48 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
                       <span className="block text-sm font-semibold">Kadro değişsin</span>
                       <span className="block text-xs text-muted-foreground">Tasarımcıyı yeniden seçer</span>
                     </button>
+                  </div>
+                </div>
+              )}
+              {/* Which alt görevler have to be redone. Mirrors the demo/ozalit
+                  rejection picker in ApprovalDialog. */}
+              {rejectRoute === 'designer' && revisableSubtasks.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label className="text-destructive">
+                    Revize Edilecek Alt Görevler{' '}
+                    <span className="font-normal text-muted-foreground">(isteğe bağlı)</span>
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Yalnızca tamamlanmış görevler revize edilebilir. Seçtikleriniz tasarımcıya
+                    revize olarak işaretlenir; seçmezseniz talep sadece geri gönderilir.
+                  </p>
+                  <div className="max-h-44 space-y-1.5 overflow-y-auto rounded-md border bg-background p-2">
+                    {revisableSubtasks.map((s) => {
+                      const checked = revizeIds.includes(s.id)
+                      return (
+                        <label
+                          key={s.id}
+                          className={cn(
+                            'flex cursor-pointer items-center gap-2.5 rounded-md border px-2.5 py-2 text-sm transition',
+                            checked ? 'border-amber-300 bg-amber-50' : 'border-transparent hover:bg-muted/50',
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setRevizeIds((prev) =>
+                                prev.includes(s.id) ? prev.filter((x) => x !== s.id) : [...prev, s.id],
+                              )
+                            }
+                            className="h-4 w-4 accent-amber-500"
+                          />
+                          <span className={cn('min-w-0 flex-1', checked && 'font-medium text-amber-800')}>
+                            {s.title}
+                          </span>
+                        </label>
+                      )
+                    })}
                   </div>
                 </div>
               )}

@@ -3,7 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover + the safe-area insets in index.css keep the UI
+         clear of the notch/home indicator once installed to the iOS Home
+         Screen (display:standalone has no browser chrome to protect it). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- PWA. Installing is REQUIRED for web push on iOS 16.4+ (Safari refuses
+         to expose PushManager to a normal tab), and is what makes the app
+         launch chromeless on Android. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#1d1d1b" />
+    <!-- iOS ignores the manifest's icons and name; these are its equivalents. -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Yayın Takip" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <title>YZ Yayın Takip</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

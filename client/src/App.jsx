@@ -31,6 +31,7 @@ const TeslimOnaylari      = lazy(() => import('./pages/TeslimOnaylari.jsx'))
 const UretimeHazir        = lazy(() => import('./pages/UretimeHazir.jsx'))
 const Settings            = lazy(() => import('./pages/Settings.jsx'))
 import NotificationSync from './components/NotificationSync.jsx'
+import PushBridge from './components/PushBridge.jsx'
 import { CelebrationProvider } from './hooks/useCelebration.jsx'
 import RouteFallback from './components/RouteFallback.jsx'
 /* RouteFallback lives in its own module to avoid the AppShell↔App.jsx
@@ -67,6 +68,7 @@ export default function App() {
     <TooltipProvider delayDuration={150}>
       <CelebrationProvider>
           <NotificationSync />
+          <PushBridge />
           <Routes>
 
 

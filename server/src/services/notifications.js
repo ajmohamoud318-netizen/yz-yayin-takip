@@ -21,6 +21,8 @@
 
 import { loadProjectAssignees } from './project-repository.js'
 import { ORDER_STEP_OWNER } from '../domain/orders.js'
+import { isPushEnabled, sendToUsers } from './push.js'
+import { getPool } from '../db/pool.js'
 
 /** Active user ids for the given role(s). */
 export async function activeUserIdsByRole(client, ...roles) {
@@ -65,8 +67,60 @@ export async function emit(client, {
     tuples.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9})`)
     values.push(uid, type, title, body, tone, projectId, orderId, link, actorId)
   })
-  await client.query(`INSERT INTO notifications ${cols} VALUES ${tuples.join(',')}`, values)
+  const { rows } = await client.query(
+    `INSERT INTO notifications ${cols} VALUES ${tuples.join(',')} RETURNING id`,
+    values,
+  )
+
+  // Deliver to registered devices as well as the in-app feed. Scheduled
+  // AFTER the caller's transaction resolves — see dispatchPush.
+  dispatchPush({
+    notificationIds: rows.map((r) => r.id),
+    recipientIds: clean,
+    payload: { type, title, body, tone, link, projectId, notificationId: rows[0]?.id },
+  })
+
   return clean.length
+}
+
+/**
+ * Fire-and-forget web push for a just-inserted batch of notifications.
+ *
+ * Two properties this has to get right, and both are why it isn't just an
+ * `await sendToUsers(...)` inline above:
+ *
+ *  1. It must not run inside the caller's transaction. `emit()` is called
+ *     with the same client that wrote stage_history, mid-transaction. Awaiting
+ *     an HTTPS round-trip to Apple/Google there would hold a Postgres
+ *     transaction (and a pool connection) open for the duration — under
+ *     concurrent teslim/onay traffic that exhausts the pool. So we detach
+ *     with setImmediate and use the POOL, not the transaction client.
+ *
+ *  2. It must not push for a rolled-back transaction. Detaching introduces
+ *     the opposite risk: the transaction may still ROLL BACK after emit()
+ *     returned, and a push for an approval that never happened is worse than
+ *     a missed one. The guard is cheap and exact — re-read the notification
+ *     ids through the pool. Uncommitted rows are invisible to a separate
+ *     connection, so "the rows are there" IS "the transaction committed".
+ *
+ * Never throws: it runs detached, so an escaping rejection would be an
+ * unhandled rejection rather than a request failure.
+ */
+function dispatchPush({ notificationIds, recipientIds, payload }) {
+  if (!isPushEnabled() || notificationIds.length === 0) return
+  setImmediate(async () => {
+    try {
+      const { rows: committed } = await getPool().query(
+        'SELECT 1 FROM notifications WHERE id = ANY($1) LIMIT 1',
+        [notificationIds],
+      )
+      if (committed.length === 0) return // transaction rolled back — stay quiet
+      await sendToUsers(recipientIds, payload)
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[notifications] push dispatch failed:', err?.message)
+    }
+  })
 }
 
 /* --------------------------- project pipeline ---------------------------- */

@@ -43,9 +43,25 @@ const MIME = {
   '.ttf':  'font/ttf',
   '.map':  'application/json',
   '.txt':  'text/plain; charset=utf-8',
+  // PWA. Serving the manifest as anything but this MIME type makes Chrome
+  // reject it silently and the install prompt never appears.
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
 };
 
 function setCacheHeaders(res, filePath) {
+  // The service worker must NEVER be cached. Browsers re-fetch /sw.js to
+  // detect updates; if an intermediary (Cloudflare sits in front of this
+  // host) serves a stale copy, the old worker is pinned indefinitely and
+  // push fixes can't be deployed. Same reasoning as index.html, but the
+  // consequences last longer — a bad SW outlives the tab that installed it.
+  if (filePath.endsWith('sw.js')) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    // Allows the worker to control the whole origin rather than just /.
+    res.setHeader('Service-Worker-Allowed', '/');
+    return;
+  }
   if (filePath.endsWith('index.html')) {
     // index.html must NOT be cached so deploys go live immediately.
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');

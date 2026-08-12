@@ -90,6 +90,29 @@ export const config = {
     store: (process.env.RATE_LIMIT_STORE ?? 'memory').toLowerCase(),
   },
 
+  // Web Push (VAPID). Free, no third party: the browser's own push service
+  // (FCM for Chrome/Android, Apple's for Safari/iOS) delivers the message,
+  // and VAPID is just the keypair that identifies us to it.
+  //
+  // Generate once with:  npx web-push generate-vapid-keys
+  // then set VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY in Dokploy. The keypair is
+  // STABLE for the life of the deployment — rotating it invalidates every
+  // stored subscription (all devices must re-subscribe), so treat the private
+  // key like a session secret.
+  //
+  // If either key is missing, services/push.js disables itself and logs once.
+  // The app still works: notifications keep landing in the bell feed, they
+  // just don't reach a closed tab. That's the intended dev default — nobody
+  // needs VAPID keys to run this locally.
+  push: {
+    vapidPublicKey: process.env.VAPID_PUBLIC_KEY?.trim() ?? '',
+    vapidPrivateKey: process.env.VAPID_PRIVATE_KEY?.trim() ?? '',
+    // mailto: or https: URL identifying us to the push service. Apple's
+    // push service REJECTS subscriptions whose VAPID subject isn't a valid
+    // mailto:/https: URI, so this must be set correctly for iOS to work.
+    vapidSubject: process.env.VAPID_SUBJECT?.trim() || 'mailto:noreply@yukselenzeka.com',
+  },
+
   // Redis connection string. In Dokploy this is the internal URL of the
   // managed Redis service (e.g. redis://default:<pw>@yz-redis:6379). In
   // local dev it falls back to localhost. Leave blank to disable Redis

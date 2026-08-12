@@ -143,9 +143,33 @@ SMTP_PASS=<resend-api-key>
 SMTP_FROM=YZ Yayın Takip <noreply@yt.mucitkarinca.com>
 SMTP_SECURE=false
 INVITE_BASE_URL=https://yt.mucitkarinca.com
+VAPID_PUBLIC_KEY=<npx web-push generate-vapid-keys>
+VAPID_PRIVATE_KEY=<npx web-push generate-vapid-keys>
+VAPID_SUBJECT=mailto:noreply@yt.mucitkarinca.com
 ```
 
 > Resend API key with **Sending access** only — never Full Access.
+
+#### Web push (VAPID) keys
+
+Generate the pair **once**, locally:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Paste both values into the API's Environment tab. Notes:
+
+- **The keypair is permanent.** Rotating it invalidates every stored
+  subscription — every user must re-enable notifications on every device,
+  with no warning that they've stopped working. Treat the private key like
+  `SESSION_SECRET`.
+- **`VAPID_SUBJECT` must be a valid `mailto:` or `https:` URI.** Apple's push
+  service rejects subscriptions outright if it isn't, so iOS silently fails
+  while Android works — a confusing failure worth avoiding.
+- **Omitting the keys is safe.** The server logs one warning, disables push,
+  and the in-app bell keeps working. That's the intended local-dev default.
+- The keys are read at first use, so changing them requires an API restart.
 
 #### Persistent volumes
 
@@ -236,6 +260,27 @@ After a successful build, hit these URLs:
 | `https://yt.mucitkarinca.com` | Login page (HTML) |
 | `https://api.yt.mucitkarinca.com/api/health` | `{"ok":true,"ts":"..."}` |
 | Browser DevTools → Network → `/api/users` | 200 OK, no CORS errors |
+| `https://yt.mucitkarinca.com/manifest.webmanifest` | JSON, `Content-Type: application/manifest+json` |
+| `https://yt.mucitkarinca.com/sw.js` | JS, `Cache-Control: no-cache` |
+
+### Verifying web push
+
+Push fails silently at half a dozen layers, so verify on a **real device** —
+emulators and desktop DevTools do not reproduce mobile push behaviour.
+
+1. Open the site, sign in, click the bell → **"Telefona/bilgisayara bildirim
+   gönder"**. Accept the permission prompt. A test push fires automatically;
+   if it doesn't arrive, the toast says so.
+2. On **iOS**: the bell shows install instructions instead of a toggle until
+   the app is added to the Home Screen. Add it, reopen from the Home Screen
+   icon (not Safari), then enable. iOS 16.4+ required.
+3. On **Android**: works in a normal Chrome tab; installing is optional.
+4. Close the app entirely, have someone trigger a real event (a demo or
+   ozalit request to matbaa), and confirm the notification arrives and that
+   tapping it opens the right project.
+5. `POST /api/push/test` returns `{ sent, pruned }` — `sent: 0` means no
+   device is registered for that user, which distinguishes "subscription
+   missing" from "OS suppressed the notification".
 
 ---
 

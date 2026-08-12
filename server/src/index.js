@@ -11,6 +11,7 @@ import { productInfoRoutes } from './routes/product-info.js'
 import { orderRoutes } from './routes/orders.js'
 import { handoverRoutes } from './routes/handovers.js'
 import { notificationRoutes } from './routes/notifications.js'
+import { pushRoutes } from './routes/push.js'
 import { workLogRoutes } from './routes/work-log.js'
 import { config } from './config.js'
 import { HttpError } from './domain/errors.js'
@@ -146,6 +147,7 @@ export async function buildServer() {
   await fastify.register(orderRoutes, { prefix: '/api' })
   await fastify.register(handoverRoutes, { prefix: '/api' })
   await fastify.register(notificationRoutes, { prefix: '/api' })
+  await fastify.register(pushRoutes, { prefix: '/api' })
   await fastify.register(workLogRoutes, { prefix: '/api' })
 
   // Health — used by Dokploy's container probe AND for human-readable

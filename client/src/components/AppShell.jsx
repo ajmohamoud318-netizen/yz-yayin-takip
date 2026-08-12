@@ -57,6 +57,7 @@ import api, { ROLE_LABELS, STATUS_META, statusKeyForProject, canRequestHandover 
 import { cn, initials } from '@/lib/utils'
 import NewProjectDialog from '@/components/NewProjectDialog'
 import WorkLogPill from '@/components/WorkLogPill'
+import PushToggle from '@/components/PushToggle.jsx'
 import { useNotifications } from '@/hooks/useNotifications'
 import { isOrderAssignedToDesigner } from '@/domain/constants/orders'
 
@@ -777,6 +778,8 @@ function NotificationBell() {
             ))}
           </div>
         )}
+        {/* Device push opt-in. Self-hiding when unavailable — see PushToggle. */}
+        <PushToggle />
       </DropdownMenuContent>
     </DropdownMenu>
   )
