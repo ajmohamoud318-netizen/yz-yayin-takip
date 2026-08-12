@@ -19,7 +19,14 @@ import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { useAuth } from '@/hooks/useAuth'
 import { isSubtaskDone } from '@/domain/services/progress'
 import { cn } from '@/lib/utils'
-import { restampOzalitRequester } from '@/components/SpecFormDialog'
+import {
+  restampOzalitRequester,
+  specVariantForStage,
+  stampSpecSignature,
+} from '@/components/SpecFormDialog'
+
+const trDate = () =>
+  new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
 
 // Where an approval sends the project, with a destination-aware button label.
 // NOTE: özalit and çin-demo approval land the project on `uretime_hazir`
@@ -184,9 +191,23 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
     // candidates (see revisableSubtasks).
     setBusy(true)
     try {
+      // The stage BEFORE the transition decides which sheet (if any) this
+      // action signs — afterwards the project has already moved on.
+      const specVariant = specVariantForStage(project.stage)
       let updated
-      if (mode === 'approve') updated = await api.approveProject(project.id)
-      else if (mode === 'reject')
+      if (mode === 'approve') {
+        updated = await api.approveProject(project.id)
+        // The leader's onay is her signature on the demo/ozalit sheet. Ozalit
+        // approval normally goes through SpecFormDialog (which stamps it
+        // itself), but Demo Onayı and the ozalit fallback land here — without
+        // this the sheet prints as approved yet unsigned. Non-leader ozalit
+        // sign-offs are tracked separately in ozalit_approvals and don't own
+        // the "Ekip Lideri / Onaylayan" box.
+        if (specVariant && isLeader) {
+          stampSpecSignature(specVariant, project, { onaylayanKisi: user?.name ?? '' })
+            .catch(() => {})
+        }
+      } else if (mode === 'reject')
         updated = await api.rejectProject(
           project.id,
           reason.trim(),
@@ -195,6 +216,18 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
         )
       else {
         updated = await api.advanceProject(project.id)
+        // Demo Talepleri's "Teslim Et" delivers through this bare confirm
+        // instead of the demo form, so stamp the delivery AND the matbaa's
+        // signature here — exactly what SpecFormDialog.handleAdvance does.
+        // The role guard matters: an advance from demo_onay is a designer /
+        // leader re-send, not a teslim, and must not be signed as one.
+        if (specVariant && user?.role === 'printer') {
+          stampSpecSignature(specVariant, project, {
+            teslimEdenKisi: user?.name ?? '',
+            teslimTarihi: trDate(),
+            matbaaYetkilisi: user?.name ?? '',
+          }).catch(() => {})
+        }
         // This bare confirm is also how a designer resubmits an ozalit after
         // an ozalit-targeted rejection (tasarim -> ozalit_teslim in one step,
         // see transitions.js) — that resend IS a fresh ozalit request, so

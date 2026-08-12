@@ -144,23 +144,54 @@ function loadSnapshot(variant, id, attempt) { return parseSaved(variant, localSt
 
 /**
  * Fields that record a specific EVENT on a specific attempt — the matbaa
- * delivered it, the team leader approved it. Unlike the spec itself (rows,
- * parça selection, İŞİN ADI) these must never be inherited by a later
+ * delivered and signed it, the team leader approved it. Unlike the spec itself
+ * (rows, parça selection, İŞİN ADI) these must never be inherited by a later
  * attempt.
  *
  * Both non-attempt-scoped sources are "latest wins": STORAGE_KEY is a single
  * blob per project overwritten on every save, and fetchServerSnapshot(…, null)
  * returns the newest demos row for the project+kind. So once ANY attempt was
  * approved, its onaylayanKisi got layered back onto every subsequent open —
- * printing a signed "ONAYLAYAN KİŞİ" on a fresh, unapproved sheet.
+ * printing a signed "ONAYLAYAN KİŞİ" on a fresh, unapproved sheet. The same
+ * applies to matbaaYetkilisi: the matbaa who signed round 1 must not appear on
+ * round 2's sheet, which may well be delivered by someone else.
  */
-const STAMP_FIELDS = ['onaylayanKisi', 'teslimTarihi', 'teslimEdenKisi']
+const STAMP_FIELDS = ['onaylayanKisi', 'teslimTarihi', 'teslimEdenKisi', 'matbaaYetkilisi']
 
 function stripStamps(data) {
   if (!data) return data
   const form = { ...(data.form ?? {}) }
   for (const f of STAMP_FIELDS) delete form[f]
   return { ...data, form }
+}
+
+/**
+ * A blank stamp means "this hasn't happened yet" — NOT "this was signed by
+ * nobody". emptyForm writes matbaaYetkilisi:'' for every non-printer, so the
+ * designer's very first save persists an empty signature; layering that saved
+ * payload straight over the fresh form then wiped the printer's own pre-filled
+ * name back to ''. That's why the matbaa's signature never reached the sheet
+ * he delivered. Dropping blank stamps before the merge lets `fresh` win when
+ * the saved payload has nothing real to say.
+ */
+function withoutBlankStamps(form) {
+  const out = { ...(form ?? {}) }
+  for (const f of STAMP_FIELDS) if (!out[f]) delete out[f]
+  return out
+}
+
+/** Which spec sheet (if any) a project stage belongs to. */
+const STAGE_VARIANT = {
+  demo_teslim: 'demo',
+  cin_demo_teslim: 'demo',
+  demo_onay: 'demo',
+  cin_demo_onay: 'demo',
+  ozalit_teslim: 'ozalit',
+  ozalit_onay: 'ozalit',
+}
+
+export function specVariantForStage(stage) {
+  return STAGE_VARIANT[stage] ?? null
 }
 
 /**
@@ -241,6 +272,54 @@ export async function restampOzalitRequester(projectId, attempt, requesterName) 
       },
     })
   } catch { /* localStorage still has it; don't block the flow */ }
+}
+
+/**
+ * Stamp signature fields onto a demo/ozalit sheet from OUTSIDE this dialog.
+ *
+ * Not every teslim/onay opens the spec form. The matbaa's "Teslim Et" on Demo
+ * Talepleri and the leader's "Onayla" on Demo Onayı both run through the bare
+ * ApprovalDialog, which advances the project without the sheet ever being
+ * mounted — so the delivery and the approval happened, but the form printed
+ * with an empty MATBAA YETKİLİSİ / ONAYLAYAN KİŞİ box. This gives those
+ * callers the same three writes the dialog performs: the project-level blob,
+ * the attempt-scoped snapshot, and the server snapshot.
+ *
+ * `project` must be the state BEFORE the transition — the attempt counter is
+ * only bumped by rejects / re-sends / not-received, never by a teslim or an
+ * onay, so this lands on the same attempt the dialog would have used.
+ */
+export async function stampSpecSignature(variantName, project, patch) {
+  const variant = VARIANTS[variantName]
+  if (!variant || !project?.id) return
+  const attempt = (project[variant.attemptField] ?? 0) + 1
+  // Same precedence as the dialog's own load: this attempt's snapshot is
+  // authoritative; the project-level blob is a spec-only fallback with the
+  // previous round's stamps stripped.
+  // The server sources matter most here: this can run on a machine that never
+  // opened the form, where localStorage holds nothing at all. Without the
+  // server fallbacks the signature would be written onto an otherwise empty
+  // snapshot and take the spec's place.
+  const existing =
+    (await fetchServerSnapshot(api, variant, project.id, attempt)) ??
+    loadSnapshot(variant, project.id, attempt) ??
+    stripStamps(loadSaved(variant, project.id)) ??
+    stripStamps(await fetchServerSnapshot(api, variant, project.id, null)) ??
+    { form: {}, customRows: [], selectedComponents: null }
+  const form = { ...(existing.form ?? {}), ...patch }
+  const customRows = existing.customRows ?? []
+  const selectedComponents = existing.selectedComponents ?? null
+  saveForm(variant, project.id, form, customRows, selectedComponents)
+  saveSnapshot(variant, project.id, attempt, form, customRows, selectedComponents)
+  try {
+    await api.createDemo({
+      project_id: project.id,
+      kind: variant.kind,
+      attempt,
+      silent: true,
+      payload: { ...form, _customRows: customRows, _selectedComponents: selectedComponents },
+    })
+  } catch { /* localStorage still has it; never block the transition */ }
 }
 
 function emptyForm(variant, project, user) {
@@ -528,8 +607,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         // today's date and the matbaa's own name as the requester. Layer the
         // saved form back on top so İŞİN ADI, İSTEM TARİHİ and İSTEYEN KİŞİ
         // reflect what was stamped. The teslim/onay stamps come through only
-        // when `current` supplied them, i.e. they really happened.
-        setForm({ ...fresh, ...(data?.form ?? {}) })
+        // when `current` supplied them, i.e. they really happened — blank ones
+        // are dropped so they can't overwrite a legitimately pre-filled
+        // signature (see withoutBlankStamps).
+        setForm({ ...fresh, ...withoutBlankStamps(data?.form) })
       } else {
         // Active editing: start from fresh, then keep only the printer-signed
         // field (matbaaYetkilisi). The system-driven fields auto-recompute.
@@ -670,10 +751,20 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       // When the printer (matbaa) is the one advancing, stamp the
       // "teslim eden kişi" + "teslim tarihi" now. The original requester
       // stamp is preserved from the first save.
+      //
+      // The teslim IS the matbaa's signature on this sheet, so stamp
+      // matbaaYetkilisi here too rather than trusting whatever was pre-filled:
+      // the value loaded into `form` comes from a payload someone else saved,
+      // and an earlier round's blank would otherwise ship an unsigned sheet.
       let payload = form
       if (user?.role === 'printer') {
         const today = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
-        payload = { ...form, teslimEdenKisi: user?.name ?? '', teslimTarihi: today }
+        payload = {
+          ...form,
+          teslimEdenKisi: user?.name ?? '',
+          teslimTarihi: today,
+          matbaaYetkilisi: user?.name ?? '',
+        }
       }
       saveForm(variant, project.id, payload, customRows, selectedComponents)
       saveSnapshot(variant, project.id, attemptNo, payload, customRows, selectedComponents)

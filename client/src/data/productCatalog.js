@@ -97,6 +97,41 @@ export function getComponentsForProject(projectId) {
 }
 
 /**
+ * Every archive (backlist) spec that has no project behind it yet.
+ *
+ * `PRODUCT_INFO` is generated from REÇETE.xlsx and keyed by seed id (`p-x1`…).
+ * A seed with no matching project exists only in this browser: it can't be
+ * saved server-side (`PUT /product-info/p-x1` 404s) and Sales can't order it.
+ * Promoting it via `POST /api/projects/import` creates the real project and
+ * makes the spec persistent — see AGENTS.md → "Arşiv (legacy) products".
+ *
+ * Pass the ids of every project that exists (including legacy imports and any
+ * stage), so already-promoted seeds drop out of the list.
+ *
+ * @param {string[]} realProjectIds
+ * @returns {{ id: string, title: string, comps: any[] }[]}
+ */
+export function listArchiveSeeds(realProjectIds = []) {
+  const real = new Set(realProjectIds)
+  const overrides = readOverrides()
+  const ids = new Set([...Object.keys(PRODUCT_INFO), ...Object.keys(overrides)])
+  const out = []
+  for (const pid of ids) {
+    if (real.has(pid)) continue
+    const comps = getComponentsForProject(pid)
+    if (!Array.isArray(comps) || comps.length === 0) continue
+    // Mirrors the orphan-row title logic in pages/UrunBilgileri.jsx: the spec's
+    // own "İŞİN ADI" field is the product name; fall back to the component name.
+    const first = comps[0]
+    const titleField = (first?.fields ?? []).find(
+      (f) => String(f?.k ?? '').toLocaleUpperCase('tr-TR') === 'İŞİN ADI',
+    )?.v
+    out.push({ id: pid, title: titleField || first?.component || pid, comps })
+  }
+  return out.sort((a, b) => a.title.localeCompare(b.title, 'tr'))
+}
+
+/**
  * Persist a project's components: server (source of truth) + in-memory cache +
  * localStorage mirror. Returns the cloned components. Never throws — if the
  * network is down the local mirror still updates and hydrate will backfill

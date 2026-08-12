@@ -7,6 +7,7 @@ import { canEditProductInfo } from '@/domain'
 import api, { TYPE_LABELS } from '@/api'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
+import PromoteArchiveDialog from '@/components/PromoteArchiveDialog'
 import PRODUCT_INFO from '@/data/productInfo'
 import { saveComponentsForProject, primeProductInfoCache } from '@/data/productCatalog'
 
@@ -241,124 +242,6 @@ function NewProductDialog({ open, onClose, projects, onCreate }) {
   )
 }
 
-/* ---------- promote-to-Ürünler dialog ---------- */
-/**
- * Confirms the two things REÇETE.xlsx can't tell us — pipeline type and the
- * stage the book is at — then hands the whole ticked selection to the import
- * endpoint. Both values apply to every selected product, so ÇİN titles should
- * be ticked and promoted as their own pass.
- */
-function PromoteDialog({ open, onClose, items, busy, onConfirm }) {
-  const [type, setType] = useState('TR')
-  const [stage, setStage] = useState('satista')
-
-  useEffect(() => {
-    if (open) {
-      setType('TR')
-      setStage('satista')
-    }
-  }, [open])
-
-  if (!open) return null
-
-  const missingSpec = items.filter((x) => (x.comps?.length ?? 0) === 0).length
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/40 px-4 animate-in fade-in" onClick={busy ? undefined : onClose}>
-      <div
-        className="w-full max-w-md overflow-hidden rounded-2xl border bg-card shadow-2xl animate-in fade-in slide-in-from-bottom-2"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b px-5 py-3.5">
-          <div className="flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary">
-              <Package className="h-4 w-4" />
-            </span>
-            <h2 className="text-base font-semibold">Ürünlere Ekle</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            aria-label="Kapat"
-            className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition active:scale-90 hover:bg-muted disabled:opacity-50"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="space-y-4 px-5 py-5">
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            <span className="font-semibold text-foreground">{items.length} arşiv ürünü</span> gerçek ürün olarak
-            eklenecek ve Satış ekibi bunlar için sipariş talebi oluşturabilecek. Bu kayıtlar iş akışında
-            (Kanban, Tüm Projeler) görünmez.
-          </p>
-
-          <div>
-            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Tür
-            </label>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-              className="h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-ring/40"
-            >
-              <option value="TR">TR</option>
-              <option value="CIN">ÇİN</option>
-            </select>
-            <p className="mt-1.5 text-[11px] text-muted-foreground">
-              Seçilen tüm ürünlere uygulanır. ÇİN ürünlerini ayrı seçip ekleyin.
-            </p>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Aşama
-            </label>
-            <select
-              value={stage}
-              onChange={(e) => setStage(e.target.value)}
-              className="h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-ring/40"
-            >
-              <option value="satista">Satışta</option>
-              <option value="uretime_hazir">Üretime Hazır</option>
-              <option value="uretimde">Üretimde</option>
-              <option value="gumruk">Gümrük</option>
-            </select>
-          </div>
-
-          {missingSpec > 0 && (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-800 ring-1 ring-amber-600/20">
-              {missingSpec} ürünün parça bilgisi yok — bunlar Ürünler listesinde görünür ama parça bilgisi
-              girilene kadar sipariş verilemez.
-            </p>
-          )}
-        </div>
-
-        <div className="flex items-center justify-end gap-2 border-t bg-muted/30 px-5 py-3">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="rounded-lg border bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground transition active:scale-95 hover:text-foreground disabled:opacity-50"
-          >
-            İptal
-          </button>
-          <button
-            type="button"
-            onClick={() => onConfirm({ type, stage })}
-            disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition active:scale-95 hover:brightness-105 disabled:opacity-60"
-          >
-            <Package className="h-3.5 w-3.5" />
-            {busy ? 'Ekleniyor…' : `${items.length} ürünü ekle`}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 /* ---------- product card ---------- */
 function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, draft, onStartEdit, onCancel, onSave, onDraftComp, onDeleteProduct, onAddComponent, index, selectable, selected, onSelect }) {
   const list = editing ? draft : comps
@@ -557,7 +440,6 @@ export default function UrunBilgileri() {
   // Seed (orphan) rows the leader has ticked for promotion into Ürünler.
   const [selectedSeeds, setSelectedSeeds] = useState(() => new Set())
   const [promoteOpen, setPromoteOpen] = useState(false)
-  const [promoting, setPromoting] = useState(false)
 
   // Load the server-side specs and overlay them on top of the localStorage
   // mirror. The server is the source of truth; the mirror only covers the
@@ -718,48 +600,12 @@ export default function UrunBilgileri() {
     })
   }
 
-  /**
-   * Promote the ticked seed rows into real, orderable products.
-   *
-   * `type` and `stage` are asked for once and applied to the whole selection:
-   * REÇETE.xlsx carries specs only — no TR/ÇİN and no stage — so there is
-   * nothing to infer them from. Tick the ÇİN titles separately if they differ.
-   *
-   * The seed id (`p-x12`) is sent as the project id on purpose: it makes the
-   * orphan row convert in place instead of the catalog showing the product
-   * twice (once as a seed, once as the new project).
-   */
-  async function promoteSelected({ type, stage }) {
-    if (selectedSeedProducts.length === 0) return
-    setPromoting(true)
-    try {
-      const items = selectedSeedProducts.map(({ project, comps }) => ({
-        id: project.id,
-        title: project.title,
-        type,
-        stage,
-        components: comps,
-      }))
-      const res = await api.importProjects(items)
-      const dupes = res?.duplicates?.length ?? 0
-      if (res?.willCreate > 0) {
-        toast.success(
-          `${res.willCreate} ürün Ürünler listesine eklendi.${dupes > 0 ? ` ${dupes} tanesi zaten mevcuttu.` : ''}`,
-        )
-      } else if (dupes > 0) {
-        toast.info('Seçilen ürünler zaten Ürünler listesinde.')
-      }
-      for (const e of res?.errors ?? []) toast.error(`Satır ${e.row}: ${e.message}`)
-      setSelectedSeeds(new Set())
-      setPromoteOpen(false)
-      // Pull the new projects into the shared store so the row flips from
-      // "arşiv" to a real product without a page reload.
-      await refetch()
-    } catch (e) {
-      toast.error(e?.message || 'Ürünler eklenemedi.')
-    } finally {
-      setPromoting(false)
-    }
+  // The import call itself lives in PromoteArchiveDialog (shared with the
+  // Ürünler page). All this page has to do afterwards is clear the ticks and
+  // refetch, so the promoted rows flip from "Arşiv" to real products in place.
+  async function onPromoted() {
+    setSelectedSeeds(new Set())
+    await refetch()
   }
 
   const filtered = useMemo(() => {
@@ -954,12 +800,15 @@ export default function UrunBilgileri() {
         onCreate={createProduct}
       />
 
-      <PromoteDialog
+      <PromoteArchiveDialog
         open={promoteOpen}
         onClose={() => setPromoteOpen(false)}
-        items={selectedSeedProducts}
-        busy={promoting}
-        onConfirm={promoteSelected}
+        items={selectedSeedProducts.map(({ project, comps }) => ({
+          id: project.id,
+          title: project.title,
+          comps,
+        }))}
+        onDone={onPromoted}
       />
     </div>
   )

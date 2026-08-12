@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
-import { CheckCircle2, AlertTriangle, Plus } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { CheckCircle2, AlertTriangle, Plus, Package } from 'lucide-react'
 
 import api, {
   TYPE_LABELS, STAGE_LABELS, ORDERABLE_STAGES, STATUS_STYLES,
-  canRequestOrder, statusKeyForProject,
+  canRequestOrder, statusKeyForProject, canEditProductInfo,
 } from '@/api'
 import { useAuth } from '@/hooks/useAuth'
 import { Card, CardContent } from '@/components/ui/card'
@@ -11,6 +11,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import OrderRequestDialog from '@/components/OrderRequestDialog'
+import PromoteArchiveDialog from '@/components/PromoteArchiveDialog'
+import { listArchiveSeeds } from '@/data/productCatalog'
 import { cn } from '@/lib/utils'
 
 /**
@@ -30,14 +32,34 @@ export default function Urunler() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [orderProductId, setOrderProductId] = useState(null)
   const [refreshTick, setRefreshTick] = useState(0)
+  // Every project id that exists, at any stage — used to work out which archive
+  // specs haven't been promoted yet. Kept separate from `products` (which is
+  // filtered to the orderable stages) so a seed already promoted to, say,
+  // Tasarım still counts as taken.
+  const [allProjectIds, setAllProjectIds] = useState([])
+  const [promoteOpen, setPromoteOpen] = useState(false)
 
   const canOrderRole = user?.role === 'satis'
+  // The team leader owns the catalog's data integrity (same gate as editing
+  // Ürün Bilgileri), so they're the one who can add archive products here.
+  const canAddArchive = canEditProductInfo(user)
 
   useEffect(() => {
     api.listProjects()
-      .then((projs) => setProducts(projs.filter((p) => ORDERABLE_STAGES.has(p.stage))))
+      .then((projs) => {
+        setProducts(projs.filter((p) => ORDERABLE_STAGES.has(p.stage)))
+        setAllProjectIds(projs.map((p) => p.id))
+      })
       .finally(() => setLoading(false))
   }, [refreshTick])
+
+  // Archive (REÇETE.xlsx) specs with no project behind them yet. These are what
+  // the "Arşivden Ürün Ekle" button offers; once promoted they drop out of this
+  // list and appear in the catalog below.
+  const archiveSeeds = useMemo(
+    () => (canAddArchive ? listArchiveSeeds(allProjectIds) : []),
+    [canAddArchive, allProjectIds],
+  )
 
   // Pick up Ürün Bilgileri changes made in another tab.
   useEffect(() => {
@@ -84,12 +106,30 @@ export default function Urunler() {
               Sipariş verilebilecek tüm ürünler — {products.length} ürün
             </p>
           </div>
-          {canOrderRole && (
-            <Button onClick={() => openOrderFor(null)} className="w-full sm:w-auto">
-              <Plus className="h-4 w-4" />
-              Sipariş Oluştur
-            </Button>
-          )}
+          <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto">
+            {canAddArchive && (
+              <Button
+                variant="outline"
+                onClick={() => setPromoteOpen(true)}
+                className="w-full sm:w-auto"
+                title="Sistemden önce yayımlanmış ürünleri kataloğa ekle"
+              >
+                <Package className="h-4 w-4" />
+                Arşivden Ürün Ekle
+                {archiveSeeds.length > 0 && (
+                  <span className="ml-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-primary">
+                    {archiveSeeds.length}
+                  </span>
+                )}
+              </Button>
+            )}
+            {canOrderRole && (
+              <Button onClick={() => openOrderFor(null)} className="w-full sm:w-auto">
+                <Plus className="h-4 w-4" />
+                Sipariş Oluştur
+              </Button>
+            )}
+          </div>
         </header>
 
         {products.length === 0 ? (
@@ -117,6 +157,15 @@ export default function Urunler() {
           </div>
         )}
       </div>
+
+      {canAddArchive && (
+        <PromoteArchiveDialog
+          open={promoteOpen}
+          onClose={() => setPromoteOpen(false)}
+          seeds={archiveSeeds}
+          onDone={() => setRefreshTick((t) => t + 1)}
+        />
+      )}
 
       {canOrderRole && (
         <OrderRequestDialog

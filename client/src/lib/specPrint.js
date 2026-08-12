@@ -30,8 +30,10 @@ export function buildSpecRows({ component, form, kind }) {
   if (form?.teslimTarihi || form?.teslimEdenKisi) {
     rows.push(['TESLİM TARİHİ', form?.teslimTarihi ?? ''], ['TESLİM EDEN KİŞİ', form?.teslimEdenKisi ?? ''])
   }
-  // Only shown once an approval has actually stamped it — otherwise an
-  // unapproved sheet prints as if the team leader already signed off.
+  // Both of these are printed only once the event actually stamped them —
+  // otherwise an undelivered / unapproved sheet reads as already signed. The
+  // on-screen ClassicSheet shows the same two rows under the same rule.
+  if (form?.matbaaYetkilisi) rows.push(['MATBAA YETKİLİSİ', form.matbaaYetkilisi])
   if (form?.onaylayanKisi) rows.push(['ONAYLAYAN KİŞİ', form.onaylayanKisi])
   return rows
 }
