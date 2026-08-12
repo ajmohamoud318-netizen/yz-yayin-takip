@@ -133,6 +133,17 @@ const server = http.createServer(async (req, res) => {
   // it without provisioning a separate edge cert for `api.yt.mucitkarinca.com`.
   if (url === '/api' || url.startsWith(API_PROXY_PREFIX) || url.startsWith('/api?')) {
     const upstream = new URL(API_UPSTREAM);
+    // Forward the real client identity. Without these the backend sees
+    // this container's IP on every request, which silently breaks the
+    // per-IP rate limiters in server/src/routes/auth.js — the whole team
+    // would share one 10-attempts-per-5-minutes login bucket and lock
+    // each other out. Fastify is started with trustProxy so it reads
+    // X-Forwarded-For into `request.ip`.
+    const priorForwardedFor = req.headers['x-forwarded-for'];
+    const clientIp = req.socket.remoteAddress || '';
+    const forwardedFor = priorForwardedFor
+      ? `${priorForwardedFor}, ${clientIp}`
+      : clientIp;
     const opts = {
       protocol: upstream.protocol,
       hostname: upstream.hostname,
@@ -142,6 +153,11 @@ const server = http.createServer(async (req, res) => {
       headers: {
         ...req.headers,
         host: `${upstream.hostname}${upstream.port ? `:${upstream.port}` : ''}`,
+        'x-forwarded-for': forwardedFor,
+        // The browser always reaches us over HTTPS at the edge; preserve
+        // that so the backend doesn't think the request was plaintext.
+        'x-forwarded-proto': req.headers['x-forwarded-proto'] || 'https',
+        'x-forwarded-host': req.headers['x-forwarded-host'] || req.headers.host || '',
       },
     };
     const proxyReq = http.request(opts, (proxyRes) => {

@@ -24,11 +24,14 @@ WORKDIR /app
 # The build step below overrides it back to production.
 ENV NODE_ENV=development
 
-# Vite only inlines env vars that are explicitly exposed at build time.
-# Dokploy passes this as a build-time arg (see "Build-time Arguments" in
-# the service config). Without this ARG, the bundle is built with the
-# empty/default value of VITE_API_BASE_URL and the SPA can never reach
-# the API.
+# Vite only inlines env vars that are explicitly exposed at build time, so
+# this ARG has to exist for Dokploy's build-time arg to reach the bundle.
+#
+# It should normally be LEFT EMPTY: the SPA then calls a relative `/api`,
+# which serve.cjs proxies to the backend at runtime — same-origin, so the
+# SameSite=lax session cookie works and no CORS is involved. Only set it
+# to point the SPA at a backend on a different (same-site) host; see
+# DEPLOY.md § SPA before you do.
 ARG VITE_API_BASE_URL
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 

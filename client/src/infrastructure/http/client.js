@@ -1,31 +1,45 @@
 import axios from 'axios'
 
-// In dev, Vite's proxy (see vite.config.js) rewrites /api → http://localhost:4000.
-// In production, the SPA is served by `serve.cjs` and `/api` would 404, so we
-// read the absolute backend URL from VITE_API_BASE_URL (set per-environment
-// in Dokploy) and fall back to a same-origin `/api` for local dev.
+// API base URL resolution — SAME-ORIGIN BY DEFAULT.
 //
-// The default below is the canonical Cloudflare-fronted host
-// (api.yt.mucitkarinca.com).
-const DEFAULT_API_BASE_URL = 'https://api.yt.mucitkarinca.com'
-
+// Both runtimes proxy `/api/*` to the Fastify backend, so a relative
+// base works everywhere and is the preferred configuration:
+//   - dev:  Vite's proxy (client/vite.config.js) → http://localhost:4000
+//   - prod: serve.cjs's reverse proxy            → API_UPSTREAM (internal net)
+//
+// Same-origin matters for more than tidiness: the session lives in an
+// httpOnly cookie with SameSite=lax. If the SPA and the API sit on
+// different registrable domains (e.g. yt.mucitkarinca.com → *.sslip.io)
+// the browser will neither store the cookie from /auth/login nor send it
+// on /auth/me, and every request 401s. Leave VITE_API_BASE_URL unset and
+// this problem cannot occur.
+//
+// VITE_API_BASE_URL remains an escape hatch for pointing the SPA at a
+// backend on another host. Only use it when that host is same-site with
+// the SPA (a sibling subdomain); otherwise the backend must also run
+// SESSION_COOKIE_SAMESITE=none + SESSION_COOKIE_SECURE=true.
 const envBase = import.meta.env?.VITE_API_BASE_URL?.trim()
-const baseURL = envBase
-  ? `${envBase.replace(/\/$/, '')}/api`
-  : `${DEFAULT_API_BASE_URL}/api`
+const baseURL = envBase ? `${envBase.replace(/\/$/, '')}/api` : '/api'
 
 /**
- * Absolute origin of the backend, suitable for absolute <img src> URLs.
- * Strips the trailing `/api` so callers can prepend their own path
- * segments.
+ * Origin of the backend, suitable for <img src> URLs. Strips the trailing
+ * `/api` so callers can prepend their own path segments.
+ *
+ * In the default same-origin setup this is the EMPTY STRING, which is
+ * correct and intentional: `${API_ORIGIN}/api/users/…` then yields a
+ * root-relative URL the browser resolves against the SPA's own origin,
+ * and the serve.cjs proxy forwards it. Consumers (UserAvatar) already
+ * concatenate rather than parse, so no call site needs to change.
  */
 export const API_ORIGIN = baseURL.replace(/\/api\/?$/, '')
 
 const client = axios.create({
   baseURL,
-  // Send the httpOnly session cookie on every request (incl. cross-origin
-  // SPA→API). Required now that auth is cookie-based, not the X-User-Id
-  // header. The API echoes Access-Control-Allow-Credentials: true.
+  // Send the httpOnly session cookie on every request. A no-op for the
+  // default same-origin setup (where cookies are sent anyway), but kept
+  // so the VITE_API_BASE_URL escape hatch still works cross-origin — the
+  // API echoes Access-Control-Allow-Credentials: true for allowlisted
+  // origins.
   withCredentials: true,
 })
 

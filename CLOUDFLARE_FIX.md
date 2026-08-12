@@ -1,7 +1,25 @@
 # Cloudflare Fix Checklist — `api.yt.mucitkarinca.com`
 
-Restore canonical TLS for the API hostname so we can stop pointing the SPA at
-the Dokploy sslip.io workaround.
+> **⚠️ No longer urgent — this is now optional cleanup.**
+>
+> The SPA has been moved to a **same-origin `/api` proxy** (`serve.cjs`
+> forwards `/api/*` to the API container over Dokploy's internal network;
+> `VITE_API_BASE_URL` is empty). The browser only ever talks to
+> `yt.mucitkarinca.com`, so `api.yt.mucitkarinca.com` is no longer on the
+> critical path and the app works fine while its TLS stays broken.
+>
+> That change also fixed a bug the sslip.io workaround had introduced:
+> pointing the SPA at `*.sslip.io` made the API call cross-site, so the
+> browser refused to store or send the `SameSite=lax` session cookie and
+> every `GET /api/auth/me` returned 401. See DEPLOY.md § SPA.
+>
+> Work this checklist only if you want `api.yt.mucitkarinca.com` reachable
+> for direct API access (curl, webhooks, a future separate client). Do
+> **not** repoint `VITE_API_BASE_URL` at it afterwards — same-origin is
+> now the intended configuration.
+
+Restore canonical TLS for the API hostname so it can be used for direct
+API access.
 
 **Symptom:** Browser → `https://api.yt.mucitkarinca.com` fails with
 `SSL alert 40 / handshake_failure` at the Cloudflare edge. On macOS

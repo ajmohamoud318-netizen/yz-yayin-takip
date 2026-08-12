@@ -67,19 +67,37 @@ Create **two** services from the same GitHub repo.
 
 **Environment:**
 ```
-VITE_API_BASE_URL=https://yayin-takip-backend-4dvoqr-53441c-46-62-170-64.sslip.io
+VITE_API_BASE_URL=
+API_UPSTREAM=http://yz-api:4000
 ```
 
 > Anything prefixed `VITE_` is baked into the JS bundle at build time —
 > don't put secrets here.
 >
-> ⚠️ **TEMPORARY OVERRIDE (active as of 2026-07-20).** The canonical URL
-> `https://api.yt.mucitkarinca.com` currently fails TLS at the Cloudflare
-> edge (`SSL alert 40 / handshake_failure`) — the `api.*` hostname has no
-> cert/origin wiring. Until that is repaired, the SPA points at the
-> Dokploy-provided sslip.io hostname so project creation works end-to-end.
-> When Cloudflare is fixed for `api.*`, change `VITE_API_BASE_URL` back to
-> `https://api.yt.mucitkarinca.com` and redeploy.
+> **`VITE_API_BASE_URL` must stay empty.** The SPA then calls a relative
+> `/api`, and `serve.cjs` reverse-proxies `/api/*` to `API_UPSTREAM` over
+> Dokploy's internal network. From the browser's point of view there is
+> only ever one origin — `yt.mucitkarinca.com` — which means:
+>
+> - the `yz_session` cookie (httpOnly, `SameSite=lax`) is stored and sent
+>   normally, because nothing is cross-site;
+> - no CORS preflights, no `Access-Control-*` negotiation;
+> - the `api.yt.mucitkarinca.com` edge cert is not on the critical path,
+>   so the Cloudflare TLS failure in `CLOUDFLARE_FIX.md` no longer blocks
+>   the app.
+>
+> Set `API_UPSTREAM` to the API service's slug and port as Dokploy resolves
+> it internally (`yz-api` per the service table below — confirm the exact
+> slug in the Dokploy UI, it must match or every `/api` call returns 502).
+>
+> ⚠️ **Historical note.** Between 2026-07-20 and this change the SPA pointed
+> directly at `https://yayin-takip-backend-…sslip.io` because
+> `api.yt.mucitkarinca.com` fails TLS at the Cloudflare edge (SSL alert 40).
+> That worked around the TLS problem but made the SPA→API call cross-site,
+> which broke cookie auth — every `GET /api/auth/me` returned 401 and no
+> one could stay logged in. Don't reintroduce a cross-domain
+> `VITE_API_BASE_URL` without also setting `SESSION_COOKIE_SAMESITE=none`
+> and `SESSION_COOKIE_SECURE=true` on the API.
 
 ### 2. API — `yz-api`
 
@@ -90,8 +108,20 @@ VITE_API_BASE_URL=https://yayin-takip-backend-4dvoqr-53441c-46-62-170-64.sslip.i
 | **Build Pack** | **Dockerfile** (uses the committed `server/Dockerfile`) |
 | **Dockerfile Path** | `Dockerfile` (relative to Build Path → `server/Dockerfile`) |
 | Port | `4000` |
-| Domain | `api.yt.mucitkarinca.com` (Let's Encrypt) |
+| Domain | `api.yt.mucitkarinca.com` (Let's Encrypt) — optional, see below |
 | Trigger | On Push |
+
+> **Remove the public domain from this service.** Browser traffic now
+> reaches the API through the SPA's `/api` proxy on the internal network,
+> so `api.yt.mucitkarinca.com` is no longer on the critical path — the app
+> works fine while it stays broken at the Cloudflare edge.
+>
+> It should be taken off rather than merely left unused, because the API
+> runs with `trustProxy: true` (so it can read the real client IP out of
+> `X-Forwarded-For` for the per-IP rate limiters). Anything that can reach
+> the API *directly* can therefore forge that header and bypass the
+> login/forgot-password throttles. Closing the public route removes the
+> only way to do that.
 
 > The Dockerfile ships with a built-in `HEALTHCHECK` against
 > `GET /api/health`, so Dokploy's container probe will start passing

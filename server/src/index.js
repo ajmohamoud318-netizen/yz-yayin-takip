@@ -34,6 +34,21 @@ export async function buildServer() {
   const fastify = Fastify({
     logger: { level: process.env.LOG_LEVEL ?? 'info' },
     bodyLimit: 8 * 1024 * 1024,
+    // The SPA container reverse-proxies /api/* to us (see serve.cjs), so
+    // the socket address is always that container. trustProxy makes
+    // Fastify derive `request.ip` from X-Forwarded-For instead — which
+    // the per-IP rate limiters on /auth/login, /auth/forgot-password,
+    // etc. depend on to bucket by real client rather than lumping every
+    // user into one.
+    //
+    // ⚠️ Trade-off: a client that can reach this service DIRECTLY can now
+    // spoof X-Forwarded-For and sidestep those per-IP limits. That is
+    // acceptable only while the sole route in is our own proxy on the
+    // internal network — so the `api.yt.mucitkarinca.com` domain should be
+    // removed from the API service in Dokploy (see DEPLOY.md § API). If you
+    // ever need the API publicly reachable again, put a trusted proxy in
+    // front that overwrites X-Forwarded-For rather than appending to it.
+    trustProxy: true,
     // Fastify 5's default ajv config strips unknown body keys silently
     // (removeAdditional: true). For a security pass we want unknown keys
     // rejected with 400 instead — that way a typo in the SPA ("stage"
