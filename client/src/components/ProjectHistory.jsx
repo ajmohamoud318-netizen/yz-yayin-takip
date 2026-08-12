@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { ChevronDown, FileText, History, ShoppingCart, ThumbsDown } from 'lucide-react'
+import { ChevronDown, ChevronUp, FileText, History, ShoppingCart, ThumbsDown } from 'lucide-react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
@@ -8,6 +8,7 @@ import {
   HISTORY_FILTERS,
   TONES,
   buildTimeline,
+  dedupeNote,
   filterCounts,
   hasDemoForm,
   hasOzalitForm,
@@ -131,6 +132,24 @@ function ProjectHistory({
           <FilteredEmptyState onReset={() => setFilter('all')} />
         ) : (
           <>
+            {/* Above the list, not below it: the hidden rows are the OLDEST
+                ones now, and they live off the top of a chronological
+                timeline. Pointing the chevron up says which way they are. */}
+            {hidden > 0 && (
+              <button
+                type="button"
+                onClick={() => setExpanded(true)}
+                className={cn(
+                  'mb-4 flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed py-2',
+                  'text-[12px] text-muted-foreground transition-colors duration-150',
+                  'hover:border-solid hover:bg-muted hover:text-foreground active:scale-[0.995]',
+                )}
+              >
+                <ChevronUp className="h-3.5 w-3.5" />
+                <span className="font-mono tabular-nums">{hidden}</span> önceki kayıt
+              </button>
+            )}
+
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={filter}
@@ -153,22 +172,28 @@ function ProjectHistory({
                       <span className="h-px flex-1 bg-border" />
                     </div>
 
+                    {/* The spine is drawn per row rather than once per <ol>:
+                        a single absolutely-positioned line can only guess where
+                        the last dot sits, and `bottom-3` guessed wrong — it ran
+                        past the final icon into empty space, leaving a stub
+                        under every day (and a stub connecting nothing at all on
+                        a day with one entry). Segments know their own end. */}
                     <ol className="relative mt-1">
-                      {/* One spine per day — a line running through the date
-                          headings would imply the headings are events too. */}
-                      <span
-                        aria-hidden="true"
-                        className="absolute bottom-3 left-[11px] top-3 w-px bg-border"
-                      />
                       {day.nodes.map((node, i) =>
                         node.type === 'run' ? (
-                          <FoldedRun key={node.id} entries={node.entries} reduce={reduce} />
+                          <FoldedRun
+                            key={node.id}
+                            entries={node.entries}
+                            reduce={reduce}
+                            isLast={i === day.nodes.length - 1}
+                          />
                         ) : (
                           <MajorRow
                             key={node.id}
                             entry={node.entry}
                             meta={node.meta}
                             index={i}
+                            isLast={i === day.nodes.length - 1}
                             reduce={reduce}
                             projectType={projectType}
                             orders={orders}
@@ -183,21 +208,6 @@ function ProjectHistory({
                 ))}
               </motion.div>
             </AnimatePresence>
-
-            {hidden > 0 && (
-              <button
-                type="button"
-                onClick={() => setExpanded(true)}
-                className={cn(
-                  'mt-4 flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed py-2',
-                  'text-[12px] text-muted-foreground transition-colors duration-150',
-                  'hover:border-solid hover:bg-muted hover:text-foreground active:scale-[0.995]',
-                )}
-              >
-                <span className="font-mono tabular-nums">{hidden}</span> önceki kayıt
-                <ChevronDown className="h-3.5 w-3.5" />
-              </button>
-            )}
           </>
         )}
       </CardContent>
@@ -217,11 +227,12 @@ export default memo(ProjectHistory)
  * attached-form actions.
  */
 function MajorRow({
-  entry, meta, index, reduce, projectType, orders,
+  entry, meta, index, isLast, reduce, projectType, orders,
   onOpenDemoForm, onOpenOzalitForm, onOpenOrderForm,
 }) {
   const Icon = meta.icon
   const tone = TONES[meta.tone] ?? TONES.neutral
+  const note = isOrderEntry(entry) ? null : dedupeNote(entry.note, meta.label)
 
   const demoForm = hasDemoForm(entry)
   const ozalitForm = hasOzalitForm(entry, projectType)
@@ -245,6 +256,9 @@ function MajorRow({
       transition={{ type: 'spring', stiffness: 240, damping: 26, delay: reduce ? 0 : Math.min(index, 8) * 0.03 }}
       className="relative flex gap-3 pb-4 last:pb-0"
     >
+      {!isLast && (
+        <span aria-hidden="true" className="absolute bottom-0 left-[11px] top-6 w-px bg-border" />
+      )}
       <span
         className={cn(
           'relative z-[1] mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full ring-4 ring-card',
@@ -277,9 +291,7 @@ function MajorRow({
           )}
         </p>
 
-        {entry.note && !isOrderEntry(entry) && (
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{entry.note}</p>
-        )}
+        {note && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{note}</p>}
 
         {entry.reason && (
           <div className="mt-2 flex items-start gap-2 rounded-md border-l-2 border-destructive/40 bg-destructive/5 py-1.5 pl-2.5 pr-3">
@@ -321,7 +333,7 @@ function MajorRow({
  * single fact ("6 alt görev güncellemesi") until you ask for the detail —
  * which is how a reader treats it anyway.
  */
-function FoldedRun({ entries, reduce }) {
+function FoldedRun({ entries, reduce, isLast }) {
   const [open, setOpen] = useState(false)
   // Distinct tones present in the run, so the summary still signals whether
   // anything in there went backwards (amber) or completed (emerald).
@@ -329,6 +341,9 @@ function FoldedRun({ entries, reduce }) {
 
   return (
     <motion.li layout={!reduce} className="relative pb-4 last:pb-0">
+      {!isLast && (
+        <span aria-hidden="true" className="absolute bottom-0 left-[11px] top-6 w-px bg-border" />
+      )}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

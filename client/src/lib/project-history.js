@@ -5,6 +5,7 @@ import {
   ClipboardList,
   MessageSquarePlus,
   Package,
+  PackageCheck,
   Plus,
   RotateCcw,
   Send,
@@ -41,20 +42,27 @@ import {
 // / violet) are held to a single stop each so the timeline never drifts into
 // a gradient of near-identical pastels.
 export const TONES = {
+  // Ink, not rose. `--primary` is documented in index.css as "primary actions
+  // only", and at /10 its 345° rose sits ~15° from `--destructive`'s 0° red —
+  // on warm paper the two tints were indistinguishable, so a rejected demo
+  // wore the same disc as the advance that produced it. Ink keeps forward
+  // motion legible as structure and leaves red to mean exactly one thing.
   pipeline: {
-    dot: 'bg-primary',
-    icon: 'text-primary',
-    surface: 'bg-primary/10',
+    dot: 'bg-foreground/70',
+    icon: 'text-foreground',
+    surface: 'bg-foreground/[0.06]',
   },
   positive: {
     dot: 'bg-emerald-600',
     icon: 'text-emerald-700 dark:text-emerald-400',
     surface: 'bg-emerald-600/10',
   },
+  // The only filled disc in the table. A rejection is what people open this
+  // panel to find; a tint among tints made it something you had to hunt for.
   negative: {
     dot: 'bg-destructive',
-    icon: 'text-destructive',
-    surface: 'bg-destructive/10',
+    icon: 'text-destructive-foreground',
+    surface: 'bg-destructive',
   },
   pending: {
     dot: 'bg-amber-500',
@@ -85,6 +93,10 @@ export const HISTORY_FILTERS = [
 const EVENTS = {
   project_created: { icon: Plus, tone: 'pipeline', weight: 'major', group: 'stage', label: 'Proje Oluşturuldu' },
   project_edit: { icon: ClipboardEdit, tone: 'neutral', weight: 'minor', group: 'stage', label: 'Proje Düzenlendi' },
+  // Backlist product promoted out of Ürün Bilgileri into a real orderable
+  // product (POST /api/projects/import). Its timeline starts here — there is no
+  // tasarım/demo/ozalit history to show, because the book predates the system.
+  legacy_import: { icon: Package, tone: 'neutral', weight: 'major', group: 'stage', label: 'Arşivden Ürün Olarak Eklendi' },
 
   subtask_done: { icon: CheckCircle2, tone: 'positive', weight: 'minor', group: 'subtask', label: 'Alt Görev Tamamlandı' },
   subtask_undone: { icon: RotateCcw, tone: 'pending', weight: 'minor', group: 'subtask', label: 'Alt Görev Geri Alındı' },
@@ -115,6 +127,20 @@ const ACTIONS = {
   reject: { icon: ThumbsDown, tone: 'negative', weight: 'major', group: 'approval' },
   order: { icon: ShoppingCart, tone: 'order', weight: 'major', group: 'order' },
   system: { icon: Package, tone: 'neutral', weight: 'minor', group: 'subtask' },
+}
+
+// The two halves of a demo/ozalit handoff travel in opposite directions, but
+// both are `action: 'advance'` and so both fell through to ACTIONS.advance's
+// generic ChevronRight — "Demoya Gönderildi" and "Demo Teslim Edildi" rendered
+// as the same glyph. Keyed by destination stage; anything unlisted keeps the
+// chevron, which is honest for a step with no better symbol.
+const ADVANCE_ICONS = {
+  demo_teslim: Send,
+  cin_demo_teslim: Send,
+  ozalit_teslim: Send,
+  demo_onay: PackageCheck,
+  cin_demo_onay: PackageCheck,
+  ozalit_onay: PackageCheck,
 }
 
 const ADVANCE_LABELS = {
@@ -164,7 +190,13 @@ export function historyMeta(h) {
 
   // Legacy rows: derive the label from the stage transition.
   if (h.action === 'create') return { ...base, label: 'Proje Oluşturuldu' }
-  if (h.action === 'advance') return { ...base, label: ADVANCE_LABELS[h.to_stage] ?? 'İlerletildi' }
+  if (h.action === 'advance') {
+    return {
+      ...base,
+      icon: ADVANCE_ICONS[h.to_stage] ?? base.icon,
+      label: ADVANCE_LABELS[h.to_stage] ?? 'İlerletildi',
+    }
+  }
   if (h.action === 'approve') return { ...base, label: APPROVE_LABELS[h.from_stage] ?? 'Onaylandı' }
   if (h.action === 'reject') return { ...base, label: REJECT_LABELS[h.from_stage] ?? 'Reddedildi' }
   if (h.action === 'order') return { ...base, label: 'Sipariş' }
@@ -198,7 +230,7 @@ export function dayLabel(key) {
 
 /**
  * Turn the flat ascending list into what the timeline actually renders:
- * newest-first day buckets whose runs of consecutive low-signal rows are
+ * chronological day buckets whose runs of consecutive low-signal rows are
  * folded into one collapsible node.
  *
  * The folding threshold is 3. Below it, collapsing costs the reader a click
@@ -211,10 +243,14 @@ export function buildTimeline(entries, filter = 'all') {
   const filtered =
     filter === 'all' ? entries : entries.filter((h) => historyMeta(h).group === filter)
 
-  // Newest first: paired with the "daha fazla" cut-off, chronological order
-  // would hide the most recent activity behind the cut, which is backwards
-  // for a log people open to answer "what just happened?".
-  const ordered = [...filtered].reverse()
+  // Chronological: "Proje Oluşturuldu" at the top, the newest row at the
+  // bottom, so the timeline reads as the story of the project in the order it
+  // happened. `entries` already arrives ascending from ProjectDetail.
+  //
+  // This puts the cut-off on the OTHER end from where it used to be — see
+  // truncateTimeline, which now drops the oldest days and parks its expander
+  // above the list rather than below it.
+  const ordered = filtered
 
   const days = []
   let currentDay = null
@@ -263,12 +299,17 @@ export function filterCounts(entries) {
  * Cut the timeline to roughly `limit` nodes without orphaning a day heading.
  * A day is kept whole once it starts, so the cut lands on a day boundary and
  * the reader never sees "23 Temmuz" followed by two of its nine rows.
+ *
+ * `days` is chronological, so the cut has to run backwards: we keep the most
+ * RECENT days and hide the oldest. Taking the first `limit` here would collapse
+ * a busy project down to the day it was created and hide everything since.
  */
 export function truncateTimeline(days, limit) {
   let shown = 0
   const kept = []
   let hidden = 0
-  for (const day of days) {
+  for (let i = days.length - 1; i >= 0; i--) {
+    const day = days[i]
     if (shown >= limit) {
       hidden += day.nodes.length
       continue
@@ -276,7 +317,30 @@ export function truncateTimeline(days, limit) {
     kept.push(day)
     shown += day.nodes.length
   }
+  kept.reverse() // back into chronological order for rendering
   return { days: kept, hidden }
+}
+
+/**
+ * Notes are written server-side without knowing what label the row will get,
+ * so several of them restate it: 'Proje oluşturuldu' under "Proje Oluşturuldu"
+ * is a dead line, and 'Demo teslim edildi — onaya gönderildi' spends half its
+ * width repeating the heading above it. Drop the echo, keep the remainder.
+ */
+export function dedupeNote(note, label) {
+  if (!note) return null
+  const n = note.trim()
+  const lower = n.toLocaleLowerCase('tr')
+  const head = label.toLocaleLowerCase('tr')
+  if (lower === head) return null
+  for (const sep of [' — ', ' – ', ' - ', ': ']) {
+    if (lower.startsWith(head + sep)) {
+      const rest = n.slice(head.length + sep.length).trim()
+      if (!rest) return null
+      return rest.charAt(0).toLocaleUpperCase('tr') + rest.slice(1)
+    }
+  }
+  return n
 }
 
 // ── Attached-form availability ────────────────────────────────────────

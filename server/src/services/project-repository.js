@@ -17,11 +17,47 @@ const PROJECT_COLUMNS = `
   ozalit_designer_approvals,
   demo_held, demo_held_at, demo_held_by_name,
   demo_received, demo_received_by, demo_received_at,
-  demo_delivered_at, demo_delivered_by, demo_delivered_by_name,
+  demo_delivered_at, demo_delivered_by,
   ozalit_requested, reject_target, last_reject_type, last_reject_target,
   ozalit_approvals,
+  origin,
   created_at, updated_at,
   deleted_at, deleted_by, deleted_by_name
+`
+
+/**
+ * `demo_delivered_by_name`, resolved live from `users` instead of read back
+ * from the snapshot `computeDemoTeslimAdvance` stamped at delivery time.
+ *
+ * The stored column froze whatever the account was called on the day the
+ * matbaa delivered, so renaming a user (the realistic fix when a shared login
+ * like "yukselen zeka" turns out to be doing the deliveries) left this field
+ * reading the old string forever — while the timeline right next to it, which
+ * resolves `done_by` through a LEFT JOIN at read time, showed the new one.
+ * Same bug class as the nameless history rows that JOIN was added to fix.
+ *
+ * COALESCE rather than a bare lookup, because the snapshot is still worth
+ * something: if the user row is ever deleted the live name goes null and the
+ * frozen string is all that's left of who delivered it. Live name wins when
+ * there is one; the snapshot is the floor. That's the same shape as
+ * `deleted_by` / `deleted_by_name` elsewhere in this table.
+ *
+ * Written as a scalar subquery, not a LEFT JOIN, because this expression has
+ * to survive three different contexts: a plain SELECT, a `RETURNING` clause
+ * (patchProject), and a `SELECT ... FOR UPDATE` (getProjectForUpdate). A join
+ * would break the last one — Postgres refuses FOR UPDATE on the nullable side
+ * of an outer join — and would need `FOR UPDATE OF projects` plus a different
+ * column prefix at every call site. A subquery is a separate query level, so
+ * it locks nothing and reads the same everywhere.
+ *
+ * `table` is the name the enclosing query uses for `projects` ('p' in the
+ * joined list query, 'projects' in the single-row ones).
+ */
+const deliveredByNameSql = (table) => `
+  COALESCE(
+    (SELECT u.name FROM users u WHERE u.id = ${table}.demo_delivered_by),
+    ${table}.demo_delivered_by_name
+  ) AS demo_delivered_by_name
 `
 
 export async function listProjects() {
@@ -32,7 +68,11 @@ export async function listProjects() {
   // `initials(project.assigned_name)`. The `assigned_name = $alias`
   // fallback keeps unassigned projects rendering "—".
   const { rows } = await getPool().query(
+    // NB: the `p.`-prefixing below splits PROJECT_COLUMNS on commas, so that
+    // constant must stay a flat list of bare column names — derived
+    // expressions are appended separately, already qualified.
     `SELECT ${PROJECT_COLUMNS.split(',').map((c) => 'p.' + c.trim()).join(', ')}
+       , ${deliveredByNameSql('p')}
        , a.name AS assignee_name
        , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = p.id) AS has_product_info
      FROM projects p
@@ -181,6 +221,7 @@ export async function loadProjectAssignees(client, project) {
 export async function getProject(id) {
   const { rows } = await getPool().query(
     `SELECT ${PROJECT_COLUMNS}
+       , ${deliveredByNameSql('projects')}
        , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id) AS has_product_info
      FROM projects WHERE id = $1 AND deleted_at IS NULL`, [id],
   )
@@ -198,6 +239,7 @@ export async function getProject(id) {
 export async function getProjectIncludingDeleted(id) {
   const { rows } = await getPool().query(
     `SELECT ${PROJECT_COLUMNS}
+       , ${deliveredByNameSql('projects')}
        , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id) AS has_product_info
      FROM projects WHERE id = $1`, [id],
   )
@@ -208,6 +250,7 @@ export async function getProjectIncludingDeleted(id) {
 export async function getProjectForUpdate(client, id) {
   const { rows } = await client.query(
     `SELECT ${PROJECT_COLUMNS}
+       , ${deliveredByNameSql('projects')}
        , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = projects.id) AS has_product_info
      FROM projects WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, [id],
   )
@@ -287,6 +330,9 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
   'demo_received_at',
   // Who/when the matbaa delivered the current demo round. Set by
   // computeDemoTeslimAdvance, nulled by a resend or "Teslim Alınamadı".
+  // `demo_delivered_by` is the id everything now reads through; the _name
+  // stays writable on purpose as the fallback snapshot described on
+  // `deliveredByNameSql` — it is no longer what gets read back.
   'demo_delivered_at',
   'demo_delivered_by',
   'demo_delivered_by_name',
@@ -319,8 +365,11 @@ export async function patchProject(client, id, fields) {
   const setSql = cols.map((c, i) => `${c} = $${i + 2}`).join(', ')
   const values = cols.map((c) => fields[c])
   const { rows } = await client.query(
+    // The routes hand this row straight back to the SPA, so the derived name
+    // has to be resolved here too — otherwise the response to the very
+    // request that renamed things would still carry the stale snapshot.
     `UPDATE projects SET ${setSql}, updated_at = NOW() WHERE id = $1
-     RETURNING ${PROJECT_COLUMNS}`,
+     RETURNING ${PROJECT_COLUMNS}, ${deliveredByNameSql('projects')}`,
     [id, ...values],
   )
   return rows[0] ? rowToProject(rows[0]) : null
@@ -366,7 +415,7 @@ export async function restoreProject(id) {
     `UPDATE projects
         SET deleted_at = NULL, deleted_by = NULL, deleted_by_name = NULL
       WHERE id = $1 AND deleted_at IS NOT NULL
-      RETURNING ${PROJECT_COLUMNS}`,
+      RETURNING ${PROJECT_COLUMNS}, ${deliveredByNameSql('projects')}`,
     [id],
   )
   return rows[0] ? rowToProject(rows[0]) : null
@@ -483,27 +532,48 @@ export async function reconcileOzalitApprovals(actor) {
   return advanced
 }
 
+/**
+ * Insert a project.
+ *
+ * `stage`, `progress` and `origin` are parameterised rather than hardcoded so
+ * the legacy/backlist import (`POST /api/projects/import`) can create a row
+ * that already sits at a finished stage. The defaults reproduce the normal
+ * create path exactly — a new project starts at Tasarım, 0% done, provenance
+ * 'pipeline' — so every pre-existing caller behaves identically.
+ *
+ * `progress` matters more than it looks for legacy rows: every orderable stage
+ * is in STAGES_REQUIRING_FULL_PROGRESS, and the client colours cards off
+ * progress, so a finished book imported at 0% renders as overdue/red.
+ */
 export async function insertProject(client, fields) {
   // The projects table has `id TEXT PRIMARY KEY` with no default — we
   // mint a `p-<nanoid>` here so the INSERT doesn't violate the not-null
   // constraint. The prefix keeps it visually distinct from user (u-…)
   // and order/handover ids, and nanoid(16) gives plenty of entropy for
   // a small-to-medium team.
+  //
+  // A caller-supplied `id` is honoured — the legacy import reuses the
+  // REÇETE.xlsx seed id (`p-x1`) so the Ürün Bilgileri orphan row converts
+  // in place instead of appearing twice. The route restricts which ids may
+  // be passed; do NOT widen that without re-reading why.
   const projectId = fields.id ?? `p-${nanoid(16)}`
   const { rows } = await client.query(
     `INSERT INTO projects
        (id, title, type, stage, assigned_to, created_by, target_month,
-        pass_number, pass_kind, progress, created_at, updated_at)
-     VALUES ($1,$2,$3,'tasarim',$4,$5,$6,1,$7,0, NOW(), NOW())
-     RETURNING ${PROJECT_COLUMNS}`,
+        pass_number, pass_kind, progress, origin, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,1,$8,$9,$10, NOW(), NOW())
+     RETURNING ${PROJECT_COLUMNS}, ${deliveredByNameSql('projects')}`,
     [
       projectId,
       fields.title,
       fields.type,
+      fields.stage ?? 'tasarim',
       fields.assigned_to ?? null,
       fields.created_by ?? null,
       fields.target_month ?? null,
       fields.pass_kind ?? 'first_edition',
+      fields.progress ?? 0,
+      fields.origin ?? 'pipeline',
     ],
   )
   return rowToProject(rows[0])
@@ -553,6 +623,9 @@ function rowToProject(r) {
     last_reject_target: r.last_reject_target ?? null,
     ozalit_approvals: r.ozalit_approvals ?? [],
     has_product_info: r.has_product_info ?? false,
+    // 'pipeline' | 'legacy'. The client's projects store filters `legacy` out of
+    // every pipeline view (Kanban, Tüm Projeler, counts) — see migration 031.
+    origin: r.origin ?? 'pipeline',
     created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
     updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at,
     deleted_at: r.deleted_at instanceof Date ? r.deleted_at.toISOString() : r.deleted_at,

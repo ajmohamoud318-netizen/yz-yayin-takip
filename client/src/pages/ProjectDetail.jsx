@@ -22,7 +22,7 @@ import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
 import { useProject } from '@/hooks/useProjects'
-import api, { STAGE_LABELS, TYPE_LABELS, IN_FLIGHT_DEMO_OZALIT_STAGES } from '@/api'
+import api, { STAGE_LABELS, TYPE_LABELS, IN_FLIGHT_DEMO_OZALIT_STAGES, isLegacyProject } from '@/api'
 import StageBar from '@/components/StageBar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -1180,6 +1180,12 @@ function PageSubtaskRow({ sub, canEdit, busy, onAdd, onRevize, revizing = false,
  */
 function availableActions({ project, user }) {
   if (!project || !user) return []
+  // Imported backlist products (origin='legacy', migration 031) have no design
+  // phase: no subtasks, no designer, no demo/ozalit history. Every pipeline
+  // route 400s on them server-side (assertNotLegacy), so offer no transition
+  // buttons at all rather than buttons that fail. A new print run for one of
+  // these starts as a sipariş, which is unaffected.
+  if (isLegacyProject(project)) return []
   const role = user.role
   const stage = project.stage
   const set = new Set()

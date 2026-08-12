@@ -22,6 +22,8 @@ import {
   isDemoApprover,
   canRejectAtStage,
   canEditProductInfo,
+  isLegacyProject,
+  assertNotLegacy,
 } from '../index.js'
 
 describe('getPipeline', () => {
@@ -215,5 +217,37 @@ describe('canEditProductInfo (Ürün Bilgileri edit)', () => {
     expect(canEditProductInfo(PRINTER)).toBe(false)
     expect(canEditProductInfo({ role: 'satis' })).toBe(false)
     expect(canEditProductInfo(undefined)).toBe(false)
+  })
+})
+
+describe('isLegacyProject / assertNotLegacy (arşiv products)', () => {
+  const legacy = { type: 'TR', stage: 'satista', origin: 'legacy', has_product_info: true }
+  const pipeline = { type: 'TR', stage: 'satista', origin: 'pipeline', has_product_info: true }
+
+  it('identifies imported backlist rows by origin', () => {
+    expect(isLegacyProject(legacy)).toBe(true)
+    expect(isLegacyProject(pipeline)).toBe(false)
+    // Rows predating migration 031 carry no origin — must not read as legacy.
+    expect(isLegacyProject({ stage: 'satista' })).toBe(false)
+    expect(isLegacyProject(undefined)).toBe(false)
+  })
+
+  it('blocks pipeline transitions but leaves sipariş and teslim open', () => {
+    expect(() => assertNotLegacy(legacy)).toThrow(/Arşiv kaydı/)
+    expect(() => assertNotLegacy(pipeline)).not.toThrow()
+    expect(() => assertNotLegacy(undefined)).not.toThrow()
+    // Ordering a backlist book is the entire point of importing it.
+    expect(canRequestOrder(legacy)).toBe(true)
+    expect(() => assertOrderable(legacy)).not.toThrow()
+    expect(canRequestHandover({ type: 'TR', stage: 'uretimde', origin: 'legacy' })).toBe(true)
+  })
+
+  it('matches the server guard message', () => {
+    // Server: server/src/domain/pipeline.js assertNotLegacy. The two domains
+    // are kept in parity deliberately; a divergence here means the SPA hides a
+    // button the API still allows (or vice versa).
+    let status
+    try { assertNotLegacy(legacy) } catch (e) { status = e.status }
+    expect(status).toBe(400)
   })
 })

@@ -13,6 +13,8 @@ export {
   STAGES_REQUIRING_FULL_PROGRESS,
   canRequestOrder,
   assertOrderable,
+  isLegacyProject,
+  assertNotLegacy,
   handoverStageFor,
   canRequestHandover,
   assertHandoverEligible,

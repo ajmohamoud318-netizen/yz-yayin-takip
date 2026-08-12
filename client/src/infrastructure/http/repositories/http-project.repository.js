@@ -123,6 +123,19 @@ export function createHttpProjectRepository(userRepo) {
       cache.set(data.id, data)
       return data
     },
+    /**
+     * Import backlist/archive products (see AGENTS.md → "Arşiv (legacy)
+     * products"). Each item is `{ id?, title, type, stage?, components? }`;
+     * the server creates them at a finished stage with `origin: 'legacy'`.
+     *
+     * Pass `dryRun: true` to get the counts back ({ willCreate, duplicates,
+     * missingProductInfo, errors }) without writing anything.
+     */
+    async importProjects(items, { dryRun = false } = {}) {
+      const { data } = await httpClient.post('/projects/import', { items, dryRun })
+      for (const p of data?.created ?? []) cache.set(p.id, p)
+      return data
+    },
     async updateProject(id, patch) {
       // Mirror `createProject`: the NewProjectDialog sends the same
       // un-normalised payload for create AND edit, so we have to map it

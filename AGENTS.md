@@ -117,6 +117,65 @@ onaylandi                    Üretime Alındı
 - `canRequestOrder` (and the throwing `assertOrderable`) gate the create-order use case to projects whose `stage ∈ ORDERABLE_STAGES = { 'uretime_hazir', 'uretimde', 'gumruk', 'satista' }` AND that have a saved `has_product_info` entry
 - The Ürünler catalog page (`pages/Urunler.jsx`) splits this pool into two groups for Sales: "Sipariş İçin Hazır" (production finished, not yet fully sold — `uretime_hazir`/`uretimde`/`gumruk`) and "Halihazırda Satışta" (`satista`)
 
+### Arşiv (legacy) products — backlist titles
+
+Books published before this system existed used to be unable to reach Ürünler:
+`insertProject` hardcoded `stage = 'tasarim'`, so a backlist title would have had
+to be walked through fake demos and a full multi-party ozalit approval to become
+orderable.
+
+The source data already existed. `client/src/data/productInfo.js` is generated
+from **REÇETE.xlsx** and holds ~93 product specs keyed by seed id (`p-x1`…).
+`pages/UrunBilgileri.jsx` renders them as synthetic orphan rows (`__seed: true`)
+when no matching project exists. Un-promoted, they are **browser-local only** —
+saving one calls `PUT /api/product-info/p-x1`, which 404s (`Proje bulunamadı`)
+into a swallowed catch, and `hydrateProductInfo` drops orphan overrides on next
+boot. Promoting a row is what makes its spec real.
+
+**Promote from Ürün Bilgileri; there is no file import.** The team leader ticks
+orphan rows (checkbox per row, plus "Tüm arşivi seç") and confirms `type` +
+`stage` in the `PromoteDialog` — REÇETE.xlsx carries specs only, no TR/ÇİN and no
+stage, so both are asked once and applied to the whole selection.
+`POST /api/projects/import` then creates each project and its `product_info` row
+in one transaction, and the orphan row converts in place.
+
+Rules that are not obvious and must not be re-litigated:
+
+- **`origin = 'legacy'`** on the created project (see schema below). Without it
+  backlist titles inflate `AppShell`'s `active`/`total`/`satista` counts and
+  `PeriodWidget` renders a meaningless "180/200 satışta".
+- **Filter in one place**: `useProjectsStore` exposes `projects` (pipeline only)
+  and `allProjects`. Every page inherits the filter. Ürünler needs no change —
+  it calls `api.listProjects()` directly and keeps seeing everything. Ürün
+  Bilgileri deliberately opts into `allProjects`: on the filtered list a promoted
+  product would fall out of the "real project" branch and the orphan branch would
+  re-add it as an un-promoted seed, offering "Ürünlere Ekle" for a product that
+  already exists.
+- **Reuse the seed id** (`p-x1`, not a fresh `p-<nanoid>`). `insertProject`
+  already honours `fields.id`, and reusing it makes `realKeys.has(pid)` true so
+  the orphan row converts in place instead of duplicating. Restrict the route to
+  `/^p-x\d+$/` and 409 on collision.
+- **`progress: 100`** — every orderable stage is in `STAGES_REQUIRING_FULL_PROGRESS`,
+  and `statusKeyForProject` colours off progress. A finished book at `satista`
+  with `progress: 0` renders as a red overdue card.
+- **`pass_kind: 'first_edition'`, not `'reprint'`** — `pass_kind` describes the
+  pass the project is currently in, and the legacy book's untracked pass *was*
+  its first edition. It flips to `reprint` when Sales orders it.
+- **Guard the pipeline routes.** `assertNotLegacy` (`domain/pipeline.js`, mirrored
+  client-side in `domain/services/pipeline.js`) 400s `/advance`, `/approve`,
+  `/reject`, `/receive`, `/demo-not-received`, `/ozalit-not-received` and
+  `POST /demos` — these projects have no subtasks, designer or history. Without
+  the guard one click on Advance walks a 2019 title into `demo_teslim`, it
+  vanishes from Ürünler, and Sales silently loses the ability to order it.
+  `availableActions` in `ProjectDetail.jsx` returns `[]` for legacy so the SPA
+  never offers a button the API rejects. Sipariş and teslim stay open — putting
+  backlist books into those flows is the reason for importing them.
+- History is logged with `event: 'legacy_import'` (free-form column, migration
+  014) and rendered as "Arşivden Ürün Olarak Eklendi" in the project timeline.
+- Titles **not** among the 93 seeds use the existing "Yeni Ürün" flow. A CSV
+  importer is a later phase if the backlist grows beyond REÇETE.xlsx; the
+  endpoint is already generic enough to serve one.
+
 ---
 ## 📦 Teslim (Physical Handover) Workflow
 When Matbaa finishes printing (`uretimde` for TR, `gumruk` for ÇİN), they raise a **handover request** so Satış can confirm the physical delivery.
@@ -365,6 +424,8 @@ CREATE TABLE projects (
   demo_attempt  INTEGER DEFAULT 0,
   ozalit_attempt INTEGER DEFAULT 0,
   progress      INTEGER DEFAULT 0,           -- 0-100, auto-calculated
+  origin        TEXT NOT NULL DEFAULT 'pipeline'  -- migration 031
+    CHECK (origin IN ('pipeline','legacy')), -- 'legacy' = backlist import, see Arşiv products
   created_at    TIMESTAMPTZ DEFAULT NOW(),
   updated_at    TIMESTAMPTZ DEFAULT NOW()
 );
@@ -495,8 +556,14 @@ GET    /api/projects/:id              → project + subtasks + stage history
 POST   /api/projects                  { title, type, assigned_to, target_month, subtasks[] } [team_leader]
 PATCH  /api/projects/:id              { title, assigned_to, target_month } [team_leader]
 DELETE /api/projects/:id              [team_leader]
+POST   /api/projects/import           { dryRun?, items[] } [team_leader]
+                                       item: { id?, title, type, stage?, pass_kind?, components? }
+                                       stage ∈ ORDERABLE_STAGES (default 'satista'); creates
+                                       origin='legacy', progress=100 projects + product_info in
+                                       one tx. See "Arşiv (legacy) products".
 ```
 ### Stage Transitions
+> Every route in this block 400s on `origin = 'legacy'` via `assertNotLegacy` — see "Arşiv (legacy) products".
 ```
 POST   /api/projects/:id/advance      move to next stage [designer or team_leader]
 POST   /api/projects/:id/approve      { stage } [printer for demo/ozalit, team_leader for cin]

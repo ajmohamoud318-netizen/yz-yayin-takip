@@ -221,3 +221,64 @@ describe('listProjectHistory', () => {
     assert.equal(rows[1].id, 'h-2', 'newer entry second')
   })
 })
+// ---------------------------------------------------------------------------
+// `demo_delivered_by_name` is resolved live from `users` (see
+// `deliveredByNameSql`) rather than read back from the snapshot the delivery
+// step stamped, so renaming a user updates it the way it already updates the
+// history timeline. That only holds if EVERY query returning a project row
+// carries the derived expression — a `SELECT`/`RETURNING` that lists
+// PROJECT_COLUMNS alone silently drops the field to null instead of failing,
+// which is exactly the kind of omission that survives a green test run.
+//
+// So this is a source-level check: it reads the module text and asserts the
+// pairing directly. Cheaper and more reliable than trying to exercise seven
+// query paths through a fake client that cannot parse SQL anyway.
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
+describe('project row queries', () => {
+  const source = readFileSync(
+    fileURLToPath(new URL('./project-repository.js', import.meta.url)),
+    'utf8',
+  )
+
+  it('pairs every PROJECT_COLUMNS query with the derived delivered-by name', () => {
+    // Statement-ish slices: each place the constant is interpolated, plus the
+    // ~200 chars after it, which is where the derived column would be added.
+    const uses = [...source.matchAll(/\$\{PROJECT_COLUMNS[^}]*\}/g)]
+    assert.ok(uses.length >= 6, `expected several query sites, found ${uses.length}`)
+
+    const missing = uses
+      .map((m) => ({ at: m.index, tail: source.slice(m.index, m.index + 220) }))
+      .filter((u) => !u.tail.includes('deliveredByNameSql'))
+      .map((u) => `line ${source.slice(0, u.at).split('\n').length}`)
+
+    assert.deepEqual(
+      missing, [],
+      `PROJECT_COLUMNS used without deliveredByNameSql at: ${missing.join(', ')}`,
+    )
+  })
+
+  it('keeps PROJECT_COLUMNS a flat list of bare column names', () => {
+    // listProjects prefixes every entry with `p.` by splitting on commas, so a
+    // derived expression added to the constant (COALESCE(a, b), a CASE, a
+    // subquery) would be shredded into invalid SQL at that one call site only.
+    const cols = source.match(/const PROJECT_COLUMNS = `([\s\S]*?)`/)[1]
+    for (const col of cols.split(',')) {
+      assert.match(
+        col.trim(), /^[a-z_][a-z0-9_]*$/,
+        `"${col.trim()}" is not a bare column name — it would break the p. prefixing in listProjects`,
+      )
+    }
+  })
+
+  it('resolves the live user name but falls back to the stored snapshot', () => {
+    const fn = source.match(/const deliveredByNameSql = \(table\) => `([\s\S]*?)`/)[1]
+    const sql = fn.replace(/\$\{table\}/g, 'projects').replace(/\s+/g, ' ').trim()
+    assert.equal(
+      sql,
+      'COALESCE( (SELECT u.name FROM users u WHERE u.id = projects.demo_delivered_by), '
+        + 'projects.demo_delivered_by_name ) AS demo_delivered_by_name',
+    )
+  })
+})

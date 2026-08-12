@@ -31,6 +31,37 @@ export function assertOrderable(project) {
 }
 
 /**
+ * True for an imported backlist product (`origin: 'legacy'`, migration 031).
+ * These are books published before this system existed: created directly at a
+ * finished stage so Sales can order them, with no subtasks, no designer and no
+ * demo/ozalit history.
+ *
+ * Mirrors `isLegacyProject` in server/src/domain/pipeline.js — the server
+ * enforces it, this copy exists so the UI doesn't offer actions that would 400.
+ * @param {{ origin?: string }} project
+ */
+export function isLegacyProject(project) {
+  return project?.origin === 'legacy'
+}
+
+/**
+ * Guard mirroring the server's `assertNotLegacy`. Advancing a legacy product
+ * moves it out of ORDERABLE_STAGES, which silently removes it from the Ürünler
+ * catalog and takes away Sales' ability to order it.
+ *
+ * Sipariş and teslim are deliberately NOT guarded — putting backlist books into
+ * those flows is the reason for importing them.
+ * @param {{ origin?: string }} project
+ */
+export function assertNotLegacy(project) {
+  if (isLegacyProject(project)) {
+    const err = new Error('Arşiv kaydı pipeline üzerinde ilerletilemez. Yeni bir baskı için sipariş talebi oluşturun.')
+    err.status = 400
+    throw err
+  }
+}
+
+/**
  * The stage a project must be in for Matbaa to raise a handover ("teslim")
  * request, based on project type.
  * @param {'TR'|'CIN'} type

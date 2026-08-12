@@ -241,8 +241,126 @@ function NewProductDialog({ open, onClose, projects, onCreate }) {
   )
 }
 
+/* ---------- promote-to-Ürünler dialog ---------- */
+/**
+ * Confirms the two things REÇETE.xlsx can't tell us — pipeline type and the
+ * stage the book is at — then hands the whole ticked selection to the import
+ * endpoint. Both values apply to every selected product, so ÇİN titles should
+ * be ticked and promoted as their own pass.
+ */
+function PromoteDialog({ open, onClose, items, busy, onConfirm }) {
+  const [type, setType] = useState('TR')
+  const [stage, setStage] = useState('satista')
+
+  useEffect(() => {
+    if (open) {
+      setType('TR')
+      setStage('satista')
+    }
+  }, [open])
+
+  if (!open) return null
+
+  const missingSpec = items.filter((x) => (x.comps?.length ?? 0) === 0).length
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/40 px-4 animate-in fade-in" onClick={busy ? undefined : onClose}>
+      <div
+        className="w-full max-w-md overflow-hidden rounded-2xl border bg-card shadow-2xl animate-in fade-in slide-in-from-bottom-2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary">
+              <Package className="h-4 w-4" />
+            </span>
+            <h2 className="text-base font-semibold">Ürünlere Ekle</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            aria-label="Kapat"
+            className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition active:scale-90 hover:bg-muted disabled:opacity-50"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-5">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            <span className="font-semibold text-foreground">{items.length} arşiv ürünü</span> gerçek ürün olarak
+            eklenecek ve Satış ekibi bunlar için sipariş talebi oluşturabilecek. Bu kayıtlar iş akışında
+            (Kanban, Tüm Projeler) görünmez.
+          </p>
+
+          <div>
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Tür
+            </label>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              className="h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-ring/40"
+            >
+              <option value="TR">TR</option>
+              <option value="CIN">ÇİN</option>
+            </select>
+            <p className="mt-1.5 text-[11px] text-muted-foreground">
+              Seçilen tüm ürünlere uygulanır. ÇİN ürünlerini ayrı seçip ekleyin.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Aşama
+            </label>
+            <select
+              value={stage}
+              onChange={(e) => setStage(e.target.value)}
+              className="h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-ring/40"
+            >
+              <option value="satista">Satışta</option>
+              <option value="uretime_hazir">Üretime Hazır</option>
+              <option value="uretimde">Üretimde</option>
+              <option value="gumruk">Gümrük</option>
+            </select>
+          </div>
+
+          {missingSpec > 0 && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-800 ring-1 ring-amber-600/20">
+              {missingSpec} ürünün parça bilgisi yok — bunlar Ürünler listesinde görünür ama parça bilgisi
+              girilene kadar sipariş verilemez.
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t bg-muted/30 px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="rounded-lg border bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground transition active:scale-95 hover:text-foreground disabled:opacity-50"
+          >
+            İptal
+          </button>
+          <button
+            type="button"
+            onClick={() => onConfirm({ type, stage })}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition active:scale-95 hover:brightness-105 disabled:opacity-60"
+          >
+            <Package className="h-3.5 w-3.5" />
+            {busy ? 'Ekleniyor…' : `${items.length} ürünü ekle`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ---------- product card ---------- */
-function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, draft, onStartEdit, onCancel, onSave, onDraftComp, onDeleteProduct, onAddComponent, index }) {
+function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, draft, onStartEdit, onCancel, onSave, onDraftComp, onDeleteProduct, onAddComponent, index, selectable, selected, onSelect }) {
   const list = editing ? draft : comps
   const multi = list.length > 1
   const updatedByName = meta?.updated_by_name
@@ -257,15 +375,38 @@ function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, d
         editing
           ? 'border-primary/40 ring-1 ring-primary/15'
           : 'hover:-translate-y-px hover:border-primary/30 hover:shadow-md',
+        selected && 'border-primary/50 ring-1 ring-primary/20',
       )}
     >
+      <div className="flex items-stretch">
+        {/* Seed rows get a tick box so the leader can promote a batch of
+            backlist titles into Ürünler in one pass. Deliberately outside the
+            expand button — nesting an input inside a <button> is invalid and
+            the click would toggle the card instead of the checkbox. */}
+        {selectable && (
+          <label
+            className="flex shrink-0 cursor-pointer items-center pl-4 pr-1"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="sr-only">{project.title} ürününü seç</span>
+            <input
+              type="checkbox"
+              checked={!!selected}
+              onChange={onSelect}
+              className="h-4 w-4 cursor-pointer rounded border-muted-foreground/40 accent-primary"
+            />
+          </label>
+        )}
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
         className="flex w-full items-center gap-3.5 rounded-2xl p-4 text-left outline-none transition active:scale-[0.997] focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="hidden w-7 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground/60 sm:block">
+        <span className={cn(
+          'hidden w-7 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground/60',
+          !selectable && 'sm:block',
+        )}>
           {String(index + 1).padStart(2, '0')}
         </span>
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary/15">
@@ -287,11 +428,20 @@ function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, d
             {comps.length} parça
           </span>
         )}
-        <span className="hidden shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground sm:block">
-          {TYPE_LABELS[project.type] ?? project.type}
-        </span>
+        {/* A seed row is a REÇETE.xlsx spec with no project behind it: it lives
+            only in this browser and Sales cannot order it until it's promoted. */}
+        {project.__seed ? (
+          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground ring-1 ring-inset ring-border">
+            Arşiv
+          </span>
+        ) : (
+          <span className="hidden shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground sm:block">
+            {TYPE_LABELS[project.type] ?? project.type}
+          </span>
+        )}
         <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-300', open && 'rotate-180')} />
       </button>
+      </div>
 
       {/* CSS-only height animation via grid rows */}
       <div className={cn('grid transition-[grid-template-rows] duration-300 ease-out', open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
@@ -384,7 +534,14 @@ function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, d
 }
 
 export default function UrunBilgileri() {
-  const { projects, loading } = useProjects()
+  // `allProjects`, not `projects`: the store filters out imported backlist
+  // products (origin='legacy') so they stay off the pipeline dashboards, but
+  // this page IS the product catalog and must show them. Using the filtered
+  // list would drop a promoted product out of the "real project" branch below,
+  // and the orphan branch would immediately re-add it as an un-promoted seed —
+  // so the "Ürünlere Ekle" button would come back for a product that already
+  // exists.
+  const { allProjects: projects, loading, refetch } = useProjects()
   const { user } = useAuth()
   // Edit rights: team_leader only.
   const canEdit = canEditProductInfo(user)
@@ -397,6 +554,10 @@ export default function UrunBilgileri() {
   const [editingId, setEditingId] = useState(null)
   const [draft, setDraft] = useState(null)
   const [newProductOpen, setNewProductOpen] = useState(false)
+  // Seed (orphan) rows the leader has ticked for promotion into Ürünler.
+  const [selectedSeeds, setSelectedSeeds] = useState(() => new Set())
+  const [promoteOpen, setPromoteOpen] = useState(false)
+  const [promoting, setPromoting] = useState(false)
 
   // Load the server-side specs and overlay them on top of the localStorage
   // mirror. The server is the source of truth; the mirror only covers the
@@ -539,6 +700,68 @@ export default function UrunBilgileri() {
 
   const totalComponents = useMemo(() => products.reduce((n, x) => n + x.comps.length, 0), [products])
 
+  // Seed rows only — these are REÇETE.xlsx specs with no project behind them,
+  // so they exist nowhere on the server and Sales can't order them. Promoting
+  // one creates a real project at a finished stage (origin='legacy'), which is
+  // what puts it in the Ürünler catalog.
+  const seedProducts = useMemo(() => products.filter((x) => x.project.__seed), [products])
+  const selectedSeedProducts = useMemo(
+    () => seedProducts.filter((x) => selectedSeeds.has(x.project.id)),
+    [seedProducts, selectedSeeds],
+  )
+
+  function toggleSeedSelected(pid) {
+    setSelectedSeeds((prev) => {
+      const next = new Set(prev)
+      next.has(pid) ? next.delete(pid) : next.add(pid)
+      return next
+    })
+  }
+
+  /**
+   * Promote the ticked seed rows into real, orderable products.
+   *
+   * `type` and `stage` are asked for once and applied to the whole selection:
+   * REÇETE.xlsx carries specs only — no TR/ÇİN and no stage — so there is
+   * nothing to infer them from. Tick the ÇİN titles separately if they differ.
+   *
+   * The seed id (`p-x12`) is sent as the project id on purpose: it makes the
+   * orphan row convert in place instead of the catalog showing the product
+   * twice (once as a seed, once as the new project).
+   */
+  async function promoteSelected({ type, stage }) {
+    if (selectedSeedProducts.length === 0) return
+    setPromoting(true)
+    try {
+      const items = selectedSeedProducts.map(({ project, comps }) => ({
+        id: project.id,
+        title: project.title,
+        type,
+        stage,
+        components: comps,
+      }))
+      const res = await api.importProjects(items)
+      const dupes = res?.duplicates?.length ?? 0
+      if (res?.willCreate > 0) {
+        toast.success(
+          `${res.willCreate} ürün Ürünler listesine eklendi.${dupes > 0 ? ` ${dupes} tanesi zaten mevcuttu.` : ''}`,
+        )
+      } else if (dupes > 0) {
+        toast.info('Seçilen ürünler zaten Ürünler listesinde.')
+      }
+      for (const e of res?.errors ?? []) toast.error(`Satır ${e.row}: ${e.message}`)
+      setSelectedSeeds(new Set())
+      setPromoteOpen(false)
+      // Pull the new projects into the shared store so the row flips from
+      // "arşiv" to a real product without a page reload.
+      await refetch()
+    } catch (e) {
+      toast.error(e?.message || 'Ürünler eklenemedi.')
+    } finally {
+      setPromoting(false)
+    }
+  }
+
   const filtered = useMemo(() => {
     if (!search.trim()) return products
     const q = search.toLowerCase()
@@ -607,6 +830,24 @@ export default function UrunBilgileri() {
           </button>
         )}
 
+        {canEdit && seedProducts.length > 0 && (
+          <button
+            type="button"
+            onClick={() =>
+              setSelectedSeeds((prev) =>
+                prev.size === seedProducts.length
+                  ? new Set()
+                  : new Set(seedProducts.map((x) => x.project.id)),
+              )
+            }
+            className="rounded-xl border bg-card px-3 py-2 text-sm font-medium text-muted-foreground transition active:scale-95 hover:text-foreground"
+          >
+            {selectedSeeds.size === seedProducts.length
+              ? 'Arşiv seçimini kaldır'
+              : `Tüm arşivi seç (${seedProducts.length})`}
+          </button>
+        )}
+
         {canEdit && (
           <button
             type="button"
@@ -617,6 +858,34 @@ export default function UrunBilgileri() {
           </button>
         )}
       </div>
+
+      {/* Selection bar — only while archive rows are ticked. */}
+      {canEdit && selectedSeeds.size > 0 && (
+        <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/[0.06] px-4 py-2.5 backdrop-blur animate-in fade-in slide-in-from-top-1">
+          <span className="text-sm font-medium text-foreground">
+            {selectedSeeds.size} arşiv ürünü seçildi
+            <span className="ml-2 text-[12px] font-normal text-muted-foreground">
+              Satış ekibinin sipariş verebilmesi için ürün olarak eklenmeli
+            </span>
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedSeeds(new Set())}
+              className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition active:scale-95 hover:text-foreground"
+            >
+              Temizle
+            </button>
+            <button
+              type="button"
+              onClick={() => setPromoteOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition active:scale-95 hover:brightness-105"
+            >
+              <Package className="h-3.5 w-3.5" /> Ürünlere Ekle
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* List */}
       {loading ? (
@@ -656,6 +925,9 @@ export default function UrunBilgileri() {
                 index={idx}
                 open={openIds.has(project.id)}
                 onToggle={() => toggle(project.id)}
+                selectable={canEdit && !!project.__seed}
+                selected={selectedSeeds.has(project.id)}
+                onSelect={() => toggleSeedSelected(project.id)}
                 canEdit={canEdit}
                 editing={editingId === project.id}
                 draft={editingId === project.id ? draft : null}
@@ -680,6 +952,14 @@ export default function UrunBilgileri() {
         onClose={() => setNewProductOpen(false)}
         projects={projects}
         onCreate={createProduct}
+      />
+
+      <PromoteDialog
+        open={promoteOpen}
+        onClose={() => setPromoteOpen(false)}
+        items={selectedSeedProducts}
+        busy={promoting}
+        onConfirm={promoteSelected}
       />
     </div>
   )

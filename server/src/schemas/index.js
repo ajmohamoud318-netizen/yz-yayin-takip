@@ -229,6 +229,35 @@ const notificationIdParams = {
 
 // ─── projects ──────────────────────────────────────────────────────────
 
+// A product spec component: { component, date?, fields: [{ k, v }] }. The field
+// list stays loose (additionalProperties allowed) so the Ürün Bilgileri form can
+// grow without a schema change, but sizes are capped so a bad client can't push
+// unbounded JSON. Declared here rather than in the product-info section because
+// `projectsImport` (below) references it, and a `const` used before its
+// initialiser runs would throw on module evaluation.
+const productComponents = {
+  type: 'array',
+  maxItems: 64,
+  items: {
+    type: 'object',
+    properties: {
+      component: { type: 'string', maxLength: 300 },
+      date: { type: 'string', maxLength: 60 },
+      fields: {
+        type: 'array',
+        maxItems: 128,
+        items: {
+          type: 'object',
+          properties: {
+            k: { type: 'string', maxLength: 200 },
+            v: { type: 'string', maxLength: 4000 },
+          },
+        },
+      },
+    },
+  },
+}
+
 const projectsCreate = {
   body: {
     type: 'object',
@@ -268,6 +297,55 @@ const projectsCreate = {
         type: 'array',
         maxItems: 32,
         items: subtaskInput,
+      },
+    },
+  },
+}
+
+// Legacy/backlist import (see AGENTS.md → "Arşiv (legacy) products").
+//
+// `stage` is deliberately NOT the full stage enum: importing straight into a
+// pre-production stage is what `POST /projects` is for. The route narrows it
+// further to ORDERABLE_STAGES and rejects anything else with a 400.
+//
+// `id` accepts only the REÇETE.xlsx seed namespace (`p-x1`, `p-x42`). Reusing
+// the seed id is what makes the Ürün Bilgileri orphan row convert in place
+// instead of appearing twice; allowing arbitrary ids here would let a client
+// choose project primary keys, so keep the pattern tight.
+const projectsImport = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['items'],
+    properties: {
+      dryRun: { type: 'boolean' },
+      items: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 500,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['title', 'type'],
+          properties: {
+            id: { type: 'string', pattern: '^p-x[0-9]{1,6}$' },
+            title: { type: 'string', minLength: 1, maxLength: 200 },
+            type: { type: 'string', enum: ['TR', 'CIN'] },
+            stage: {
+              type: 'string',
+              enum: ['uretime_hazir', 'uretimde', 'gumruk', 'satista'],
+            },
+            pass_kind: {
+              type: 'string',
+              enum: ['first_edition', 'reprint', 'redesign'],
+            },
+            target_month: {
+              type: ['string', 'null'],
+              pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$',
+            },
+            components: productComponents,
+          },
+        },
       },
     },
   },
@@ -462,9 +540,6 @@ const demosCreate = {
 
 // ─── product info (ürün bilgileri / parçalar) ──────────────────────────
 
-// A component is { component, date?, fields: [{ k, v }] }. We keep the field
-// list loose (additionalProperties allowed) so the form can grow without a
-// schema change, but cap sizes so a bad client can't push unbounded JSON.
 const productInfoUpsert = {
   params: {
     type: 'object',
@@ -477,28 +552,7 @@ const productInfoUpsert = {
     additionalProperties: false,
     required: ['components'],
     properties: {
-      components: {
-        type: 'array',
-        maxItems: 64,
-        items: {
-          type: 'object',
-          properties: {
-            component: { type: 'string', maxLength: 300 },
-            date: { type: 'string', maxLength: 60 },
-            fields: {
-              type: 'array',
-              maxItems: 128,
-              items: {
-                type: 'object',
-                properties: {
-                  k: { type: 'string', maxLength: 200 },
-                  v: { type: 'string', maxLength: 4000 },
-                },
-              },
-            },
-          },
-        },
-      },
+      components: productComponents,
     },
   },
 }
@@ -603,6 +657,7 @@ export const schemas = {
   workLogIdParams,
   notificationIdParams,
   projectsCreate,
+  projectsImport,
   projectsPatch,
   projectsIdParams,
   projectsAdvance,

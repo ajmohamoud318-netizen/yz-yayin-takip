@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, createElement } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, createElement } from 'react'
 import api from '@/api'
 import { getAuthToken } from '@/infrastructure/http/client.js'
 import { hydrateProductInfo } from '@/data/productCatalog'
@@ -93,9 +93,40 @@ export function ProjectsProvider({ children }) {
     }
   }, [refetch, updateOne])
 
+  // Imported backlist products (`origin: 'legacy'` — see migration 031 and
+  // AGENTS.md → "Arşiv (legacy) products") are real projects sitting at a
+  // finished stage so Sales can order them, but they are NOT live pipeline
+  // work: no subtasks, no designer, no demo/ozalit history.
+  //
+  // Filtering here — at the single store every page reads through — is what
+  // keeps them out of İş Akışı, Tüm Projeler, Yıllık Plan, Projelerim and the
+  // AppShell counts without touching any of those pages. In particular
+  // PeriodWidget renders `satista / total`: unfiltered, importing ~90 backlist
+  // titles would make it read "180/200 satışta" on day one and stop describing
+  // the current period at all.
+  //
+  // Callers that genuinely want everything (Ürün Bilgileri, which lists the
+  // catalog) opt in via `allProjects`. Ürünler needs neither — it calls
+  // api.listProjects() directly and so keeps seeing the full set.
+  const pipelineProjects = useMemo(
+    () => projects.filter((p) => p.origin !== 'legacy'),
+    [projects],
+  )
+
   return createElement(
     ProjectsContext.Provider,
-    { value: { projects, loading, error, refetch, setProjects, updateOne, addOne } },
+    {
+      value: {
+        projects: pipelineProjects,
+        allProjects: projects,
+        loading,
+        error,
+        refetch,
+        setProjects,
+        updateOne,
+        addOne,
+      },
+    },
     children,
   )
 }

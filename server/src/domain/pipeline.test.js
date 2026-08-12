@@ -11,6 +11,7 @@ import {
   getPipeline, getNextStage, assertCanEnterProduction,
   canRequestOrder, assertOrderable,
   canRequestHandover, assertHandoverEligible,
+  isLegacyProject, assertNotLegacy,
 } from './pipeline.js'
 
 describe('pipeline', () => {
@@ -69,5 +70,40 @@ describe('pipeline', () => {
     assert.equal(canRequestOrder({ stage: 'uretimde', has_product_info: true }), true)
     assert.equal(canRequestOrder({ stage: 'gumruk', has_product_info: true }), true)
     assert.equal(canRequestOrder({ stage: 'tasarim', has_product_info: true }), false)
+  })
+})
+
+describe('legacy (arşiv) products', () => {
+  const legacy = { stage: 'satista', origin: 'legacy', has_product_info: true }
+  const pipeline = { stage: 'satista', origin: 'pipeline', has_product_info: true }
+
+  it('identifies imported backlist rows by origin', () => {
+    assert.equal(isLegacyProject(legacy), true)
+    assert.equal(isLegacyProject(pipeline), false)
+    // A row predating migration 031 has no origin at all — must not be legacy.
+    assert.equal(isLegacyProject({ stage: 'satista' }), false)
+    assert.equal(isLegacyProject(undefined), false)
+  })
+
+  it('blocks pipeline transitions on a legacy product', () => {
+    assert.throws(() => assertNotLegacy(legacy), { status: 400 })
+    assert.throws(() => assertNotLegacy(legacy), /Arşiv kaydı/)
+    assert.doesNotThrow(() => assertNotLegacy(pipeline))
+    assert.doesNotThrow(() => assertNotLegacy({ stage: 'tasarim' }))
+    assert.doesNotThrow(() => assertNotLegacy(undefined))
+  })
+
+  it('still lets Sales order a legacy product — that is the point of importing it', () => {
+    // The sipariş and teslim guards are intentionally origin-blind.
+    assert.equal(canRequestOrder(legacy), true)
+    assert.doesNotThrow(() => assertOrderable(legacy))
+    assert.equal(canRequestHandover({ type: 'TR', stage: 'uretimde', origin: 'legacy' }), true)
+  })
+
+  it('is imported at 100% so it clears the production gate it already passed', () => {
+    // The import route sets progress: 100 for exactly this reason — every
+    // orderable stage is in STAGES_REQUIRING_FULL_PROGRESS.
+    assert.doesNotThrow(() => assertCanEnterProduction('satista', 100))
+    assert.throws(() => assertCanEnterProduction('satista', 0), /%100/)
   })
 })

@@ -15,6 +15,10 @@ import {
   applyOzalitNotReceived, applyRejection,
 } from '../services/project-transitions.js'
 import { notifyProjectCreated, notifyProjectTransition, notifyProjectDeleted } from '../services/notifications.js'
+import { ORDERABLE_STAGES } from '../domain/stages.js'
+// Blocks main-pipeline transitions on imported backlist products — see the
+// helper's own docblock for why this is destructive rather than just useless.
+import { assertNotLegacy } from '../domain/pipeline.js'
 
 /**
  * Projects + stage transition API.
@@ -22,6 +26,7 @@ import { notifyProjectCreated, notifyProjectTransition, notifyProjectDeleted } f
  * GET    /api/projects
  * GET    /api/projects/:id           — returns project + subtasks + history
  * POST   /api/projects
+ * POST   /api/projects/import        — legacy/backlist products (team_leader only)
  * PATCH  /api/projects/:id
  * DELETE /api/projects/:id           — soft delete (team_leader only)
  * GET    /api/projects/deleted       — list soft-deleted projects (team_leader only)
@@ -41,6 +46,7 @@ const PROJECT_FIELD_LABELS = {
   target_month: 'Hedef ay',
   assigned_to: 'Tasarımcı',
 }
+
 
 export async function projectRoutes(fastify) {
   fastify.get('/projects', async (request) => {
@@ -135,6 +141,149 @@ export async function projectRoutes(fastify) {
     return result
   })
 
+  /**
+   * Legacy/backlist import — see AGENTS.md → "Arşiv (legacy) products".
+   *
+   * Creates projects that already sit at a finished stage, so books published
+   * before this system existed can appear in the Ürünler catalog and Sales can
+   * raise a sipariş against them. Deliberately a separate route from
+   * `POST /projects` so the normal create path keeps its "every project starts
+   * at Tasarım" invariant.
+   *
+   * The whole batch runs in ONE transaction: a half-imported catalog is worse
+   * than a rejected file, and `dryRun` relies on being able to roll back after
+   * doing every real check.
+   */
+  fastify.post('/projects/import', { schema: schemas.projectsImport }, async (request) => {
+    await attachUser(request)
+    requireRole(request, 'team_leader')
+    const { items, dryRun = false } = request.body
+
+    // Duplicate detection is on normalised title (case-insensitive, collapsed
+    // whitespace) against live projects AND within the batch itself. We report
+    // rather than merge: a collision between a live project and a backlist entry
+    // is a human decision, not something to guess at.
+    const norm = (s) => String(s ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('tr-TR')
+
+    const result = await withTx(async (client) => {
+      const { rows: existingRows } = await client.query(
+        'SELECT id, title FROM projects WHERE deleted_at IS NULL',
+      )
+      const existingTitles = new Map(existingRows.map((r) => [norm(r.title), r.title]))
+      const existingIds = new Set(existingRows.map((r) => r.id))
+
+      const created = []
+      const duplicates = []
+      const errors = []
+      const seenInBatch = new Set()
+      let missingProductInfo = 0
+
+      for (const [index, item] of items.entries()) {
+        const key = norm(item.title)
+        if (!key) {
+          errors.push({ row: index + 1, message: 'Kitap adı boş.' })
+          continue
+        }
+        // An id already taken means this seed was promoted before — a 409 for a
+        // single item, but in a batch it's just "already done", so report it as
+        // a duplicate instead of failing the whole import.
+        if (item.id && existingIds.has(item.id)) {
+          duplicates.push(item.title)
+          continue
+        }
+        if (existingTitles.has(key) || seenInBatch.has(key)) {
+          duplicates.push(item.title)
+          continue
+        }
+        seenInBatch.add(key)
+
+        const components = Array.isArray(item.components) ? item.components : []
+        if (components.length === 0) missingProductInfo += 1
+
+        const stage = item.stage ?? 'satista'
+        // Belt-and-braces: the schema already restricts the enum, but this is
+        // the invariant that keeps a legacy row out of the live pipeline, so
+        // assert it here too rather than trusting one layer.
+        if (!ORDERABLE_STAGES.has(stage)) {
+          badRequest(`Arşiv kaydı yalnızca üretime hazır ve sonrası aşamalara aktarılabilir (satır ${index + 1}).`)
+        }
+
+        const project = await insertProject(client, {
+          id: item.id,
+          title: item.title,
+          type: item.type,
+          stage,
+          // Finished books are 100% done by definition. At 0% they'd render as
+          // red/overdue cards and trip the STAGES_REQUIRING_FULL_PROGRESS gate.
+          progress: 100,
+          // The pass this book is currently in was its (untracked) first
+          // edition; it becomes a 'reprint' when Sales orders it.
+          pass_kind: item.pass_kind ?? 'first_edition',
+          target_month: item.target_month ?? null,
+          assigned_to: null,
+          origin: 'legacy',
+          created_by: request.user.id,
+        })
+
+        if (components.length > 0) {
+          await client.query(
+            `INSERT INTO product_info (project_id, components, updated_by, updated_at)
+             VALUES ($1, $2::jsonb, $3, NOW())
+             ON CONFLICT (project_id)
+             DO UPDATE SET components = EXCLUDED.components,
+                           updated_by = EXCLUDED.updated_by,
+                           updated_at = NOW()`,
+            [project.id, JSON.stringify(components), request.user.id],
+          )
+        }
+
+        await logHistory(
+          client,
+          {
+            project_id: project.id,
+            from_stage: null,
+            to_stage: stage,
+            action: 'create',
+            event: 'legacy_import',
+            note: 'Arşivden ürün olarak eklendi',
+          },
+          request.user,
+        )
+
+        existingIds.add(project.id)
+        existingTitles.set(key, item.title)
+        created.push(project)
+      }
+
+      const summary = {
+        willCreate: created.length,
+        duplicates,
+        missingProductInfo,
+        errors,
+        dryRun,
+      }
+
+      // Deliberately NOT calling notifyProjectCreated: it fans out to
+      // assignees, and a legacy row has none — across a 90-item batch it would
+      // be a notification flood for no reader.
+
+      if (dryRun) {
+        // Undo everything we just wrote; the caller only wanted the counts.
+        // Throwing is how withTx rolls back, so carry the summary on the error
+        // and unwrap it outside.
+        const rollback = new Error('dry-run')
+        rollback.__dryRunSummary = summary
+        throw rollback
+      }
+      return { ...summary, created }
+    }).catch((e) => {
+      if (e && e.__dryRunSummary) return { ...e.__dryRunSummary, created: [] }
+      throw e
+    })
+
+    return result
+  })
+
   fastify.patch('/projects/:id', { schema: schemas.projectsPatch }, async (request) => {
     await attachUser(request)
     requireRole(request, 'team_leader')
@@ -214,6 +363,7 @@ export async function projectRoutes(fastify) {
     const result = await withTx(async (client) => {
       const project = await getProjectForUpdate(client, request.params.id)
       if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
       // Hydrate assignees: the demo re-send branch in computeAdvance gates on
       // "team_leader OR assigned designer" via project.assignees. getProjectForUpdate
       // doesn't populate that array, so without this the assigned-designer check
@@ -291,6 +441,7 @@ export async function projectRoutes(fastify) {
     const result = await withTx(async (client) => {
       const project = await getProjectForUpdate(client, request.params.id)
       if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
       // Multi-party ozalit approval needs the full required set: every active
       // team leader + every assigned designer. Load both so the transition can
       // record this approval and advance only once everyone has signed off.
@@ -352,6 +503,7 @@ export async function projectRoutes(fastify) {
     const result = await withTx(async (client) => {
       const project = await getProjectForUpdate(client, request.params.id)
       if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
       project.assignees = await loadProjectAssignees(client, project)
       const designerIds = project.assignees.map((a) => a.id)
       const { project: next, history } = applyDemoReceive(project, { user: request.user, designerIds })
@@ -376,6 +528,7 @@ export async function projectRoutes(fastify) {
     const result = await withTx(async (client) => {
       const project = await getProjectForUpdate(client, request.params.id)
       if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
       project.assignees = await loadProjectAssignees(client, project)
       const designerIds = project.assignees.map((a) => a.id)
       const { project: next, history } = applyDemoNotReceived(project, { user: request.user, designerIds })
@@ -412,6 +565,7 @@ export async function projectRoutes(fastify) {
     const result = await withTx(async (client) => {
       const project = await getProjectForUpdate(client, request.params.id)
       if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
       project.assignees = await loadProjectAssignees(client, project)
       const designerIds = project.assignees.map((a) => a.id)
       const { project: next, history } = applyOzalitNotReceived(project, { user: request.user, designerIds })
@@ -444,6 +598,7 @@ export async function projectRoutes(fastify) {
     const result = await withTx(async (client) => {
       const project = await getProjectForUpdate(client, request.params.id)
       if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
       // Load subtasks so computeRejection can reset exactly the leader-selected
       // ones (revizeIds) and recompute progress on a reject-to-designer. Without
       // this the transition operates on an empty subtask list and the revise
