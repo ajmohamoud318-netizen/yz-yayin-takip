@@ -328,7 +328,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
                   <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     <Pencil className="h-3.5 w-3.5 shrink-0" />
                     Ürün Bilgileri
-                    <span className="font-normal normal-case tracking-normal text-muted-foreground/60">· gerekirse düzenle</span>
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {items.length > 0
@@ -616,9 +615,6 @@ export function TalepHistoryViewer({ order, open, onOpenChange, initialStep = nu
           /* ── Horizontal stage pipeline — click a signed stage for its form ── */
           <div className="space-y-2">
             <HorizontalStages order={order} onSelect={(h) => setViewStep(h)} />
-            <p className="text-center text-[11px] text-muted-foreground">
-              İmzalı bir aşamaya tıklayarak o aşamanın formunu görüntüleyin.
-            </p>
           </div>
         )}
 

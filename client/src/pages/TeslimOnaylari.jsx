@@ -63,9 +63,6 @@ export default function TeslimOnaylari() {
           </span>
           <h1 className="text-2xl font-semibold tracking-tight">Teslim Onayları</h1>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Matbaadan gelen teslim talepleri. "Alındı" dediğinizde ürün otomatik olarak satışa çıkar.
-        </p>
       </header>
 
       <Tabs value={tab} onValueChange={setTab}>

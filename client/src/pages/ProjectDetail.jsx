@@ -499,7 +499,7 @@ export default function ProjectDetail() {
               <Trash2 className="mt-0.5 h-4 w-4 shrink-0" />
               <p className="text-sm">
                 Bu proje silindi{project.deleted_by_name ? ` — ${project.deleted_by_name} tarafından` : ''}
-                {project.deleted_at ? `, ${formatDateTr(project.deleted_at)}` : ''}. Sadece görüntülenebilir.
+                {project.deleted_at ? `, ${formatDateTr(project.deleted_at)}` : ''}
               </p>
             </div>
             {isLeader && (

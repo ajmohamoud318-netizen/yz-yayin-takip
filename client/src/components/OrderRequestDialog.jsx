@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
-import { ShoppingCart, FileSpreadsheet, ArrowLeft } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ShoppingCart, FileSpreadsheet, ArrowLeft, ListChecks, Search } from 'lucide-react'
 import { toast } from 'sonner'
 
-import api from '@/api'
+import api, { STAGE_LABELS } from '@/api'
 import { getComponentsForProject } from '@/data/productCatalog'
 import { storeOrderAdet } from '@/data/orderAdet'
 import { Button } from '@/components/ui/button'
@@ -136,7 +136,13 @@ async function parseExcelFile(file) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function OrderRequestDialog({ products, user, open, initialProductId, onOpenChange, onSubmitted, onBatchSubmitted }) {
-  const [step, setStep] = useState('upload') // 'upload' | 'confirm' | 'batch'
+  const [step, setStep] = useState('select') // 'select' | 'confirm' | 'batch'
+  // Two ways into an order from the 'select' step: tick products in the catalog
+  // picker, or drop an Excel and let it match. Both land on the same quantity
+  // screens below.
+  const [mode, setMode] = useState('pick')   // 'pick' | 'upload'
+  const [pickSearch, setPickSearch] = useState('')
+  const [pickedIds, setPickedIds] = useState(() => new Set())
   const [dragOver, setDragOver] = useState(false)
   const [selectedProductId, setSelectedProductId] = useState('')
   const [itemQtys, setItemQtys] = useState({})
@@ -168,7 +174,10 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
 
   useEffect(() => {
     if (!open) {
-      setStep('upload')
+      setStep('select')
+      setMode('pick')
+      setPickSearch('')
+      setPickedIds(new Set())
       setDragOver(false)
       dragCountRef.current = 0
       setSelectedProductId('')
@@ -205,6 +214,38 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
     components.forEach((name) => { next[name] = val })
     setItemQtys(next)
     setExcelFilled(new Set())
+  }
+
+  // ── Direct picker ───────────────────────────────────────────────────────────
+
+  const pickFiltered = useMemo(() => {
+    const q = normTR(pickSearch)
+    if (!q) return products
+    return products.filter((p) => normTR(p.title).includes(q))
+  }, [products, pickSearch])
+
+  function togglePicked(id) {
+    setPickedIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  // Same split as the Excel path: one product gets the itemized form (so Sales
+  // can set each component separately), several go to the batch screen.
+  function continueWithPicked() {
+    const chosen = products.filter((p) => pickedIds.has(p.id))
+    if (chosen.length === 0) return
+    if (chosen.length === 1) {
+      setSelectedProductId(chosen[0].id)
+      setStep('confirm')
+      return
+    }
+    setBatchRows(chosen.map((product) => ({ product, qty: 0, modified: true })))
+    setBatchUnmatched([])
+    setBatchNotes('')
+    setStep('batch')
   }
 
   async function processFile(file) {
@@ -386,8 +427,8 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md sm:max-w-md max-sm:left-0 max-sm:top-0 max-sm:h-screen max-sm:max-h-screen max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-l-0">
 
-        {/* ── STEP 1: Upload / drag-drop ─────────────────────────────────── */}
-        {step === 'upload' && (
+        {/* ── STEP 1: Pick products / upload Excel ───────────────────────── */}
+        {step === 'select' && (
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -396,7 +437,87 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
               </DialogTitle>
             </DialogHeader>
 
+            {/* Mode switch */}
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted/60 p-1">
+              {[
+                { id: 'pick', label: 'Ürün seç', Icon: ListChecks },
+                { id: 'upload', label: 'Excel yükle', Icon: FileSpreadsheet },
+              ].map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setMode(id)}
+                  aria-pressed={mode === id}
+                  className={cn(
+                    'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-all',
+                    mode === id
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Catalog picker */}
+            {mode === 'pick' && (
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={pickSearch}
+                    onChange={(e) => setPickSearch(e.target.value)}
+                    placeholder="Ürün ara…"
+                    className="h-9 pl-8"
+                  />
+                </div>
+
+                <ul className="max-h-72 divide-y overflow-y-auto rounded-xl border">
+                  {pickFiltered.length === 0 ? (
+                    <li className="px-3 py-8 text-center text-xs text-muted-foreground">
+                      {products.length === 0
+                        ? 'Sipariş verilebilecek ürün bulunmuyor.'
+                        : 'Aramaya uyan ürün yok.'}
+                    </li>
+                  ) : (
+                    pickFiltered.map((p) => (
+                      <li key={p.id}>
+                        <label
+                          className={cn(
+                            'flex cursor-pointer items-center gap-2.5 px-3 py-2.5 text-sm transition-colors hover:bg-muted/40',
+                            pickedIds.has(p.id) && 'bg-primary/[0.05]',
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={pickedIds.has(p.id)}
+                            onChange={() => togglePicked(p.id)}
+                            className="h-4 w-4 shrink-0 cursor-pointer rounded border-muted-foreground/40 accent-primary"
+                          />
+                          <span className="min-w-0 flex-1 truncate font-medium">
+                            {p.title.replace(/ \/ /g, ' ')}
+                          </span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                            {STAGE_LABELS[p.stage] ?? p.stage}
+                          </span>
+                        </label>
+                      </li>
+                    ))
+                  )}
+                </ul>
+
+                <p className="text-xs text-muted-foreground">
+                  {pickedIds.size > 0
+                    ? `${pickedIds.size} ürün seçildi — adetleri sonraki adımda gireceksiniz.`
+                    : 'Sipariş vermek istediğiniz ürünleri işaretleyin.'}
+                </p>
+              </div>
+            )}
+
             {/* Drop zone */}
+            {mode === 'upload' && (
             <div
               onDragOver={(e) => e.preventDefault()}
               onDragEnter={handleDragEnter}
@@ -440,9 +561,15 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
                 </>
               )}
             </div>
+            )}
 
-            <DialogFooter>
+            <DialogFooter className="gap-2 sm:gap-2">
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>İptal</Button>
+              {mode === 'pick' && (
+                <Button type="button" disabled={pickedIds.size === 0} onClick={continueWithPicked}>
+                  {pickedIds.size > 1 ? `Devam (${pickedIds.size})` : 'Devam'}
+                </Button>
+              )}
             </DialogFooter>
           </>
         )}
@@ -455,7 +582,7 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
                 <button
                   type="button"
                   aria-label="Geri"
-                  onClick={() => setStep('upload')}
+                  onClick={() => setStep('select')}
                   className="-ml-1.5 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-95"
                 >
                   <ArrowLeft className="h-4 w-4" />
@@ -600,7 +727,7 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
               <DialogTitle className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setStep('upload')}
+                  onClick={() => setStep('select')}
                   className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <ArrowLeft className="h-4 w-4" />
@@ -629,6 +756,8 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
                   <Input
                     type="number"
                     min="1"
+                    inputMode="numeric"
+                    placeholder="0"
                     className={cn('h-8 w-24 text-right tabular-nums', row.qty > 0 ? 'font-semibold' : '')}
                     value={row.qty || ''}
                     onChange={(e) =>

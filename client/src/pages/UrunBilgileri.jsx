@@ -632,10 +632,6 @@ export default function UrunBilgileri() {
             <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Matbaa Takip</span>
           </div>
           <h1 className="text-3xl tracking-tight md:text-4xl">Ürün Bilgileri</h1>
-          <p className="mt-2 max-w-[60ch] text-sm leading-relaxed text-muted-foreground">
-            Her ürünün parçalarına (kitap, kutu, magnet…) ait üretim verileri — demo ve ozalit isteklerinde kullanılan bilgiler
-            {canEdit ? '. Her kartı tek tek düzenleyebilirsiniz.' : '.'}
-          </p>
         </div>
 
         {!loading && (

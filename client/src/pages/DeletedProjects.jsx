@@ -54,9 +54,6 @@ export default function DeletedProjects() {
       <div className="mx-auto max-w-7xl 2xl:max-w-screen-2xl 3xl:max-w-[88rem] space-y-6 2xl:space-y-8">
         <header>
           <h1 className="text-2xl font-semibold tracking-tight">Silinen Projeler</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Silinen projeler burada listelenir ve geri yüklenebilir.
-          </p>
         </header>
 
         {loading ? (

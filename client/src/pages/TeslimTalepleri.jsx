@@ -78,9 +78,6 @@ export default function TeslimTalepleri() {
           </span>
           <h1 className="text-2xl font-semibold tracking-tight">Teslim Talepleri</h1>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Üretimi tamamlanan ürünler için satış ekibine teslim talebi oluşturun. Satış "Alındı" dediğinde ürün otomatik olarak satışa çıkar.
-        </p>
       </header>
 
       <div className="grid gap-8 lg:grid-cols-2">

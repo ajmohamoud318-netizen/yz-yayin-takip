@@ -843,7 +843,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
             {variant.title}
-            {readOnly && <span className="ml-1 text-xs font-normal text-muted-foreground">({attemptNo}. {variant.attemptWord} — salt görüntüleme)</span>}
+            {readOnly && <span className="ml-1 text-xs font-normal text-muted-foreground">({attemptNo}. {variant.attemptWord})</span>}
           </DialogTitle>
         </DialogHeader>
 

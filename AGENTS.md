@@ -116,6 +116,12 @@ onaylandi                    Üretime Alındı
 - `ORDER_REJECT_TARGETS.matbaa_onay` = `{ designer, matbaa }` — mirrors the main pipeline's ozalit rejection target choice
 - `canRequestOrder` (and the throwing `assertOrderable`) gate the create-order use case to projects whose `stage ∈ ORDERABLE_STAGES = { 'uretime_hazir', 'uretimde', 'gumruk', 'satista' }` AND that have a saved `has_product_info` entry
 - The Ürünler catalog page (`pages/Urunler.jsx`) splits this pool into two groups for Sales: "Sipariş İçin Hazır" (production finished, not yet fully sold — `uretime_hazir`/`uretimde`/`gumruk`) and "Halihazırda Satışta" (`satista`)
+- `components/OrderRequestDialog.jsx` has three entry paths, all ending in the same `POST /api/orders` calls:
+  - **row click** — the per-product "Sipariş" button passes `initialProductId` and jumps straight to the quantity form
+  - **Ürün seç** — the "Sipariş Oluştur" button opens a searchable, multi-select catalog picker (default mode)
+  - **Excel yükle** — the same button's other mode; a dropped `.xlsx/.xls/.csv` is fuzzy-matched (`matchScore`, TR-normalized) against product titles and component names
+
+  One product — picked or matched — lands on the itemized "Kalem adetleri" form (a quantity per component); two or more land on the batch screen (one quantity per product, applied to all of its components), which submits an order per row.
 
 ### Arşiv (legacy) products — backlist titles
 

@@ -108,9 +108,6 @@ export default function BaskiListesi() {
           </span>
           <h1 className="text-2xl font-semibold tracking-tight">Baskı Listesi</h1>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Şu anda üretimde olan ve gümrükte bekleyen projeler. Hedef tarihi en yakın olan üstte.
-        </p>
       </header>
 
       {queue.length === 0 ? (

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, AlertTriangle, Plus, Package } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, Plus } from 'lucide-react'
 
 import api, {
   TYPE_LABELS, STAGE_LABELS, ORDERABLE_STAGES, STATUS_STYLES,
@@ -103,7 +103,7 @@ export default function Urunler() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Ürünler</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Sipariş verilebilecek tüm ürünler — {products.length} ürün
+              {products.length} ürün
             </p>
           </div>
           <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto">
@@ -114,8 +114,7 @@ export default function Urunler() {
                 className="w-full sm:w-auto"
                 title="Sistemden önce yayımlanmış ürünleri kataloğa ekle"
               >
-                <Package className="h-4 w-4" />
-                Arşivden Ürün Ekle
+                Ürün Ekle
                 {archiveSeeds.length > 0 && (
                   <span className="ml-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-primary">
                     {archiveSeeds.length}

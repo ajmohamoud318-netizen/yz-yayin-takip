@@ -66,9 +66,6 @@ export default function UretimeHazir() {
           </span>
           <h1 className="text-2xl font-semibold tracking-tight">Üretime Hazır</h1>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Ozaliti onaylanan ve üretime alınmayı bekleyen projeler. "Üretime Al" dediğinizde proje üretime geçer.
-        </p>
       </header>
 
       <section className="space-y-3">

@@ -114,9 +114,6 @@ export default function YearPlan() {
             <p className="mt-0.5 text-sm text-muted-foreground">
               {year} · {bars.length} proje zaman çizelgesinde
             </p>
-            <p className="mt-0.5 hidden text-xs text-muted-foreground/70 sm:block">
-              Yıl değiştirmek için sağa / sola kaydırın
-            </p>
           </div>
           <div className="flex items-center gap-1">
             <Button variant="outline" size="icon" onClick={() => setYear((y) => y - 1)} aria-label="Önceki yıl">
