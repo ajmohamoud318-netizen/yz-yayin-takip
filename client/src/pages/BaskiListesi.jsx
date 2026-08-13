@@ -53,7 +53,10 @@ function ProjectRow({ project, icon: Icon, onOpen }) {
   const names = assigneeNames(project)
   return (
     <Card className="transition-colors hover:border-primary/30">
-      <CardContent className="flex flex-wrap items-center gap-3 p-4">
+      {/* Phones: the title/status wrap freely and the date + type move under
+          them — truncating the book name to fit a date on one line is the
+          wrong trade on a 390px screen. ≥sm keeps the single-line row. */}
+      <CardContent className="flex items-start gap-3 p-4 sm:items-center">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
           <Icon className="h-5 w-5" />
         </span>
@@ -62,16 +65,24 @@ function ProjectRow({ project, icon: Icon, onOpen }) {
           onClick={() => onOpen(project.id)}
           className="min-w-0 flex-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
         >
-          <p className="truncate text-sm font-semibold leading-snug">{cleanTitle(project.title)}</p>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+          <p className="text-sm font-semibold leading-snug sm:truncate">{cleanTitle(project.title)}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground sm:truncate">
             {STAGE_LABELS[project.stage] ?? project.stage}
             {names && ` · ${names}`}
           </p>
+          <p className="mt-1.5 flex items-center gap-2 sm:hidden">
+            <Badge variant="outline" className="text-[10px]">
+              {TYPE_LABELS[project.type] ?? project.type}
+            </Badge>
+            <span className="font-mono text-xs text-muted-foreground">
+              {formatTargetDate(project.target_month)}
+            </span>
+          </p>
         </button>
-        <span className="shrink-0 font-mono text-xs text-muted-foreground">
+        <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:block">
           {formatTargetDate(project.target_month)}
         </span>
-        <Badge variant="outline" className="shrink-0 text-[10px]">
+        <Badge variant="outline" className="hidden shrink-0 text-[10px] sm:inline-flex">
           {TYPE_LABELS[project.type] ?? project.type}
         </Badge>
       </CardContent>

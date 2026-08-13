@@ -129,7 +129,8 @@ function ApprovalRow({ handover: h, saving, onConfirm }) {
   const received = h.status === 'received'
   return (
     <Card className={cn(!received && 'border-amber-200')}>
-      <CardContent className="flex flex-wrap items-center gap-3 p-4">
+      {/* Phones: full title + full-width action stacked; ≥sm one line. */}
+      <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:flex-wrap sm:items-center">
         <span
           className={cn(
             'grid h-10 w-10 shrink-0 place-items-center rounded-full',
@@ -139,18 +140,18 @@ function ApprovalRow({ handover: h, saving, onConfirm }) {
           {received ? <CheckCircle2 className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold leading-snug">{cleanTitle(h.project_title)}</p>
+          <p className="text-sm font-semibold leading-snug sm:truncate">{cleanTitle(h.project_title)}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Matbaa: {h.raised_by_name ?? '—'} · {fmtDate(h.created_at)}
           </p>
         </div>
         {received ? (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+          <span className="inline-flex shrink-0 items-center gap-1 self-start rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 sm:self-auto">
             <CheckCircle2 className="h-3.5 w-3.5" />
             Satışa çıktı
           </span>
         ) : (
-          <Button size="sm" onClick={onConfirm} disabled={saving}>
+          <Button size="sm" className="w-full sm:w-auto" onClick={onConfirm} disabled={saving}>
             <CheckCircle2 className="h-3.5 w-3.5" />
             {saving ? 'Onaylanıyor…' : 'Alındı'}
           </Button>

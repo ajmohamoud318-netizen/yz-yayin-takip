@@ -126,7 +126,7 @@ export default function DemoRequests() {
                       className="flex items-center justify-between gap-3 rounded-xl border border-dashed bg-card px-4 py-3 shadow-sm"
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">{d.title}</p>
+                        <p className="line-clamp-2 text-sm font-medium text-foreground sm:line-clamp-1">{d.title}</p>
                         <p className="text-xs text-muted-foreground">
                           {(d.items?.length ?? 0)} içerik · {d.files.length} dosya ·{' '}
                           {new Date(d.created_at).toLocaleDateString('tr-TR')}
@@ -183,7 +183,7 @@ export default function DemoRequests() {
                       >
                         <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', meta.dot)} />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-foreground">{p.title}</p>
+                          <p className="line-clamp-2 text-sm font-semibold text-foreground sm:line-clamp-1">{p.title}</p>
                           <p className="truncate text-xs text-muted-foreground">
                             {TYPE_LABELS[p.type]} · {STAGE_LABELS[p.stage]} · {p.assigned_name}
                           </p>
@@ -240,7 +240,7 @@ export default function DemoRequests() {
                         >
                           <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', meta.dot)} />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold">{p.title}</p>
+                            <p className="line-clamp-2 text-sm font-semibold sm:line-clamp-1">{p.title}</p>
                             <p className="mt-0.5 text-xs text-muted-foreground">{STAGE_LABELS[p.stage]}</p>
                           </div>
                           <Badge variant="outline" className="shrink-0">

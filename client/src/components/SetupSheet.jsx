@@ -61,8 +61,8 @@ export default function SetupSheet() {
 
   const needsInstall = mode === 'available' || mode === 'ios'
   // 'default' is the only push state a button can act on. 'needs-install'
-  // (iOS tab) is handled by the install row above it; 'denied', 'disabled'
-  // and 'unsupported' have no in-app fix.
+  // (iOS tab) is handled by the install row above it; 'denied', 'disabled',
+  // 'unsupported' and 'desktop' have no in-app fix (or no fix we want).
   const canEnablePush = status === 'default'
   const hasSomethingToOffer = needsInstall || canEnablePush
 
@@ -131,8 +131,14 @@ export default function SetupSheet() {
             <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold leading-tight">Kurulumu tamamlayın</p>
+              {/* Copy follows what's actually on offer. On desktop push is
+                  suppressed (status 'desktop'), so the install row can be the
+                  only thing here — and promising phone notifications next to a
+                  button that installs a desktop app reads as a bug. */}
               <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                Uygulamayı ana ekranınıza ekleyin ve iş bildirimlerini telefonunuza alın.
+                {canEnablePush
+                  ? 'Uygulamayı ana ekranınıza ekleyin ve iş bildirimlerini telefonunuza alın.'
+                  : 'Uygulamayı yükleyin — sekme aramadan, tek tıkla açılır.'}
               </p>
             </div>
             <button

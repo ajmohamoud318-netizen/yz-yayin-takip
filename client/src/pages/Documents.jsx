@@ -223,7 +223,7 @@ function DocumentCard({ project, form, attemptNo, docType, approved, printerName
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <p className="truncate text-sm font-semibold">{project.title}</p>
+              <p className="line-clamp-2 text-sm font-semibold sm:line-clamp-1">{project.title}</p>
             </div>
             <p className="mt-0.5 pl-6 text-xs text-muted-foreground">
               {requester || project.assigned_name}

@@ -83,18 +83,19 @@ export default function UretimeHazir() {
           <div className="space-y-2.5">
             {projects.map((p) => (
               <Card key={p.id} className="transition-colors hover:border-primary/30">
-                <CardContent className="flex flex-wrap items-center gap-3 p-4">
+                {/* Phones: full title + full-width action stacked; ≥sm one line. */}
+                <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:flex-wrap sm:items-center">
                   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
                     <Factory className="h-5 w-5" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold leading-snug">{cleanTitle(p.title)}</p>
+                    <p className="text-sm font-semibold leading-snug sm:truncate">{cleanTitle(p.title)}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {STAGE_LABELS[p.stage] ?? p.stage} · ozalit onaylandı
                     </p>
                   </div>
-                  <Badge variant="outline" className="shrink-0 text-[10px]">{TYPE_LABELS[p.type] ?? p.type}</Badge>
-                  <Button size="sm" onClick={() => setConfirmProject(p)} disabled={savingId === p.id}>
+                  <Badge variant="outline" className="shrink-0 self-start text-[10px] sm:self-auto">{TYPE_LABELS[p.type] ?? p.type}</Badge>
+                  <Button size="sm" className="w-full sm:w-auto" onClick={() => setConfirmProject(p)} disabled={savingId === p.id}>
                     <ArrowRight className="h-3.5 w-3.5" />
                     {savingId === p.id ? 'Alınıyor…' : 'Üretime Al'}
                   </Button>

@@ -376,7 +376,9 @@ function SummaryCard({ label, value, colorKey }) {
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-lg border p-4',
+        // Tighter on phones: 8 of these stack in 2 columns before any real
+        // content, so every saved pixel moves the plan closer to the fold.
+        'relative overflow-hidden rounded-lg border p-3 sm:p-4',
         isTotal
           ? 'bg-foreground border-foreground'
           : cn(meta?.surface, meta?.border),
@@ -385,7 +387,7 @@ function SummaryCard({ label, value, colorKey }) {
       <p className={cn('truncate text-xs font-medium opacity-80', isTotal ? 'text-background' : meta?.onSurface)}>
         {label}
       </p>
-      <p className={cn('mt-2 font-mono text-3xl font-bold tabular-nums', isTotal ? 'text-background' : meta?.onSurface)}>
+      <p className={cn('mt-1 font-mono text-2xl font-bold tabular-nums sm:mt-2 sm:text-3xl', isTotal ? 'text-background' : meta?.onSurface)}>
         {value}
       </p>
     </div>

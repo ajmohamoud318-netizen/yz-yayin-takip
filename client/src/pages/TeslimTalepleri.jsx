@@ -101,7 +101,7 @@ export default function TeslimTalepleri() {
                       <PackageCheck className="h-5 w-5" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold leading-snug">{cleanTitle(p.title)}</p>
+                      <p className="text-sm font-semibold leading-snug sm:truncate">{cleanTitle(p.title)}</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {STAGE_LABELS[p.stage] ?? p.stage} · üretim tamamlandı
                       </p>
@@ -174,7 +174,7 @@ function HandoverRow({ handover: h }) {
           {received ? <CheckCircle2 className="h-4.5 w-4.5" /> : <Clock className="h-4.5 w-4.5" />}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{cleanTitle(h.project_title)}</p>
+          <p className="text-sm font-medium sm:truncate">{cleanTitle(h.project_title)}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {received
               ? `${h.received_by_name} teslim aldı · ${fmtDate(h.received_at)}`

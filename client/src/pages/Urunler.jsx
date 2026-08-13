@@ -326,24 +326,30 @@ function ProductRow({
   const [subtasksOpen, setSubtasksOpen] = useState(false)
 
   return (
-    <li className="px-4 py-3">
-      <div className="flex items-center gap-3">
-        <span className="w-6 shrink-0 text-right text-xs font-semibold tabular-nums text-muted-foreground">
-          {index}.
-        </span>
-        <span className={cn(
-          'min-w-0 flex-1 truncate text-sm font-semibold leading-snug',
-          muted && 'text-muted-foreground',
-        )}>
-          {project.title.replace(/ \/ /g, ' ')}
-        </span>
+    <li className="px-3 py-3 sm:px-4">
+      {/* One line on ≥sm (title truncates, actions right). On phones the
+          title gets its own full-width line — it's the reason the row exists
+          — and the badges/actions wrap onto an indented second line. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex min-w-0 items-center gap-2.5 sm:flex-1 sm:gap-3">
+          <span className="w-6 shrink-0 text-right text-xs font-semibold tabular-nums text-muted-foreground">
+            {index}.
+          </span>
+          <span className={cn(
+            'min-w-0 flex-1 text-sm font-semibold leading-snug sm:truncate',
+            muted && 'text-muted-foreground',
+          )}>
+            {project.title.replace(/ \/ /g, ' ')}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 pl-[2.125rem] sm:shrink-0 sm:gap-3 sm:pl-0">
         {hasSpec ? (
-          <span className="hidden items-center gap-1.5 text-xs text-emerald-600 sm:flex">
+          <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600">
             <CheckCircle2 className="h-3.5 w-3.5" />
             Ürün bilgisi var
           </span>
         ) : (
-          <span className="hidden items-center gap-1.5 text-xs text-amber-600 sm:flex" title="Sipariş verilmeden önce takım lideri Ürün Bilgileri'ni doldurmalı">
+          <span className="inline-flex items-center gap-1.5 text-xs text-amber-600" title="Sipariş verilmeden önce takım lideri Ürün Bilgileri'ni doldurmalı">
             <AlertTriangle className="h-3.5 w-3.5" />
             Ürün bilgisi eksik
           </span>
@@ -360,14 +366,14 @@ function ProductRow({
               type="button"
               onClick={onOrder}
               title="Sipariş talebi oluştur"
-              className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+              className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1.5 text-[11px] sm:py-1 font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
             >
               <Plus className="h-3 w-3" />
               Sipariş
             </button>
           ) : (
             <span
-              className="shrink-0 cursor-not-allowed rounded-md bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground"
+              className="shrink-0 cursor-not-allowed rounded-md bg-muted px-2 py-1.5 text-[11px] sm:py-1 font-medium text-muted-foreground"
               title="Sipariş verilmeden önce Ürün Bilgileri'nde kaydı olmalı"
             >
               Sipariş veremezsiniz
@@ -386,7 +392,7 @@ function ProductRow({
             aria-expanded={subtasksOpen}
             title="Bu ürünün alt görevlerini düzenle"
             className={cn(
-              'inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-colors',
+              'inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1.5 text-[11px] sm:py-1 font-semibold transition-colors',
               subtasksOpen
                 ? 'bg-primary/10 text-primary'
                 : 'text-muted-foreground hover:bg-primary/10 hover:text-primary',
@@ -406,7 +412,7 @@ function ProductRow({
             onClick={onDelist}
             disabled={busy}
             title="Ürünü katalogdan kaldır — satış ekibi artık sipariş veremez"
-            className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+            className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1.5 text-[11px] sm:py-1 font-semibold text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
           >
             <EyeOff className="h-3 w-3" />
             Kaldır
@@ -418,12 +424,13 @@ function ProductRow({
             onClick={onRelist}
             disabled={busy}
             title="Ürünü katalogda tekrar yayına al"
-            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground disabled:opacity-50"
+            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1.5 text-[11px] sm:py-1 font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground disabled:opacity-50"
           >
             <Undo2 className="h-3 w-3" />
             Geri Al
           </button>
         )}
+        </div>
       </div>
 
       {canManageSubtasks && subtasksOpen && (

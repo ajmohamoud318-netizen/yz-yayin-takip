@@ -179,7 +179,7 @@ export default function Approvals({ tab = 'demo' }) {
             <CardContent className="space-y-3 p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">{p.title}</p>
+                  <p className="line-clamp-2 text-sm font-semibold sm:line-clamp-1">{p.title}</p>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">
                     {p.assigned_name} · {formatTargetDate(p.target_month)}
                   </p>
@@ -362,7 +362,7 @@ function SiparisOrderCard({ order, onSign, onView }) {
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">
+            <p className="line-clamp-2 text-sm font-semibold sm:line-clamp-1">
               {order.project_title?.replace(/ \/ /g, ' ')}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">

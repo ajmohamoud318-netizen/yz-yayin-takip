@@ -78,7 +78,9 @@ DialogFooter.displayName = 'DialogFooter'
 const DialogTitle = React.forwardRef(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn('text-lg font-semibold leading-none tracking-tight', className)}
+    // pr-8 keeps a long title from running under the absolute-positioned
+    // close button in the corner (visible on phone-width dialogs).
+    className={cn('pr-8 text-lg font-semibold leading-none tracking-tight', className)}
     {...props}
   />
 ))

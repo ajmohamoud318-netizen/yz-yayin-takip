@@ -277,7 +277,7 @@ function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, d
               type="checkbox"
               checked={!!selected}
               onChange={onSelect}
-              className="h-4 w-4 cursor-pointer rounded border-muted-foreground/40 accent-primary"
+              className="h-5 w-5 cursor-pointer rounded border-muted-foreground/40 accent-primary sm:h-4 sm:w-4"
             />
           </label>
         )}
@@ -300,7 +300,7 @@ function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, d
           <BookOpen className="h-[18px] w-[18px]" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold leading-tight text-foreground">{project.title}</p>
+          <p className="line-clamp-2 text-sm font-semibold leading-tight text-foreground sm:line-clamp-1">{project.title}</p>
           {updatedByName && (
             <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
               Son güncelleyen: <span className="font-medium text-foreground/80">{updatedByName}</span>

@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth.js'
  *
  *   'unsupported'    → browser has no Push API at all (desktop Safari < 16,
  *                      Firefox with push disabled, embedded webviews)
+ *   'desktop'        → works, but deliberately not offered here — see below
  *   'needs-install'  → iOS Safari in a normal tab. Push exists on iOS 16.4+
  *                      but ONLY inside a Home Screen app, so the fix is an
  *                      install, not a permission prompt.
@@ -20,6 +21,17 @@ import { useAuth } from '@/hooks/useAuth.js'
  *   'denied'         → user (or a previous session) blocked notifications
  *   'default'        → supported and available, not yet subscribed
  *   'subscribed'     → active subscription stored on the server
+ *
+ * `'desktop'` is a product decision, not a capability one: desktop Chrome and
+ * Edge support push perfectly well. But push exists here to reach people AWAY
+ * from a screen — the matbaa team on the print floor — and at a desk the app is
+ * already open and polling every 15s, so the bell and the toasts cover it. All
+ * a desktop permission prompt buys is one more thing to dismiss, plus OS
+ * banners duplicating a toast the user is already looking at.
+ *
+ * A desktop that is ALREADY subscribed keeps working and keeps its toggle (so
+ * it can be turned off). Only new setup is suppressed — silently tearing down
+ * something a user explicitly enabled is worse than the banner it prevents.
  *
  * The iOS distinction matters more than it looks: prompting for notification
  * permission in an iOS tab throws rather than showing a dialog, and a denied
@@ -43,6 +55,28 @@ function isIOS() {
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 }
 
+/**
+ * Is this a phone/tablet — i.e. a device push is actually FOR?
+ *
+ * Deliberately conservative in the "yes" direction, because the cost of the
+ * two mistakes is asymmetric: wrongly classifying a phone as desktop hides the
+ * feature from someone who needs it on the print floor, while wrongly
+ * classifying a desktop as mobile just shows one dismissible row.
+ *
+ * The `pointer: coarse` clause is what catches Android tablets and anything
+ * with a non-standard UA. Note it is AND-ed with `maxTouchPoints`, and that
+ * `pointer` describes the PRIMARY input — a touchscreen Windows laptop reports
+ * `pointer: fine` because its main pointer is the trackpad, so it correctly
+ * falls through to desktop.
+ */
+function isMobileDevice() {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false
+  if (isIOS()) return true
+  if (/Android|iPhone|iPad|iPod|Windows Phone|Mobile/i.test(navigator.userAgent || '')) return true
+  return window.matchMedia?.('(pointer: coarse)')?.matches === true &&
+    (navigator.maxTouchPoints ?? 0) > 0
+}
+
 /** True when running as an installed PWA rather than a browser tab. */
 function isStandalone() {
   if (typeof window === 'undefined') return false
@@ -62,6 +96,32 @@ function urlBase64ToUint8Array(base64String) {
   const output = new Uint8Array(raw.length)
   for (let i = 0; i < raw.length; i += 1) output[i] = raw.charCodeAt(i)
   return output
+}
+
+/**
+ * Does this device already hold a usable push subscription?
+ *
+ * Used only by the desktop branch, to tell "never set up" (hide everything)
+ * apart from "set up before we stopped offering it" (leave it working). Also
+ * re-POSTs, for the same self-healing reason the mobile path does: the browser
+ * can silently rotate a subscription, and the server row may have been pruned
+ * after a transient 410.
+ *
+ * Never throws — a device we can't interrogate is treated as not subscribed,
+ * which lands on the quieter behaviour.
+ */
+async function hasLiveSubscription() {
+  try {
+    if (!('serviceWorker' in navigator) || !('Notification' in window)) return false
+    if (Notification.permission !== 'granted') return false
+    const reg = await navigator.serviceWorker.ready
+    const sub = await reg.pushManager.getSubscription()
+    if (!sub) return false
+    try { await api.savePushSubscription(sub.toJSON()) } catch { /* retried next load */ }
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Mounted instances of this hook, kept in agreement — see `commit` below. */
@@ -112,6 +172,15 @@ export function usePushNotifications() {
         return
       }
 
+      // Desktop: don't offer setup — but check for an existing subscription
+      // first, so a machine that opted in before this rule (or deliberately,
+      // via a device that reports as desktop) keeps working and keeps a way to
+      // turn it off. Only the offer is suppressed, never a live subscription.
+      if (!isMobileDevice()) {
+        if (!cancelled) commit(await hasLiveSubscription() ? 'subscribed' : 'desktop')
+        return
+      }
+
       try {
         const { enabled, key } = await api.getPushPublicKey()
         if (cancelled) return
@@ -155,6 +224,9 @@ export function usePushNotifications() {
     setBusy(true)
     try {
       if (isIOS() && !isStandalone()) { commit('needs-install'); return false }
+      // Belt and braces: no UI should reach here on desktop, but a stray call
+      // must not be what fires a permission prompt we decided not to ask for.
+      if (!isMobileDevice()) { commit('desktop'); return false }
 
       const permission = await Notification.requestPermission()
       if (permission !== 'granted') {
@@ -245,9 +317,10 @@ export function usePushNotifications() {
     sendTest,
     iosInstallSteps: IOS_INSTALL_STEPS,
     isSubscribed: status === 'subscribed',
-    // Only these two states are actionable by a button.
+    // Only these two states are actionable by a button. 'desktop' is not:
+    // that's the whole point of it.
     canSubscribe: status === 'default' || status === 'denied',
   }
 }
 
-export { isIOS, isStandalone, urlBase64ToUint8Array }
+export { isIOS, isMobileDevice, isStandalone, urlBase64ToUint8Array }

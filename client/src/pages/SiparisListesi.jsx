@@ -116,7 +116,7 @@ function RequestRow({ request, onView }) {
         <div className="flex flex-wrap items-start gap-3">
           <Package className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{request.project_title?.replace(/ \/ /g, ' ')}</p>
+            <p className="text-sm font-medium sm:truncate">{request.project_title?.replace(/ \/ /g, ' ')}</p>
             {items.length > 0 ? (
               <div className="mt-1 flex flex-wrap gap-1.5">
                 {items.map((item) => (
