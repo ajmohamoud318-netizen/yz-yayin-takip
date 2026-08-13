@@ -2,7 +2,12 @@
 <html lang="tr">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
+    <!-- ?v=N on every icon URL is load-bearing, not cosmetic. Android bakes the
+         icon into a generated WebAPK at install time and only re-mints it when
+         the MANIFEST bytes change — replacing the PNG at the same URL is
+         invisible to it. Bump N on both this file and manifest.webmanifest
+         whenever an icon changes. -->
+    <link rel="icon" type="image/png" href="/favicon.png?v=2" />
     <!-- viewport-fit=cover + the safe-area insets in index.css keep the UI
          clear of the notch/home indicator once installed to the iOS Home
          Screen (display:standalone has no browser chrome to protect it). -->
@@ -14,7 +19,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#1d1d1b" />
     <!-- iOS ignores the manifest's icons and name; these are its equivalents. -->
-    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=2" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Yayın Takip" />

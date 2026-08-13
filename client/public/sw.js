@@ -39,8 +39,8 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'YZ Yayın Takip'
   const options = {
     body: data.body || 'Yeni bir bildiriminiz var.',
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
+    icon: '/icons/icon-192.png?v=2',
+    badge: '/icons/icon-192.png?v=2',
     // Collapse: a second push about the same project replaces the first
     // instead of stacking. Without renotify:true the replacement would be
     // silent, so the device still buzzes for genuinely new information.
