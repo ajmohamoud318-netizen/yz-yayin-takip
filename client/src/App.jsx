@@ -175,7 +175,7 @@ export default function App() {
             <Route
               path="/urunler"
               element={
-                <RoleGuard allow={['satis', 'printer', 'team_leader']}>
+                <RoleGuard allow={['satis', 'team_leader']}>
                   <Urunler />
                 </RoleGuard>
               }

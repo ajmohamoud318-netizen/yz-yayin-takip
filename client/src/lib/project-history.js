@@ -97,7 +97,7 @@ const EVENTS = {
   // Backlist product promoted out of Ürün Bilgileri into a real orderable
   // product (POST /api/projects/import). Its timeline starts here — there is no
   // tasarım/demo/ozalit history to show, because the book predates the system.
-  legacy_import: { icon: Package, tone: 'neutral', weight: 'major', group: 'stage', label: 'Arşivden Ürün Olarak Eklendi' },
+  legacy_import: { icon: Package, tone: 'neutral', weight: 'major', group: 'stage', label: 'Kayıttan Ürün Olarak Eklendi' },
   // "Kaldır" / "Geri Al" on the Ürünler page (migration 033). Grouped under
   // 'order' rather than 'stage': the stage never moves, what changes is whether
   // Sales can order the product.

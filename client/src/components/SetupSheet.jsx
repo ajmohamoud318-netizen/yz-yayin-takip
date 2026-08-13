@@ -6,7 +6,7 @@ import {
 import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
-import { usePushNotifications } from '@/hooks/usePushNotifications.js'
+import { usePushNotifications, isMobileDevice } from '@/hooks/usePushNotifications.js'
 import { usePwaInstall } from '@/hooks/usePwaInstall.js'
 import IosInstallGuide from '@/components/IosInstallGuide.jsx'
 import { cn } from '@/lib/utils'
@@ -59,7 +59,15 @@ export default function SetupSheet() {
   const [installing, setInstalling] = useState(false)
   const [guideOpen, setGuideOpen] = useState(false)
 
-  const needsInstall = mode === 'available' || mode === 'ios'
+  // Mobile only. On a desktop the whole sheet is noise: push is deliberately
+  // not offered there (status 'desktop'), which leaves an install row that
+  // turns a browser tab into a windowed browser tab — nobody on this team
+  // asked for that, and it's the first thing they see on every fresh open.
+  // Evaluated once per mount: form factor doesn't change mid-session, and
+  // isMobileDevice() reads matchMedia, which shouldn't run during render.
+  const [isMobile] = useState(() => isMobileDevice())
+
+  const needsInstall = isMobile && (mode === 'available' || mode === 'ios')
   // 'default' is the only push state a button can act on. 'needs-install'
   // (iOS tab) is handled by the install row above it; 'denied', 'disabled',
   // 'unsupported' and 'desktop' have no in-app fix (or no fix we want).
@@ -71,6 +79,11 @@ export default function SetupSheet() {
     const t = setTimeout(() => setVisible(true), APPEAR_DELAY_MS)
     return () => clearTimeout(t)
   }, [user, dismissed, hasSomethingToOffer])
+
+  // Belt and braces: hasSomethingToOffer is already false on desktop (push is
+  // 'desktop', install is gated above), but this makes the rule unmissable and
+  // keeps a future row from leaking onto desktop by accident.
+  if (!isMobile) return null
 
   function close() {
     setVisible(false)

@@ -3,7 +3,7 @@
  * A project can be created for the first time (`first_edition`) or loop back as
  * a `reprint` (reprint with the existing design) or `redesign` (a new pass
  * after a design revize). The string values are the same ones written to
- * `project.pass_kind` and archived into `passes[]` — keep them stable.
+ * `project.pass_kind` and rolled into `passes[]` — keep them stable.
  */
 
 export const PASS_KIND = Object.freeze({

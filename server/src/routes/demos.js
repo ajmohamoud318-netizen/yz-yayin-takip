@@ -35,7 +35,7 @@ export async function demoRoutes(fastify) {
     // design phase to demo — they were inserted straight at a finished stage.
     // See assertNotLegacy in routes/projects.js for the full rationale.
     if (proj.rows[0].origin === 'legacy') {
-      badRequest('Arşiv kaydı için demo/ozalit formu oluşturulamaz.')
+      badRequest('Kayıtlı ürün için demo/ozalit formu oluşturulamaz.')
     }
     // The attempt stamps which demo/ozalit round this form belongs to, so
     // the history timeline can reopen the exact sheet later — from any

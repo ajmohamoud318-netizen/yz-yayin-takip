@@ -103,7 +103,7 @@ describe('catalog delisting (kaldırma, migration 033)', () => {
   })
 })
 
-describe('legacy (arşiv) products', () => {
+describe('legacy (kayıtlı ürün) products', () => {
   const legacy = { stage: 'satista', origin: 'legacy', has_product_info: true }
   const pipeline = { stage: 'satista', origin: 'pipeline', has_product_info: true }
 
@@ -117,7 +117,7 @@ describe('legacy (arşiv) products', () => {
 
   it('blocks pipeline transitions on a legacy product', () => {
     assert.throws(() => assertNotLegacy(legacy), { status: 400 })
-    assert.throws(() => assertNotLegacy(legacy), /Arşiv kaydı/)
+    assert.throws(() => assertNotLegacy(legacy), /Kayıtlı ürün/)
     assert.doesNotThrow(() => assertNotLegacy(pipeline))
     assert.doesNotThrow(() => assertNotLegacy({ stage: 'tasarim' }))
     assert.doesNotThrow(() => assertNotLegacy(undefined))

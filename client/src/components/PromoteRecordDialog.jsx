@@ -6,17 +6,17 @@ import api from '@/api'
 import { cn } from '@/lib/utils'
 
 /**
- * Promote archive (backlist) products into the Ürünler catalog.
+ * Promote kayıt (backlist) products into the Ürünler catalog.
  *
  * These are REÇETE.xlsx specs with no project behind them (`p-x1`…): they live
  * only in the browser and Sales can't order them. Confirming here calls
  * `POST /api/projects/import`, which creates each one as a real project at a
- * finished stage with `origin: 'legacy'` — see AGENTS.md → "Arşiv (legacy)
- * products".
+ * finished stage with `origin: 'legacy'` — see AGENTS.md → "Kayıtlı ürünler
+ * (legacy)".
  *
  * Two modes, one component so the two entry points can't drift:
  *
- *  - **picker** (`seeds` given): the dialog lists every un-promoted archive spec
+ *  - **picker** (`seeds` given): the dialog lists every un-promoted kayıt spec
  *    with search + tick boxes. Used from Ürünler, where the leader hasn't
  *    chosen anything yet.
  *  - **fixed** (`items` given): the selection was already made outside, e.g. the
@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils'
  * REÇETE.xlsx carries specs only — no TR/ÇİN and no stage to infer them from.
  * ÇİN titles should be promoted as their own pass.
  */
-export default function PromoteArchiveDialog({ open, onClose, seeds, items, onDone }) {
+export default function PromoteRecordDialog({ open, onClose, seeds, items, onDone }) {
   const pickerMode = !items
   const [selected, setSelected] = useState(() => new Set())
   const [search, setSearch] = useState('')
@@ -91,7 +91,7 @@ export default function PromoteArchiveDialog({ open, onClose, seeds, items, onDo
     setBusy(true)
     try {
       // The seed id travels as the project id on purpose: it makes the Ürün
-      // Bilgileri archive row convert in place instead of the catalog listing
+      // Bilgileri kayıt row convert in place instead of the catalog listing
       // the product twice (once as a seed, once as the new project).
       const payload = chosen.map(({ id, title, comps }) => ({
         id,
@@ -133,7 +133,7 @@ export default function PromoteArchiveDialog({ open, onClose, seeds, items, onDo
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary">
               <Package className="h-4 w-4" />
             </span>
-            <h2 className="text-base font-semibold">Arşivden Ürün Ekle</h2>
+            <h2 className="text-base font-semibold">Kayıtlardan Ürün Ekle</h2>
           </div>
           <button
             type="button"
@@ -155,7 +155,7 @@ export default function PromoteArchiveDialog({ open, onClose, seeds, items, onDo
           {pickerMode && (
             available.length === 0 ? (
               <div className="rounded-xl border border-dashed bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
-                Eklenecek arşiv ürünü kalmadı — hepsi zaten Ürünler listesinde.
+                Eklenecek kayıtlı ürün kalmadı — hepsi zaten Ürünler listesinde.
               </div>
             ) : (
               <div className="space-y-2">
@@ -211,7 +211,7 @@ export default function PromoteArchiveDialog({ open, onClose, seeds, items, onDo
           )}
 
           {!pickerMode && (
-            <p className="text-sm font-semibold text-foreground">{chosen.length} arşiv ürünü seçildi</p>
+            <p className="text-sm font-semibold text-foreground">{chosen.length} kayıtlı ürün seçildi</p>
           )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

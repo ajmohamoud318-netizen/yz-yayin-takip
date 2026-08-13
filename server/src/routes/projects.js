@@ -146,7 +146,7 @@ export async function projectRoutes(fastify) {
   })
 
   /**
-   * Legacy/backlist import — see AGENTS.md → "Arşiv (legacy) products".
+   * Legacy/backlist import — see AGENTS.md → "Kayıtlı ürünler (legacy)".
    *
    * Creates projects that already sit at a finished stage, so books published
    * before this system existed can appear in the Ürünler catalog and Sales can
@@ -209,7 +209,7 @@ export async function projectRoutes(fastify) {
         // the invariant that keeps a legacy row out of the live pipeline, so
         // assert it here too rather than trusting one layer.
         if (!ORDERABLE_STAGES.has(stage)) {
-          badRequest(`Arşiv kaydı yalnızca üretime hazır ve sonrası aşamalara aktarılabilir (satır ${index + 1}).`)
+          badRequest(`Kayıtlı ürün yalnızca üretime hazır ve sonrası aşamalara aktarılabilir (satır ${index + 1}).`)
         }
 
         const project = await insertProject(client, {
@@ -249,7 +249,7 @@ export async function projectRoutes(fastify) {
             to_stage: stage,
             action: 'create',
             event: 'legacy_import',
-            note: 'Arşivden ürün olarak eklendi',
+            note: 'Kayıttan ürün olarak eklendi',
           },
           request.user,
         )
@@ -372,7 +372,7 @@ export async function projectRoutes(fastify) {
    * pipeline view and the timeline. This flips one flag and nothing else.
    *
    * team_leader only — same owner as the rest of the catalog's data integrity
-   * (Ürün Bilgileri, archive imports).
+   * (Ürün Bilgileri, kayıt imports).
    */
   fastify.post('/projects/:id/catalog', { schema: schemas.projectsCatalog }, async (request) => {
     await attachUser(request)

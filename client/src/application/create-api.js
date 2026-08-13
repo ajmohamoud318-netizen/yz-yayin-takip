@@ -69,8 +69,8 @@ export function createApi() {
     listProjects: () => projectRepo.listProjects(),
     getProject: (id) => projectRepo.getProject(id),
     createProject: (payload) => projectRepo.createProject(payload),
-    // Backlist/archive import — promotes Ürün Bilgileri seed entries into real
-    // orderable products. See AGENTS.md → "Arşiv (legacy) products".
+    // Backlist/kayıt import — promotes Ürün Bilgileri seed entries into real
+    // orderable products. See AGENTS.md → "Kayıtlı ürünler (legacy)".
     importProjects: (items, opts) => projectRepo.importProjects(items, opts),
     updateProject: (id, patch) => projectRepo.updateProject(id, patch),
     deleteProject: (id) => projectRepo.deleteProject(id),

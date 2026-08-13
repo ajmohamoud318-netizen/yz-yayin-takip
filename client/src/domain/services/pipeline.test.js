@@ -246,7 +246,7 @@ describe('canEditProductInfo (Ürün Bilgileri edit)', () => {
   })
 })
 
-describe('isLegacyProject / assertNotLegacy (arşiv products)', () => {
+describe('isLegacyProject / assertNotLegacy (kayıtlı ürünler)', () => {
   const legacy = { type: 'TR', stage: 'satista', origin: 'legacy', has_product_info: true }
   const pipeline = { type: 'TR', stage: 'satista', origin: 'pipeline', has_product_info: true }
 
@@ -259,7 +259,7 @@ describe('isLegacyProject / assertNotLegacy (arşiv products)', () => {
   })
 
   it('blocks pipeline transitions but leaves sipariş and teslim open', () => {
-    expect(() => assertNotLegacy(legacy)).toThrow(/Arşiv kaydı/)
+    expect(() => assertNotLegacy(legacy)).toThrow(/Kayıtlı ürün/)
     expect(() => assertNotLegacy(pipeline)).not.toThrow()
     expect(() => assertNotLegacy(undefined)).not.toThrow()
     // Ordering a backlist book is the entire point of importing it.

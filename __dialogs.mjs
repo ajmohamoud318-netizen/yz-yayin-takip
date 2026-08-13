@@ -16,7 +16,7 @@ const EMAILS = {
 const CASES = [
   ['team_leader', '/', '[aria-label="Yeni proje"]', 'new-project'],
   ['team_leader', '/team', 'button:has-text("Üye Davet Et")', 'team-invite'],
-  ['team_leader', '/urunler', 'button:has-text("Ürün Ekle")', 'promote-archive'],
+  ['team_leader', '/urunler', 'button:has-text("Ürün Ekle")', 'promote-record'],
   ['team_leader', '/urunler', 'button:has-text("Sipariş")', 'order-request'],
   ['team_leader', '/approvals/demo', 'button:has-text("Onayla")', 'approval'],
   ['team_leader', 'PROJECT', 'button:has-text("Demo Formu")', 'spec-form'],

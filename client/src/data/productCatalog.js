@@ -97,13 +97,13 @@ export function getComponentsForProject(projectId) {
 }
 
 /**
- * Every archive (backlist) spec that has no project behind it yet.
+ * Every kayıt (backlist) spec that has no project behind it yet.
  *
  * `PRODUCT_INFO` is generated from REÇETE.xlsx and keyed by seed id (`p-x1`…).
  * A seed with no matching project exists only in this browser: it can't be
  * saved server-side (`PUT /product-info/p-x1` 404s) and Sales can't order it.
  * Promoting it via `POST /api/projects/import` creates the real project and
- * makes the spec persistent — see AGENTS.md → "Arşiv (legacy) products".
+ * makes the spec persistent — see AGENTS.md → "Kayıtlı ürünler (legacy)".
  *
  * Pass the ids of every project that exists (including legacy imports and any
  * stage), so already-promoted seeds drop out of the list.
@@ -111,7 +111,7 @@ export function getComponentsForProject(projectId) {
  * @param {string[]} realProjectIds
  * @returns {{ id: string, title: string, comps: any[] }[]}
  */
-export function listArchiveSeeds(realProjectIds = []) {
+export function listRecordSeeds(realProjectIds = []) {
   const real = new Set(realProjectIds)
   const overrides = readOverrides()
   const ids = new Set([...Object.keys(PRODUCT_INFO), ...Object.keys(overrides)])

@@ -82,7 +82,7 @@ export function ProjectsProvider({ children }) {
   }, [bootstrapping, isAuthenticated, refetch, updateOne])
 
   // Imported backlist products (`origin: 'legacy'` — see migration 031 and
-  // AGENTS.md → "Arşiv (legacy) products") are real projects sitting at a
+  // AGENTS.md → "Kayıtlı ürünler (legacy)") are real projects sitting at a
   // finished stage so Sales can order them, but they are NOT live pipeline
   // work: no subtasks, no designer, no demo/ozalit history.
   //

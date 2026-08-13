@@ -322,7 +322,7 @@ const projectsCreate = {
   },
 }
 
-// Legacy/backlist import (see AGENTS.md → "Arşiv (legacy) products").
+// Legacy/backlist import (see AGENTS.md → "Kayıtlı ürünler (legacy)").
 //
 // `stage` is deliberately NOT the full stage enum: importing straight into a
 // pre-production stage is what `POST /projects` is for. The route narrows it

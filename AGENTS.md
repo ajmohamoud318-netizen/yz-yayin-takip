@@ -123,7 +123,7 @@ onaylandi                    Üretime Alındı
 
   One product — picked or matched — lands on the itemized "Kalem adetleri" form (a quantity per component); two or more land on the batch screen (one quantity per product, applied to all of its components), which submits an order per row.
 
-### Arşiv (legacy) products — backlist titles
+### Kayıtlı ürünler (legacy) — backlist titles
 
 Books published before this system existed used to be unable to reach Ürünler:
 `insertProject` hardcoded `stage = 'tasarim'`, so a backlist title would have had
@@ -139,7 +139,7 @@ into a swallowed catch, and `hydrateProductInfo` drops orphan overrides on next
 boot. Promoting a row is what makes its spec real.
 
 **Promote from Ürün Bilgileri; there is no file import.** The team leader ticks
-orphan rows (checkbox per row, plus "Tüm arşivi seç") and confirms `type` +
+orphan rows (checkbox per row, plus "Tüm kayıtları seç") and confirms `type` +
 `stage` in the `PromoteDialog` — REÇETE.xlsx carries specs only, no TR/ÇİN and no
 stage, so both are asked once and applied to the whole selection.
 `POST /api/projects/import` then creates each project and its `product_info` row
@@ -177,7 +177,7 @@ Rules that are not obvious and must not be re-litigated:
   never offers a button the API rejects. Sipariş and teslim stay open — putting
   backlist books into those flows is the reason for importing them.
 - History is logged with `event: 'legacy_import'` (free-form column, migration
-  014) and rendered as "Arşivden Ürün Olarak Eklendi" in the project timeline.
+  014) and rendered as "Kayıttan Ürün Olarak Eklendi" in the project timeline.
 - Titles **not** among the 93 seeds use the existing "Yeni Ürün" flow. A CSV
   importer is a later phase if the backlist grows beyond REÇETE.xlsx; the
   endpoint is already generic enough to serve one.
@@ -473,7 +473,7 @@ CREATE TABLE projects (
   ozalit_attempt INTEGER DEFAULT 0,
   progress      INTEGER DEFAULT 0,           -- 0-100, auto-calculated
   origin        TEXT NOT NULL DEFAULT 'pipeline'  -- migration 031
-    CHECK (origin IN ('pipeline','legacy')), -- 'legacy' = backlist import, see Arşiv products
+    CHECK (origin IN ('pipeline','legacy')), -- 'legacy' = backlist import, see Kayıtlı ürünler
   catalog_hidden    BOOLEAN NOT NULL DEFAULT FALSE, -- migration 033, "kaldırıldı"
   catalog_hidden_at TIMESTAMPTZ,                    -- cleared on re-listing
   catalog_hidden_by TEXT REFERENCES users(id) ON DELETE SET NULL,
@@ -632,10 +632,10 @@ POST   /api/projects/import           { dryRun?, items[] } [team_leader]
                                        item: { id?, title, type, stage?, pass_kind?, components? }
                                        stage ∈ ORDERABLE_STAGES (default 'satista'); creates
                                        origin='legacy', progress=100 projects + product_info in
-                                       one tx. See "Arşiv (legacy) products".
+                                       one tx. See "Kayıtlı ürünler (legacy)".
 ```
 ### Stage Transitions
-> Every route in this block 400s on `origin = 'legacy'` via `assertNotLegacy` — see "Arşiv (legacy) products".
+> Every route in this block 400s on `origin = 'legacy'` via `assertNotLegacy` — see "Kayıtlı ürünler (legacy)".
 ```
 POST   /api/projects/:id/advance      move to next stage [designer or team_leader]
 POST   /api/projects/:id/approve      { stage } [printer for demo/ozalit, team_leader for cin]
@@ -669,6 +669,14 @@ there because a sipariş hands the designer whatever alt görevler the product
 already has, and an imported backlist product (`origin='legacy'`) arrives with
 none. Adding rows to a product at an orderable stage does NOT drop its progress
 bar: `progressFor` pins every stage in `STAGES_REQUIRING_FULL_PROGRESS` at 100.
+
+A **Kayıt** row on Ürün Bilgileri (`__seed`: a REÇETE.xlsx spec with no project
+behind it) has no project row to hang subtasks on, so it gets an explanatory
+placeholder plus a per-row **Ürünlere Ekle** button instead of the editor.
+Rendering nothing there was a usability bug, not a safe default — most of the
+page is kayıt rows, so the leader expanded card after card and concluded alt
+görev ekleme didn't exist. Promotion reuses the seed id as the project id, so
+the row converts in place and the real editor appears without collapsing it.
 
 Send each row's `id` — the PUT reconciles on id and falls
 back to title, so a RENAME keeps the original row. That matters because
@@ -768,7 +776,7 @@ Sidebar grouping is computed in `AppShell.navGroups()` and groups items into:
 1. **Ana menü** — Dashboard, Projelerim / Tüm Projeler, İş Akışı, Baskı Listesi, Toplantılar (yakında), Satış-only: Sipariş Talebi, Tüm Ürünler
 2. **Onaylar** (printer + team_leader; satis only sees Teslim Onayları)
 3. **Yönetim / kaynaklar** — Ekip (team_leader only), Dökümanlar, Ürün Bilgileri (team_leader only). Çalışma Defteri used to sit here; it is off behind `WORK_LOG_ENABLED`
-4. **Acil İşler** (yakında) — pinned projects sorted by attempt counter
+4. **Acil İşler** (yakında) — pinned projects sorted by attempt counter. Shown to `team_leader` + `designer` only; `printer` and `satis` don't get this group, the pinned list, or the "Bu Dönem" period widget below it (re-send pressure and the satışa-çıkar goal aren't their workload)
 
 Each entry can be role-restricted via the `roles: [...]` field on the nav item and is hidden when the user role isn't in the allow-list.
 

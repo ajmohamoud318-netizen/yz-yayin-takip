@@ -124,7 +124,7 @@ export function createHttpProjectRepository(userRepo) {
       return data
     },
     /**
-     * Import backlist/archive products (see AGENTS.md → "Arşiv (legacy)
+     * Import backlist/kayıt products (see AGENTS.md → "Kayıtlı ürünler (legacy)
      * products"). Each item is `{ id?, title, type, stage?, components? }`;
      * the server creates them at a finished stage with `origin: 'legacy'`.
      *

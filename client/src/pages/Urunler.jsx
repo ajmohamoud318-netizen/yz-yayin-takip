@@ -12,9 +12,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import OrderRequestDialog from '@/components/OrderRequestDialog'
-import PromoteArchiveDialog from '@/components/PromoteArchiveDialog'
+import PromoteRecordDialog from '@/components/PromoteRecordDialog'
 import ProductSubtaskEditor from '@/components/ProductSubtaskEditor'
-import { listArchiveSeeds } from '@/data/productCatalog'
+import { listRecordSeeds } from '@/data/productCatalog'
 import { cn } from '@/lib/utils'
 
 /**
@@ -40,7 +40,7 @@ export default function Urunler() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [orderProductId, setOrderProductId] = useState(null)
   const [refreshTick, setRefreshTick] = useState(0)
-  // Every project id that exists, at any stage — used to work out which archive
+  // Every project id that exists, at any stage — used to work out which kayıt
   // specs haven't been promoted yet. Kept separate from `products` (which is
   // filtered to the orderable stages) so a seed already promoted to, say,
   // Tasarım still counts as taken.
@@ -49,16 +49,16 @@ export default function Urunler() {
 
   const canOrderRole = user?.role === 'satis'
   // The team leader owns the catalog's data integrity (same gate as editing
-  // Ürün Bilgileri), so they're the one who can add archive products here.
-  const canAddArchive = canEditProductInfo(user)
+  // Ürün Bilgileri), so they're the one who can add kayıt products here.
+  const canAddRecords = canEditProductInfo(user)
   // ...and the one who owns the SHAPE of each product's alt görev list. Same
   // editor as Ürün Bilgileri: a product ordered off this page hands its
   // subtasks to the designer the leader assigns, and an imported backlist
   // product starts with none, so this is where that gets fixed.
-  const canManageSubtasks = canAddArchive
+  const canManageSubtasks = canAddRecords
   // ...and who may pull a product out of the catalog. Mirrors the server's
   // `requireRole(team_leader)` on POST /projects/:id/catalog.
-  const canManageCatalog = canAddArchive
+  const canManageCatalog = canAddRecords
   // Designer roster for the alt görev assignment dropdown. Fetched once for
   // the page rather than per row, and only for the role that can see it.
   const [designers, setDesigners] = useState([])
@@ -86,12 +86,12 @@ export default function Urunler() {
     return () => { cancelled = true }
   }, [canManageSubtasks])
 
-  // Archive (REÇETE.xlsx) specs with no project behind them yet. These are what
-  // the "Arşivden Ürün Ekle" button offers; once promoted they drop out of this
+  // Kayıt (REÇETE.xlsx) specs with no project behind them yet. These are what
+  // the "Kayıtlardan Ürün Ekle" button offers; once promoted they drop out of this
   // list and appear in the catalog below.
-  const archiveSeeds = useMemo(
-    () => (canAddArchive ? listArchiveSeeds(allProjectIds) : []),
-    [canAddArchive, allProjectIds],
+  const recordSeeds = useMemo(
+    () => (canAddRecords ? listRecordSeeds(allProjectIds) : []),
+    [canAddRecords, allProjectIds],
   )
 
   // Pick up Ürün Bilgileri changes made in another tab.
@@ -171,7 +171,7 @@ export default function Urunler() {
             </p>
           </div>
           <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto">
-            {canAddArchive && (
+            {canAddRecords && (
               <Button
                 variant="outline"
                 onClick={() => setPromoteOpen(true)}
@@ -179,9 +179,9 @@ export default function Urunler() {
                 title="Sistemden önce yayımlanmış ürünleri kataloğa ekle"
               >
                 Ürün Ekle
-                {archiveSeeds.length > 0 && (
+                {recordSeeds.length > 0 && (
                   <span className="ml-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-primary">
-                    {archiveSeeds.length}
+                    {recordSeeds.length}
                   </span>
                 )}
               </Button>
@@ -247,11 +247,11 @@ export default function Urunler() {
         )}
       </div>
 
-      {canAddArchive && (
-        <PromoteArchiveDialog
+      {canAddRecords && (
+        <PromoteRecordDialog
           open={promoteOpen}
           onClose={() => setPromoteOpen(false)}
-          seeds={archiveSeeds}
+          seeds={recordSeeds}
           onDone={() => setRefreshTick((t) => t + 1)}
         />
       )}

@@ -342,6 +342,10 @@ export default function AppShell() {
 /* ----------------------------- sidebar ----------------------------- */
 
 function Sidebar({ collapsed, groups, pinned, counts, user, onLogout, onNavigate, onToggleCollapsed, onOpenProject }) {
+  // Same rule as the "Acil İşler" group in navGroups(): the pinned re-send
+  // list and the period goal are leader/designer context. Matbaa gets the
+  // nav and its own queues, nothing else.
+  const showOverview = user?.role !== 'printer'
   return (
     <>
       <SidebarBrand collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />
@@ -363,7 +367,7 @@ function Sidebar({ collapsed, groups, pinned, counts, user, onLogout, onNavigate
           </SidebarSection>
         ))}
 
-        {!collapsed && pinned.length > 0 && (
+        {!collapsed && showOverview && pinned.length > 0 && (
           <SidebarSection collapsed={collapsed}>
             {pinned.map((p) => {
               const meta = STATUS_META[statusKeyForProject(p)]
@@ -387,7 +391,7 @@ function Sidebar({ collapsed, groups, pinned, counts, user, onLogout, onNavigate
           </SidebarSection>
         )}
 
-        {!collapsed && (
+        {!collapsed && showOverview && (
           <div className="px-3 pt-4">
             <PeriodWidget satista={counts.satista} total={counts.total} />
           </div>
@@ -899,7 +903,7 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
     { to: '/my-projects', label: 'Projelerim', icon: Briefcase, badge: counts.myProjects || designerOrders || undefined, badgeTone: designerOrders > 0 ? 'amber' : 'default', roles: ['designer'] },
     { to: '/kanban', label: 'İş Akışı', icon: Columns3, badge: counts.active, roles: ['team_leader', 'designer', 'printer'] },
     { to: '/projects', label: 'Tüm Projeler', icon: LayoutGrid, end: true, badge: counts.total, roles: ['team_leader', 'designer', 'printer'] },
-    { to: '/urunler', label: 'Ürünler', icon: Package, roles: ['satis', 'printer', 'team_leader'] },
+    { to: '/urunler', label: 'Ürünler', icon: Package, roles: ['satis', 'team_leader'] },
     {
       to: '/baski-listesi',
       label: 'Baskı Listesi',
@@ -1016,6 +1020,8 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
   const groups = [{ id: 'main', label: null, items: mainItems }]
   if (approvalItems.length > 0) groups.push({ id: 'approvals', label: role === 'satis' ? null : 'Onaylar', items: approvalItems })
   if (resourceItems.length > 0) groups.push({ id: 'resources', label: null, items: resourceItems })
-  if (role !== 'satis') groups.push({ id: 'urgent', label: null, items: urgentItems })
+  // Matbaa's sidebar stays a work queue — "Acil İşler" tracks demo/özalit
+  // re-send pressure, which is the leader's and the designers' problem.
+  if (role !== 'satis' && role !== 'printer') groups.push({ id: 'urgent', label: null, items: urgentItems })
   return groups
 }

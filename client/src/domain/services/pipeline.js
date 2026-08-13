@@ -75,7 +75,7 @@ export function isLegacyProject(project) {
  */
 export function assertNotLegacy(project) {
   if (isLegacyProject(project)) {
-    const err = new Error('Arşiv kaydı pipeline üzerinde ilerletilemez. Yeni bir baskı için sipariş talebi oluşturun.')
+    const err = new Error('Kayıtlı ürün pipeline üzerinde ilerletilemez. Yeni bir baskı için sipariş talebi oluşturun.')
     err.status = 400
     throw err
   }
