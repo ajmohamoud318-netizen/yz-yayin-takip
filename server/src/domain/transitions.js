@@ -106,7 +106,7 @@ export function computeAdvance(project, actor) {
   // via the Revize action first. (The advance route loads subtasks so this
   // guard can see them; a first submission has no needs_revize flags.)
   if (project.stage === 'tasarim' && (project.subtasks ?? []).some((s) => s.needs_revize)) {
-    badRequest('Revize bekleyen alt görevler var — hepsini revize etmeden gönderemezsiniz.')
+    badRequest('Revize bekleyen alt görevler var, hepsini revize etmeden gönderemezsiniz.')
   }
 
   // 1) Ozalit revision resubmit — designer finished a redesign after a
@@ -128,7 +128,7 @@ export function computeAdvance(project, actor) {
         from_stage: 'tasarim',
         to_stage: 'ozalit_teslim',
         done_by_name: actorName,
-        note: 'Ozalit revizyonu tamamlandı — matbaaya gönderildi',
+        note: 'Ozalit revizyonu tamamlandı, matbaaya gönderildi',
       }),
     }
   }
@@ -164,7 +164,7 @@ export function computeAdvance(project, actor) {
     // Only a held demo may be re-sent. Otherwise a demo is already in
     // progress (with the matbaa, or awaiting the leader's approve/reject).
     if (project.demo_held !== true) {
-      badRequest('Devam eden bir demo var — yeni demo istemeden önce mevcut demo teslim edilmeli, onaylanmalı veya reddedilmelidir.')
+      badRequest('Devam eden bir demo var, yeni demo istemeden önce mevcut demo teslim edilmeli, onaylanmalı veya reddedilmelidir.')
     }
     // Re-send starts a new demo round at the *_teslim stage so the
     // matbaa (TR) / leader (ÇİN) immediately receives the new demo —
@@ -263,7 +263,7 @@ function computeDemoTeslimAdvance(project, actor, now, approvalStage) {
       from_stage: project.stage,
       to_stage: approvalStage,
       done_by_name: actor?.name ?? 'Bilinmeyen',
-      note: 'Demo teslim edildi — onaya gönderildi',
+      note: 'Demo teslim edildi, onaya gönderildi',
     }),
   }
 }
@@ -277,7 +277,7 @@ function computeOzalitTeslimAdvance(project, actor, now) {
       badRequest('Yalnızca ekip lideri veya atanmış tasarımcı ozalit isteyebilir.')
     }
     if (project.ozalit_requested) {
-      badRequest('Ozalit zaten istendi — matbaa teslimi bekleniyor.')
+      badRequest('Ozalit zaten istendi, matbaa teslimi bekleniyor.')
     }
     return {
       project: { ...project, ozalit_requested: true, updated_at: now },
@@ -286,7 +286,7 @@ function computeOzalitTeslimAdvance(project, actor, now) {
         from_stage: 'ozalit_teslim',
         to_stage: 'ozalit_teslim',
         done_by_name: actor?.name ?? 'Bilinmeyen',
-        note: 'Ozalit istendi — matbaa teslimi bekleniyor',
+        note: 'Ozalit istendi, matbaa teslimi bekleniyor',
       }),
     }
   }
@@ -313,7 +313,7 @@ function computeOzalitTeslimAdvance(project, actor, now) {
       from_stage: 'ozalit_teslim',
       to_stage: 'ozalit_onay',
       done_by_name: actor?.name ?? 'Bilinmeyen',
-      note: 'Ozalit teslim edildi — onaya gönderildi',
+      note: 'Ozalit teslim edildi, onaya gönderildi',
     }),
   }
 }
@@ -359,7 +359,7 @@ export function computeApproval(project, actor, ctx = {}) {
           from_stage: project.stage,
           to_stage: project.stage,
           done_by_name: actorName,
-          note: 'Demo onaylandı — tasarım tamamlanmadığı için Ozalit bekleniyor',
+          note: 'Demo onaylandı, tasarım tamamlanmadığı için Ozalit bekleniyor',
         }),
       }
     }
@@ -491,7 +491,7 @@ export function computeDemoNotReceived(project, actor, ctx = {}) {
       from_stage: project.stage,
       to_stage: resendStage,
       done_by_name: actorName,
-      note: 'Demo teslim alınamadı — matbaaya geri gönderildi',
+      note: 'Demo teslim alınamadı, matbaaya geri gönderildi',
     }),
   }
 }
@@ -589,7 +589,7 @@ export function computeOzalitNotReceived(project, actor, ctx = {}) {
       from_stage: 'ozalit_onay',
       to_stage: 'ozalit_teslim',
       done_by_name: actorName,
-      note: 'Ozalit teslim alınamadı — matbaaya geri gönderildi',
+      note: 'Ozalit teslim alınamadı, matbaaya geri gönderildi',
     }),
   }
 }
@@ -637,7 +637,7 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
         from_stage: 'ozalit_onay',
         to_stage: 'ozalit_onay',
         done_by_name: actorName,
-        note: `Ozalit onayı verildi — ${remaining} onay daha bekleniyor`,
+        note: `Ozalit onayı verildi, ${remaining} onay daha bekleniyor`,
       }),
     }
   }

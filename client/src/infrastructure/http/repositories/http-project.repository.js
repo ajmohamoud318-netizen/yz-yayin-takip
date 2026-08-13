@@ -217,7 +217,7 @@ export function createHttpProjectRepository(userRepo) {
     },
     async approveProject(id) {
       const cached = cache.get(id)
-      if (!cached) badRequest('Proje bilinmiyor — listeyi yenileyin.')
+      if (!cached) badRequest('Proje bilinmiyor, listeyi yenileyin.')
       const { data } = await httpClient.post(`/projects/${id}/approve`, { stage: cached.stage })
       cache.set(id, data)
       return data
@@ -250,7 +250,7 @@ export function createHttpProjectRepository(userRepo) {
     },
     async rejectProject(id, reason, revizeIds, target) {
       const cached = cache.get(id)
-      if (!cached) badRequest('Proje bilinmiyor — listeyi yenileyin.')
+      if (!cached) badRequest('Proje bilinmiyor, listeyi yenileyin.')
       const { data } = await httpClient.post(`/projects/${id}/reject`, {
         stage: cached.stage, reason, reject_target: target, revizeIds,
       })

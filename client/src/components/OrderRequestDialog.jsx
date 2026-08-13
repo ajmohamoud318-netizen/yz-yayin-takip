@@ -511,7 +511,7 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
 
                 <p className="text-xs text-muted-foreground">
                   {pickedIds.size > 0
-                    ? `${pickedIds.size} ürün seçildi — adetleri sonraki adımda gireceksiniz.`
+                    ? `${pickedIds.size} ürün seçildi, adetleri sonraki adımda gireceksiniz.`
                     : 'Sipariş vermek istediğiniz ürünleri işaretleyin.'}
                 </p>
               </div>

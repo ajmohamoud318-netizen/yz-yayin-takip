@@ -44,7 +44,7 @@ export default function PushToggle() {
           className="flex w-full items-center gap-2 text-left text-[11px] text-muted-foreground transition-colors hover:text-foreground"
         >
           <Smartphone className="h-3.5 w-3.5 shrink-0" />
-          <span className="flex-1">Telefonda bildirim al — kurulum gerekli</span>
+          <span className="flex-1">Telefonda bildirim al, kurulum gerekli</span>
         </button>
         {showSteps && (
           <ol className="mt-2 space-y-1 pl-5 text-[11px] leading-relaxed text-muted-foreground">

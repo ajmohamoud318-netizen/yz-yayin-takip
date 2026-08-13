@@ -293,7 +293,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
               <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
                 <Check className="h-4 w-4 shrink-0" />
                 <span>
-                  Demo teslim alındı{project?.demo_received_by ? ` — ${project.demo_received_by}` : ''}. Onaylayabilirsiniz.
+                  Demo teslim alındı{project?.demo_received_by ? `, ${project.demo_received_by}` : ''}. Onaylayabilirsiniz.
                 </span>
               </div>
             ) : (

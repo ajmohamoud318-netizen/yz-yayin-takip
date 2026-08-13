@@ -324,10 +324,10 @@ export const ASSIGNMENT_GREETINGS = Object.freeze([
   'Yeni proje sizde ✨ Hadi başlayalım!',
   'Yeni bir kitap sizi bekliyor 📚',
   'Bu kitap size emanet 📖',
-  'Yeni proje elinizde — kolay gelsin! 💪',
+  'Yeni proje elinizde, kolay gelsin! 💪',
   'Sıradaki kitap sizin, başarılar! 🌟',
   'Yeni bir sayfa açılıyor ✨',
-  'Taze bir proje geldi — sıra sizde! 🎨',
+  'Taze bir proje geldi, sıra sizde! 🎨',
   'Yeni bir tasarım başlıyor ✏️',
   'Güzel işler çıkaralım! 🎯',
   'Yeni proje hazır, ilham dolu olsun 🌱',
@@ -376,21 +376,27 @@ export async function notifyProjectCreated(client, { project, actor, assignees }
  * The two sides get different copy on purpose: the leader is the only one who
  * can act on it now (approval is theirs alone at this stage), the designers
  * are just being kept in the loop.
+ *
+ * ⚠️ Unlike every other notification, the bold `title` line here is the PERSON,
+ * not the book — "Aylin / «Kitap» demoyu teslim aldı". These two events are the
+ * only ones whose news is *who acted*, and the first thing a phone shows is the
+ * title, so leading with the project buried the answer one line down. The book
+ * moves into the body, which nothing truncates — long titles survive intact.
  */
 export async function notifyDemoReceived(client, { project, actor, assignees }) {
   const designers = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
   const leaders = await activeUserIdsByRole(client, 'team_leader')
   const who = actor?.name ?? 'Ekipten biri'
   const base = {
-    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    actorId: actor?.id, title: who, projectId: project.id, link: `/projects/${project.id}`,
   }
   const a = await emit(client, {
     ...base, recipientIds: leaders, type: 'demo_approval_pending', tone: 'amber',
-    body: `${who} demoyu teslim aldı — onayınızı bekliyor`,
+    body: `${project.title} demoyu teslim aldı, onayınızı bekliyor`,
   })
   const b = await emit(client, {
     ...base, recipientIds: designers, type: 'demo_received', tone: 'blue',
-    body: `${who} demoyu teslim aldı — onay bekleniyor`,
+    body: `${project.title} demoyu teslim aldı, onay bekleniyor`,
   })
   return a + b
 }
@@ -410,9 +416,10 @@ export async function notifyOzalitReceived(client, { project, actor, assignees }
   const leaders = await activeUserIdsByRole(client, 'team_leader')
   const who = actor?.name ?? 'Ekipten biri'
   return emit(client, {
-    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    // Person as the title, book in the body — see notifyDemoReceived.
+    actorId: actor?.id, title: who, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: [...leaders, ...designers], type: 'ozalit_approval_pending', tone: 'amber',
-    body: `${who} ozaliti teslim aldı — onayınızı bekliyor`,
+    body: `${project.title} ozaliti teslim aldı, onayınızı bekliyor`,
   })
 }
 
@@ -438,7 +445,7 @@ export async function notifyProjectTransition(client, {
   if (action === 'reject' && toStage === 'tasarim') {
     return emit(client, {
       ...base, recipientIds: designers, type: 'rejection', tone: 'rose',
-      body: 'Revizyon gerekiyor — tasarıma geri döndü', link: `/projects/${project.id}`,
+      body: 'Revizyon gerekiyor, tasarıma geri döndü', link: `/projects/${project.id}`,
     })
   }
 
@@ -451,7 +458,7 @@ export async function notifyProjectTransition(client, {
       (toStage === 'demo_onay' || toStage === 'cin_demo_onay')) {
     return emit(client, {
       ...base, recipientIds: designers, type: 'demo_held', tone: 'amber',
-      body: 'Demo onaylandı — tasarım bitince ikinci demo gerekiyor', link: `/projects/${project.id}`,
+      body: 'Demo onaylandı, tasarım bitince demo gerekiyor', link: `/projects/${project.id}`,
     })
   }
 
@@ -473,7 +480,7 @@ export async function notifyProjectTransition(client, {
     case 'cin_demo_onay':
       return emit(client, {
         ...base, recipientIds: [...leaders, ...designers], type: 'demo_receipt_pending', tone: 'amber',
-        body: 'Matbaa demoyu teslim etti — "Teslim Alındı" bekleniyor', link: `/projects/${project.id}`,
+        body: 'Matbaa demoyu teslim etti, "Teslim Alındı" bekleniyor', link: `/projects/${project.id}`,
       })
 
     // Reaching ozalit_teslim: either the demo was just approved (designer may
@@ -489,7 +496,7 @@ export async function notifyProjectTransition(client, {
       }
       return emit(client, {
         ...base, recipientIds: designers, type: 'ozalit_requestable', tone: 'blue',
-        body: 'Demo onaylandı — ozalit isteyebilirsiniz', link: `/projects/${project.id}`,
+        body: 'Demo onaylandı, ozalit isteyebilirsiniz', link: `/projects/${project.id}`,
       })
 
     // Matbaa delivered the ozalit. Like the demo case above, this is NOT an
@@ -499,7 +506,7 @@ export async function notifyProjectTransition(client, {
     case 'ozalit_onay':
       return emit(client, {
         ...base, recipientIds: [...leaders, ...designers], type: 'ozalit_receipt_pending', tone: 'amber',
-        body: 'Matbaa ozaliti teslim etti — "Teslim Alındı" bekleniyor', link: `/projects/${project.id}`,
+        body: 'Matbaa ozaliti teslim etti, "Teslim Alındı" bekleniyor', link: `/projects/${project.id}`,
       })
 
     // Production ready → matbaa can take it in.
@@ -598,7 +605,7 @@ export async function notifyProductCatalogChanged(client, { project, actor, hidd
     type: hidden ? 'product_delisted' : 'product_relisted',
     tone: hidden ? 'amber' : 'green',
     body: hidden
-      ? 'Ürün katalogdan kaldırıldı — sipariş verilemez'
+      ? 'Ürün katalogdan kaldırıldı, sipariş verilemez'
       : 'Ürün katalogda tekrar yayında',
     link: '/urunler',
   })
@@ -607,7 +614,7 @@ export async function notifyProductCatalogChanged(client, { project, actor, hidd
 /* ------------------------------- orders ---------------------------------- */
 
 const ORDER_STEP_BODY = {
-  pending: 'Yeni sipariş talebi — onayınızı bekliyor',
+  pending: 'Yeni sipariş talebi, onayınızı bekliyor',
   goruldu: 'Sipariş kontrolünüzü bekliyor',
   tasarimci_onay: 'Sipariş ozalit isteniyor',
   matbaa_onay: 'Sipariş ozalit onayınızı bekliyor',
@@ -637,7 +644,7 @@ export async function notifyOrderTransition(client, {
   if (newStatus === 'onaylandi') {
     return emit(client, {
       ...base, recipientIds: [requesterId], type: 'order_approved', tone: 'green',
-      body: 'Talebiniz onaylandı — üretime alındı', link: '/siparis-talebi',
+      body: 'Talebiniz onaylandı, üretime alındı', link: '/siparis-talebi',
     })
   }
 
@@ -677,7 +684,7 @@ export async function notifyHandoverRequested(client, { project, actor }) {
   const sales = await activeUserIdsByRole(client, 'satis')
   return emit(client, {
     recipientIds: sales, actorId: actor?.id, type: 'handover_request', tone: 'amber',
-    title: project.title, body: 'Teslim talebi — onayınızı bekliyor',
+    title: project.title, body: 'Teslim talebi, onayınızı bekliyor',
     projectId: project.id, link: '/teslim-onaylari',
   })
 }
@@ -689,7 +696,7 @@ export async function notifyHandoverConfirmed(client, { project, actor, raisedBy
   return emit(client, {
     recipientIds: [raisedBy, ...leaders, ...designers], actorId: actor?.id,
     type: 'handover_confirmed', tone: 'pink',
-    title: project.title, body: 'Teslim onaylandı — satışa çıktı 🎉',
+    title: project.title, body: 'Teslim onaylandı, satışa çıktı 🎉',
     projectId: project.id, link: `/projects/${project.id}`,
   })
 }

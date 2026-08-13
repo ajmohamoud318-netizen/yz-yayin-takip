@@ -70,7 +70,7 @@ export default function UretimeHazir() {
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          Bekleyen — {projects.length} proje
+          Bekleyen, {projects.length} proje
         </h2>
         {projects.length === 0 ? (
           <Card>

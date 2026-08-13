@@ -95,7 +95,7 @@ export default function MyProjects() {
             <div className="flex items-center gap-2">
               <ShoppingCart className="h-4 w-4 text-amber-600" />
               <h2 className="text-sm font-semibold text-amber-700">
-                Sipariş Onayı Bekliyor — {siparisQueue.length} talep
+                Sipariş Onayı Bekliyor, {siparisQueue.length} talep
               </h2>
             </div>
             <div className="space-y-2">

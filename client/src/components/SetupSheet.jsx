@@ -151,7 +151,7 @@ export default function SetupSheet() {
               <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
                 {canEnablePush
                   ? 'Uygulamayı ana ekranınıza ekleyin ve iş bildirimlerini telefonunuza alın.'
-                  : 'Uygulamayı yükleyin — sekme aramadan, tek tıkla açılır.'}
+                  : 'Uygulamayı yükleyin, sekme aramadan, tek tıkla açılır.'}
               </p>
             </div>
             <button
@@ -203,7 +203,7 @@ export default function SetupSheet() {
                 <span className="min-w-0 flex-1">
                   <span className="block text-[13px] font-medium">Ana ekrana ekleyin</span>
                   <span className="block text-[11px] text-muted-foreground">
-                    Bildirimler iPhone’da yalnızca böyle çalışır — 3 adım, resimli.
+                    Bildirimler iPhone’da yalnızca böyle çalışır, 3 adım, resimli.
                   </span>
                 </span>
                 <span className="shrink-0 rounded-md bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground">

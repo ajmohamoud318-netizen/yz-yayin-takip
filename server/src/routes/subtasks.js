@@ -155,7 +155,7 @@ export async function subtaskRoutes(fastify) {
             to_stage: project.stage,
             action: 'system',
             event: request.body.is_done ? 'subtask_done' : 'subtask_undone',
-            note: `${sub.title} — ${request.body.is_done ? 'tamamlandı' : 'tamamlanmadı olarak işaretlendi'}`,
+            note: `${sub.title}, ${request.body.is_done ? 'tamamlandı' : 'tamamlanmadı olarak işaretlendi'}`,
           },
           request.user,
         )
@@ -169,7 +169,7 @@ export async function subtaskRoutes(fastify) {
             to_stage: project.stage,
             action: 'system',
             event: 'subtask_progress',
-            note: `${sub.title} — sayfa ${request.body.pages_done}/${sub.total_pages ?? '?'}`,
+            note: `${sub.title}, sayfa ${request.body.pages_done}/${sub.total_pages ?? '?'}`,
           },
           request.user,
         )
@@ -183,7 +183,7 @@ export async function subtaskRoutes(fastify) {
             to_stage: project.stage,
             action: 'system',
             event: 'subtask_progress',
-            note: `${sub.title} — etiket ${request.body.stickers_done}/${sub.total_stickers ?? '?'}`,
+            note: `${sub.title}, etiket ${request.body.stickers_done}/${sub.total_stickers ?? '?'}`,
           },
           request.user,
         )
@@ -228,7 +228,7 @@ export async function subtaskRoutes(fastify) {
           to_stage: project.stage,
           action: 'system',
           event: 'subtask_revize',
-          note: `${sub.title} — revize edildi`,
+          note: `${sub.title}, revize edildi`,
         },
         request.user,
       )
@@ -263,7 +263,7 @@ export async function subtaskRoutes(fastify) {
           to_stage: project.stage,
           action: 'system',
           event: 'subtask_note',
-          note: `${sub.title} — ${note.length > 200 ? note.slice(0, 200) + '…' : note}`,
+          note: `${sub.title}, ${note.length > 200 ? note.slice(0, 200) + '…' : note}`,
         },
         request.user,
       )

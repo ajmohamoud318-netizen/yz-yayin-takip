@@ -50,7 +50,7 @@ export default function TeslimTalepleri() {
       })
       setHandovers((prev) => [created, ...prev])
       setConfirmProject(null)
-      toast.success('Teslim talebi oluşturuldu — satış ekibi onayını bekliyor.')
+      toast.success('Teslim talebi oluşturuldu, satış ekibi onayını bekliyor.')
     } catch (err) {
       toast.error(err?.message || 'Teslim talebi oluşturulamadı.')
     } finally {
@@ -84,7 +84,7 @@ export default function TeslimTalepleri() {
         {/* Eligible for handover */}
         <section className="space-y-3">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Teslim Edilebilir — {eligible.length} ürün
+            Teslim Edilebilir, {eligible.length} ürün
           </h2>
           {eligible.length === 0 ? (
             <Card>

@@ -47,7 +47,7 @@ export default function TeslimOnaylari() {
       const { handover: updated } = await api.confirmHandover(h.id)
       setHandovers((prev) => prev.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)))
       setConfirmH(null)
-      toast.success(`${cleanTitle(h.project_title)} teslim alındı — satışa çıktı.`)
+      toast.success(`${cleanTitle(h.project_title)} teslim alındı, satışa çıktı.`)
     } catch (err) {
       toast.error(err?.message || 'Teslim onaylanamadı.')
     } finally {

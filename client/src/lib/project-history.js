@@ -205,7 +205,7 @@ export function historyMeta(h) {
   // Order rows carry their step label from the server; it's more specific
   // than anything this table could reconstruct.
   if (isOrderEntry(h) && h.order_step_label) {
-    return { ...base, label: `Sipariş — ${h.order_step_label}` }
+    return { ...base, label: `Sipariş, ${h.order_step_label}` }
   }
   if (base.label) return base
 
@@ -345,8 +345,13 @@ export function truncateTimeline(days, limit) {
 /**
  * Notes are written server-side without knowing what label the row will get,
  * so several of them restate it: 'Proje oluşturuldu' under "Proje Oluşturuldu"
- * is a dead line, and 'Demo teslim edildi — onaya gönderildi' spends half its
+ * is a dead line, and 'Demo teslim edildi, onaya gönderildi' spends half its
  * width repeating the heading above it. Drop the echo, keep the remainder.
+ *
+ * The dash separators stay in the list even though new notes are written with
+ * a comma: `stage_history` is append-only, so every row logged before the copy
+ * switch still reads 'Demo teslim edildi — onaya gönderildi' and would start
+ * echoing its own heading the moment ' — ' left this list.
  */
 export function dedupeNote(note, label) {
   if (!note) return null
@@ -354,7 +359,7 @@ export function dedupeNote(note, label) {
   const lower = n.toLocaleLowerCase('tr')
   const head = label.toLocaleLowerCase('tr')
   if (lower === head) return null
-  for (const sep of [' — ', ' – ', ' - ', ': ']) {
+  for (const sep of [', ', ' — ', ' – ', ' - ', ': ']) {
     if (lower.startsWith(head + sep)) {
       const rest = n.slice(head.length + sep.length).trim()
       if (!rest) return null

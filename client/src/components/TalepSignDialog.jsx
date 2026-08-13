@@ -247,7 +247,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
         expectedVersion: order.version ?? null,
         ...(isAssignStep ? { assignees: assignIds } : {}),
       })
-      toast.success(`${nextLabel} — İmzalandı.`)
+      toast.success(`${nextLabel}, İmzalandı.`)
       if (isDesignerStep) celebrate()
       setNotes('')
       onOpenChange(false)
@@ -277,11 +277,11 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
       toast.success(
         rejectRoute === 'designer'
           ? revizeIds.length > 0
-            ? `Sipariş ozaliti reddedildi — ${revizeIds.length} alt görev revize için tasarımcıya gönderildi.`
-            : 'Sipariş ozaliti reddedildi — tasarımcıya geri gönderildi.'
+            ? `Sipariş ozaliti reddedildi, ${revizeIds.length} alt görev revize için tasarımcıya gönderildi.`
+            : 'Sipariş ozaliti reddedildi, tasarımcıya geri gönderildi.'
           : rejectRoute === 'reassign'
-          ? 'Sipariş reddedildi — tasarımcı kadrosu yeniden seçilecek.'
-          : 'Sipariş ozaliti reddedildi — matbaaya geri gönderildi.',
+          ? 'Sipariş reddedildi, tasarımcı kadrosu yeniden seçilecek.'
+          : 'Sipariş ozaliti reddedildi, matbaaya geri gönderildi.',
       )
       setRejectReason('')
       setRejectRoute('matbaa')
@@ -312,7 +312,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PenLine className="h-4 w-4" />
-            {isDesignerStep ? 'İncele ve Gönder' : `İmzala — ${nextLabel}`}
+            {isDesignerStep ? 'İncele ve Gönder' : `İmzala, ${nextLabel}`}
           </DialogTitle>
           <DialogDescription>
             {isDesignerStep
@@ -437,7 +437,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
           {/* Assign step: pick the designer(s) who will check this run */}
           {isAssignStep && (
             <div className="space-y-1.5">
-              <Label>Tasarımcı(lar) — kim kontrol edecek? *</Label>
+              <Label>Tasarımcı(lar), kim kontrol edecek? *</Label>
               <p className="text-xs text-muted-foreground">
                 Bu baskıyı orijinal tasarımcı(lar)a veya farklı birine atayabilirsiniz.
               </p>
@@ -637,7 +637,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
               ) : (
                 <Button type="submit" disabled={saving}>
                   <PenLine className="h-4 w-4" />
-                  {saving ? 'İmzalanıyor…' : isDesignerStep ? 'İncele ve Gönder' : `İmzala — ${nextLabel}`}
+                  {saving ? 'İmzalanıyor…' : isDesignerStep ? 'İncele ve Gönder' : `İmzala, ${nextLabel}`}
                 </Button>
               )}
             </div>
@@ -1262,7 +1262,7 @@ function SubtaskEditor({ subtasks, onChange }) {
     <div className="space-y-1">
       <p className="px-1 pb-1 text-[11px] text-muted-foreground">
         Revize ettiğiniz alt görevleri işaretleyin.{' '}
-        {revizeCount > 0 ? `${revizeCount} görev revize edildi.` : 'İşaretlenen yok — her şey hazır.'}
+        {revizeCount > 0 ? `${revizeCount} görev revize edildi.` : 'İşaretlenen yok, her şey hazır.'}
       </p>
       {subtasks.length === 0 ? (
         <p className="px-2 py-3 text-center text-xs text-muted-foreground">Bu projede alt görev yok.</p>

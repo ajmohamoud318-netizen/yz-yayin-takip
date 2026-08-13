@@ -78,7 +78,7 @@ export async function attachUser(request) {
 
   // Neither a valid session nor (in dev) a valid header. Surface a clean
   // 401 the client.js response interceptor turns into a /login bounce.
-  unauthorized('Oturum geçersiz — lütfen yeniden giriş yapın')
+  unauthorized('Oturum geçersiz, lütfen yeniden giriş yapın')
 }
 
 /** Convenience: assert the attached user is in `roles`. */

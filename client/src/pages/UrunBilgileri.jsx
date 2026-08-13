@@ -436,7 +436,7 @@ function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, d
                 </span>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs text-muted-foreground">
-                    Bu ürün henüz kayıtta — gerçek bir proje değil, bu yüzden alt görev eklenemiyor.
+                    Bu ürün henüz kayıtta, gerçek bir proje değil, bu yüzden alt görev eklenemiyor.
                   </p>
                   <button
                     type="button"

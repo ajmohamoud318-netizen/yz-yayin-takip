@@ -155,7 +155,7 @@ export default function PromoteRecordDialog({ open, onClose, seeds, items, onDon
           {pickerMode && (
             available.length === 0 ? (
               <div className="rounded-xl border border-dashed bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
-                Eklenecek kayıtlı ürün kalmadı — hepsi zaten Ürünler listesinde.
+                Eklenecek kayıtlı ürün kalmadı, hepsi zaten Ürünler listesinde.
               </div>
             ) : (
               <div className="space-y-2">
@@ -252,7 +252,7 @@ export default function PromoteRecordDialog({ open, onClose, seeds, items, onDon
             <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-800 ring-1 ring-amber-600/20">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
-                {missingSpec} ürünün parça bilgisi yok — Ürünler listesinde görünür ama Ürün Bilgileri
+                {missingSpec} ürünün parça bilgisi yok, Ürünler listesinde görünür ama Ürün Bilgileri
                 girilene kadar sipariş verilemez.
               </span>
             </p>

@@ -33,7 +33,7 @@ const SECTIONS = [
   {
     stage: 'gumruk',
     icon: Ship,
-    blurb: 'Çin baskısı yolda — gümrük sürecinde.',
+    blurb: 'Çin baskısı yolda, gümrük sürecinde.',
   },
 ]
 
@@ -136,7 +136,7 @@ export default function BaskiListesi() {
             <section key={stage} className="space-y-3">
               <div>
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                  {STAGE_LABELS[stage]} — {rows.length} proje
+                  {STAGE_LABELS[stage]}, {rows.length} proje
                 </h2>
                 <p className="mt-0.5 text-xs text-muted-foreground/80">{blurb}</p>
               </div>

@@ -242,7 +242,7 @@ export default function ProjectDetail() {
     try {
       await api.reportDemoNotReceived(project.id)
       await refetch()
-      toast.success('Demo teslim alınamadı olarak işaretlendi — matbaaya geri gönderildi.')
+      toast.success('Demo teslim alınamadı olarak işaretlendi, matbaaya geri gönderildi.')
     } catch (err) {
       toast.error(err.message || 'İşlem tamamlanamadı.')
     } finally {
@@ -259,7 +259,7 @@ export default function ProjectDetail() {
     try {
       await api.reportOzalitNotReceived(project.id)
       await refetch()
-      toast.success('Ozalit teslim alınamadı olarak işaretlendi — matbaaya geri gönderildi.')
+      toast.success('Ozalit teslim alınamadı olarak işaretlendi, matbaaya geri gönderildi.')
     } catch (err) {
       toast.error(err.message || 'İşlem tamamlanamadı.')
     } finally {
@@ -465,7 +465,8 @@ export default function ProjectDetail() {
       (project?.progress ?? 0) < 100 &&
       subtasksSafe.every((s) => {
         const done = localDone[s.id] !== undefined ? localDone[s.id] : s.is_done
-        if (s.kind === 'pages') return (s.pages_done ?? 0) >= (s.total_pages ?? 0)
+        // Counter kinds ignore `is_done` — ask the shared predicate instead.
+        if (s.kind === 'pages' || s.kind === 'sticker-count') return isSubtaskDone(s)
         return done
       })
     try {
@@ -486,15 +487,23 @@ export default function ProjectDetail() {
     }
   }
 
-  async function addPages(sub, delta) {
-    const total = sub.total_pages ?? 0
-    const next = Math.max(0, Math.min(total, (sub.pages_done ?? 0) + delta))
+  // Numeric subtasks ("Sayfa Sayısı", "Sticker") share one handler: the
+  // designer logs how many they finished, we clamp to the configured total
+  // and PATCH the matching counter column. Both kinds derive `is_done`
+  // server-side from the counter, so there's nothing to tick separately.
+  async function addCount(sub, delta) {
+    const isSticker = sub.kind === 'sticker-count'
+    const total = (isSticker ? sub.total_stickers : sub.total_pages) ?? 0
+    const done = (isSticker ? sub.stickers_done : sub.pages_done) ?? 0
+    const next = Math.max(0, Math.min(total, done + delta))
     setToggling(sub.id)
     try {
-      const { project: updated } = await api.setSubtaskPages(sub.id, next)
+      const { project: updated } = isSticker
+        ? await api.setSubtaskStickers(sub.id, next)
+        : await api.setSubtaskPages(sub.id, next)
       setProject((prev) => ({ ...prev, subtasks: updated.subtasks, progress: updated.progress }))
     } catch (err) {
-      toast.error(err.message || 'Sayfa güncellenemedi.')
+      toast.error(err.message || (isSticker ? 'Sticker güncellenemedi.' : 'Sayfa güncellenemedi.'))
     } finally {
       setToggling(null)
     }
@@ -508,7 +517,7 @@ export default function ProjectDetail() {
     try {
       await api.reviseSubtask(sub.id)
       await refetch()
-      toast.success(`${sub.title} — revize edildi.`)
+      toast.success(`${sub.title}, revize edildi.`)
     } catch (err) {
       toast.error(err.message || 'Revize kaydedilemedi.')
     } finally {
@@ -568,7 +577,7 @@ export default function ProjectDetail() {
             <div className="flex items-start gap-2">
               <Trash2 className="mt-0.5 h-4 w-4 shrink-0" />
               <p className="text-sm">
-                Bu proje silindi{project.deleted_by_name ? ` — ${project.deleted_by_name} tarafından` : ''}
+                Bu proje silindi{project.deleted_by_name ? `, ${project.deleted_by_name} tarafından` : ''}
                 {project.deleted_at ? `, ${formatDateTr(project.deleted_at)}` : ''}
               </p>
             </div>
@@ -740,13 +749,13 @@ export default function ProjectDetail() {
                 {isOzalitOnayStage && project.ozalit_received && (
                   <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
                     <CheckCircle2 className="h-4 w-4" />
-                    Teslim alındı{project.ozalit_received_by ? ` — ${project.ozalit_received_by}` : ''}
+                    Teslim alındı{project.ozalit_received_by ? `, ${project.ozalit_received_by}` : ''}
                   </span>
                 )}
                 {isDemoOnayStage && project.demo_received && (
                   <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
                     <CheckCircle2 className="h-4 w-4" />
-                    Teslim alındı{project.demo_received_by ? ` — ${project.demo_received_by}` : ''}
+                    Teslim alındı{project.demo_received_by ? `, ${project.demo_received_by}` : ''}
                   </span>
                 )}
                 {actions.includes('approve') && (
@@ -779,7 +788,7 @@ export default function ProjectDetail() {
                       title="Tasarımcı kalan görevleri bitirip yeni demo gönderdiğinde ilerleyecek"
                     >
                       <Clock className="h-3.5 w-3.5" />
-                      Tasarım tamamlanmadı — tasarımcı yeni demo gönderdiğinde ilerleyecek
+                      Tasarım tamamlanmadı, tasarımcı yeni demo gönderdiğinde ilerleyecek
                     </span>
                   )}
                 {actions.includes('reject') && (
@@ -810,7 +819,7 @@ export default function ProjectDetail() {
                 <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-blue-800">
-                    Ozalit istendi — matbaa teslimi bekleniyor
+                    Ozalit istendi, matbaa teslimi bekleniyor
                   </p>
                   <p className="mt-0.5 text-xs text-blue-600">
                     {user?.role === 'printer'
@@ -829,7 +838,7 @@ export default function ProjectDetail() {
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-amber-800">
-                    Matbaa ozaliti teslim etti — "Teslim Alındı" bekleniyor
+                    Matbaa ozaliti teslim etti, "Teslim Alındı" bekleniyor
                   </p>
                   <p className="mt-0.5 text-xs text-amber-700">
                     {canReceiveOzalit
@@ -845,7 +854,7 @@ export default function ProjectDetail() {
             {isOzalitOnayStage && project.ozalit_received && (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
                 <p className="text-sm font-semibold text-emerald-800">
-                  Ozalit onayı — tüm ekip liderleri ve atanmış tasarımcılar onaylamalı
+                  Ozalit onayı, tüm ekip liderleri ve atanmış tasarımcılar onaylamalı
                 </p>
                 {(project.ozalit_approvals ?? []).length > 0 ? (
                   <div className="mt-2 flex flex-wrap gap-1.5">
@@ -872,8 +881,8 @@ export default function ProjectDetail() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-amber-800">
                     {project.last_reject_type === 'ozalit'
-                      ? `Ozalit reddedildi — revizyon gerekiyor (${(project.ozalit_attempt ?? 0) + 1}. deneme)`
-                      : `Demo reddedildi — revizyon gerekiyor (${(project.demo_attempt ?? 0) + 1}. deneme)`}
+                      ? `Ozalit reddedildi, revizyon gerekiyor (${(project.ozalit_attempt ?? 0) + 1}. deneme)`
+                      : `Demo reddedildi, revizyon gerekiyor (${(project.demo_attempt ?? 0) + 1}. deneme)`}
                   </p>
                   {lastRejectReason && (
                     <p className="mt-0.5 text-sm text-amber-700">"{lastRejectReason}"</p>
@@ -1007,9 +1016,9 @@ export default function ProjectDetail() {
                         const flagged = inRevision && s.needs_revize
                         const lockedDone = inRevision && !s.needs_revize && s.is_done
 
-                        if (s.kind === 'pages') {
+                        if (s.kind === 'pages' || s.kind === 'sticker-count') {
                           return (
-                            <PageSubtaskRow
+                            <CountSubtaskRow
                               key={s.id}
                               sub={s}
                               canEdit={canEdit}
@@ -1018,7 +1027,7 @@ export default function ProjectDetail() {
                               busy={toggling === s.id}
                               revizing={toggling === s.id}
                               onRevize={() => handleRevize(s)}
-                              onAdd={(delta) => addPages(s, delta)}
+                              onAdd={(delta) => addCount(s, delta)}
                             />
                           )
                         }
@@ -1170,7 +1179,7 @@ export default function ProjectDetail() {
             {IN_FLIGHT_DEMO_OZALIT_STAGES.has(project.stage) && (
               <span className="flex items-start gap-1.5 rounded-md bg-amber-50 px-2.5 py-2 text-amber-800">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>{STAGE_LABELS[project.stage]} bekleniyor — silinirse kuyruktan kaybolur.</span>
+                <span>{STAGE_LABELS[project.stage]} bekleniyor, silinirse kuyruktan kaybolur.</span>
               </span>
             )}
           </span>
@@ -1203,15 +1212,30 @@ export default function ProjectDetail() {
 }
 
 /**
- * Page-count subtask. The designer logs how many pages they finished today;
- * progress is recalculated automatically (pages done / total pages).
+ * Numeric ("counter") subtask — `pages` and `sticker-count`. The designer
+ * logs how many they finished today; progress is recalculated automatically
+ * (done / total). `is_done` is derived from the counter on both sides, so
+ * these rows deliberately have no checkbox — the row completes itself once
+ * the counter reaches the total.
  */
-function PageSubtaskRow({ sub, canEdit, busy, onAdd, onRevize, revizing = false, flagged = false, lockedDone = false }) {
+function CountSubtaskRow({ sub, canEdit, busy, onAdd, onRevize, revizing = false, flagged = false, lockedDone = false }) {
   const [today, setToday] = useState('')
-  const total = sub.total_pages ?? 0
-  const done = sub.pages_done ?? 0
+  const isSticker = sub.kind === 'sticker-count'
+  const unit = isSticker ? 'sticker' : 'sayfa'
+  const total = (isSticker ? sub.total_stickers : sub.total_pages) ?? 0
+  const done = (isSticker ? sub.stickers_done : sub.pages_done) ?? 0
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
   const remaining = Math.max(0, total - done)
+  const isComplete = isSubtaskDone(sub)
+  // A counter saved without a total (ProductSubtaskEditor coerces an empty
+  // field to null) can never reach "done" — say so instead of showing a
+  // disabled "Tamamlandı" the designer can't act on.
+  const noTotal = total <= 0
+  const statusText = noTotal
+    ? 'Toplam sayı tanımlanmamış, takım liderine bildirin.'
+    : remaining === 0
+      ? 'Tamamlandı'
+      : `Kalan: ${remaining} ${unit}`
 
   function submit(e) {
     e.preventDefault()
@@ -1225,8 +1249,8 @@ function PageSubtaskRow({ sub, canEdit, busy, onAdd, onRevize, revizing = false,
     <div
       className={cn(
         'rounded-lg border bg-background px-3 py-2.5',
-        sub.is_done && 'border-emerald-200 bg-emerald-50/40',
-        flagged && !sub.is_done && 'border-amber-200 bg-amber-50/40',
+        isComplete && 'border-emerald-200 bg-emerald-50/40',
+        flagged && !isComplete && 'border-amber-200 bg-amber-50/40',
         lockedDone && 'opacity-60',
       )}
     >
@@ -1253,7 +1277,7 @@ function PageSubtaskRow({ sub, canEdit, busy, onAdd, onRevize, revizing = false,
           )}
         </span>
         <span className="text-xs text-muted-foreground">
-          {done} / {total} sayfa · <span className="font-semibold text-foreground">%{pct}</span>
+          {done} / {total} {unit} · <span className="font-semibold text-foreground">%{pct}</span>
         </span>
       </div>
       <Progress value={pct} className="mt-2 h-1.5" />
@@ -1265,21 +1289,17 @@ function PageSubtaskRow({ sub, canEdit, busy, onAdd, onRevize, revizing = false,
             max={remaining || undefined}
             value={today}
             onChange={(e) => setToday(e.target.value)}
-            placeholder="Bugün biten sayfa"
+            placeholder={`Bugün biten ${unit}`}
             className="h-8 w-40"
             disabled={busy || remaining === 0}
           />
           <Button type="submit" size="sm" disabled={busy || remaining === 0 || !today}>
             Ekle
           </Button>
-          <span className="text-[11px] text-muted-foreground">
-            {remaining === 0 ? 'Tamamlandı' : `Kalan: ${remaining} sayfa`}
-          </span>
+          <span className="text-[11px] text-muted-foreground">{statusText}</span>
         </form>
       ) : (
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          {remaining === 0 ? 'Tamamlandı' : `Kalan: ${remaining} sayfa`}
-        </p>
+        <p className="mt-2 text-[11px] text-muted-foreground">{statusText}</p>
       )}
     </div>
   )

@@ -168,7 +168,7 @@ function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
             {gorulduStep && (
               <p className="text-xs text-blue-600">
                 ✓ {gorulduStep.signed_by_name} tarafından görüldü
-                {gorulduStep.notes ? ` — "${gorulduStep.notes}"` : ''}
+                {gorulduStep.notes ? `, "${gorulduStep.notes}"` : ''}
               </p>
             )}
           </div>

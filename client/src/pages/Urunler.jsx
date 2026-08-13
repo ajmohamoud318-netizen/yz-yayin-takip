@@ -411,7 +411,7 @@ function ProductRow({
             type="button"
             onClick={onDelist}
             disabled={busy}
-            title="Ürünü katalogdan kaldır — satış ekibi artık sipariş veremez"
+            title="Ürünü katalogdan kaldır, satış ekibi artık sipariş veremez"
             className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1.5 text-[11px] sm:py-1 font-semibold text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
           >
             <EyeOff className="h-3 w-3" />

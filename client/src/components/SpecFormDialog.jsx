@@ -840,7 +840,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       await persistCatalogEdits()
       const updated = await api.approveProject(project.id)
       updateOne(updated)
-      toast.success('Onaylandı — proje üretime alındı.')
+      toast.success('Onaylandı, proje üretime alındı.')
       onDone?.(updated)
       onOpenChange(false)
     } catch (err) {
@@ -964,7 +964,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               </div>
               {selectedComponents.length > 0 && (
                 <p className="mt-2 text-[10px] text-muted-foreground">
-                  Yazdır / Gönder dediğinizde <strong>{selectedComponents.length}</strong> ayrı form oluşturulur — her parça kendi imza bloğuyla birlikte.
+                  Yazdır / Gönder dediğinizde <strong>{selectedComponents.length}</strong> ayrı form oluşturulur, her parça kendi imza bloğuyla birlikte.
                 </p>
               )}
             </div>
@@ -1112,7 +1112,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
               <Check className="h-4 w-4 shrink-0" />
               <span>
-                Ozalit teslim alındı{project?.ozalit_received_by ? ` — ${project.ozalit_received_by}` : ''}. Onaylayabilirsiniz.
+                Ozalit teslim alındı{project?.ozalit_received_by ? `, ${project.ozalit_received_by}` : ''}. Onaylayabilirsiniz.
               </span>
             </div>
           ) : (

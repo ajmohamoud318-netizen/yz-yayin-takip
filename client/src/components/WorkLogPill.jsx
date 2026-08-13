@@ -54,7 +54,7 @@ export default function WorkLogPill({ collapsed = false }) {
         {collapsed ? (
           <button
             type="button"
-            aria-label={count ? `${label} — bugün ${count} kayıt` : `${label} — bugün kayıt yok`}
+            aria-label={count ? `${label}, bugün ${count} kayıt` : `${label}, bugün kayıt yok`}
             title={label}
             className={cn(
               'relative flex h-9 w-full items-center justify-center rounded-md transition-colors',
@@ -67,7 +67,7 @@ export default function WorkLogPill({ collapsed = false }) {
         ) : (
           <button
             type="button"
-            aria-label={count ? `${label} — bugün ${count} kayıt` : `${label} — bugün kayıt yok`}
+            aria-label={count ? `${label}, bugün ${count} kayıt` : `${label}, bugün kayıt yok`}
             className={cn(
               'group flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm font-medium transition-colors',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',

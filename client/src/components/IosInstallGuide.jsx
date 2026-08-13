@@ -35,7 +35,7 @@ const STEPS = [
   {
     img: '/ios-install/2-add.png',
     title: '"Ana Ekrana Ekle"yi seçin',
-    caption: 'Açılan listeyi yukarı kaydırın — genelde biraz aşağıdadır.',
+    caption: 'Açılan listeyi yukarı kaydırın, genelde biraz aşağıdadır.',
     ring: { left: 4, top: 58, width: 92, height: 7 },
   },
   {

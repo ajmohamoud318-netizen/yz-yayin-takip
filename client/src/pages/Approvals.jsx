@@ -220,7 +220,7 @@ export default function Approvals({ tab = 'demo' }) {
                     {/* Held demo: nothing to approve/reject until the designer
                         re-sends. Kept in the queue for visibility. */}
                     <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 sm:flex-1">
-                      Tasarım tamamlanmadı — tasarımcı yeni demo gönderecek
+                      Tasarım tamamlanmadı, tasarımcı yeni demo gönderecek
                     </span>
                     <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={() => navigate(`/projects/${p.id}`)}>
                       Detay
@@ -232,7 +232,7 @@ export default function Approvals({ tab = 'demo' }) {
                       // This user already signed off — waiting on the others.
                       <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800 sm:flex-1">
                         <ThumbsUp className="h-3.5 w-3.5" />
-                        Onayınız kaydedildi — diğer onaylar bekleniyor
+                        Onayınız kaydedildi, diğer onaylar bekleniyor
                       </span>
                     ) : canApprove ? (
                       <Button

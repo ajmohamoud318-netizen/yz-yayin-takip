@@ -235,7 +235,7 @@ export async function orderRoutes(fastify) {
               to_stage: 'uretimde',
               action: 'system',
               event: 'order_final',
-              note: 'Sipariş onaylandı — üretime alındı',
+              note: 'Sipariş onaylandı, üretime alındı',
             },
             request.user,
           )
@@ -319,7 +319,7 @@ export async function orderRoutes(fastify) {
             reason,
             reject_target: rejectTarget,
             note: revized.length > 0
-              ? `Sipariş reddedildi (${rejectTarget}) — revize: ${revized.join(', ')}`
+              ? `Sipariş reddedildi (${rejectTarget}), revize: ${revized.join(', ')}`
               : `Sipariş reddedildi (${rejectTarget})`,
           },
           request.user,

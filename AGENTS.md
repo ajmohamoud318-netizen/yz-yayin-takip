@@ -311,7 +311,8 @@ When creating a project, the team leader selects which subtasks apply:
 - Yazılım (software)
 - İçerik / Görsel (content / visuals)
 - Sayfa Sayısı (page count — numeric field)
-The designer can check each one off (and add per-subtask updates / page progress). Progress % = completed subtasks / total subtasks × 100, recalculated server-side on every check.
+- Sticker (sticker count — numeric field)
+The designer can check each one off (and add per-subtask updates). The two numeric kinds (`pages`, `sticker-count`) have no checkbox: the designer logs how many they finished and the row completes itself once the counter reaches the total — `is_done` is derived from `pages_done`/`total_pages` and `stickers_done`/`total_stickers` on both client and server (`isSubtaskDone`). Progress % = completed subtasks / total subtasks × 100, recalculated server-side on every change.
 
 ---
 ## 🏗️ System Architecture
@@ -592,7 +593,7 @@ CREATE TABLE notifications (             -- durable per-recipient feed (migratio
   id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,  -- recipient
   type          TEXT NOT NULL,           -- event key (assignment, demo_approval_pending, order_step, …)
-  title         TEXT NOT NULL DEFAULT '',
+  title         TEXT NOT NULL DEFAULT '',  -- bold line: project title, EXCEPT the receipt events (actor name)
   body          TEXT NOT NULL DEFAULT '',
   tone          TEXT NOT NULL DEFAULT 'blue'
     CHECK (tone IN ('amber','green','rose','blue','pink')),
@@ -832,7 +833,7 @@ Recipient rules live once, in the service (`notifyProjectTransition`, `notifyPro
 - `team_leader` — demo delivered / demo receipt acknowledged (→ approval unblocked), ozalit approvals pending, production-ready, new sipariş talep steps
 - `printer` — demo/ozalit delivery pending, production-ready, sipariş ozalit steps
 - `designer` — new assignment, rejection ("Revizyon gerekiyor"), demo delivered, demo receipt acknowledged, demo held, ozalit-requestable, production-ready, assigned-order steps
-- `satis` — handover confirmation pending, "Talebiniz onaylandı — üretime alındı", on-sale
+- `satis` — handover confirmation pending, "Talebiniz onaylandı, üretime alındı", on-sale
 
 **A notification must only ever name an action its recipient can take.** The demo leg is where this is easy to get wrong, because three different events land on the same `demo_onay` stage and they have different audiences:
 
@@ -843,6 +844,8 @@ Recipient rules live once, in the service (`notifyProjectTransition`, `notifyPro
 | Approve at <100% (`demo_onay → demo_onay`) | `demo_held` | assigned designers | Stage doesn't move; without an explicit branch this falls through to the delivery case and re-asks everyone for an approval that already happened |
 
 The ozalit leg follows the same shape since migration 035 gave it a receipt gate: delivery (`ozalit_teslim → ozalit_onay`) emits `ozalit_receipt_pending` to the leaders + assigned designers, and `POST /ozalit-receive` emits `ozalit_approval_pending` to everyone who must still sign off. No leader/designer split there — ozalit onay is multi-party, so both sides really are being asked to approve.
+
+**Receipt notifications lead with the person, not the book.** Every other notification puts the project title on the bold `title` line and the event in the body. The three "Teslim Alındı" acknowledgements (`demo_approval_pending`, `demo_received`, `ozalit_approval_pending`) invert it — title is the actor's name, body is `«kitap» demoyu/ozaliti teslim aldı, …` — because *who acted* is the news there, and the title is the first (sometimes only) line a lock screen shows. Keeping the book in the body also spares long titles the bell's `truncate`. Locked by a test in `services/notifications.test.js`.
 
 ÇİN has no ozalit leg, so `cin_demo_onay → uretime_hazir` *is* the designer's "demo approved" moment — that's why assigned designers are on the `uretime_hazir` fan-out and not just leaders. Covered by tests in `services/notifications.test.js`.
 
@@ -889,6 +892,7 @@ Endpoints: `GET /api/push/public-key`, `POST /api/push/subscribe`, `DELETE /api/
 - Order eligibility: `assertOrderable(project)` throws 400 if `project.stage ∉ ORDERABLE_STAGES` (`uretime_hazir`/`uretimde`/`gumruk`/`satista`), `has_product_info` isn't set yet, or the product was delisted (`catalog_hidden` — distinct message, see "Kaldırma")
 - Handover eligibility: `assertHandoverEligible(project)` throws 400 if the project is not at `uretimde` (TR) / `gumruk` (ÇİN)
 - Mock/Infra seam: `infrastructure/config.js` exposes `USE_MOCK`; flipping it to `false` switches repositories from `mock/*` to `http/*` without changing the application or presentation layer.
+- **Turkish copy joins clauses with a comma, not an em dash** — "Ozalit istendi, matbaa teslimi bekleniyor". Applies to everything a user reads: notification bodies, `stage_history` notes, toasts, error messages, inline status lines. The em dash survives only where it isn't punctuation: the `'—'` empty-value placeholder in tables, and document/brand titles ("Sipariş Formu — {kitap}", the password-reset subject). Code comments and this file are prose for developers and keep their dashes. Old `stage_history` rows still carry ' — ', which is why `dedupeNote` (`lib/project-history.js`) matches both.
 
 ### Phone layout (the app is used on an iPhone, not only at a desk)
 Four rules, each of which was a shipped bug before it was a rule:

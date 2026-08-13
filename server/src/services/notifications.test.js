@@ -83,7 +83,8 @@ function fakeClient() {
       // column order declared there.
       for (let i = 0; i < params.length; i += 10) {
         rows.push({
-          userId: params[i], type: params[i + 1], body: params[i + 3], tone: params[i + 4],
+          userId: params[i], type: params[i + 1], title: params[i + 2],
+          body: params[i + 3], tone: params[i + 4],
         })
       }
       return { rows: rows.map((r, i) => ({ id: `n-${i}`, user_id: r.userId })) }
@@ -124,6 +125,28 @@ test('marking Teslim Alındı pings the other side, not the person who clicked',
   // A co-assigned designer is kept in the loop without being asked for anything.
   assert.equal(byUser['u-feyza'].type, 'demo_received')
   assert.ok(!/onayınızı/.test(byUser['u-feyza'].body))
+})
+
+test('a receipt notification leads with the person, then the book', async () => {
+  // The whole news of these two events is WHO acted, and the title is the line
+  // a phone shows first — so it holds the name, and the book sits in the body
+  // where nothing truncates it. Reads "Aylin / «kitap» demoyu teslim aldı".
+  const client = fakeClient()
+  await notifyDemoReceived(client, { project, actor: { id: 'u-aylin', name: 'Aylin' }, assignees })
+  await notifyOzalitReceived(client, { project, actor: { id: 'u-aylin', name: 'Aylin' }, assignees })
+  for (const r of client.rows) {
+    assert.equal(r.title, 'Aylin', `title must be the actor, got: ${r.title}`)
+    assert.ok(r.body.startsWith(project.title), `body must open with the book: ${r.body}`)
+    assert.ok(!r.body.includes('Aylin'), `name repeated in the body: ${r.body}`)
+  }
+})
+
+test('an unnamed actor still produces a readable receipt notification', async () => {
+  // actor.name is optional on the route's user object; a missing one must not
+  // ship a blank bold line ("" renders as the app name in the push payload).
+  const client = fakeClient()
+  await notifyDemoReceived(client, { project, actor: { id: 'u-x' }, assignees })
+  for (const r of client.rows) assert.equal(r.title, 'Ekipten biri')
 })
 
 test('a leader acknowledging tells the designers and nobody else', async () => {

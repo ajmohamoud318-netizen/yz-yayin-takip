@@ -165,7 +165,7 @@ export function renderResetEmail({ name, resetUrl }) {
     '',
     resetUrl,
     '',
-    'Bu bağlantı 1 saat geçerlidir. Sıfırlama işlemini sen başlatmadıysan bu e-postayı görmezden gelebilirsin — şifren değişmez.',
+    'Bu bağlantı 1 saat geçerlidir. Sıfırlama işlemini sen başlatmadıysan bu e-postayı görmezden gelebilirsin, şifren değişmez.',
     '',
     'Sevgiyle,',
     'Yükselen Zeka Yayın Takip Ekibi',
@@ -189,7 +189,7 @@ export function renderResetEmail({ name, resetUrl }) {
       <p><a href="${resetUrl}" style="color:#1155cc;text-decoration:underline;word-break:break-all;">${escapeHtml(resetUrl)}</a></p>
 
       <p style="color:#888888;font-size:12px;">
-        Bu bağlantı 1 saat geçerlidir. Sıfırlama işlemini sen başlatmadıysan bu e-postayı görmezden gelebilirsin — şifren değişmez.
+        Bu bağlantı 1 saat geçerlidir. Sıfırlama işlemini sen başlatmadıysan bu e-postayı görmezden gelebilirsin, şifren değişmez.
       </p>
 
       <p>Sevgiyle,<br>

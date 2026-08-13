@@ -126,8 +126,8 @@ function generateHistory(p, assignees, subtasksDone, subtasksTotal) {
   // ── Demo rejection cycles ──────────────────────────────────────────────────
   for (let i = 0; i < demoAttempt; i++) {
     const attemptLabel = i === 0
-      ? `Tasarım tamamlandı${subtasksTotal > 0 ? ` — ${subtasksDone}/${subtasksTotal} alt görev` : ''}`
-      : `${i + 1}. demo — revizyon tamamlandı`
+      ? `Tasarım tamamlandı${subtasksTotal > 0 ? `, ${subtasksDone}/${subtasksTotal} alt görev` : ''}`
+      : `${i + 1}. demo, revizyon tamamlandı`
     h.push({
       id: `${p.id}-hd${i}`,
       action: 'advance',
@@ -166,8 +166,8 @@ function generateHistory(p, assignees, subtasksDone, subtasksTotal) {
 
   // ── Current demo submission ────────────────────────────────────────────────
   const finalDemoLabel = demoAttempt === 0
-    ? `Tasarım tamamlandı${subtasksTotal > 0 ? ` — ${subtasksDone}/${subtasksTotal} alt görev` : ''}`
-    : `${demoAttempt + 1}. demo — revizyon tamamlandı`
+    ? `Tasarım tamamlandı${subtasksTotal > 0 ? `, ${subtasksDone}/${subtasksTotal} alt görev` : ''}`
+    : `${demoAttempt + 1}. demo, revizyon tamamlandı`
   h.push({
     id: `${p.id}-hdf`,
     action: 'advance',

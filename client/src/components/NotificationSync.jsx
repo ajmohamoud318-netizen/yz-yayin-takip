@@ -37,7 +37,7 @@ export default function NotificationSync() {
     const fresh = items.filter((it) => !seen.has(it.id) && !it.is_read).reverse()
     for (const it of fresh) {
       const fn = toast[TONE_TO_TOAST[it.tone] ?? 'info'] ?? toast
-      fn(it.body ? `${it.title} — ${it.body}` : it.title, { duration: 6000 })
+      fn(it.body ? `${it.title}, ${it.body}` : it.title, { duration: 6000 })
     }
     for (const it of items) seen.add(it.id)
   }, [items])

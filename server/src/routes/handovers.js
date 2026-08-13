@@ -108,7 +108,7 @@ export async function handoverRoutes(fastify) {
           to_stage: 'satista',
           action: 'system',
           event: 'handover_confirm',
-          note: 'Teslim onaylandı — satışta',
+          note: 'Teslim onaylandı, satışta',
         },
         request.user,
       )

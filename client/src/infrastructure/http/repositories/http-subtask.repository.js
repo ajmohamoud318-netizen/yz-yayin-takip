@@ -14,6 +14,10 @@ export function createHttpSubtaskRepository() {
       const { data } = await httpClient.patch(`/subtasks/${subtaskId}`, { pages_done: pagesDone })
       return { project: data }
     },
+    async setSubtaskStickers(subtaskId, stickersDone) {
+      const { data } = await httpClient.patch(`/subtasks/${subtaskId}`, { stickers_done: stickersDone })
+      return { project: data }
+    },
     async reviseSubtask(subtaskId) {
       const { data } = await httpClient.post(`/subtasks/${subtaskId}/revize`)
       return { project: data }
