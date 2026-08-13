@@ -20,9 +20,17 @@
  *
  * Dead-subscription hygiene: push services return 404/410 when a subscription
  * is permanently gone (permission revoked, site data cleared, PWA deleted).
- * Those rows are deleted immediately — keeping them means every future emit
- * pays for a guaranteed-failing HTTPS request per dead device, which is how
- * push fan-out quietly gets slow.
+ * Those rows are stamped `failed_at` immediately, which takes them out of the
+ * fan-out query (`loadSubscriptions` filters on it) — keeping them live means
+ * every future emit pays for a guaranteed-failing HTTPS request per dead
+ * device, which is how push fan-out quietly gets slow.
+ *
+ * They are DELETED later, by the maintenance sweep, after a grace period. The
+ * two-phase approach is deliberate and is what migration 032's schema always
+ * described: the grace window is the only way to answer "why did Oktay stop
+ * getting pushes on his phone?" after the fact, and re-subscribing from that
+ * device clears `failed_at` (see saveSubscription) so a device that comes back
+ * inside the window is restored rather than re-registered.
  */
 
 import webpush from 'web-push'
@@ -143,70 +151,182 @@ export function buildPayload({ type, title, body, tone, link, projectId, notific
 }
 
 /**
- * Fan a single notification out to every device of every recipient.
+ * How many sends may be in flight at once.
  *
- * Returns { sent, pruned }. Never throws — failures are counted, not raised.
- *
- * Sends run in parallel: a slow push service (Apple's is routinely slower
- * than FCM) shouldn't serialise behind the others when a book notifies five
- * people across a dozen devices.
+ * The previous `Promise.all` over every subscription was unbounded: one team
+ * leader bulk-approving a shelf of books fans out to (recipients × devices ×
+ * notifications) simultaneous HTTPS requests, all from a single Node process
+ * that also has to serve the API. 12 keeps the tail latency of a fan-out flat
+ * without letting a burst monopolise the event loop or the socket pool.
  */
-export async function sendToUsers(userIds, payloadArgs) {
-  if (!ensureConfigured()) return { sent: 0, pruned: 0 }
-  const ids = [...new Set((userIds ?? []).filter(Boolean))]
-  if (ids.length === 0) return { sent: 0, pruned: 0 }
+const MAX_CONCURRENT_SENDS = 12
 
-  const pool = getPool()
+/** Run `worker` over `items`, at most `limit` at a time. Never rejects. */
+async function mapWithConcurrency(items, limit, worker) {
+  let cursor = 0
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const i = cursor
+      cursor += 1
+      if (i >= items.length) return
+      await worker(items[i])
+    }
+  })
+  await Promise.all(runners)
+}
+
+/**
+ * Deliver a batch of DISTINCT notifications, each to its own recipient's
+ * devices.
+ *
+ *   entries: [{ userId, notificationId, payload }]
+ *
+ * This replaced a `sendToUsers(userIds, onePayload)` signature that could not
+ * express what `emit()` actually produces. `emit` writes one row PER recipient
+ * — five people notified about a book is five rows with five ids — but the old
+ * call site collapsed them into a single payload carrying `rows[0].id`, so
+ * four of the five recipients received a push stamped with a notification id
+ * belonging to someone else's row. Harmless while nothing read the field back;
+ * a silent cross-user data bug the moment anything did (marking a push read,
+ * per-row delivery receipts, click attribution). Carrying the pairs through is
+ * the only shape that can't drift.
+ *
+ * Returns Map<notificationId, { sent, transient, dead }> so the caller can
+ * tell the three outcomes apart:
+ *   • sent > 0                      → delivered, settle the row
+ *   • all zero                      → recipient has no live device, settle it
+ *   • transient > 0, sent === 0     → retryable, leave the row owed
+ *
+ * Never throws: a notification is already committed to Postgres by the time we
+ * get here, and a push-service outage must not turn into a 500 on a teslim.
+ */
+export async function sendToRecipients(entries) {
+  const list = (entries ?? []).filter((e) => e?.userId && e?.notificationId)
+  const result = new Map(list.map((e) => [e.notificationId, { sent: 0, transient: 0, dead: 0 }]))
+  if (!ensureConfigured() || list.length === 0) return result
+
+  const byUser = new Map()
+  for (const e of list) {
+    if (!byUser.has(e.userId)) byUser.set(e.userId, [])
+    byUser.get(e.userId).push(e)
+  }
+
   let subs
   try {
-    subs = await loadSubscriptions(pool, ids)
+    subs = await loadSubscriptions(getPool(), [...byUser.keys()])
   } catch (err) {
+    // Treat a DB failure as transient for every entry — the sweeper retries.
     // eslint-disable-next-line no-console
     console.error('[push] failed to load subscriptions:', err.message)
-    return { sent: 0, pruned: 0 }
+    for (const stat of result.values()) stat.transient += 1
+    return result
   }
-  if (subs.length === 0) return { sent: 0, pruned: 0 }
+  if (subs.length === 0) return result
 
-  const payload = buildPayload(payloadArgs)
-  const dead = []
-  let sent = 0
+  // One job per (device × notification owed to that device's user).
+  const jobs = []
+  for (const sub of subs) {
+    for (const entry of byUser.get(sub.user_id) ?? []) jobs.push({ sub, entry })
+  }
 
-  await Promise.all(subs.map(async (sub) => {
+  const dead = new Set()
+  const reached = new Set()
+
+  await mapWithConcurrency(jobs, MAX_CONCURRENT_SENDS, async ({ sub, entry }) => {
+    const stat = result.get(entry.notificationId)
+    // Skip devices already known dead in this batch — no point spending
+    // another guaranteed-404 round-trip per remaining notification.
+    if (dead.has(sub.id)) { stat.dead += 1; return }
     try {
       await webpush.sendNotification(
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-        payload,
+        buildPayload(entry.payload),
         // TTL: if the device is offline, the push service holds the message
         // this long before dropping it. 24h — a demo request that surfaces a
         // day late is still useful; a week late is just noise.
         { TTL: 86_400 },
       )
-      sent += 1
+      stat.sent += 1
+      reached.add(sub.id)
     } catch (err) {
       // 404 Not Found / 410 Gone = subscription permanently dead. Anything
       // else (429, 500, network) is transient — leave the row alone so the
-      // device keeps working once the push service recovers.
+      // device keeps working once the push service recovers, and let the
+      // caller retry the notification.
       if (err?.statusCode === 404 || err?.statusCode === 410) {
-        dead.push(sub.id)
+        stat.dead += 1
+        dead.add(sub.id)
       } else {
+        stat.transient += 1
         // eslint-disable-next-line no-console
         console.error(`[push] send failed (${err?.statusCode ?? 'network'}):`, err?.message)
       }
     }
-  }))
+  })
 
-  const pruned = await pruneSubscriptions(dead)
-  await touchLastUsed(subs.filter((s) => !dead.includes(s.id)).map((s) => s.id))
+  await markSubscriptionsFailed([...dead])
+  await touchLastUsed([...reached])
+  return result
+}
+
+/**
+ * Fan ONE ad-hoc payload out to a set of users. Kept for callers that aren't
+ * delivering a stored notification row — currently just POST /api/push/test.
+ *
+ * Returns { sent, pruned } for backwards compatibility with that route (and
+ * the PushToggle UI that reads `sent` to prove delivery to the user).
+ */
+export async function sendToUsers(userIds, payloadArgs) {
+  const ids = [...new Set((userIds ?? []).filter(Boolean))]
+  const results = await sendToRecipients(ids.map((userId, i) => ({
+    userId,
+    notificationId: `${payloadArgs?.notificationId ?? 'adhoc'}-${i}`,
+    payload: payloadArgs,
+  })))
+  let sent = 0
+  let pruned = 0
+  for (const stat of results.values()) {
+    sent += stat.sent
+    pruned += stat.dead
+  }
   return { sent, pruned }
 }
 
-/** Delete permanently-dead subscriptions. Best-effort. */
-export async function pruneSubscriptions(ids) {
+/**
+ * Take permanently-dead subscriptions out of the fan-out immediately.
+ *
+ * Marks rather than deletes, so `pruneFailedSubscriptions` can clear them
+ * after a grace period — see this file's header for why the two phases exist.
+ * `AND failed_at IS NULL` keeps the first failure timestamp, so the grace
+ * window is measured from when the device actually died, not from the last
+ * time something tried to reach it.
+ */
+export async function markSubscriptionsFailed(ids) {
   if (!ids || ids.length === 0) return 0
   try {
     const { rowCount } = await getPool().query(
-      'DELETE FROM push_subscriptions WHERE id = ANY($1)',
+      'UPDATE push_subscriptions SET failed_at = NOW() WHERE id = ANY($1) AND failed_at IS NULL',
       [ids],
+    )
+    return rowCount
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[push] mark-failed failed:', err.message)
+    return 0
+  }
+}
+
+/**
+ * Delete subscriptions that have been dead longer than the grace period.
+ * Called from the maintenance sweep. Best-effort.
+ */
+export async function pruneFailedSubscriptions({ graceHours = 72 } = {}) {
+  try {
+    const { rowCount } = await getPool().query(
+      `DELETE FROM push_subscriptions
+        WHERE failed_at IS NOT NULL
+          AND failed_at < NOW() - make_interval(hours => $1::int)`,
+      [graceHours],
     )
     return rowCount
   } catch (err) {
@@ -233,3 +353,11 @@ async function touchLastUsed(ids) {
 export function __resetPushConfigForTests() {
   configured = null
 }
+
+/**
+ * Test seam for the internals worth locking down without a live push service.
+ * `mapWithConcurrency` in particular: an off-by-one in its cursor silently
+ * drops sends, which is invisible in production (nobody reports the push they
+ * never got).
+ */
+export const __testing = { mapWithConcurrency, MAX_CONCURRENT_SENDS }

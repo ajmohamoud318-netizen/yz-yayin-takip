@@ -10,14 +10,25 @@ import { httpClient } from '../client.js'
  */
 export function createHttpNotificationRepository() {
   return {
-    async listNotifications() {
-      const { data } = await httpClient.get('/notifications')
-      // { items: [...], unread, unseen }. `unseen` drives the bell badge;
-      // `unread` (per-item is_read) drives the bold styling.
+    /**
+     * One page of the feed. `cursor` is the opaque `nextCursor` string from a
+     * previous call — pass it to fetch older items.
+     *
+     * `unread` / `unseen` are whole-feed totals computed server-side, NOT
+     * counts of `items`: the badge has to be right even when the unread set is
+     * larger than a page (it used to be derived from the page, and silently
+     * capped at 50).
+     */
+    async listNotifications({ cursor = null, limit = null } = {}) {
+      const params = {}
+      if (cursor) params.cursor = cursor
+      if (limit) params.limit = String(limit)
+      const { data } = await httpClient.get('/notifications', { params })
       return {
         items: Array.isArray(data?.items) ? data.items : [],
         unread: typeof data?.unread === 'number' ? data.unread : 0,
         unseen: typeof data?.unseen === 'number' ? data.unseen : 0,
+        nextCursor: typeof data?.nextCursor === 'string' ? data.nextCursor : null,
       }
     },
     async markNotificationRead(id) {

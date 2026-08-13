@@ -119,7 +119,7 @@ export function createApi() {
     confirmHandover: makeConfirmHandover(),
 
     // Notifications (server-backed feed)
-    listNotifications: () => notificationRepo.listNotifications(),
+    listNotifications: (opts) => notificationRepo.listNotifications(opts),
     markNotificationRead: (id) => notificationRepo.markNotificationRead(id),
     markAllNotificationsRead: () => notificationRepo.markAllNotificationsRead(),
     markNotificationsSeen: () => notificationRepo.markNotificationsSeen(),

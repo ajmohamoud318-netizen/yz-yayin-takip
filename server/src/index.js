@@ -17,6 +17,9 @@ import { config } from './config.js'
 import { HttpError } from './domain/errors.js'
 import { up as migrateUp } from './services/migrate.js'
 import { closePool } from './db/pool.js'
+import {
+  startNotificationMaintenance, stopNotificationMaintenance,
+} from './services/notification-maintenance.js'
 import { registerAuthDecorators } from './middleware/auth.js'
 
 /**
@@ -184,8 +187,19 @@ async function main() {
   await app.listen({ host: config.host, port: config.port })
   app.log.info(`YZ server listening on http://${config.host}:${config.port}`)
 
+  // Push retry + retention sweeps. Started only in the real server process
+  // (not from buildServer) so tests and any future in-process consumer can
+  // build an app without acquiring background timers. See
+  // services/notification-maintenance.js.
+  startNotificationMaintenance()
+
   const shutdown = async (sig) => {
     app.log.info({ sig }, 'shutting down')
+    // Stop the sweeps FIRST: a redeploy is exactly when an in-flight push is
+    // most likely to be dropped, and a sweep that starts here would be racing
+    // the pool it is about to lose. Anything still owed stays owed and the
+    // next boot's sweep delivers it — which is the whole point of the outbox.
+    stopNotificationMaintenance()
     try { await app.close() } catch { /* ignore */ }
     try { await closePool() } catch { /* ignore */ }
     process.exit(0)

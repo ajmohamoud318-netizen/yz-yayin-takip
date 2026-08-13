@@ -64,12 +64,29 @@ function urlBase64ToUint8Array(base64String) {
   return output
 }
 
+/** Mounted instances of this hook, kept in agreement — see `commit` below. */
+const statusPeers = new Set()
+
 export function usePushNotifications() {
   const { user } = useAuth()
   const [status, setStatus] = useState('default')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const serverKeyRef = useRef('')
+
+  // Two components mount this hook at once: the setup sheet shown on open and
+  // the toggle in the bell dropdown. Each useState is independent, so without
+  // a shared channel, subscribing from one leaves the other advertising "Aç"
+  // for a feature that's already on. Peers hold the (stable) setState fns;
+  // React bails out when the value is unchanged, so publishing to self is free.
+  const commit = useCallback((next) => {
+    statusPeers.forEach((fn) => fn(next))
+  }, [])
+
+  useEffect(() => {
+    statusPeers.add(setStatus)
+    return () => { statusPeers.delete(setStatus) }
+  }, [])
 
   const supported = typeof window !== 'undefined' &&
     'serviceWorker' in navigator &&
@@ -87,21 +104,21 @@ export function usePushNotifications() {
       // iOS in a tab: report the install requirement rather than 'unsupported',
       // so the UI can show the 4-step fix instead of a dead end.
       if (!supported) {
-        if (!cancelled) setStatus(isIOS() && !isStandalone() ? 'needs-install' : 'unsupported')
+        if (!cancelled) commit(isIOS() && !isStandalone() ? 'needs-install' : 'unsupported')
         return
       }
       if (isIOS() && !isStandalone()) {
-        if (!cancelled) setStatus('needs-install')
+        if (!cancelled) commit('needs-install')
         return
       }
 
       try {
         const { enabled, key } = await api.getPushPublicKey()
         if (cancelled) return
-        if (!enabled || !key) { setStatus('disabled'); return }
+        if (!enabled || !key) { commit('disabled'); return }
         serverKeyRef.current = key
 
-        if (Notification.permission === 'denied') { setStatus('denied'); return }
+        if (Notification.permission === 'denied') { commit('denied'); return }
 
         const reg = await navigator.serviceWorker.ready
         const existing = await reg.pushManager.getSubscription()
@@ -111,22 +128,22 @@ export function usePushNotifications() {
           // and it self-heals the case where the browser silently rotated the
           // subscription, or the row was pruned after a transient 410.
           try { await api.savePushSubscription(existing.toJSON()) } catch { /* retried next load */ }
-          if (!cancelled) setStatus('subscribed')
+          if (!cancelled) commit('subscribed')
         } else if (!cancelled) {
           // Permission may already be 'granted' with no subscription — e.g.
           // the row was pruned, or the browser dropped the subscription on a
           // storage sweep. Still 'default': the user must click again, but
           // the click won't re-prompt, so it's a single silent step for them.
-          setStatus('default')
+          commit('default')
         }
       } catch {
-        if (!cancelled) setStatus('default')
+        if (!cancelled) commit('default')
       }
     }
 
     resolve()
     return () => { cancelled = true }
-  }, [user, supported])
+  }, [user, supported, commit])
 
   /**
    * Subscribe. MUST be called from a user gesture (click) — browsers ignore
@@ -137,18 +154,18 @@ export function usePushNotifications() {
     setError(null)
     setBusy(true)
     try {
-      if (isIOS() && !isStandalone()) { setStatus('needs-install'); return false }
+      if (isIOS() && !isStandalone()) { commit('needs-install'); return false }
 
       const permission = await Notification.requestPermission()
       if (permission !== 'granted') {
-        setStatus(permission === 'denied' ? 'denied' : 'default')
+        commit(permission === 'denied' ? 'denied' : 'default')
         return false
       }
 
       let key = serverKeyRef.current
       if (!key) {
         const res = await api.getPushPublicKey()
-        if (!res.enabled || !res.key) { setStatus('disabled'); return false }
+        if (!res.enabled || !res.key) { commit('disabled'); return false }
         key = res.key
         serverKeyRef.current = key
       }
@@ -175,7 +192,7 @@ export function usePushNotifications() {
       }
 
       const ok = await api.savePushSubscription(sub.toJSON())
-      setStatus(ok ? 'subscribed' : 'default')
+      commit(ok ? 'subscribed' : 'default')
       return ok
     } catch (err) {
       setError(err?.message ?? 'Bildirim aboneliği başarısız oldu.')
@@ -183,7 +200,7 @@ export function usePushNotifications() {
     } finally {
       setBusy(false)
     }
-  }, [])
+  }, [commit])
 
   /** Unsubscribe this device. Clears both the browser and the server row. */
   const unsubscribe = useCallback(async () => {
@@ -199,7 +216,7 @@ export function usePushNotifications() {
         try { await api.deletePushSubscription(sub.endpoint) } catch { /* pruned on 410 */ }
         await sub.unsubscribe()
       }
-      setStatus('default')
+      commit('default')
       return true
     } catch (err) {
       setError(err?.message ?? 'Abonelik kaldırılamadı.')
@@ -207,7 +224,7 @@ export function usePushNotifications() {
     } finally {
       setBusy(false)
     }
-  }, [])
+  }, [commit])
 
   const sendTest = useCallback(async () => {
     setError(null)

@@ -6,7 +6,15 @@ import { AuthProvider } from './hooks/useAuth.js'
 import { ProjectsProvider } from './hooks/useProjectsStore.jsx'
 import { NotificationsProvider } from './hooks/useNotifications.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import { initPwaInstall } from './hooks/usePwaInstall.js'
 import './index.css'
+
+/**
+ * Capture the install prompt before React mounts. Chrome fires
+ * `beforeinstallprompt` once, very early, and only a preventDefault()'d event
+ * can be replayed later from our own UI (see SetupSheet).
+ */
+initPwaInstall()
 
 /**
  * Register the push service worker.

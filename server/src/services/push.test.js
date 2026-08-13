@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildPayload } from './push.js'
+import { buildPayload, __testing } from './push.js'
 
 /**
  * Payload contract tests.
@@ -50,6 +50,45 @@ test('buildPayload: tags by project so repeat events collapse', () => {
 
   const c = JSON.parse(buildPayload({ type: 'info', notificationId: 'n-1' }))
   assert.equal(c.tag, 'notif-n-1')
+})
+
+/* ------------------------- fan-out concurrency --------------------------- */
+
+const { mapWithConcurrency, MAX_CONCURRENT_SENDS } = __testing
+
+test('mapWithConcurrency visits every item exactly once', async () => {
+  // The fan-out replaced an unbounded Promise.all with a worker-pool cursor.
+  // A dropped item here is a push nobody ever receives and nobody reports.
+  const items = Array.from({ length: 57 }, (_, i) => i)
+  const seen = []
+  await mapWithConcurrency(items, 8, async (n) => {
+    await new Promise((r) => setTimeout(r, n % 3))
+    seen.push(n)
+  })
+  assert.equal(seen.length, items.length)
+  assert.deepEqual([...seen].sort((a, b) => a - b), items)
+})
+
+test('mapWithConcurrency never exceeds the limit', async () => {
+  let inFlight = 0
+  let peak = 0
+  await mapWithConcurrency(Array.from({ length: 40 }, (_, i) => i), 5, async () => {
+    inFlight += 1
+    peak = Math.max(peak, inFlight)
+    await new Promise((r) => setTimeout(r, 1))
+    inFlight -= 1
+  })
+  assert.ok(peak <= 5, `peak concurrency was ${peak}`)
+  assert.ok(peak > 1, 'work should actually run in parallel')
+})
+
+test('mapWithConcurrency handles fewer items than workers, and none at all', async () => {
+  const seen = []
+  await mapWithConcurrency([1, 2], MAX_CONCURRENT_SENDS, async (n) => { seen.push(n) })
+  assert.deepEqual(seen.sort(), [1, 2])
+  await mapWithConcurrency([], MAX_CONCURRENT_SENDS, async () => {
+    assert.fail('worker must not run for an empty list')
+  })
 })
 
 test('buildPayload: stays well inside the ~4KB push service limit', () => {

@@ -60,6 +60,7 @@ import NewProjectDialog from '@/components/NewProjectDialog'
 import WorkLogPill from '@/components/WorkLogPill'
 import { WORK_LOG_ENABLED } from '@/lib/work-log.js'
 import PushToggle from '@/components/PushToggle.jsx'
+import SetupSheet from '@/components/SetupSheet.jsx'
 import { useNotifications } from '@/hooks/useNotifications'
 import { isOrderAssignedToDesigner } from '@/domain/constants/orders'
 
@@ -325,6 +326,10 @@ export default function AppShell() {
       </div>
 
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
+
+      {/* Install + notification opt-in, offered on open instead of hidden in
+          the bell dropdown. Self-hiding once both are done — see SetupSheet. */}
+      <SetupSheet />
     </div>
   )
 }

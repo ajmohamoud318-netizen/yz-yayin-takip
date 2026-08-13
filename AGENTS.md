@@ -564,6 +564,8 @@ CREATE TABLE notifications (             -- durable per-recipient feed (migratio
   read_at       TIMESTAMPTZ,
   seen          BOOLEAN NOT NULL DEFAULT FALSE,  -- bell badge (cleared on open) — migration 024
   seen_at       TIMESTAMPTZ,
+  pushed_at     TIMESTAMPTZ,             -- push outbox: NULL = still owed — migration 034
+  push_attempts SMALLINT NOT NULL DEFAULT 0,     -- transient-failure counter; cap PUSH_MAX_ATTEMPTS
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE work_log_entries (          -- "Çalışma Defteri" (migration 026)
@@ -593,7 +595,7 @@ CREATE TABLE push_subscriptions (         -- web push devices (migration 032)
   auth          TEXT NOT NULL,
   user_agent    TEXT NOT NULL DEFAULT '', -- diagnostics only ("Oktay's iPhone" vs laptop)
   last_used_at  TIMESTAMPTZ,
-  failed_at     TIMESTAMPTZ,              -- set on 404/410; row is then pruned
+  failed_at     TIMESTAMPTZ,              -- set on 404/410; excluded from fan-out, deleted after 72h
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -601,6 +603,9 @@ CREATE INDEX idx_handovers_status ON handovers(status);
 CREATE INDEX idx_push_subscriptions_user ON push_subscriptions(user_id);
 CREATE INDEX idx_notifications_user_created ON notifications(user_id, created_at DESC);
 CREATE INDEX idx_notifications_unread ON notifications(user_id) WHERE is_read = FALSE;
+CREATE INDEX idx_notifications_unseen ON notifications(user_id) WHERE seen = FALSE;
+CREATE INDEX idx_notifications_push_pending ON notifications(created_at) WHERE pushed_at IS NULL;  -- outbox tail
+CREATE INDEX idx_notifications_created ON notifications(created_at);  -- retention pruner
 CREATE INDEX idx_work_log_user_date ON work_log_entries(user_id, entry_date DESC, created_at DESC);
 CREATE INDEX idx_work_log_date ON work_log_entries(entry_date DESC, created_at DESC);
 ```
@@ -715,7 +720,12 @@ POST   /api/push/test                 push yourself one                      →
 
 ### Notifications
 ```
-GET    /api/notifications             → { items: [...50], unread, unseen } for the current user
+GET    /api/notifications             → { items, unread, unseen, nextCursor } for the current user
+       ?limit=50 (max 100) &cursor=<opaque "<iso>|<id>" from the previous page's nextCursor>
+       `unread`/`unseen` are whole-feed COUNTs, NOT counts of `items` — they used to be derived
+       from the page, which capped the badge at the page size and hid every row past it.
+       `nextCursor` is null on the last page. Keyset (not OFFSET) because the feed appends at
+       the top; a malformed/stale cursor degrades to page 1 rather than 400ing.
 PATCH  /api/notifications/:id/read     mark one read (also seen; owner-scoped)
 POST   /api/notifications/read-all     mark all read (also seen) → { count }
 POST   /api/notifications/seen         mark all seen (bell open; badge clear) → { count }
@@ -783,10 +793,16 @@ Polling only works while a tab is open — useless for the matbaa team, who are 
 WhatsApp was the original ask and was rejected on cost: Meta's Cloud API bills per business-initiated message, and its exemption for in-window utility messages ends **2026-10-01**. Unofficial WhatsApp libraries (Baileys, whatsapp-web.js) were rejected on risk — they violate Meta's ToS and get numbers banned without warning.
 
 - **Storage**: `push_subscriptions`, one row per browser-on-device, `UNIQUE(endpoint)` so re-subscribing upserts instead of duplicating (duplicates = double notifications).
-- **Fan-out**: `services/push.js#sendToUsers`, invoked from `services/notifications.js#dispatchPush` at the end of `emit()` — so **every existing `notify*` helper gained push with zero call-site changes**.
+- **Fan-out**: `services/push.js#sendToRecipients`, invoked from `services/notifications.js#dispatchPush` at the end of `emit()` — so **every existing `notify*` helper gained push with zero call-site changes**.
 - **Transaction discipline**: `dispatchPush` registers the send through **`client.afterCommit(...)`** (see `db/pool.js#withTx`), so it runs only once `COMMIT` succeeds and outside the transaction. Both properties matter: awaiting an HTTPS round-trip inside `withTx` would pin a pool connection per request, and pushing for a rolled-back approval is worse than missing one.
   - ⚠️ **Do not replace this with `setImmediate` + a "are the rows visible yet?" probe.** That was the original implementation and it was silently broken: `setImmediate` fires on the next event-loop check phase, which arrives long before the `withTx` callback resolves and `COMMIT` is issued, so the probe always found nothing and **every push for a real pipeline event was dropped**. Only `POST /api/push/test` worked, because it calls `sendToUsers` directly — which is exactly what made it look like "push works, but notifications don't arrive". Regression tests live in `db/pool.test.js`.
-- **Dead subscriptions**: a 404/410 from the push service means permanently gone (permission revoked, site data cleared, PWA deleted) → row deleted immediately. Other errors are transient and leave the row alone.
+- **One payload per recipient**: `emit()` writes one row **per recipient**, so `dispatchPush` carries `{ userId, notificationId, payload }` triples through to the send. It used to collapse them into a single payload stamped with `rows[0].id`, which meant every recipient after the first received a push carrying **someone else's** notification id. Harmless while nothing read the field back; a cross-user bug the moment anything did. Don't re-flatten it.
+- **Durable delivery (outbox — migration 034)**: `afterCommit` is in-process, so a push scheduled but not yet sent is **lost if the container stops** — which is what a redeploy does to every request in flight. Rows are therefore written with `pushed_at = NULL` ("owed") and stamped only once a device has them. `services/notification-maintenance.js` sweeps the owed set every 30s (and 5s after boot) and re-sends. At-least-once: a duplicate collapses under the payload `tag`, a lost one doesn't. Three outcomes, in `notifications.js#classifyDelivery` — delivered (settle), no live device (settle; retrying forever is how the partial index degenerates), transient failure (retry, up to `PUSH_MAX_ATTEMPTS`).
+  - When VAPID is unset, `emit` stamps `pushed_at` **at insert time** — otherwise every row in every dev database sits owed forever and the partial index covers the whole table.
+  - ⚠️ Multi-instance: each replica runs its own sweep, so a retry can go out N times. Gate the interval behind `pg_try_advisory_lock` before scaling past one container.
+- **Dead subscriptions**: a 404/410 from the push service means permanently gone (permission revoked, site data cleared, PWA deleted) → `failed_at` stamped immediately, which removes the row from `loadSubscriptions` (and therefore from every future fan-out). Deleted by the maintenance sweep after a 72h grace window, which is the only way to answer "why did Oktay stop getting pushes?" after the fact; re-subscribing inside the window clears `failed_at` and restores the device. Other errors are transient and leave the row alone.
+- **Retention**: nothing pruned notifications before migration 034 and the table grew monotonically (each transition fans out to 2–6 rows). `pruneOldNotifications` deletes read rows after 30 days and everything after 90; `stage_history` remains the actual audit log.
+- **Concurrency**: sends run through a bounded worker pool (`MAX_CONCURRENT_SENDS = 12`), not `Promise.all` over every subscription — a bulk approval otherwise fans out to (recipients × devices × notifications) simultaneous HTTPS requests from the process that also serves the API.
 - **Client**: `hooks/usePushNotifications.js` collapses the whole support chain into one `status` (`unsupported` / `needs-install` / `disabled` / `denied` / `default` / `subscribed`); `components/PushToggle.jsx` renders it in the bell footer and **only ever prompts from a click** (unprompted permission requests get auto-denied by Chrome, and a denial is unrecoverable without system settings). `components/PushBridge.jsx` routes notification taps through React Router. `public/sw.js` is push-only — deliberately **no offline cache**, since a stale pipeline stage shown to a printer is worse than nothing.
 - **iOS specifics**: push requires Home Screen install, so `status: 'needs-install'` shows the 4-step install instructions instead of a dead toggle. `apple-touch-icon.png` must be flat RGB (iOS renders alpha as black); `apple-mobile-web-app-capable` and the manifest live in `client/index.html`.
 - **Config**: `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`. Absent → push self-disables with one warning and the bell feed carries on (the dev default; no keys needed locally). **Rotating the keypair invalidates every stored subscription** — all devices must re-subscribe.

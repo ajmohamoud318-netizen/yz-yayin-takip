@@ -227,6 +227,26 @@ const notificationIdParams = {
   },
 }
 
+// Feed paging. `cursor` is the opaque `<iso>|<id>` string the previous page
+// returned — validated for shape here and parsed in the route, which returns
+// the first page rather than an error for anything malformed (a stale cursor
+// from an old tab should degrade to "top of feed", not to a 400 the SPA has
+// no recovery path for). maxLength bounds it well above a real cursor (~60).
+//
+// Query params arrive as strings, and the server sets coerceTypes:false
+// globally — so `limit` is declared as a string with a numeric pattern and
+// converted in the route, rather than as an integer that would always 400.
+const notificationListQuery = {
+  querystring: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      limit: { type: 'string', pattern: '^[0-9]{1,3}$' },
+      cursor: { type: 'string', maxLength: 128 },
+    },
+  },
+}
+
 // ─── projects ──────────────────────────────────────────────────────────
 
 // A product spec component: { component, date?, fields: [{ k, v }] }. The field
@@ -748,6 +768,7 @@ export const schemas = {
   workLogUpdate,
   workLogIdParams,
   notificationIdParams,
+  notificationListQuery,
   projectsCreate,
   projectsImport,
   projectsPatch,
