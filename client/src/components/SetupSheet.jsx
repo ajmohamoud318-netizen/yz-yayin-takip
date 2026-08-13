@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  BellRing, Check, Loader2, Share, Smartphone, X, Download,
+  BellRing, Check, ChevronDown, Loader2, Share, Smartphone, SquarePlus, X, Download,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -46,19 +46,33 @@ const DISMISS_KEY = 'yz-setup-sheet-dismissed'
 // rather than a modal that hijacked the launch.
 const APPEAR_DELAY_MS = 1400
 
+/**
+ * The iOS install path, spelled out. Each step carries the glyph the user is
+ * actually looking for on screen — the Share box-with-arrow is the one people
+ * miss, so it's the first thing they see rather than a word in a sentence.
+ */
+const IOS_STEPS = [
+  { text: 'Safari’nin alt çubuğundaki Paylaş düğmesine dokunun', Icon: Share, strong: true },
+  { text: 'Listeyi kaydırıp "Ana Ekrana Ekle"yi seçin', Icon: SquarePlus, strong: true },
+  { text: 'Sağ üstteki "Ekle"ye dokunun', Icon: Check, strong: false },
+  { text: 'Uygulamayı ana ekrandan açın — bildirim izni orada çıkar', Icon: Smartphone, strong: false },
+]
+
 export default function SetupSheet() {
   const { user } = useAuth()
-  const {
-    status, busy, error, subscribe, sendTest, iosInstallSteps,
-  } = usePushNotifications()
+  const { status, busy, error, subscribe, sendTest } = usePushNotifications()
   const { mode, promptInstall } = usePwaInstall()
 
   const [dismissed, setDismissed] = useState(() => {
     try { return sessionStorage.getItem(DISMISS_KEY) === '1' } catch { return false }
   })
   const [visible, setVisible] = useState(false)
-  const [showSteps, setShowSteps] = useState(false)
   const [installing, setInstalling] = useState(false)
+  // Phone vs iPad: the Share button lives in the BOTTOM toolbar on iPhone and
+  // the TOP one on iPad, so the pointer arrow would aim at nothing on a tablet.
+  const [isPhone] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia?.('(max-width: 767px)')?.matches === true
+  ))
 
   const needsInstall = mode === 'available' || mode === 'ios'
   // 'default' is the only push state a button can act on. 'needs-install'
@@ -80,7 +94,6 @@ export default function SetupSheet() {
   }
 
   async function handleInstall() {
-    if (mode === 'ios') { setShowSteps((v) => !v); return }
     setInstalling(true)
     const outcome = await promptInstall()
     setInstalling(false)
@@ -142,39 +155,68 @@ export default function SetupSheet() {
           </div>
 
           <div className="mt-2 divide-y border-t">
-            {needsInstall && (
-              <div>
-                <button
-                  type="button"
-                  onClick={handleInstall}
-                  disabled={installing}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted disabled:opacity-60"
-                >
-                  {installing
-                    ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                    : mode === 'ios'
-                      ? <Share className="h-4 w-4 shrink-0" />
-                      : <Download className="h-4 w-4 shrink-0" />}
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[13px] font-medium">Ana ekrana ekle</span>
-                    <span className="block text-[11px] text-muted-foreground">
-                      {mode === 'ios'
-                        ? 'iPhone’da Paylaş menüsünden — nasıl?'
-                        : 'Tarayıcı sekmesi olmadan, uygulama gibi açılır.'}
-                    </span>
+            {mode === 'available' && (
+              <button
+                type="button"
+                onClick={handleInstall}
+                disabled={installing}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted disabled:opacity-60"
+              >
+                {installing
+                  ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                  : <Download className="h-4 w-4 shrink-0" />}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-medium">Ana ekrana ekle</span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    Tarayıcı sekmesi olmadan, uygulama gibi açılır.
                   </span>
-                  <span className="shrink-0 rounded-md bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground">
-                    {mode === 'ios' ? (showSteps ? 'Gizle' : 'Göster') : 'Ekle'}
-                  </span>
-                </button>
-                {mode === 'ios' && showSteps && (
-                  <ol className="space-y-1 px-4 pb-3 pl-11 text-[11px] leading-relaxed text-muted-foreground">
-                    {iosInstallSteps.map((step, i) => (
-                      <li key={step} className="list-decimal">
-                        <span className={cn(i === 0 && 'font-medium text-foreground')}>{step}</span>
-                      </li>
-                    ))}
-                  </ol>
+                </span>
+                <span className="shrink-0 rounded-md bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground">
+                  Ekle
+                </span>
+              </button>
+            )}
+
+            {/* iOS. Safari exposes no install API at all — Add to Home Screen
+                is Share-sheet only, by Apple's design — so the honest best is
+                a guide that can't be misread: shown expanded (no extra tap to
+                discover it), each step carrying the glyph the user is hunting
+                for, and on a phone an arrow pointing at where the Share button
+                physically is (bottom toolbar, centre). iPad puts that toolbar
+                at the TOP, so the arrow is phone-only. */}
+            {mode === 'ios' && (
+              <div className="px-4 py-3">
+                <p className="text-[13px] font-medium">iPhone’a ana ekrana ekleyin</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                  Bildirimler iOS’ta yalnızca ana ekrana eklenmiş uygulamada çalışır.
+                </p>
+                <ol className="mt-2.5 space-y-2">
+                  {IOS_STEPS.map(({ text, Icon, strong }, i) => (
+                    <li key={text} className="flex items-start gap-2.5">
+                      <span className="mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold tabular-nums">
+                        {i + 1}
+                      </span>
+                      <span className={cn(
+                        'flex min-w-0 flex-1 items-start gap-1.5 text-[11px] leading-snug',
+                        strong ? 'text-foreground' : 'text-muted-foreground',
+                      )}
+                      >
+                        <span>{text}</span>
+                        <Icon className={cn('mt-px h-3.5 w-3.5 shrink-0', strong && 'text-primary')} />
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+                {isPhone && (
+                  <motion.div
+                    aria-hidden="true"
+                    className="mt-3 flex flex-col items-center gap-0.5 text-primary"
+                    animate={{ y: [0, 5, 0] }}
+                    transition={{ duration: 1.3, repeat: Infinity, ease: 'easeInOut' }}
+                  >
+                    <span className="text-[10px] font-medium">Paylaş düğmesi ekranın en altında</span>
+                    <ChevronDown className="h-4 w-4" />
+                  </motion.div>
                 )}
               </div>
             )}
@@ -201,9 +243,10 @@ export default function SetupSheet() {
               </button>
             )}
 
-            {/* iOS tab: push is impossible until the install above is done.
-                Say so, rather than showing a button that throws. */}
-            {status === 'needs-install' && (
+            {/* Push blocked pending an install, on a device where we couldn't
+                offer the install itself (e.g. an iOS in-app webview). The iOS
+                block above already carries this line, so don't repeat it. */}
+            {status === 'needs-install' && mode !== 'ios' && (
               <div className="flex items-center gap-3 px-4 py-3 text-[11px] text-muted-foreground">
                 <BellRing className="h-4 w-4 shrink-0 opacity-50" />
                 <span>Bildirimler, uygulama ana ekrandan açıldıktan sonra etkinleşir.</span>
@@ -218,13 +261,18 @@ export default function SetupSheet() {
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={close}
-            className="w-full border-t py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            Şimdi değil
-          </button>
+          {/* Omitted on iOS: the pointer arrow has to be the last thing in the
+              card or it appears to point at this row instead of at Safari's
+              toolbar. The X in the header still dismisses. */}
+          {mode !== 'ios' && (
+            <button
+              type="button"
+              onClick={close}
+              className="w-full border-t py-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              Şimdi değil
+            </button>
+          )}
         </motion.div>
       )}
     </AnimatePresence>
