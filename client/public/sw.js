@@ -20,6 +20,63 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim())
 })
 
+/* ------------------------- cold-start click handoff ----------------------- */
+
+/**
+ * Where a tap wants to go, parked so a COLD launch can pick it up.
+ *
+ * `clients.openWindow('/uretime-hazir')` is supposed to launch the app on that
+ * route. In an installed PWA on iOS it does not: WebKit ignores the URL and
+ * relaunches the app at the manifest `start_url`, which is `/`. Android behaves,
+ * but the same thing happens anywhere `matchAll` comes back empty while the app
+ * is actually still alive in the background.
+ *
+ * The result was the bug this exists to fix: the push arrives, you tap it, and
+ * you land on the dashboard instead of the book you were told about.
+ *
+ * A service worker has no localStorage, so the handoff goes through IndexedDB —
+ * written here, drained by PushBridge on mount. Keep DB/store/key in sync with
+ * client/src/lib/push-target.js; they are two halves of one contract.
+ */
+const HANDOFF_DB = 'yz-push'
+const HANDOFF_STORE = 'handoff'
+const HANDOFF_KEY = 'pending'
+
+function openHandoffDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HANDOFF_DB, 1)
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(HANDOFF_STORE)) {
+        req.result.createObjectStore(HANDOFF_STORE)
+      }
+    }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+/**
+ * Park the tap target. Never rejects: a failed handoff costs the deep link,
+ * which is exactly what we have today — it must not also swallow the focus /
+ * openWindow call that follows it.
+ */
+async function parkTarget(target) {
+  try {
+    const db = await openHandoffDb()
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDOFF_STORE, 'readwrite')
+      // `at` lets the reader ignore a stale target — without it, a tap that
+      // never reached the app would hijack the next unrelated cold start.
+      tx.objectStore(HANDOFF_STORE).put({ ...target, at: Date.now() }, HANDOFF_KEY)
+      tx.oncomplete = resolve
+      tx.onerror = () => reject(tx.error)
+    })
+    db.close()
+  } catch {
+    /* deep link degrades to start_url — the notification still opened the app */
+  }
+}
+
 /**
  * Push received.
  *
@@ -49,8 +106,10 @@ self.addEventListener('push', (event) => {
     // The pipeline is the user's actual job — these are not marketing pings,
     // so they should make a sound and appear on the lock screen.
     silent: false,
-    // Round-trips the destination to notificationclick below.
-    data: { url: data.url || '/', type: data.type || 'info' },
+    // Round-trips the destination to notificationclick below. `id` rides along
+    // so the tap can mark that exact row read instead of leaving it bold in the
+    // bell after the user has clearly acted on it.
+    data: { url: data.url || '/', type: data.type || 'info', id: data.id ?? null },
     timestamp: Date.now(),
   }
 
@@ -64,28 +123,54 @@ self.addEventListener('push', (event) => {
  * the dashboard open all day, and spawning a duplicate tab per notification is
  * how you end up with fifteen. Navigate the focused client to the target route
  * so the tap still lands on the right project.
+ *
+ * The target is parked in IndexedDB FIRST, before any focus/open call, and on
+ * every path — including the warm one. Rationale:
+ *
+ *  • Cold launch: `openWindow(target)` is ignored by iOS PWAs (relaunches at
+ *    start_url), so the parked value is the only thing that carries the route.
+ *  • Warm focus: `postMessage` reaches the page only if PushBridge's listener
+ *    is already attached. Right after a background wake it may not be, and the
+ *    message is dropped with no retry. PushBridge drains the parked target on
+ *    mount and on visibilitychange, so the tap lands either way.
+ *
+ * Whichever route runs first wins; the reader deletes the entry as it consumes
+ * it, so the second is a no-op rather than a double navigation.
  */
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const target = event.notification?.data?.url || '/'
+  const data = event.notification?.data || {}
+  const target = typeof data.url === 'string' && data.url.startsWith('/') ? data.url : '/'
+  const notificationId = data.id ?? null
 
   event.waitUntil((async () => {
+    await parkTarget({ url: target, notificationId })
+
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     for (const client of all) {
       // Same-origin tab already open → reuse it.
       if ('focus' in client) {
-        await client.focus()
+        try {
+          await client.focus()
+        } catch {
+          // Focus can reject (backgrounded PWA on iOS). Keep going: the tab
+          // still gets the message, and the parked target covers the rest.
+        }
         // navigate() is unavailable in some browsers (and throws on iOS
         // Safari); postMessage lets the SPA route via React Router instead,
         // which also avoids a full page reload.
         if ('postMessage' in client) {
-          client.postMessage({ type: 'notification-click', url: target })
+          client.postMessage({ type: 'notification-click', url: target, notificationId })
         }
         return
       }
     }
     if (self.clients.openWindow) {
-      await self.clients.openWindow(target)
+      // Absolute URL: openWindow is specified against the SW scope, but a bare
+      // path is resolved differently across engines. Pinning the origin removes
+      // the ambiguity — and on the engines that honour it, this alone lands the
+      // user on the right screen without the handoff.
+      await self.clients.openWindow(new URL(target, self.location.origin).href)
     }
   })())
 })

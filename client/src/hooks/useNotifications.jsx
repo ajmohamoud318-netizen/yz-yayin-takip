@@ -2,7 +2,6 @@ import {
   createContext, useContext, useState, useCallback, useEffect, useRef, createElement,
 } from 'react'
 import api from '@/api'
-import { getAuthToken } from '@/infrastructure/http/client.js'
 import { useAuth } from '@/hooks/useAuth.js'
 
 /**
@@ -31,7 +30,6 @@ export function NotificationsProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   const refetch = useCallback(async () => {
-    if (!getAuthToken()) return
     try {
       const { items: next, unread: nr, unseen: ns } = await api.listNotifications()
       setItems(next)
@@ -96,28 +94,14 @@ export function NotificationsProvider({ children }) {
     }
     if (!userId) return undefined
 
-    // Gate the first fetch on the auth token being present (same cold-load
-    // race the projects store guards against on a hard refresh).
-    let cancelled = false
-    let warmup = null
-    let attempts = 0
-    function tryFirst() {
-      if (cancelled) return
-      if (getAuthToken()) refetch()
-      else if (attempts++ < 40) warmup = setTimeout(tryFirst, 25)
-      else setLoading(false)
-    }
-    tryFirst()
-
-    const t = setInterval(() => {
-      if (getAuthToken()) refetch()
-    }, POLL_MS)
-
-    return () => {
-      cancelled = true
-      if (warmup) clearTimeout(warmup)
-      clearInterval(t)
-    }
+    // `userId` is only non-null once AuthProvider's GET /auth/me has resolved,
+    // so reaching this line already means the session is good — no need to
+    // also wait on the legacy localStorage token. That extra gate is what kept
+    // the bell empty on cold start for sessions where "30 gün hatırla" was not
+    // ticked (nothing is written to localStorage in that case).
+    refetch()
+    const t = setInterval(refetch, POLL_MS)
+    return () => clearInterval(t)
   }, [userId, refetch])
 
   const value = { items, unread, unseen, loading, refetch, markRead, markAllRead, markSeen }

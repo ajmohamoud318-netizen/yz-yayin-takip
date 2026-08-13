@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import api from '@/api'
-import { getAuthToken } from '@/infrastructure/http/client.js'
 import { useAuth } from '@/hooks/useAuth.js'
 import { groupByDay, todayKey } from '@/lib/work-log.js'
 
@@ -41,7 +40,6 @@ export function useWorkLog({ days = 14 } = {}) {
   )
 
   const refetch = useCallback(async () => {
-    if (!getAuthToken()) return
     try {
       const next = await api.listWorkLog(days)
       setEntries(next)
@@ -53,8 +51,10 @@ export function useWorkLog({ days = 14 } = {}) {
     }
   }, [days, syncAuthStatus])
 
-  // Refetch on sign-in / account switch, gating the first call on the auth
-  // token being present (same cold-load race the projects store guards).
+  // Refetch on sign-in / account switch. A non-null `userId` already means
+  // AuthProvider's GET /auth/me came back OK, so the cookie session is live —
+  // the old extra wait on the legacy localStorage token just left the pill
+  // empty for sessions that never wrote one ("30 gün hatırla" unticked).
   const lastUserRef = useRef(null)
   useEffect(() => {
     if (lastUserRef.current !== userId) {
@@ -62,21 +62,8 @@ export function useWorkLog({ days = 14 } = {}) {
       setEntries([])
       setLoading(!!userId)
     }
-    if (!userId) return undefined
-    let cancelled = false
-    let warmup = null
-    let attempts = 0
-    function tryFirst() {
-      if (cancelled) return
-      if (getAuthToken()) refetch()
-      else if (attempts++ < 40) warmup = setTimeout(tryFirst, 25)
-      else setLoading(false)
-    }
-    tryFirst()
-    return () => {
-      cancelled = true
-      if (warmup) clearTimeout(warmup)
-    }
+    if (!userId) return
+    refetch()
   }, [userId, refetch])
 
   const add = useCallback(

@@ -430,11 +430,18 @@ export async function notifyProjectTransition(client, {
       })
 
     // Production ready → matbaa can take it in.
-    case 'uretime_hazir':
-      return emit(client, {
-        ...base, recipientIds: [...printers, ...leaders], type: 'production_ready', tone: 'green',
-        body: 'Üretime hazır', link: '/uretime-hazir',
-      })
+    //
+    // Split by role because the destination is not the same for both, and a
+    // link the recipient can't open is worse than no link: /uretime-hazir is
+    // guarded to `printer`, so a team leader tapping that push was bounced
+    // straight back to the dashboard. Printers get the queue they act on;
+    // leaders get the project itself, which they can always open.
+    case 'uretime_hazir': {
+      const ready = { ...base, type: 'production_ready', tone: 'green', body: 'Üretime hazır' }
+      const a = await emit(client, { ...ready, recipientIds: printers, link: '/uretime-hazir' })
+      const b = await emit(client, { ...ready, recipientIds: leaders, link: `/projects/${project.id}` })
+      return a + b
+    }
 
     case 'uretimde':
       return emit(client, {
@@ -466,10 +473,15 @@ export async function notifyProjectTransition(client, {
  * instead of just finding it silently missing from their lists next time
  * they act on it.
  *
- * Designers/printers get no `link`: the project detail 404s once deleted
- * and they have no access to "Silinen Projeler" to recover it, so a link
- * would just be a dead click. Team leaders get a link there since they're
- * the ones who can restore it.
+ * Team leaders are linked to "Silinen Projeler" since they're the ones who can
+ * restore it. Designers/printers can't reach that page, and the project detail
+ * 404s once deleted — so they go to the project LIST instead.
+ *
+ * Note the explicit link rather than leaving it null: both the bell and
+ * `buildPayload` fall back to `/projects/<id>` whenever a notification carries
+ * a project id, so "no link" quietly became "link to the deleted project" —
+ * a tap that 404s. If you ever want a genuinely inert notification, the
+ * fallback has to change too.
  */
 export async function notifyProjectDeleted(client, { project, actor, assignees }) {
   const designers = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
@@ -479,7 +491,7 @@ export async function notifyProjectDeleted(client, { project, actor, assignees }
     actorId: actor?.id, title: project.title, projectId: project.id,
     type: 'project_deleted', tone: 'rose', body: 'Proje silindi',
   }
-  const a = await emit(client, { ...base, recipientIds: [...designers, ...printers] })
+  const a = await emit(client, { ...base, recipientIds: [...designers, ...printers], link: '/projects' })
   const b = await emit(client, { ...base, recipientIds: leaders, link: '/deleted-projects' })
   return a + b
 }

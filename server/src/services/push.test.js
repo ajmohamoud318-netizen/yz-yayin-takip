@@ -34,6 +34,19 @@ test('buildPayload: falls back to the project route, then home', () => {
   assert.equal(bare.url, '/')
 })
 
+test('buildPayload: carries the recipient-specific notification id', () => {
+  // sw.js round-trips this back to PushBridge so the tap can mark THAT row
+  // read. It must be the id of the recipient's own row — sendToRecipients
+  // builds one entry per recipient precisely so this can't be shared.
+  const p = JSON.parse(buildPayload({ type: 'assignment', notificationId: 'n-42' }))
+  assert.equal(p.id, 'n-42')
+
+  // Absent rather than undefined: the worker reads `data.id ?? null` and must
+  // not end up posting `undefined` to the app.
+  const bare = JSON.parse(buildPayload({ type: 'info' }))
+  assert.equal(bare.id, null)
+})
+
 test('buildPayload: never emits an empty title', () => {
   // An empty title renders as a blank notification banner on Android.
   const p = JSON.parse(buildPayload({ type: 'info', title: '' }))

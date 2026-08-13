@@ -1,11 +1,15 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, createElement } from 'react'
 import api from '@/api'
-import { getAuthToken } from '@/infrastructure/http/client.js'
+import { useAuth } from './useAuth.js'
 import { hydrateProductInfo } from '@/data/productCatalog'
 
 const ProjectsContext = createContext(null)
 
 export function ProjectsProvider({ children }) {
+  // ProjectsProvider is mounted INSIDE AuthProvider (see main.jsx), so this
+  // is safe — and it is what lets the fetch wait on the real session check
+  // instead of guessing from localStorage.
+  const { bootstrapping, isAuthenticated } = useAuth()
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -38,60 +42,44 @@ export function ProjectsProvider({ children }) {
     setProjects((prev) => (prev.some((p) => p.id === created.id) ? prev : [...prev, created]))
   }, [])
 
-  // Wait until an auth token is present in the module mirror OR
-  // localStorage before firing the first refetch. Otherwise the
-  // ProjectsProvider's mount effect races AuthProvider's mount effect:
-  // both are deferred effects, so whichever runs first wins. On a hard
-  // refresh of a session where "30 gün hatırla" was NOT ticked, the
-  // token is held only in memory — and `getAuthToken()` returns null
-  // until AuthProvider's restore effect runs. Calling refetch() with
-  // no token means the request leaves without X-User-Id, the backend
-  // rejects with 401, and the dashboard flashes the red 'X-User-Id
-  // header is required' error card.
+  // Gate the first fetch on AUTH STATE, not on a token in localStorage.
   //
-  // We poll for the token at 25 ms (4 ticks × 25 ms = 100 ms of slack,
-  // well inside the React commit + effect microtask window). If a
-  // token still hasn't shown up after ~1 s, give up silently — the user
-  // is unauthenticated, the Login route will catch them at
-  // <RequireAuth>.
+  // The previous version polled `getAuthToken()` — the legacy `X-User-Id`
+  // mirror — for ~1 s and gave up if nothing showed up. But the session is
+  // an httpOnly cookie now, and `persistAuth()` only writes that mirror when
+  // "30 gün hatırla" is ticked. So for every non-remembered session a cold
+  // start found no token, gave up, and set loading=false with an EMPTY list:
+  // `GET /auth/me` succeeded on the cookie, the user was plainly logged in,
+  // and the dashboard still showed nothing until they hit "Yenile" (which
+  // calls refetch() directly, bypassing the gate — hence "refresh fixes it").
+  // The same gate also killed the 30 s auto-refresh for those sessions.
+  //
+  // `bootstrapping` is exactly the signal we actually wanted: it flips false
+  // once AuthProvider's `GET /auth/me` resolves, so the cookie is known-good
+  // (or known-absent) before we ask for projects. No polling, no race.
   useEffect(() => {
-    let cancelled = false
-    let pollTimer = null
-    let pollingAttempts = 0
+    // Still asking the server who we are — projects would 401.
+    if (bootstrapping) return
 
-    function tryRefetch() {
-      if (cancelled) return
-      const tok = getAuthToken()
-      if (tok) {
-        refetch()
-      } else if (pollingAttempts++ < 40) {
-        pollTimer = setTimeout(tryRefetch, 25)
-      } else {
-        // Give up: user isn't authenticated. Set loading=false so
-        // child pages render their empty state instead of an error
-        // card.
-        setLoading(false)
-      }
+    // Genuinely unauthenticated. Drop the spinner so child pages render
+    // their empty state; <RequireAuth> handles the redirect to /login.
+    if (!isAuthenticated) {
+      setLoading(false)
+      return
     }
-    tryRefetch()
 
-    const t = setInterval(() => {
-      // Subsequent ticks only fire if we still have a token — never
-      // re-introduce the cold-load 401 race.
-      if (getAuthToken()) refetch()
-    }, 30_000)
+    refetch()
+    const t = setInterval(refetch, 30_000)
 
     // Subscribe to cross-aggregate mutations (order reassignment,
     // handover confirm, etc.) so the bell red-dots and project cards
     // update without waiting for the next 30 s tick.
     const unsubscribe = api.subscribeProjects?.(updateOne)
     return () => {
-      cancelled = true
-      if (pollTimer) clearTimeout(pollTimer)
       clearInterval(t)
       unsubscribe?.()
     }
-  }, [refetch, updateOne])
+  }, [bootstrapping, isAuthenticated, refetch, updateOne])
 
   // Imported backlist products (`origin: 'legacy'` — see migration 031 and
   // AGENTS.md → "Arşiv (legacy) products") are real projects sitting at a

@@ -144,6 +144,10 @@ export function buildPayload({ type, title, body, tone, link, projectId, notific
     // fallback (link → project detail → home) so tapping a push and clicking
     // the bell item land in exactly the same place.
     url: link || (projectId ? `/projects/${projectId}` : '/'),
+    // Round-tripped so the tap can mark THIS row read. Must be the recipient's
+    // own notification id — see sendToRecipients on why a shared id is a
+    // cross-user bug waiting to happen.
+    id: notificationId ?? null,
     // Collapse key: a newer push about the SAME project replaces the older
     // banner instead of stacking five notifications for one book.
     tag: projectId ? `project-${projectId}` : `notif-${notificationId ?? 'general'}`,
