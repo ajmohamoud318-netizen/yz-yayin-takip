@@ -28,7 +28,29 @@ const HANDOFF_KEY = 'pending'
  * confusing bug than the one this fixes. Two minutes comfortably covers a cold
  * PWA boot on a slow phone and nothing else.
  */
-const MAX_AGE_MS = 2 * 60 * 1000
+export const MAX_AGE_MS = 2 * 60 * 1000
+
+/**
+ * Is a parked entry safe to act on? Split out from the IndexedDB plumbing
+ * because these are the actual rules — the storage around them is a few lines
+ * of boilerplate, and jsdom has no IndexedDB to exercise it against.
+ *
+ * Returns the normalised target, or `null` to drop the entry.
+ */
+export function readTarget(entry, now = Date.now()) {
+  if (!entry || typeof entry !== 'object') return null
+  if (!Number.isFinite(entry.at) || now - entry.at > MAX_AGE_MS) return null
+  // A clock that jumped backwards (or an entry written by a device whose time
+  // is ahead) would otherwise look infinitely fresh. Treat the future as stale.
+  if (entry.at > now + MAX_AGE_MS) return null
+  // Same-origin paths only. The value came from our own push payload, but it
+  // has round-tripped through storage — validating costs nothing and keeps a
+  // tampered entry from turning an app launch into an off-site redirect.
+  // `//evil.com` is protocol-relative and passes a naive startsWith('/').
+  if (typeof entry.url !== 'string') return null
+  if (!entry.url.startsWith('/') || entry.url.startsWith('//')) return null
+  return { url: entry.url, notificationId: entry.notificationId ?? null }
+}
 
 function openHandoffDb() {
   return new Promise((resolve, reject) => {
@@ -70,13 +92,7 @@ export async function takePendingPushTarget() {
       tx.oncomplete = () => resolve(get.result ?? null)
       tx.onerror = () => reject(tx.error)
     })
-    if (!entry) return null
-    if (!Number.isFinite(entry.at) || Date.now() - entry.at > MAX_AGE_MS) return null
-    // Same-origin paths only. The value came from our own push payload, but it
-    // has round-tripped through storage — validating costs nothing and keeps a
-    // tampered entry from turning an app launch into an off-site redirect.
-    if (typeof entry.url !== 'string' || !entry.url.startsWith('/')) return null
-    return { url: entry.url, notificationId: entry.notificationId ?? null }
+    return readTarget(entry)
   } catch {
     return null
   } finally {
