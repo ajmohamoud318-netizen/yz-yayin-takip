@@ -5,10 +5,10 @@
  *     acknowledged, the leader or an assigned designer can report it never
  *     arrived, sending it back to the matbaa (bumps demo_attempt, like every
  *     other back-to-teslim transition).
- *   • Ozalit: ozalit approval has no receipt gate (see migration 021 — that's
- *     intentional and unchanged), but the same escape hatch exists so nobody
- *     is stuck choosing Onayla/Reddet for a proof they never saw. Locks the
- *     re-delivery to the matbaa and wipes the partial approval ledger.
+ *   • Ozalit: the same pair, one leg later (migration 035 gave ozalit its own
+ *     receipt gate). Reporting non-receipt locks the re-delivery to the matbaa
+ *     and wipes the partial approval ledger, since a new physical proof needs
+ *     everyone's sign-off again.
  */
 
 import { describe, it } from 'node:test'
@@ -30,6 +30,7 @@ function ozalitProject(overrides = {}) {
   return {
     id: 'p-2', type: 'TR', stage: 'ozalit_onay',
     ozalit_attempt: 1, ozalit_approvals: [], reject_target: null,
+    ozalit_received: false,
     ...overrides,
   }
 }
@@ -110,6 +111,13 @@ describe('ozalit "Teslim Alınamadı" escape hatch', () => {
     assert.throws(
       () => computeOzalitNotReceived(ozalitProject(), stranger, { designerIds: ['u-d'] }),
       /yalnızca ekip lideri veya atanmış tasarımcı/,
+    )
+  })
+
+  it('refuses once the ozalit is already marked received — nothing to report', () => {
+    assert.throws(
+      () => computeOzalitNotReceived(ozalitProject({ ozalit_received: true }), leader, { designerIds: [] }),
+      /zaten teslim alındı/,
     )
   })
 

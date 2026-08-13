@@ -12,16 +12,17 @@ import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
 import {
   applyAdvance, applyApproval, applyDemoReceive, applyDemoNotReceived,
-  applyOzalitNotReceived, applyRejection,
+  applyOzalitReceive, applyOzalitNotReceived, applyRejection,
 } from '../services/project-transitions.js'
 import {
   notifyProjectCreated, notifyProjectTransition, notifyProjectDeleted,
-  notifyProductCatalogChanged,
+  notifyProductCatalogChanged, notifyDemoReceived, notifyOzalitReceived,
 } from '../services/notifications.js'
 import { ORDERABLE_STAGES } from '../domain/stages.js'
 // Blocks main-pipeline transitions on imported backlist products — see the
 // helper's own docblock for why this is destructive rather than just useless.
 import { assertNotLegacy } from '../domain/pipeline.js'
+import { captureProductInfoFromSpec, captureHistoryNote } from '../services/product-info-capture.js'
 
 /**
  * Projects + stage transition API.
@@ -448,6 +449,21 @@ export async function projectRoutes(fastify) {
       if (Object.prototype.hasOwnProperty.call(next, 'demo_held_by_name')) {
         fields.demo_held_by_name = next.demo_held_by_name
       }
+      // The receipt gates. Both are cleared by the matbaa's delivery step
+      // (computeDemoTeslimAdvance / computeOzalitTeslimAdvance) so each round
+      // needs its own "Teslim Alındı" — a reset that never reached the DB
+      // while these fields weren't in the patch, leaving a re-delivered demo
+      // pre-acknowledged from the previous round.
+      if (Object.prototype.hasOwnProperty.call(next, 'demo_received')) {
+        fields.demo_received = next.demo_received
+        fields.demo_received_by = next.demo_received_by ?? null
+        fields.demo_received_at = next.demo_received_at ?? null
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'ozalit_received')) {
+        fields.ozalit_received = next.ozalit_received
+        fields.ozalit_received_by = next.ozalit_received_by ?? null
+        fields.ozalit_received_at = next.ozalit_received_at ?? null
+      }
       // Who/when the matbaa delivered the current demo round — set by the
       // printer's delivery step, nulled when a second demo is sent.
       if (Object.prototype.hasOwnProperty.call(next, 'demo_delivered_at')) {
@@ -544,6 +560,29 @@ export async function projectRoutes(fastify) {
           action: history.action, actor: request.user, assignees: project.assignees,
         })
       }
+      // Entering production is the point the spec stops changing, so the
+      // approved ozalit (ÇİN: demo) sheet is copied into Ürün Bilgileri here.
+      // Without it a project can reach Üretime Hazır with a fully signed sheet
+      // and still have no spec, which blocks Sales from ordering it at all.
+      // Guarded on an actual stage CHANGE so re-approving an already
+      // production-ready project doesn't re-run the capture.
+      if (updated.stage === 'uretime_hazir' && project.stage !== 'uretime_hazir') {
+        const captured = await captureProductInfoFromSpec(client, { project: updated, actor: request.user })
+        if (captured) {
+          await logHistory(
+            client,
+            {
+              project_id: project.id,
+              from_stage: updated.stage,
+              to_stage: updated.stage,
+              action: 'system',
+              event: 'product_info_auto',
+              note: captureHistoryNote(captured.added),
+            },
+            request.user,
+          )
+        }
+      }
       return updated
     })
     return result
@@ -566,8 +605,13 @@ export async function projectRoutes(fastify) {
         demo_received_by: next.demo_received_by ?? null,
         demo_received_at: next.demo_received_at ?? null,
       })
+      // `history` is null when the demo was already acknowledged (receive is
+      // idempotent) — no second round of pings for a repeat click.
       if (history) {
         await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyDemoReceived(client, {
+          project: updated, actor: request.user, assignees: project.assignees,
+        })
       }
       return updated
     })
@@ -611,9 +655,40 @@ export async function projectRoutes(fastify) {
     return result
   })
 
+  // Mark a delivered ozalit "Teslim Alındı" (received) — the gate before the
+  // multi-party Ozalit Onayı. Allowed for the team leader or an assigned
+  // designer, only at ozalit_onay. Twin of /receive (migration 035).
+  fastify.post('/projects/:id/ozalit-receive', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const designerIds = project.assignees.map((a) => a.id)
+      const { project: next, history } = applyOzalitReceive(project, { user: request.user, designerIds })
+      const updated = await patchProject(client, project.id, {
+        ozalit_received: next.ozalit_received,
+        ozalit_received_by: next.ozalit_received_by ?? null,
+        ozalit_received_at: next.ozalit_received_at ?? null,
+      })
+      // `history` is null when the ozalit was already acknowledged (receive is
+      // idempotent) — no second round of pings for a repeat click.
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyOzalitReceived(client, {
+          project: updated, actor: request.user, assignees: project.assignees,
+        })
+      }
+      return updated
+    })
+    return result
+  })
+
   // Report that a delivered ozalit never actually reached the leader/designer
   // — sends it back to ozalit_teslim with the matbaa re-delivery lock, wiping
   // any partial approval ledger (a new physical proof needs fresh sign-off).
+  // Counterpart to /ozalit-receive; only valid before ozalit_received is set.
   fastify.post('/projects/:id/ozalit-not-received', { schema: schemas.projectsIdParams }, async (request) => {
     await attachUser(request)
     const result = await withTx(async (client) => {
@@ -627,6 +702,9 @@ export async function projectRoutes(fastify) {
         stage: next.stage,
         ozalit_attempt: next.ozalit_attempt,
         ozalit_requested: next.ozalit_requested,
+        ozalit_received: next.ozalit_received,
+        ozalit_received_by: next.ozalit_received_by,
+        ozalit_received_at: next.ozalit_received_at,
         reject_target: next.reject_target,
         ozalit_leader_approved: next.ozalit_leader_approved,
         ozalit_leader_approved_by: next.ozalit_leader_approved_by,

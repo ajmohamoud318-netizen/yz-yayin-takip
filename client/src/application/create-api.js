@@ -83,6 +83,7 @@ export function createApi() {
     approveProject: (id) => projectRepo.approveProject(id),
     receiveDemo: (id) => projectRepo.receiveDemo(id),
     reportDemoNotReceived: (id) => projectRepo.reportDemoNotReceived(id),
+    receiveOzalit: (id) => projectRepo.receiveOzalit(id),
     reportOzalitNotReceived: (id) => projectRepo.reportOzalitNotReceived(id),
     rejectProject: (id, reason, revizeIds, target) => projectRepo.rejectProject(id, reason, revizeIds, target),
 

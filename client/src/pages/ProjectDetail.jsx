@@ -67,6 +67,11 @@ export default function ProjectDetail() {
   const [saving, setSaving] = useState(false)
   const [receiving, setReceiving] = useState(false)
   const [reportingNotReceived, setReportingNotReceived] = useState(false)
+  // Which teslim decision is awaiting an "emin misiniz?" — all four are
+  // single-click, irreversible-ish, and sit right next to each other in the
+  // action row, so none of them fires straight from the button.
+  // 'demo-received' | 'demo-not-received' | 'ozalit-received' | 'ozalit-not-received'
+  const [teslimConfirm, setTeslimConfirm] = useState(null)
   const [updatingSubId, setUpdatingSubId] = useState(null) // per-subtask "what changed" note
   const [updateNote, setUpdateNote] = useState('')
   const [projectOrders, setProjectOrders] = useState([])
@@ -164,6 +169,13 @@ export default function ProjectDetail() {
   const canReceiveDemo =
     isDemoOnayStage && !project?.demo_received && (isLeader || (user?.role === 'designer' && isAssigned))
 
+  // The same pair one leg later: the physical ozalit proof is acknowledged at
+  // ozalit_onay before anyone can sign off on it (migration 035). One
+  // acknowledgment covers the whole multi-party round.
+  const isOzalitOnayStage = project?.stage === 'ozalit_onay'
+  const canReceiveOzalit =
+    isOzalitOnayStage && !project?.ozalit_received && (isLeader || (user?.role === 'designer' && isAssigned))
+
   async function handleReceiveDemo() {
     if (!project) return
     setReceiving(true)
@@ -175,6 +187,22 @@ export default function ProjectDetail() {
       toast.error(err.message || 'İşlem tamamlanamadı.')
     } finally {
       setReceiving(false)
+      setTeslimConfirm(null)
+    }
+  }
+
+  async function handleReceiveOzalit() {
+    if (!project) return
+    setReceiving(true)
+    try {
+      await api.receiveOzalit(project.id)
+      await refetch()
+      toast.success('Ozalit teslim alındı.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setReceiving(false)
+      setTeslimConfirm(null)
     }
   }
 
@@ -219,6 +247,7 @@ export default function ProjectDetail() {
       toast.error(err.message || 'İşlem tamamlanamadı.')
     } finally {
       setReportingNotReceived(false)
+      setTeslimConfirm(null)
     }
   }
 
@@ -235,8 +264,49 @@ export default function ProjectDetail() {
       toast.error(err.message || 'İşlem tamamlanamadı.')
     } finally {
       setReportingNotReceived(false)
+      setTeslimConfirm(null)
     }
   }
+
+  // Copy + handler for each teslim decision, keyed by the pending confirm.
+  // Both "Teslim Alınamadı" variants send the project back to the matbaa and
+  // bump the attempt counter, so the description says so plainly — that's the
+  // one people will regret clicking by accident.
+  const TESLIM_CONFIRMS = {
+    'demo-received': {
+      title: 'Demoyu teslim aldınız mı?',
+      description:
+        'Demo "Teslim Alındı" olarak işaretlenecek ve onay adımı açılacak. Bu işlem geri alınamaz.',
+      confirmLabel: 'Teslim Aldım',
+      variant: 'success',
+      onConfirm: handleReceiveDemo,
+    },
+    'demo-not-received': {
+      title: 'Demo size ulaşmadı mı?',
+      description:
+        'Proje matbaanın demo teslim aşamasına geri döner ve yeni bir demo turu başlar (Demo sayacı +1). Bu işlem geri alınamaz.',
+      confirmLabel: 'Teslim Alınamadı',
+      variant: 'destructive',
+      onConfirm: handleDemoNotReceived,
+    },
+    'ozalit-received': {
+      title: 'Ozaliti teslim aldınız mı?',
+      description:
+        'Ozalit "Teslim Alındı" olarak işaretlenecek ve onay adımı açılacak. Bu işlem geri alınamaz.',
+      confirmLabel: 'Teslim Aldım',
+      variant: 'success',
+      onConfirm: handleReceiveOzalit,
+    },
+    'ozalit-not-received': {
+      title: 'Ozalit size ulaşmadı mı?',
+      description:
+        'Proje ozalit teslim aşamasına geri döner, matbaa yeniden teslim eder ve verilmiş onaylar sıfırlanır (Ozalit sayacı +1). Bu işlem geri alınamaz.',
+      confirmLabel: 'Teslim Alınamadı',
+      variant: 'destructive',
+      onConfirm: handleOzalitNotReceived,
+    },
+  }
+  const pendingTeslim = teslimConfirm ? TESLIM_CONFIRMS[teslimConfirm] : null
 
   // Available actions depend on the role + stage
   const actions = availableActions({ project, user })
@@ -628,7 +698,7 @@ export default function ProjectDetail() {
                 )}
                 {/* Demo "Teslim Alındı" gate — before the Onay. */}
                 {canReceiveDemo && (
-                  <Button size="sm" onClick={handleReceiveDemo} disabled={receiving || reportingNotReceived}>
+                  <Button size="sm" onClick={() => setTeslimConfirm('demo-received')} disabled={receiving || reportingNotReceived}>
                     <CheckCircle2 className="h-4 w-4" />
                     {receiving ? 'İşleniyor…' : 'Teslim Alındı'}
                   </Button>
@@ -640,12 +710,38 @@ export default function ProjectDetail() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={handleDemoNotReceived}
+                    onClick={() => setTeslimConfirm('demo-not-received')}
                     disabled={receiving || reportingNotReceived}
                   >
                     <PackageX className="h-4 w-4" />
                     {reportingNotReceived ? 'İşleniyor…' : 'Teslim Alınamadı'}
                   </Button>
+                )}
+                {/* Ozalit "Teslim Alındı" gate — the same pair before Ozalit
+                    Onayı. Onayla/Reddet stay hidden until this is clicked
+                    (see availableActions). */}
+                {canReceiveOzalit && (
+                  <Button size="sm" onClick={() => setTeslimConfirm('ozalit-received')} disabled={receiving || reportingNotReceived}>
+                    <CheckCircle2 className="h-4 w-4" />
+                    {receiving ? 'İşleniyor…' : 'Teslim Alındı'}
+                  </Button>
+                )}
+                {canReceiveOzalit && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setTeslimConfirm('ozalit-not-received')}
+                    disabled={receiving || reportingNotReceived}
+                  >
+                    <PackageX className="h-4 w-4" />
+                    {reportingNotReceived ? 'İşleniyor…' : 'Teslim Alınamadı'}
+                  </Button>
+                )}
+                {isOzalitOnayStage && project.ozalit_received && (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Teslim alındı{project.ozalit_received_by ? ` — ${project.ozalit_received_by}` : ''}
+                  </span>
                 )}
                 {isDemoOnayStage && project.demo_received && (
                   <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
@@ -668,22 +764,6 @@ export default function ProjectDetail() {
                   >
                     <ThumbsUp className="h-4 w-4" />
                     {approveLabel}
-                  </Button>
-                )}
-                {/* Escape hatch: the delivered ozalit never actually reached
-                    this leader/designer — send it back to the matbaa instead
-                    of being stuck choosing between Onayla/Reddet for a proof
-                    they never saw. Shown to anyone who still has a pending
-                    approve decision at this stage. */}
-                {project.stage === 'ozalit_onay' && actions.includes('approve') && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleOzalitNotReceived}
-                    disabled={reportingNotReceived}
-                  >
-                    <PackageX className="h-4 w-4" />
-                    {reportingNotReceived ? 'İşleniyor…' : 'Teslim Alınamadı'}
                   </Button>
                 )}
                 {/* Demo-hold hint: the leader has already approved the first
@@ -741,9 +821,28 @@ export default function ProjectDetail() {
               </div>
             )}
 
+            {/* Ozalit delivered but not yet acknowledged — the receipt step
+                comes before any sign-off, so the approval progress panel below
+                would be misleading here (nobody can approve yet). */}
+            {isOzalitOnayStage && !project.ozalit_received && (
+              <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-amber-800">
+                    Matbaa ozaliti teslim etti — "Teslim Alındı" bekleniyor
+                  </p>
+                  <p className="mt-0.5 text-xs text-amber-700">
+                    {canReceiveOzalit
+                      ? 'Ozalit elinize ulaştıysa "Teslim Alındı"ya basın; onay adımı ondan sonra açılır. Ulaşmadıysa "Teslim Alınamadı" ile matbaaya geri gönderin.'
+                      : 'Ekip lideri veya atanmış tasarımcı ozaliti teslim aldı olarak işaretleyene kadar onay verilemez.'}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Ozalit onay — multi-party approval progress. Every team leader
                 AND every assigned designer must approve before it advances. */}
-            {project.stage === 'ozalit_onay' && (
+            {isOzalitOnayStage && project.ozalit_received && (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
                 <p className="text-sm font-semibold text-emerald-800">
                   Ozalit onayı — tüm ekip liderleri ve atanmış tasarımcılar onaylamalı
@@ -1083,6 +1182,22 @@ export default function ProjectDetail() {
         busyLabel="Siliniyor…"
         onConfirm={confirmDeleteProject}
       />
+
+      {/* Second step in front of the four teslim decisions. They're one click,
+          they can't be undone from the UI, and "Teslim Alındı" sits right next
+          to "Teslim Alınamadı" — which sends the whole thing back to the
+          matbaa. See TESLIM_CONFIRMS for the per-action copy. */}
+      <ConfirmDialog
+        open={!!pendingTeslim}
+        onOpenChange={(v) => !v && setTeslimConfirm(null)}
+        title={pendingTeslim?.title}
+        description={pendingTeslim?.description}
+        confirmLabel={pendingTeslim?.confirmLabel}
+        cancelLabel="Vazgeç"
+        variant={pendingTeslim?.variant}
+        busy={receiving || reportingNotReceived}
+        onConfirm={() => pendingTeslim?.onConfirm?.()}
+      />
     </>
   )
 }
@@ -1236,7 +1351,12 @@ function availableActions({ project, user }) {
   // Ozalit Onay: multi-party approval. Every team leader AND every assigned
   // designer must approve before it advances to Üretime Hazır. Each may approve
   // once (hidden after they have). Only the team leader can reject.
-  if (stage === 'ozalit_onay') {
+  //
+  // Nothing is decidable until the physical proof has been marked "Teslim
+  // Alındı" (migration 035) — the same rule the demo leg has: you can't sign
+  // off on a proof nobody has taken delivery of. Until then the action row
+  // shows the Teslim Alındı / Teslim Alınamadı pair instead.
+  if (stage === 'ozalit_onay' && project.ozalit_received === true) {
     const alreadyApproved = (project.ozalit_approvals ?? []).some((a) => a.id === user.id)
     // Each leader/designer approves once. A leader who hasn't decided yet sees
     // both Onayla and Reddet; once they approve, BOTH disappear (they've

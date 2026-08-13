@@ -8,6 +8,7 @@
 
 import { getPool, withTx } from '../db/pool.js'
 import { nanoid } from 'nanoid'
+import { captureProductInfoFromSpec, captureHistoryNote } from './product-info-capture.js'
 
 const PROJECT_COLUMNS = `
   id, title, type, stage, assigned_to, created_by, target_month,
@@ -17,6 +18,7 @@ const PROJECT_COLUMNS = `
   ozalit_designer_approvals,
   demo_held, demo_held_at, demo_held_by_name,
   demo_received, demo_received_by, demo_received_at,
+  ozalit_received, ozalit_received_by, ozalit_received_at,
   demo_delivered_at, demo_delivered_by,
   ozalit_requested, reject_target, last_reject_type, last_reject_target,
   ozalit_approvals,
@@ -334,6 +336,12 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
   'demo_received',
   'demo_received_by',
   'demo_received_at',
+  // Ozalit "received" gate — the same rule one leg later: set at ozalit_onay,
+  // reset when the matbaa delivers a fresh proof, blocks the ozalit approve
+  // until true (migration 035).
+  'ozalit_received',
+  'ozalit_received_by',
+  'ozalit_received_at',
   // Who/when the matbaa delivered the current demo round. Set by
   // computeDemoTeslimAdvance, nulled by a resend or "Teslim Alınamadı".
   // `demo_delivered_by` is the id everything now reads through; the _name
@@ -558,6 +566,26 @@ export async function reconcileOzalitApprovals(actor) {
         },
         actor,
       )
+      // This is the second door into production (the approve route is the
+      // first), so it owes the same Ürün Bilgileri capture — otherwise a
+      // project advanced this way would be the one product Sales can't order.
+      const captured = await captureProductInfoFromSpec(client, {
+        project: { ...project, stage: 'uretime_hazir' }, actor,
+      })
+      if (captured) {
+        await logHistory(
+          client,
+          {
+            project_id: id,
+            from_stage: 'uretime_hazir',
+            to_stage: 'uretime_hazir',
+            action: 'system',
+            event: 'product_info_auto',
+            note: captureHistoryNote(captured.added),
+          },
+          actor,
+        )
+      }
       advanced += 1
     })
   }
@@ -644,6 +672,11 @@ function rowToProject(r) {
     demo_received_at: r.demo_received_at instanceof Date
       ? r.demo_received_at.toISOString()
       : r.demo_received_at,
+    ozalit_received: r.ozalit_received ?? false,
+    ozalit_received_by: r.ozalit_received_by ?? null,
+    ozalit_received_at: r.ozalit_received_at instanceof Date
+      ? r.ozalit_received_at.toISOString()
+      : r.ozalit_received_at,
     demo_delivered_at: r.demo_delivered_at instanceof Date
       ? r.demo_delivered_at.toISOString()
       : r.demo_delivered_at,

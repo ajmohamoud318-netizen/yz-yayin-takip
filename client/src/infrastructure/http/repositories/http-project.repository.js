@@ -235,6 +235,12 @@ export function createHttpProjectRepository(userRepo) {
       cache.set(id, data)
       return data
     },
+    // Mark a delivered ozalit "Teslim Alındı" — the gate before Ozalit Onayı.
+    async receiveOzalit(id) {
+      const { data } = await httpClient.post(`/projects/${id}/ozalit-receive`, {})
+      cache.set(id, data)
+      return data
+    },
     // Report that a delivered ozalit never reached the leader/designer —
     // sends it back to the matbaa for redelivery.
     async reportOzalitNotReceived(id) {

@@ -536,6 +536,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // Bumped once the server spec has been fetched for this project, so the
   // catalog memo below recomputes with fresh data even on a cold cache.
   const [catalogVersion, setCatalogVersion] = useState(0)
+  // Ozalit receipt gate (migration 035) — see the block below the effects.
+  const [receiving, setReceiving] = useState(false)
+  const [receivedLocal, setReceivedLocal] = useState(false)
+  const [confirmReceive, setConfirmReceive] = useState(false)
 
   const readOnly = variant.isReadOnly({ mode, user })
   const printable = variant.canPrint({ user, project, readOnly })
@@ -634,6 +638,46 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, project?.id, viewAttempt])
+
+  /* ── Ozalit "Teslim Alındı" gate ──────────────────────────────────────────
+   * The ozalit approve is refused server-side until the physical proof has
+   * been acknowledged (migration 035), so this dialog — which is where the
+   * Onaylar page and the project detail both sign off — has to offer the
+   * acknowledgment inline rather than bouncing the user with an error toast.
+   * Same shape as ApprovalDialog's demo gate; `receivedLocal` reflects a click
+   * made in this session, before the parent re-passes the updated project.
+   */
+  const isOzalitApproval = mode === 'approve' && variantName === 'ozalit'
+  const ozalitReceived = !!project?.ozalit_received || receivedLocal
+  const needsOzalitReceive = isOzalitApproval && !ozalitReceived
+  const canAckOzalit =
+    user?.role === 'team_leader' ||
+    (user?.role === 'designer' && (project?.assignees ?? []).some((a) => a.id === user?.id))
+
+  // Each (re)open starts from the project's own state — a stale local ack
+  // would otherwise unlock the button for the next project opened.
+  useEffect(() => {
+    if (!open) return
+    setReceivedLocal(false)
+    setConfirmReceive(false)
+  }, [open, project?.id])
+
+  async function handleReceiveOzalit() {
+    if (!project) return
+    setReceiving(true)
+    try {
+      const updated = await api.receiveOzalit(project.id)
+      updateOne(updated)
+      setReceivedLocal(true)
+      setConfirmReceive(false)
+      toast.success('Ozalit teslim alındı.')
+      onDone?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setReceiving(false)
+    }
+  }
 
   function toggleComponent(compId) {
     if (readOnly) return
@@ -1060,6 +1104,46 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         </>
         )}
 
+        {/* Ozalit receipt gate — the approve below stays disabled until the
+            proof is acknowledged. The confirm is inline (a second click on the
+            same spot) rather than a nested dialog. */}
+        {isOzalitApproval && (
+          ozalitReceived ? (
+            <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
+              <Check className="h-4 w-4 shrink-0" />
+              <span>
+                Ozalit teslim alındı{project?.ozalit_received_by ? ` — ${project.ozalit_received_by}` : ''}. Onaylayabilirsiniz.
+              </span>
+            </div>
+          ) : (
+            <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+              <p>
+                Onaydan önce ozalit teslim alınıp <strong>"Teslim Alındı"</strong> olarak
+                işaretlenmelidir (atanmış tasarımcı veya ekip lideri).
+              </p>
+              {canAckOzalit && (
+                confirmReceive ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium">Ozaliti teslim aldınız mı?</span>
+                    <Button type="button" size="sm" variant="success" onClick={handleReceiveOzalit} disabled={receiving}>
+                      <Check className="h-4 w-4" />
+                      {receiving ? 'İşleniyor…' : 'Evet, teslim aldım'}
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmReceive(false)} disabled={receiving}>
+                      Vazgeç
+                    </Button>
+                  </div>
+                ) : (
+                  <Button type="button" size="sm" variant="outline" onClick={() => setConfirmReceive(true)}>
+                    <Check className="h-4 w-4" />
+                    Teslim Alındı olarak işaretle
+                  </Button>
+                )
+              )}
+            </div>
+          )
+        )}
+
         <DialogFooter className="flex-wrap gap-2">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             {readOnly ? 'Kapat' : 'İptal'}
@@ -1080,7 +1164,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             </Button>
           )}
           {mode === 'approve' && (
-            <Button variant="success" disabled={busy} onClick={handleApprove}>
+            <Button variant="success" disabled={busy || needsOzalitReceive} onClick={handleApprove}>
               <Check className="h-4 w-4" />
               {busy ? 'İşleniyor…' : 'Onayla'}
             </Button>

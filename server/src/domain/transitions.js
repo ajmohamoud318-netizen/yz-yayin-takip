@@ -300,6 +300,11 @@ function computeOzalitTeslimAdvance(project, actor, now) {
       ...project,
       stage: 'ozalit_onay',
       ozalit_requested: false,
+      // Fresh delivery → clear any prior "received" ack; a designer/leader must
+      // acknowledge this proof before it can be approved (mirrors the demo).
+      ozalit_received: false,
+      ozalit_received_by: null,
+      ozalit_received_at: null,
       reject_target: null,
       updated_at: now,
     },
@@ -492,15 +497,59 @@ export function computeDemoNotReceived(project, actor, ctx = {}) {
 }
 
 /* ============================================================================
+ *  ozalitReceive(project, actor, ctx) → next project state
+ *
+ *  Marks a delivered ozalit as "Teslim Alındı" (received) — the ozalit twin of
+ *  computeDemoReceive (migration 035). Allowed only at ozalit_onay, and only by
+ *  the team leader or an assigned designer. Idempotent. This is the gate the
+ *  ozalit approve checks (computeOzalitOnayApproval): one acknowledgment
+ *  unblocks the whole multi-party round, because there is only one physical
+ *  proof to take delivery of.
+ * ========================================================================== */
+export function computeOzalitReceive(project, actor, ctx = {}) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (project.stage !== 'ozalit_onay') {
+    badRequest('Teslim alma yalnızca ozalit onay aşamasında yapılabilir.')
+  }
+  const designerIds = ctx.designerIds ?? []
+  const isLeader = actor?.role === 'team_leader'
+  const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
+  if (!isLeader && !isAssignedDesigner) {
+    badRequest('Teslim almayı yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
+  }
+  if (project.ozalit_received) {
+    return { project, history: null } // already acknowledged
+  }
+  return {
+    project: {
+      ...project,
+      ozalit_received: true,
+      ozalit_received_by: actorName,
+      ozalit_received_at: now,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'advance',
+      event: 'ozalit_received',
+      from_stage: 'ozalit_onay',
+      to_stage: 'ozalit_onay',
+      done_by_name: actorName,
+      note: 'Ozalit teslim alındı',
+    }),
+  }
+}
+
+/* ============================================================================
  *  ozalitNotReceived(project, actor, ctx) → next project state
  *
- *  Ozalit has no receipt gate on approval (see migration 021's note — that's
- *  intentional and unchanged here), but a leader or assigned designer still
- *  needs a way to say "the physical proof never reached me" instead of being
- *  stuck with only Onayla/Reddet. Sends the project back to ozalit_teslim
- *  with the matbaa re-delivery lock (matching a reject-to-matbaa), wipes any
- *  partial approval ledger (a new physical proof needs everyone's sign-off
- *  again), and bumps ozalit_attempt.
+ *  The counterpart to computeOzalitReceive: a leader or assigned designer says
+ *  "the physical proof never reached me" instead of being stuck with only
+ *  Onayla/Reddet. Only valid before it's been acknowledged — once
+ *  ozalit_received is true there's nothing to report. Sends the project back to
+ *  ozalit_teslim with the matbaa re-delivery lock (matching a reject-to-matbaa),
+ *  wipes any partial approval ledger (a new physical proof needs everyone's
+ *  sign-off again), and bumps ozalit_attempt.
  * ========================================================================== */
 export function computeOzalitNotReceived(project, actor, ctx = {}) {
   const now = new Date().toISOString()
@@ -514,12 +563,18 @@ export function computeOzalitNotReceived(project, actor, ctx = {}) {
   if (!isLeader && !isAssignedDesigner) {
     badRequest('Bu işlemi yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
   }
+  if (project.ozalit_received) {
+    badRequest('Ozalit zaten teslim alındı olarak işaretlenmiş.')
+  }
   return {
     project: {
       ...project,
       stage: 'ozalit_teslim',
       ozalit_attempt: (project.ozalit_attempt ?? 0) + 1,
       ozalit_requested: false,
+      ozalit_received: false,
+      ozalit_received_by: null,
+      ozalit_received_at: null,
       reject_target: 'matbaa',
       ozalit_leader_approved: false,
       ozalit_leader_approved_by: null,
@@ -551,6 +606,13 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
   const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
   if (!isLeader && !isAssignedDesigner) {
     badRequest('Ozalit onayını yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
+  }
+  // Gate: the delivered ozalit must be marked "Teslim Alındı" (received) by an
+  // assigned designer or the team leader before anyone can sign off on it —
+  // same rule as the demo (migration 035). One acknowledgment covers the whole
+  // multi-party round; the physical proof arrives once.
+  if (!project.ozalit_received) {
+    badRequest('Önce ozalit "Teslim Alındı" olarak işaretlenmelidir.')
   }
 
   // Record this approver (idempotent — approving twice is a no-op).

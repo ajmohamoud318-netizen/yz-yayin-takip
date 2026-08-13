@@ -72,6 +72,44 @@ Satışta ✅
 ### Production Gate
 A project **cannot** enter Ozalit or any later stage until `progress === 100%`. Enforced by `assertCanEnterProduction` in `domain/services/pipeline.js`. `STAGES_REQUIRING_FULL_PROGRESS` = `ozalit_teslim, ozalit_onay, uretime_hazir, uretimde, gumruk, satista`.
 
+### Ürün Bilgileri auto-capture (entering Üretime Hazır)
+The moment a project lands on **Üretime Hazır** its approved spec sheet is
+copied into `product_info` by `services/product-info-capture.js`, in the same
+transaction as the stage change.
+
+Why it exists: the spec a designer actually fills in lives in the Demo/Ozalit
+sheet (`demos.payload`), not in `product_info`. The only writers to
+`product_info` were the leader hand-typing it in Ürün Bilgileri and
+`SpecFormDialog#persistCatalogEdits` — and that write-back deliberately no-ops
+when the project has no catalog yet, i.e. exactly when the data is missing. So
+a project could clear ozalit onayı with a fully signed sheet, still have zero
+ürün bilgileri, and be unorderable by Sales forever (`has_product_info` false →
+`assertOrderable` throws).
+
+Rules that are not obvious:
+
+- **Üretime Hazır, not Üretimde.** `uretimde` is only ever reached by final
+  sipariş approval (`routes/orders.js`), and raising a sipariş already requires
+  `has_product_info` — hooking there would be strictly too late to help.
+- **Ozalit sheet wins, demo is the fallback.** One query orders
+  `(kind = 'ozalit') DESC, attempt DESC`. ÇİN has no ozalit stage at all, so
+  those projects capture their latest demo sheet.
+- **Merge is additive, per parça.** A parça already in the catalog is left
+  exactly as the leader typed it, in place. Only missing names are appended, so
+  re-running can never clobber hand-entered data. When nothing is new the row
+  isn't touched at all, keeping `updated_by`/`updated_at` on the last human.
+- **ADET rows are stripped.** They come from the sipariş
+  (`data/orderAdet.js#buildAdetRows`) and describe one print run, not the
+  product — baking them in would make the next order inherit the last one's
+  quantity.
+- **An empty sheet captures nothing**, so `has_product_info` can't flip on for
+  a product with a blank spec (the same case the `components <> '[]'` guard in
+  `listProjects` exists for).
+- **Both doors into production do it**: `POST /api/projects/:id/approve` and
+  `reconcileOzalitApprovals` (which advances projects when the last pending
+  leader is deactivated). Each logs a `product_info_auto` history row naming
+  the parçalar it wrote.
+
 ### Demo Rule (demos are exempt from the 100% gate)
 Demos are a **review checkpoint**, not a production step. The 100% gate kicks in at ozalit — a half-finished design must not reach the print proof or the press.
 
@@ -94,7 +132,9 @@ Enforced by:
 - The `demo_attempt` / `ozalit_attempt` counter increments on each rejection (Demo 1, Demo 2, …)
 - `team_leader` can reject at any stage
 - At Özalit rejection, the leader picks the loop target: `matbaa` (Matbaa re-delivers ozalit) or `designer` (Tasarımcı reworks first)
-- **"Teslim Alınamadı" (not received)**: ozalit approval has no receipt gate (unlike demo — this is intentional, see migration `021__demo_received.sql`), but the leader or an assigned designer can still report that a delivered ozalit never reached them. `computeOzalitNotReceived` sends the project back to `ozalit_teslim` with the matbaa re-delivery lock (`reject_target: 'matbaa'`, same mechanism as reject-to-matbaa), wipes the partial multi-party approval ledger, and bumps `ozalit_attempt`. Route: `POST /api/projects/:id/ozalit-not-received`.
+- **"Teslim Alındı" (received) — the ozalit receipt gate (migration `035__ozalit_received.sql`)**: the delivered ozalit must be acknowledged by the team leader or an assigned designer before *anyone* can sign off on it. `computeOzalitOnayApproval` refuses with "Önce ozalit «Teslim Alındı» olarak işaretlenmelidir." until `ozalit_received` is true, and `availableActions` hides Onayla/Reddet until then — you can't approve a physical proof nobody has taken delivery of. One acknowledgment covers the whole multi-party round (there is only one proof), and the matbaa's delivery clears it again so every ozalit round needs its own. Route: `POST /api/projects/:id/ozalit-receive`. This mirrors the demo gate from migration 021 — whose note that ozalit is "intentionally NOT gated" no longer holds.
+- **"Teslim Alınamadı" (not received)**: the counterpart, for when the delivered ozalit never reached the leader/designer — only valid before it's been acknowledged. `computeOzalitNotReceived` sends the project back to `ozalit_teslim` with the matbaa re-delivery lock (`reject_target: 'matbaa'`, same mechanism as reject-to-matbaa), wipes the partial multi-party approval ledger, and bumps `ozalit_attempt`. Route: `POST /api/projects/:id/ozalit-not-received`.
+- Both teslim decisions are behind an "emin misiniz?" confirm in the UI (`ConfirmDialog` on the project detail, an inline yes/no inside the spec-sheet and approval dialogs) — they're one click, adjacent to each other, and neither can be undone from the app. Same for the demo pair.
 
 ---
 ## 🛒 Sipariş (Order) Mini-Workflow — sales re-prints
@@ -169,7 +209,7 @@ Rules that are not obvious and must not be re-litigated:
   its first edition. It flips to `reprint` when Sales orders it.
 - **Guard the pipeline routes.** `assertNotLegacy` (`domain/pipeline.js`, mirrored
   client-side in `domain/services/pipeline.js`) 400s `/advance`, `/approve`,
-  `/reject`, `/receive`, `/demo-not-received`, `/ozalit-not-received` and
+  `/reject`, `/receive`, `/demo-not-received`, `/ozalit-receive`, `/ozalit-not-received` and
   `POST /demos` — these projects have no subtasks, designer or history. Without
   the guard one click on Advance walks a 2019 title into `demo_teslim`, it
   vanishes from Ürünler, and Sales silently loses the ability to order it.
@@ -643,6 +683,7 @@ POST   /api/projects/:id/reject       { stage, reason, reject_target? } [team_le
                                        reject_target ∈ { 'matbaa' | 'designer' } for ozalit_onay
 POST   /api/projects/:id/receive               mark delivered demo "Teslim Alındı" [team_leader or assigned designer]
 POST   /api/projects/:id/demo-not-received     report a delivered demo never arrived → back to matbaa [team_leader or assigned designer]
+POST   /api/projects/:id/ozalit-receive        mark delivered ozalit "Teslim Alındı" [team_leader or assigned designer]
 POST   /api/projects/:id/ozalit-not-received   report a delivered ozalit never arrived → back to matbaa [team_leader or assigned designer]
 ```
 ### Subtasks
@@ -787,11 +828,23 @@ Delivery is **polling** (the SPA authenticates with a trusted `X-User-Id` header
 
 **Seen vs read (migration 024).** Two independent states, so the badge behaves like a real app without losing the to-do signal: `seen` drives the red **badge** and is cleared the moment the bell dropdown opens (a glance counts); `is_read` drives the per-item **bold** styling and is only cleared when the item is clicked (or "Tümünü okundu say"). Invariant: reading implies seeing (the service sets `seen` wherever it sets `is_read`). The bell shows a per-`type` icon in a tone-tinted circle (`TYPE_ICON` / `NotifIcon` in `AppShell.jsx`).
 
-Recipient rules live once, in the service (`notifyProjectTransition`, `notifyProjectCreated`, `notifyOrderTransition`, `notifyOrderRejected`, `notifyHandoverRequested`, `notifyHandoverConfirmed`). The actor is never notified of their own action; recipients are resolved against the **active** user set. Per role the feed surfaces:
-- `team_leader` — demo/ozalit approvals pending, production-ready, new sipariş talep steps
+Recipient rules live once, in the service (`notifyProjectTransition`, `notifyProjectCreated`, `notifyDemoReceived`, `notifyOrderTransition`, `notifyOrderRejected`, `notifyHandoverRequested`, `notifyHandoverConfirmed`). The actor is never notified of their own action; recipients are resolved against the **active** user set. Per role the feed surfaces:
+- `team_leader` — demo delivered / demo receipt acknowledged (→ approval unblocked), ozalit approvals pending, production-ready, new sipariş talep steps
 - `printer` — demo/ozalit delivery pending, production-ready, sipariş ozalit steps
-- `designer` — new assignment, rejection ("Revizyon gerekiyor"), ozalit-requestable, assigned-order steps
+- `designer` — new assignment, rejection ("Revizyon gerekiyor"), demo delivered, demo receipt acknowledged, demo held, ozalit-requestable, production-ready, assigned-order steps
 - `satis` — handover confirmation pending, "Talebiniz onaylandı — üretime alındı", on-sale
+
+**A notification must only ever name an action its recipient can take.** The demo leg is where this is easy to get wrong, because three different events land on the same `demo_onay` stage and they have different audiences:
+
+| Event | Type | Who hears it | Why |
+|---|---|---|---|
+| Matbaa delivers (`* → demo_onay`) | `demo_receipt_pending` | leader + assigned designers | Nobody can approve yet — `computeApproval` refuses until `demo_received`. Both sides may click "Teslim Alındı", so the ask is receipt, not approval |
+| "Teslim Alındı" (`POST /receive`, no stage change) | `demo_approval_pending` → leader, `demo_received` → designers | the side that *didn't* click (`emit` drops the actor) | The gate is open, so now the approval ping is real — and it goes only to the leader, who is the one who can act on it |
+| Approve at <100% (`demo_onay → demo_onay`) | `demo_held` | assigned designers | Stage doesn't move; without an explicit branch this falls through to the delivery case and re-asks everyone for an approval that already happened |
+
+The ozalit leg follows the same shape since migration 035 gave it a receipt gate: delivery (`ozalit_teslim → ozalit_onay`) emits `ozalit_receipt_pending` to the leaders + assigned designers, and `POST /ozalit-receive` emits `ozalit_approval_pending` to everyone who must still sign off. No leader/designer split there — ozalit onay is multi-party, so both sides really are being asked to approve.
+
+ÇİN has no ozalit leg, so `cin_demo_onay → uretime_hazir` *is* the designer's "demo approved" moment — that's why assigned designers are on the `uretime_hazir` fan-out and not just leaders. Covered by tests in `services/notifications.test.js`.
 
 Endpoints: `GET /api/notifications`, `PATCH /api/notifications/:id/read`, `POST /api/notifications/read-all` (all owner-scoped).
 

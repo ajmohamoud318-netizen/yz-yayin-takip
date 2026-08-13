@@ -364,6 +364,59 @@ export async function notifyProjectCreated(client, { project, actor, assignees }
 }
 
 /**
+ * A delivered demo was just marked "Teslim Alındı" (received).
+ *
+ * Not a stage transition — the project stays at demo_onay — so it can't ride
+ * notifyProjectTransition, but it's the event that unblocks the approval, and
+ * until now it was silent: whoever didn't click stayed unaware the gate had
+ * opened. Either the team leader or an assigned designer can acknowledge, so
+ * we fan out to both sides and let emit() drop the actor — "whoever marked it,
+ * the other one hears about it".
+ *
+ * The two sides get different copy on purpose: the leader is the only one who
+ * can act on it now (approval is theirs alone at this stage), the designers
+ * are just being kept in the loop.
+ */
+export async function notifyDemoReceived(client, { project, actor, assignees }) {
+  const designers = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  const who = actor?.name ?? 'Ekipten biri'
+  const base = {
+    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+  }
+  const a = await emit(client, {
+    ...base, recipientIds: leaders, type: 'demo_approval_pending', tone: 'amber',
+    body: `${who} demoyu teslim aldı — onayınızı bekliyor`,
+  })
+  const b = await emit(client, {
+    ...base, recipientIds: designers, type: 'demo_received', tone: 'blue',
+    body: `${who} demoyu teslim aldı — onay bekleniyor`,
+  })
+  return a + b
+}
+
+/**
+ * A delivered ozalit was just marked "Teslim Alındı" (received) — the ozalit
+ * twin of notifyDemoReceived (migration 035).
+ *
+ * Same shape, one difference in who can act: ozalit approval is multi-party, so
+ * the acknowledgement unblocks the leaders AND the assigned designers. Both
+ * sides therefore get an "approval pending" message rather than the leader-only
+ * split the demo uses; emit() drops the actor, so whoever clicked doesn't get
+ * told about their own click.
+ */
+export async function notifyOzalitReceived(client, { project, actor, assignees }) {
+  const designers = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  const who = actor?.name ?? 'Ekipten biri'
+  return emit(client, {
+    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: [...leaders, ...designers], type: 'ozalit_approval_pending', tone: 'amber',
+    body: `${who} ozaliti teslim aldı — onayınızı bekliyor`,
+  })
+}
+
+/**
  * A project pipeline transition (advance / approve / reject) just committed.
  * `toStage` / `fromStage` / `action` come straight from the history row the
  * route already built. We map the resulting state to the people who now need
@@ -389,6 +442,19 @@ export async function notifyProjectTransition(client, {
     })
   }
 
+  // Demo approved but HELD: the leader signed off at <100% progress, so the
+  // stage doesn't move and a second demo is owed once the design is finished.
+  // Caught before the switch because from === to here — falling through to
+  // `demo_onay` would re-send "waiting for your approval" to the very people
+  // who have nothing left to approve.
+  if (action === 'approve' && toStage === fromStage &&
+      (toStage === 'demo_onay' || toStage === 'cin_demo_onay')) {
+    return emit(client, {
+      ...base, recipientIds: designers, type: 'demo_held', tone: 'amber',
+      body: 'Demo onaylandı — tasarım bitince ikinci demo gerekiyor', link: `/projects/${project.id}`,
+    })
+  }
+
   switch (toStage) {
     // Matbaa must deliver the requested demo.
     case 'demo_teslim':
@@ -398,12 +464,16 @@ export async function notifyProjectTransition(client, {
         body: 'Demo teslimi bekleniyor', link: `/projects/${project.id}`,
       })
 
-    // Demo delivered → leader + assigned designers review/approve.
+    // Matbaa delivered the demo. NOT an approval ping: nobody can approve yet
+    // — computeApproval refuses until the delivery is marked "Teslim Alındı",
+    // and that acknowledgement is the leader's OR an assigned designer's to
+    // give. Telling a designer "your approval is awaited" named an action they
+    // don't have; the approval ping is sent later, by notifyDemoReceived().
     case 'demo_onay':
     case 'cin_demo_onay':
       return emit(client, {
-        ...base, recipientIds: [...leaders, ...designers], type: 'demo_approval_pending', tone: 'amber',
-        body: 'Demo onayınızı bekliyor', link: `/projects/${project.id}`,
+        ...base, recipientIds: [...leaders, ...designers], type: 'demo_receipt_pending', tone: 'amber',
+        body: 'Matbaa demoyu teslim etti — "Teslim Alındı" bekleniyor', link: `/projects/${project.id}`,
       })
 
     // Reaching ozalit_teslim: either the demo was just approved (designer may
@@ -422,11 +492,14 @@ export async function notifyProjectTransition(client, {
         body: 'Demo onaylandı — ozalit isteyebilirsiniz', link: `/projects/${project.id}`,
       })
 
-    // Ozalit delivered → leader + assigned designers approve.
+    // Matbaa delivered the ozalit. Like the demo case above, this is NOT an
+    // approval ping: since migration 035 computeOzalitOnayApproval refuses
+    // until the proof is marked "Teslim Alındı". The approval ping follows
+    // from notifyOzalitReceived once someone acknowledges it.
     case 'ozalit_onay':
       return emit(client, {
-        ...base, recipientIds: [...leaders, ...designers], type: 'ozalit_approval_pending', tone: 'amber',
-        body: 'Ozalit onayınızı bekliyor', link: `/projects/${project.id}`,
+        ...base, recipientIds: [...leaders, ...designers], type: 'ozalit_receipt_pending', tone: 'amber',
+        body: 'Matbaa ozaliti teslim etti — "Teslim Alındı" bekleniyor', link: `/projects/${project.id}`,
       })
 
     // Production ready → matbaa can take it in.
@@ -436,10 +509,14 @@ export async function notifyProjectTransition(client, {
     // guarded to `printer`, so a team leader tapping that push was bounced
     // straight back to the dashboard. Printers get the queue they act on;
     // leaders get the project itself, which they can always open.
+    // Assigned designers are included because for a ÇİN project this stage IS
+    // the "your demo was approved" moment (cin_demo_onay → uretime_hazir, no
+    // ozalit leg in between). TR designers hear it at ozalit_teslim instead,
+    // but a second confirmation that their book cleared the gate is harmless.
     case 'uretime_hazir': {
       const ready = { ...base, type: 'production_ready', tone: 'green', body: 'Üretime hazır' }
       const a = await emit(client, { ...ready, recipientIds: printers, link: '/uretime-hazir' })
-      const b = await emit(client, { ...ready, recipientIds: leaders, link: `/projects/${project.id}` })
+      const b = await emit(client, { ...ready, recipientIds: [...leaders, ...designers], link: `/projects/${project.id}` })
       return a + b
     }
 

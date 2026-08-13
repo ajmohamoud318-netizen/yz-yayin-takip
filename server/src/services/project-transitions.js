@@ -20,6 +20,7 @@ import {
   computeApproval,
   computeDemoReceive,
   computeDemoNotReceived,
+  computeOzalitReceive,
   computeOzalitNotReceived,
   computeRejection,
 } from '../domain/transitions.js'
@@ -60,6 +61,15 @@ export function applyDemoReceive(project, { user, designerIds = [] }) {
  */
 export function applyDemoNotReceived(project, { user, designerIds = [] }) {
   return computeDemoNotReceived(project, user, { designerIds })
+}
+
+/**
+ * `POST /projects/:id/ozalit-receive`. Marks a delivered ozalit "Teslim
+ * Alındı" — the gate before the multi-party ozalit onay. Pass the assigned
+ * designer ids so an assigned designer is authorized alongside the leader.
+ */
+export function applyOzalitReceive(project, { user, designerIds = [] }) {
+  return computeOzalitReceive(project, user, { designerIds })
 }
 
 /**

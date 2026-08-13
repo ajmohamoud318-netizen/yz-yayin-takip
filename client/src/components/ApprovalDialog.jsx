@@ -54,6 +54,9 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
   // Local mirror so the dialog reflects a "Teslim Alındı" click immediately,
   // even before the parent re-passes the updated project.
   const [receivedLocal, setReceivedLocal] = useState(false)
+  // "Teslim Alındı" can't be undone from the UI, so it asks first. Inline
+  // (the button turns into a yes/no pair) rather than a nested dialog.
+  const [confirmReceive, setConfirmReceive] = useState(false)
   // IDs of the subtasks the leader wants the designer to revise.
   const [revizeIds, setRevizeIds] = useState([])
   // Who the rejection is routed to: 'designer' (redesign) or 'matbaa' (re-deliver).
@@ -79,6 +82,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
       setReason('')
       setRejectTarget('designer')
       setReceivedLocal(false)
+      setConfirmReceive(false)
     }
   }, [open, project?.id])
 
@@ -170,6 +174,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
       const updated = await api.receiveDemo(project.id)
       updateOne(updated)
       setReceivedLocal(true)
+      setConfirmReceive(false)
       toast.success('Demo teslim alındı.')
       onDone?.(updated)
     } catch (err) {
@@ -298,10 +303,23 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
                   işaretlenmelidir (atanmış tasarımcı veya ekip lideri).
                 </p>
                 {isLeader && (
-                  <Button type="button" size="sm" variant="outline" onClick={handleReceive} disabled={receiving}>
-                    <Check className="h-4 w-4" />
-                    {receiving ? 'İşleniyor…' : 'Teslim Alındı olarak işaretle'}
-                  </Button>
+                  confirmReceive ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-medium">Demoyu teslim aldınız mı?</span>
+                      <Button type="button" size="sm" variant="success" onClick={handleReceive} disabled={receiving}>
+                        <Check className="h-4 w-4" />
+                        {receiving ? 'İşleniyor…' : 'Evet, teslim aldım'}
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmReceive(false)} disabled={receiving}>
+                        Vazgeç
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button type="button" size="sm" variant="outline" onClick={() => setConfirmReceive(true)}>
+                      <Check className="h-4 w-4" />
+                      Teslim Alındı olarak işaretle
+                    </Button>
+                  )
                 )}
               </div>
             )

@@ -7,6 +7,7 @@ import {
   MessageSquarePlus,
   Package,
   PackageCheck,
+  PackageX,
   Plus,
   RotateCcw,
   Send,
@@ -113,6 +114,20 @@ const EVENTS = {
 
   demo_form: { icon: Send, tone: 'pipeline', weight: 'major', group: 'approval', label: 'Demo Formu Gönderildi' },
   ozalit_form: { icon: Send, tone: 'pipeline', weight: 'major', group: 'approval', label: 'Ozalit Formu Gönderildi' },
+
+  // The receipt gates. These are `action: 'advance'` rows that don't move the
+  // stage, so without an entry here they fell through to ADVANCE_LABELS and
+  // rendered as the delivery they acknowledge ("Demo Teslim Edildi") — two
+  // different moments wearing the same label.
+  demo_received: { icon: PackageCheck, tone: 'positive', weight: 'major', group: 'approval', label: 'Demo Teslim Alındı' },
+  demo_not_received: { icon: PackageX, tone: 'negative', weight: 'major', group: 'approval', label: 'Demo Teslim Alınamadı' },
+  ozalit_received: { icon: PackageCheck, tone: 'positive', weight: 'major', group: 'approval', label: 'Ozalit Teslim Alındı' },
+  ozalit_not_received: { icon: PackageX, tone: 'negative', weight: 'major', group: 'approval', label: 'Ozalit Teslim Alınamadı' },
+  // Written by the server when a project enters Üretime Hazır and its approved
+  // ozalit/demo sheet is copied into Ürün Bilgileri (services/product-info-capture.js).
+  // 'minor' because nobody performed it — it's bookkeeping that explains where
+  // a spec the leader never typed came from.
+  product_info_auto: { icon: Package, tone: 'neutral', weight: 'minor', group: 'order', label: 'Ürün Bilgileri Otomatik Kaydedildi' },
 
   handover_request: { icon: Truck, tone: 'pending', weight: 'major', group: 'order', label: 'Teslim Talebi Oluşturuldu' },
   handover_confirm: { icon: Package, tone: 'positive', weight: 'major', group: 'order', label: 'Teslim Onaylandı' },
