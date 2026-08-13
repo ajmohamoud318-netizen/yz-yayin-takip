@@ -253,9 +253,14 @@ export default function AppShell() {
         </SheetContent>
       </Sheet>
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Top bar — wider gutters on huge screens to keep the search/CTA from feeling stranded */}
+        {/* Top bar — wider gutters on huge screens to keep the search/CTA from feeling stranded.
+            min-h, NOT h: with border-box sizing a fixed `h-14` is the whole box,
+            so the safe-area padding below would eat the content band instead of
+            growing the bar — the menu button and search then render *inside* the
+            iOS status bar once installed to the Home Screen. min-height lets the
+            inset add to the 3.5rem instead of carving it up. */}
         <header
-          className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/95 px-3 backdrop-blur sm:px-4 lg:px-6 2xl:px-8 3xl:px-12"
+          className="sticky top-0 z-30 flex min-h-14 items-center gap-3 border-b bg-background/95 px-3 backdrop-blur sm:px-4 lg:px-6 2xl:px-8 3xl:px-12"
           style={{ paddingTop: 'max(0px, var(--safe-top, 0px))' }}
         >
           {/* Left — mobile menu + greeting */}

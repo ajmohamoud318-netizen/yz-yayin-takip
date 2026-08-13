@@ -162,10 +162,11 @@ function ProjectHistory({
                 {visibleDays.map((day) => (
                   <section key={day.key}>
                     {/* Sticky so the date stays with you while you read a
-                        long day. Offset by the app header's h-14 so it parks
-                        below the topbar instead of sliding under it, and
+                        long day. Offset by the app header's full height —
+                        3.5rem *plus* the safe-area inset it carries, or the
+                        chip parks under the topbar on a notched iPhone — and
                         painted `bg-card` to match the panel, not the page. */}
-                    <div className="sticky top-14 z-10 -mx-1 flex items-center gap-2.5 bg-card px-1 py-1.5">
+                    <div className="sticky top-[calc(3.5rem+var(--safe-top,0px))] z-10 -mx-1 flex items-center gap-2.5 bg-card px-1 py-1.5">
                       <h4 className="font-sans text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                         {day.label}
                       </h4>

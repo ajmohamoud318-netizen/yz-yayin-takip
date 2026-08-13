@@ -129,12 +129,12 @@ export default function Dashboard() {
             otherwise the cards flash "0" for ~100–400 ms on every hard
             refresh, which reads as "your data is empty" until numbers pop
             in. */}
-        <div className="stagger-children grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8 2xl:gap-4">
+        <div className="stagger-children grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 xl:grid-cols-8 2xl:gap-4">
           {loading ? (
             <>
-              <Skeleton className="h-[78px] rounded-lg" />
+              <Skeleton className="h-[46px] rounded-lg sm:h-[78px]" />
               {LEGEND_KEYS.map((k) => (
-                <Skeleton key={k} className="h-[78px] rounded-lg" />
+                <Skeleton key={k} className="h-[46px] rounded-lg sm:h-[78px]" />
               ))}
             </>
           ) : (
@@ -376,9 +376,13 @@ function SummaryCard({ label, value, colorKey }) {
   return (
     <div
       className={cn(
-        // Tighter on phones: 8 of these stack in 2 columns before any real
-        // content, so every saved pixel moves the plan closer to the fold.
-        'relative overflow-hidden rounded-lg border p-3 sm:p-4',
+        // On phones these 8 tiles are the entire first screen — stacked
+        // label-over-number they ran 78px each, 348px of counters before the
+        // plan even starts. Below sm the label and the number share one
+        // baseline row (46px), which halves the block without dropping any
+        // of the counts. The stacked KPI card returns at sm+.
+        'relative overflow-hidden rounded-lg border px-3 py-2 sm:block sm:p-4',
+        'flex items-baseline justify-between gap-2',
         isTotal
           ? 'bg-foreground border-foreground'
           : cn(meta?.surface, meta?.border),
@@ -387,7 +391,12 @@ function SummaryCard({ label, value, colorKey }) {
       <p className={cn('truncate text-xs font-medium opacity-80', isTotal ? 'text-background' : meta?.onSurface)}>
         {label}
       </p>
-      <p className={cn('mt-1 font-mono text-2xl font-bold tabular-nums sm:mt-2 sm:text-3xl', isTotal ? 'text-background' : meta?.onSurface)}>
+      <p
+        className={cn(
+          'shrink-0 font-mono text-lg font-bold tabular-nums sm:mt-2 sm:text-3xl',
+          isTotal ? 'text-background' : meta?.onSurface,
+        )}
+      >
         {value}
       </p>
     </div>
