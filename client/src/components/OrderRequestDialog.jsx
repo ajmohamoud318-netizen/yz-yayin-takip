@@ -388,7 +388,6 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
   const singleValue = hasComponents ? (itemQtys[singleComp] ?? '') : singleQty
   const setSingleValue = (v) =>
     hasComponents ? setItemQtys((prev) => ({ ...prev, [singleComp]: v })) : setSingleQty(v)
-  const totalAdet = components.reduce((sum, name) => sum + (parseInt(itemQtys[name] || '0', 10) || 0), 0)
 
   async function handleSubmit(e) {
     e?.preventDefault()
@@ -690,12 +689,6 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
                       </div>
                     )
                   })}
-                </div>
-                <div className="flex items-center justify-between pt-1 text-sm">
-                  <span className="text-muted-foreground">Toplam</span>
-                  <span className="font-semibold tabular-nums text-foreground">
-                    {totalAdet.toLocaleString('tr-TR')} adet
-                  </span>
                 </div>
               </div>
             )}

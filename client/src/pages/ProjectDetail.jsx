@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -48,6 +48,14 @@ import { canApproveOzalitNow, ozalitLeaderApproved } from '@/domain'
 export default function ProjectDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
+  const goBack = () => {
+    if (location.key !== 'default') {
+      navigate(-1)
+    } else {
+      navigate('/')
+    }
+  }
 
   const { user } = useAuth()
   const celebrate = useDesignerCelebration()
@@ -553,8 +561,8 @@ export default function ProjectDetail() {
       <>
         <div className="rounded-xl border border-dashed bg-card p-12 text-center">
           <p className="text-sm font-medium text-foreground">Proje bulunamadı.</p>
-          <Button asChild variant="outline" size="sm" className="mt-3">
-            <Link to="/">Panele dön</Link>
+          <Button variant="outline" size="sm" className="mt-3" onClick={goBack}>
+            Geri dön
           </Button>
         </div>
       </>
@@ -565,11 +573,14 @@ export default function ProjectDetail() {
     <>
       <div className="space-y-6">
         <div>
-          <Button asChild variant="ghost" size="sm" className="-ml-2 text-muted-foreground">
-            <Link to="/">
-              <ArrowLeft className="h-4 w-4" />
-              Panele dön
-            </Link>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 text-muted-foreground"
+            onClick={goBack}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Geri dön
           </Button>
         </div>
 
