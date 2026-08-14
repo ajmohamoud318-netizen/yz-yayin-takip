@@ -136,10 +136,18 @@ export default function UserAvatar({ user, size = 'md', className }) {
           loading="lazy"
           onError={() => setImageBroken(true)}
         />
-      ) : null}
-      <AvatarFallback className={cn('bg-primary/10 font-semibold text-primary', dotClass.split(' ').pop())}>
-        {initials(user?.name)}
-      </AvatarFallback>
+      ) : (
+        // Radix's <AvatarFallback> only hides itself once its own
+        // <AvatarImage> reports "loaded" — since we render a plain <img>
+        // above instead (so onError can swap to initials on a 404), Radix
+        // never sees that signal and the fallback never unmounts on its
+        // own. Gating it on `src` here keeps it mutually exclusive with the
+        // photo; without this it rendered as a flex sibling *next to* the
+        // photo — a sliver of pink initials bleeding out beside the face.
+        <AvatarFallback className={cn('bg-primary/10 font-semibold text-primary', dotClass.split(' ').pop())}>
+          {initials(user?.name)}
+        </AvatarFallback>
+      )}
     </Avatar>
   )
 }
