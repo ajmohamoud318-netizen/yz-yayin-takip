@@ -846,12 +846,14 @@ function UserMenu({ user, onLogout }) {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link to="/team">
-            <UsersRound className="h-4 w-4" />
-            Ekip
-          </Link>
-        </DropdownMenuItem>
+        {user?.role === 'team_leader' && (
+          <DropdownMenuItem asChild>
+            <Link to="/team">
+              <UsersRound className="h-4 w-4" />
+              Ekip
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem asChild>
           <Link to="/settings">
             <Settings className="h-4 w-4" />
