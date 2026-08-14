@@ -25,6 +25,21 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
+// ── Adet formatting ───────────────────────────────────────────────────────────
+// Plain `type="number"` renders "10000" and "100000" as visually indistinguishable
+// walls of digits, which is how a stray zero slips into a production order. These
+// keep the underlying value as plain digits (so existing parseInt call sites don't
+// change) while displaying it grouped, e.g. "10.000".
+
+function digitsOnly(v) {
+  return String(v ?? '').replace(/\D/g, '')
+}
+
+function formatAdet(v) {
+  const digits = digitsOnly(v)
+  return digits ? parseInt(digits, 10).toLocaleString('tr-TR') : ''
+}
+
 // ── Excel helpers ─────────────────────────────────────────────────────────────
 
 function normTR(s) {
@@ -148,6 +163,7 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
   const [selectedProductId, setSelectedProductId] = useState('')
   const [itemQtys, setItemQtys] = useState({})
   const [singleQty, setSingleQty] = useState('')
+  const [bulkQty, setBulkQty] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [excelLoading, setExcelLoading] = useState(false)
@@ -159,6 +175,15 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
   const [batchUnmatched, setBatchUnmatched] = useState([])
   const [batchNotes, setBatchNotes] = useState('')
   const [batchSaving, setBatchSaving] = useState(false)
+  // Which adet field is currently being typed into, if any. Reformatting a
+  // grouped value ("10.000") on every keystroke moves the caret out from under
+  // the user's fingers — the dot shifts digits and drops/reorders whatever they
+  // type next. So the focused field shows plain digits; grouping only kicks in
+  // once it's settled (blur). `null` / a component name / a batch row id.
+  const [singleFocused, setSingleFocused] = useState(false)
+  const [bulkFocused, setBulkFocused] = useState(false)
+  const [focusedItemName, setFocusedItemName] = useState(null)
+  const [focusedBatchId, setFocusedBatchId] = useState(null)
 
   const components = getComponentsForProject(selectedProductId).map((c) => c.component)
   const hasComponents = components.length > 0
@@ -184,11 +209,16 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
       setSelectedProductId('')
       setItemQtys({})
       setSingleQty('')
+      setBulkQty('')
       setNotes('')
       setExcelFilled(new Set())
       setBatchRows([])
       setBatchUnmatched([])
       setBatchNotes('')
+      setSingleFocused(false)
+      setBulkFocused(false)
+      setFocusedItemName(null)
+      setFocusedBatchId(null)
     }
   }, [open])
 
@@ -198,6 +228,7 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
     components.forEach((name) => { init[name] = '' })
     setItemQtys(init)
     setSingleQty('')
+    setBulkQty('')
     setExcelFilled(new Set())
   }, [selectedProductId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -214,6 +245,7 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
     const next = {}
     components.forEach((name) => { next[name] = val })
     setItemQtys(next)
+    setBulkQty(val)
     setExcelFilled(new Set())
   }
 
@@ -623,14 +655,15 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
                 <div className="relative">
                   <Input
                     id="single-adet"
-                    type="number"
-                    min="1"
+                    type="text"
                     inputMode="numeric"
                     autoFocus
                     placeholder="0"
                     className="h-14 pr-16 text-2xl font-semibold tracking-tight tabular-nums"
-                    value={singleValue}
-                    onChange={(e) => setSingleValue(e.target.value)}
+                    value={singleFocused ? singleValue : formatAdet(singleValue)}
+                    onChange={(e) => setSingleValue(digitsOnly(e.target.value))}
+                    onFocus={() => setSingleFocused(true)}
+                    onBlur={() => setSingleFocused(false)}
                   />
                   <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
                     adet
@@ -647,13 +680,15 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
                   <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                     Tümüne
                     <Input
-                      type="number"
-                      min="1"
+                      type="text"
                       inputMode="numeric"
                       aria-label="Tüm kalemlere uygula"
                       placeholder="0"
-                      className="h-8 w-16 text-right tabular-nums"
-                      onChange={(e) => applyToAll(e.target.value)}
+                      className="h-8 w-20 text-right tabular-nums"
+                      value={bulkFocused ? bulkQty : formatAdet(bulkQty)}
+                      onChange={(e) => applyToAll(digitsOnly(e.target.value))}
+                      onFocus={() => setBulkFocused(true)}
+                      onBlur={() => setBulkFocused(false)}
                     />
                   </label>
                 </div>
@@ -671,16 +706,17 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
                         )}
                         <div className="relative shrink-0">
                           <Input
-                            type="number"
-                            min="1"
+                            type="text"
                             inputMode="numeric"
-                            className={cn('h-10 w-24 pr-9 text-right tabular-nums', qty > 0 && 'font-semibold')}
+                            className={cn('h-10 w-28 pr-9 text-right tabular-nums', qty > 0 && 'font-semibold')}
                             placeholder="0"
-                            value={itemQtys[name] ?? ''}
+                            value={focusedItemName === name ? (itemQtys[name] ?? '') : formatAdet(itemQtys[name])}
                             onChange={(e) => {
-                              setItemQtys((prev) => ({ ...prev, [name]: e.target.value }))
+                              setItemQtys((prev) => ({ ...prev, [name]: digitsOnly(e.target.value) }))
                               setExcelFilled((prev) => { const s = new Set(prev); s.delete(name); return s })
                             }}
+                            onFocus={() => setFocusedItemName(name)}
+                            onBlur={() => setFocusedItemName((cur) => (cur === name ? null : cur))}
                           />
                           <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
                             adet
@@ -748,21 +784,22 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
                     </span>
                   )}
                   <Input
-                    type="number"
-                    min="1"
+                    type="text"
                     inputMode="numeric"
                     placeholder="0"
                     className={cn('h-8 w-24 text-right tabular-nums', row.qty > 0 ? 'font-semibold' : '')}
-                    value={row.qty || ''}
+                    value={focusedBatchId === row.product.id ? String(row.qty || '') : formatAdet(row.qty)}
                     onChange={(e) =>
                       setBatchRows((prev) =>
                         prev.map((r) =>
                           r.product.id === row.product.id
-                            ? { ...r, qty: parseInt(e.target.value) || 0, modified: true }
+                            ? { ...r, qty: parseInt(digitsOnly(e.target.value), 10) || 0, modified: true }
                             : r,
                         ),
                       )
                     }
+                    onFocus={() => setFocusedBatchId(row.product.id)}
+                    onBlur={() => setFocusedBatchId((cur) => (cur === row.product.id ? null : cur))}
                   />
                   <span className="w-7 shrink-0 text-xs text-muted-foreground">adet</span>
                 </div>
