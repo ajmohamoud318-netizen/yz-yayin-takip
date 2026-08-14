@@ -155,13 +155,16 @@ describe('mergeComponents', () => {
 
 // Minimal in-memory pg client. Queries are matched on a distinguishing SQL
 // fragment; writes are recorded so the test can assert what was persisted.
-function makeFakeClient({ demoPayload, existingComponents }) {
+// `demoPayloads` is the full result set in preference order (ozalit sheets
+// first); `demoPayload` is the single-sheet shorthand.
+function makeFakeClient({ demoPayload, demoPayloads, existingComponents }) {
+  const sheets = demoPayloads ?? (demoPayload === undefined ? [] : [demoPayload])
   const writes = []
   return {
     writes,
     async query(sql, params) {
       if (/FROM demos/.test(sql)) {
-        return { rows: demoPayload === undefined ? [] : [{ payload: demoPayload }] }
+        return { rows: sheets.map((payload) => ({ payload })) }
       }
       if (/SELECT components FROM product_info/.test(sql)) {
         return { rows: existingComponents === undefined ? [] : [{ components: existingComponents }] }
@@ -247,5 +250,37 @@ describe('captureProductInfoFromSpec', () => {
     const demoQuery = seen.find((s) => /FROM demos/.test(s))
     assert.match(demoQuery, /ORDER BY \(kind = 'ozalit'\) DESC/)
     assert.match(demoQuery, /attempt DESC/, 'latest round of that kind wins')
+  })
+
+  it('falls back to the demo sheet when the ozalit sheet carries no spec', async () => {
+    // The real-world shape on a project with no catalog: the leader's ozalit
+    // form opens empty, so "Matbaaya Gönder" stores a sheet with the header
+    // fields but no rows. Preferring it blindly captured nothing and the
+    // project entered production with no ürün bilgileri at all.
+    const client = makeFakeClient({
+      demoPayloads: [
+        { isinAdi: 'Fen Bilimleri 7', ozalitIsteyenKisi: 'Ayşenur', _customRows: [], _selectedComponents: [] },
+        { isinAdi: 'Fen Bilimleri 7', _customRows: [row('EBAT', '19,5 x 27,5'), row('CİLT', 'amerikan cilt')] },
+      ],
+    })
+    const result = await captureProductInfoFromSpec(client, { project, actor })
+
+    assert.deepEqual(result, { added: ['Fen Bilimleri 7'] })
+    assert.deepEqual(client.writes[0].components[0].fields, [
+      { k: 'İŞİN ADI', v: 'Fen Bilimleri 7' },
+      { k: 'EBAT', v: '19,5 x 27,5' },
+      { k: 'CİLT', v: 'amerikan cilt' },
+    ])
+  })
+
+  it('an ozalit sheet that HAS a spec still wins over the demo sheet', async () => {
+    const client = makeFakeClient({
+      demoPayloads: [
+        { _selectedComponents: [{ component: 'KİTAP', rows: [row('EBAT', 'ozalit value')] }] },
+        { _selectedComponents: [{ component: 'KİTAP', rows: [row('EBAT', 'demo value')] }] },
+      ],
+    })
+    await captureProductInfoFromSpec(client, { project, actor })
+    assert.equal(client.writes[0].components[0].fields[1].v, 'ozalit value')
   })
 })

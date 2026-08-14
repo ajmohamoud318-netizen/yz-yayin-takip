@@ -20,6 +20,8 @@ import {
   canRequestHandover,
   assertHandoverEligible,
   isOzalitApprover,
+  ozalitLeaderApproved,
+  canApproveOzalitNow,
   isDemoApprover,
   canRejectAtStage,
   canEditProductInfo,
@@ -200,6 +202,39 @@ describe('isOzalitApprover (ozalit_onay approval)', () => {
     expect(isOzalitApprover(PRINTER)).toBe(false)
     expect(isOzalitApprover({ role: 'satis' })).toBe(false)
     expect(isOzalitApprover(undefined)).toBe(false)
+  })
+})
+
+describe('canApproveOzalitNow (multi-party, leader-first)', () => {
+  // Mirrors computeOzalitOnayApproval on the server; the UI uses it to decide
+  // whether to offer Onayla at all.
+  const AYSE = { id: 'u-ayse', role: 'team_leader' }
+  const AYLIN = { id: 'u-aylin', role: 'designer' }
+  const OKTAY = { id: 'u-oktay', role: 'printer' }
+  const base = { ozalit_received: true, assignees: [{ id: 'u-aylin' }], ozalit_approvals: [] }
+  const leaderSigned = { ...base, ozalit_approvals: [{ id: 'u-ayse', role: 'team_leader' }] }
+
+  it('lets a leader approve a received proof straight away', () => {
+    expect(canApproveOzalitNow(AYSE, base)).toBe(true)
+  })
+  it('blocks the assigned designer until a leader has approved', () => {
+    expect(canApproveOzalitNow(AYLIN, base)).toBe(false)
+    expect(canApproveOzalitNow(AYLIN, leaderSigned)).toBe(true)
+  })
+  it('does not count another designer\'s sign-off as the leader\'s', () => {
+    const designerOnly = { ...base, ozalit_approvals: [{ id: 'u-feyza', role: 'designer' }] }
+    expect(ozalitLeaderApproved(designerOnly)).toBe(false)
+    expect(canApproveOzalitNow(AYLIN, designerOnly)).toBe(false)
+  })
+  it('keeps the receipt gate ahead of the order rule', () => {
+    expect(canApproveOzalitNow(AYSE, { ...leaderSigned, ozalit_received: false })).toBe(false)
+    expect(canApproveOzalitNow(AYLIN, { ...leaderSigned, ozalit_received: false })).toBe(false)
+  })
+  it('denies unassigned designers, printers and missing users', () => {
+    expect(canApproveOzalitNow({ id: 'u-nur', role: 'designer' }, leaderSigned)).toBe(false)
+    expect(canApproveOzalitNow(OKTAY, leaderSigned)).toBe(false)
+    expect(canApproveOzalitNow(undefined, leaderSigned)).toBe(false)
+    expect(canApproveOzalitNow(AYSE, undefined)).toBe(false)
   })
 })
 

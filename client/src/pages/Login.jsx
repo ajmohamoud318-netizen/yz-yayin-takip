@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 const YZ_LOGO_BLACK = '/yz_blacklogo.svg'
 import { useNavigate, Link } from 'react-router-dom'
@@ -24,7 +24,7 @@ function loadRememberedEmail() {
 }
 
 export default function Login() {
-  const { login, loading } = useAuth()
+  const { login, loading, isAuthenticated } = useAuth()
   const navigate = useNavigate()
 
   const [email, setEmail]           = useState(loadRememberedEmail)
@@ -33,6 +33,21 @@ export default function Login() {
   const [remember, setRemember]     = useState(loadRememberPref)
   const [error, setError]           = useState('')
   const [exiting, setExiting]       = useState(false)
+
+  /**
+   * Already signed in? Don't sit on the login form.
+   *
+   * Normally nobody reaches /login with a live session. But the session check
+   * has a deadline now (BOOTSTRAP_MAX_MS): if the API is slow to answer on a
+   * cold PWA launch, <RequireAuth> stops waiting and sends the user here while
+   * the check is still in flight. When it lands a moment later the user IS
+   * authenticated — and without this they'd be staring at a login form,
+   * retyping a password they didn't need. `exiting` is excluded so this never
+   * races the post-login exit animation, which does its own navigate.
+   */
+  useEffect(() => {
+    if (isAuthenticated && !exiting) navigate('/', { replace: true })
+  }, [isAuthenticated, exiting, navigate])
 
   function toggleRemember(checked) {
     setRemember(checked)

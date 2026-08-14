@@ -15,7 +15,7 @@ import DemoFormDialog from '@/components/DemoFormDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
-import { canRejectAtStage, isDemoApprover, isOzalitApprover } from '@/domain'
+import { canRejectAtStage, isDemoApprover, isOzalitApprover, ozalitLeaderApproved } from '@/domain'
 import { formatTargetDate } from '@/lib/utils'
 
 /**
@@ -169,6 +169,11 @@ export default function Approvals({ tab = 'demo' }) {
           const isAssignedDesigner = (p.assignees ?? []).some((a) => a.id === user?.id)
           const alreadyApproved = sub === 'ozalit' && (p.ozalit_approvals ?? []).some((a) => a.id === user?.id)
           const canApprove = sub === 'demo' ? isLeader : (isLeader || isAssignedDesigner)
+          // Ozalit is leader-first: an assigned designer's Onayla only opens
+          // once a team leader has signed off (the server refuses it before
+          // that). The card stays in their queue so they can watch it move.
+          const awaitingLeader =
+            sub === 'ozalit' && isDesigner && !alreadyApproved && !ozalitLeaderApproved(p)
           const heldDemo = sub === 'demo' && p.demo_held === true
           return (
           <Card
@@ -233,6 +238,11 @@ export default function Approvals({ tab = 'demo' }) {
                       <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800 sm:flex-1">
                         <ThumbsUp className="h-3.5 w-3.5" />
                         Onayınız kaydedildi, diğer onaylar bekleniyor
+                      </span>
+                    ) : awaitingLeader ? (
+                      // Designer, leader hasn't approved yet — not their turn.
+                      <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 sm:flex-1">
+                        Ekip lideri onayı bekleniyor, sonra sizin onayınız
                       </span>
                     ) : canApprove ? (
                       <Button

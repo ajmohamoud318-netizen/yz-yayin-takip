@@ -11,6 +11,7 @@ import { dailyStatusSelect, workLogTodaySelect } from '../services/work-log.js'
 import { sendMail, renderInviteEmail } from '../services/mail.js'
 import {
   MAX_AVATAR_BYTES,
+  avatarCacheHeaders,
   deleteAvatar,
   extForMime,
   isAllowedMime,
@@ -51,9 +52,18 @@ export async function userRoutes(fastify) {
   // resolve an assignee's name, nothing that leaks PII or attendance.
   fastify.get('/users', async (request) => {
     await attachUser(request)
+    // `avatar_url` + `avatar_updated_at` ship with BOTH column sets. The
+    // avatar file route is already public-ish (an <img> can't send
+    // X-User-Id), so these leak nothing the roster doesn't already, and
+    // without them every UserAvatar fed by this list — /team cards, the
+    // assignee pickers — renders initials forever no matter what the
+    // person uploads. `avatar_updated_at` is what the SPA turns into the
+    // `?v=` cache-buster (see avatarSrc()), so it has to travel with the
+    // URL or a replaced photo stays stale in the browser cache.
     if (request.user.role !== 'team_leader') {
       const { rows } = await getPool().query(
-        `SELECT u.id, u.name, u.role, u.is_active
+        `SELECT u.id, u.name, u.role, u.is_active,
+                u.avatar_url, u.avatar_updated_at
            FROM users u
           ORDER BY u.created_at`,
       )
@@ -66,6 +76,7 @@ export async function userRoutes(fastify) {
     const { rows } = await getPool().query(
       `SELECT u.id, u.name, u.email, u.role, u.is_active,
               u.invited_at, u.joined_at, u.created_at,
+              u.avatar_url, u.avatar_updated_at,
               ${dailyStatusSelect('u')},
               ${workLogTodaySelect('u')}
          FROM users u
@@ -320,12 +331,15 @@ export async function userRoutes(fastify) {
     // and rewrites the path at render time (see avatarSrc() in Settings).
     // An absolute URL would couple this column to whichever origin was
     // current at upload time, breaking when the cert/host rotates.
-    await getPool().query(
+    const { rows } = await getPool().query(
       `UPDATE users SET avatar_url = $2, avatar_updated_at = NOW(), updated_at = NOW()
-       WHERE id = $1 RETURNING avatar_url`,
+       WHERE id = $1 RETURNING avatar_url, avatar_updated_at`,
       [request.user.id, url],
     )
-    return { avatarUrl: url }
+    // Hand back the server's own stamp: it's what every other client will
+    // see in GET /users, so the uploader's `?v=` matches theirs instead of
+    // depending on how well the phone's clock is set.
+    return { avatarUrl: url, avatarUpdatedAt: rows[0]?.avatar_updated_at ?? null }
   })
 
   fastify.delete('/users/me/avatar', async (request) => {
@@ -339,39 +353,54 @@ export async function userRoutes(fastify) {
     return { ok: true }
   })
 
-  // Public file stream for an arbitrary user. No auth — <img src> can't
-  // carry X-User-Id. Returns 404 if no avatar is on file.
-  fastify.get('/users/:id/avatar/file', async (request, reply) => {
-    const { id } = request.params
+  /**
+   * Shared body for both avatar file routes. Cache policy — and the
+   * reasoning behind it — lives in avatarCacheHeaders().
+   */
+  async function sendAvatar(request, reply, id) {
     const { rows } = await getPool().query(
-      `SELECT avatar_url FROM users WHERE id = $1 LIMIT 1`,
+      `SELECT avatar_url, avatar_updated_at FROM users WHERE id = $1 LIMIT 1`,
       [id],
     )
     if (!rows[0]?.avatar_url) return notFound('Avatar bulunamadı.')
+
+    const { cacheControl, etag } = avatarCacheHeaders({
+      versioned: !!request.query?.v,
+      userId: id,
+      updatedAt: rows[0].avatar_updated_at,
+    })
+
+    if (request.headers['if-none-match'] === etag) {
+      // Unchanged since the browser last fetched it — skip the disk read
+      // and the body entirely.
+      return reply.header('Cache-Control', cacheControl).header('ETag', etag).code(304).send()
+    }
+
+    // Headers go on only once we know we have bytes. Setting them earlier
+    // would let a `?v=`-immutable Cache-Control ride out on the 404 below,
+    // and that 404 is a *transient* condition (see avatars.js on volumes
+    // that mount late) — pinning it in the browser for a year would leave
+    // the person permanently without an avatar.
     const file = await readAvatar(id, rows[0].avatar_url)
     if (!file) return notFound('Avatar dosyası eksik.')
     reply
       .header('Content-Type', file.mime)
-      .header('Cache-Control', 'private, max-age=300')
+      .header('Cache-Control', cacheControl)
+      .header('ETag', etag)
       .send(file.buffer)
-  })
+  }
+
+  // Public file stream for an arbitrary user. No auth — <img src> can't
+  // carry X-User-Id. Returns 404 if no avatar is on file.
+  fastify.get('/users/:id/avatar/file', async (request, reply) =>
+    sendAvatar(request, reply, request.params.id),
+  )
 
   // Owner-only alias for the authenticated caller's avatar. Mirrors the
   // /users/:id route but resolves the id from the X-User-Id trust header.
   // Useful when a page holds a stale relative URL like `/api/users/me/avatar/file`.
   fastify.get('/users/me/avatar/file', async (request, reply) => {
     await attachUser(request)
-    const id = request.user.id
-    const { rows } = await getPool().query(
-      `SELECT avatar_url FROM users WHERE id = $1 LIMIT 1`,
-      [id],
-    )
-    if (!rows[0]?.avatar_url) return notFound('Avatar bulunamadı.')
-    const file = await readAvatar(id, rows[0].avatar_url)
-    if (!file) return notFound('Avatar dosyası eksik.')
-    reply
-      .header('Content-Type', file.mime)
-      .header('Cache-Control', 'private, max-age=300')
-      .send(file.buffer)
+    return sendAvatar(request, reply, request.user.id)
   })
 }

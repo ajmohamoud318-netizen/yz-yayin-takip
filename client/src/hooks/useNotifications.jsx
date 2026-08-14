@@ -100,7 +100,15 @@ export function NotificationsProvider({ children }) {
     // the bell empty on cold start for sessions where "30 gün hatırla" was not
     // ticked (nothing is written to localStorage in that case).
     refetch()
-    const t = setInterval(refetch, POLL_MS)
+    // Don't poll a backgrounded app. iOS freezes the timer regardless, and
+    // PushBridge refetches on every return to the foreground — so the only
+    // thing these ticks would achieve is spending battery and data on a feed
+    // nobody can see. A push that arrives meanwhile still shows as a system
+    // notification, which is the point of the worker.
+    const t = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      refetch()
+    }, POLL_MS)
     return () => clearInterval(t)
   }, [userId, refetch])
 

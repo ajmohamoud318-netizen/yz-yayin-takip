@@ -19,7 +19,9 @@ import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { getComponentsForProject, getComponentRows, primeProductInfoCache, saveEditedComponents } from '@/data/productCatalog'
 import { printSpecSheets, buildSpecRows } from '@/lib/specPrint'
+import { hasSpecContent, specWithDemoFallback } from '@/lib/spec-seed'
 import { buildAdetRows } from '@/data/orderAdet'
+import { ozalitLeaderApproved } from '@/domain'
 
 /* ------------------------------------------------------------------ */
 /*  Variant configuration — everything that differs between the Demo  */
@@ -181,6 +183,7 @@ function withoutBlankStamps(form) {
   for (const f of STAMP_FIELDS) if (!out[f]) delete out[f]
   return out
 }
+
 
 /** Which spec sheet (if any) a project stage belongs to. */
 const STAGE_VARIANT = {
@@ -625,12 +628,23 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           ...(data?.form?.matbaaYetkilisi ? { matbaaYetkilisi: data.form.matbaaYetkilisi } : {}),
         })
       }
-      const savedRows = data?.customRows ?? []
+      // First ozalit round on a project whose ozalit sheet is still empty:
+      // borrow the spec the designer already filled in on the demo sheet.
+      // See specWithDemoFallback.
+      let spec = data
+      if (variant.kind === 'ozalit' && !hasSpecContent(data)) {
+        const fromDemo =
+          loadSaved(VARIANTS.demo, project.id) ??
+          (await fetchServerSnapshot(api, VARIANTS.demo, project.id, null))
+        if (cancelled) return
+        spec = specWithDemoFallback(data, fromDemo)
+      }
+      const savedRows = spec?.customRows ?? []
       const hasAdet = savedRows.some((r) => r.label?.toUpperCase().startsWith('ADET'))
       setCustomRows(hasAdet ? savedRows : [...buildAdetRows(project.id), ...savedRows])
       // null means never explicitly set — default to all catalog components checked.
       // [] means the user intentionally cleared them — respect that.
-      const savedComponents = data?.selectedComponents ?? null
+      const savedComponents = spec?.selectedComponents ?? null
       setSelectedComponents(savedComponents ?? catalogComponents)
     }
 
@@ -653,6 +667,16 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const canAckOzalit =
     user?.role === 'team_leader' ||
     (user?.role === 'designer' && (project?.assignees ?? []).some((a) => a.id === user?.id))
+
+  /* ── Ozalit leader-first gate ─────────────────────────────────────────────
+   * The second ordering rule on the same approve: a designer counter-signs an
+   * ozalit only after a team leader has approved it (computeOzalitOnayApproval
+   * refuses otherwise). Nothing for the designer to click here — unlike the
+   * receipt gate, they can't open it themselves — so the button is disabled
+   * with the reason spelled out.
+   */
+  const ozalitAwaitingLeader =
+    isOzalitApproval && user?.role === 'designer' && !ozalitLeaderApproved(project)
 
   // Each (re)open starts from the project's own state — a stale local ack
   // would otherwise unlock the button for the next project opened.
@@ -1109,12 +1133,22 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             same spot) rather than a nested dialog. */}
         {isOzalitApproval && (
           ozalitReceived ? (
-            <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
-              <Check className="h-4 w-4 shrink-0" />
-              <span>
-                Ozalit teslim alındı{project?.ozalit_received_by ? `, ${project.ozalit_received_by}` : ''}. Onaylayabilirsiniz.
-              </span>
-            </div>
+            ozalitAwaitingLeader ? (
+              <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                <Check className="h-4 w-4 shrink-0" />
+                <span>
+                  Ozalit teslim alındı{project?.ozalit_received_by ? `, ${project.ozalit_received_by}` : ''}.
+                  Onay sırası ekip liderinde, o onayladıktan sonra onaylayabilirsiniz.
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
+                <Check className="h-4 w-4 shrink-0" />
+                <span>
+                  Ozalit teslim alındı{project?.ozalit_received_by ? `, ${project.ozalit_received_by}` : ''}. Onaylayabilirsiniz.
+                </span>
+              </div>
+            )
           ) : (
             <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
               <p>
@@ -1164,7 +1198,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             </Button>
           )}
           {mode === 'approve' && (
-            <Button variant="success" disabled={busy || needsOzalitReceive} onClick={handleApprove}>
+            <Button variant="success" disabled={busy || needsOzalitReceive || ozalitAwaitingLeader} onClick={handleApprove}>
               <Check className="h-4 w-4" />
               {busy ? 'İşleniyor…' : 'Onayla'}
             </Button>

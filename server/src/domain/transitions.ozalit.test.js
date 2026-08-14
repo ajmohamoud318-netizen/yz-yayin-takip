@@ -38,6 +38,12 @@ describe('multi-party ozalit approval', () => {
     assert.equal(next.ozalit_approvals[0].id, 'L1')
   })
 
+  it('the second leader can approve before any designer', () => {
+    // Leader-first constrains the DESIGNERS only; leaders sign in any order.
+    const { project: next } = computeApproval(ozalitProject(), L2, ctx)
+    assert.equal(next.ozalit_approvals[0].id, 'L2')
+  })
+
   it('advances only once every leader AND designer has approved', () => {
     const r1 = computeApproval(ozalitProject(), L1, ctx)
     const r2 = computeApproval(r1.project, L2, ctx)
@@ -69,6 +75,56 @@ describe('multi-party ozalit approval', () => {
     const partial = ozalitProject({ ozalit_approvals: [{ id: 'L1', role: 'team_leader', name: 'Ayşenur' }] })
     const { project: next } = computeRejection(partial, 'renkler', [], 'designer', { actorName: L1.name, actor: L1 })
     assert.deepEqual(next.ozalit_approvals, [])
+  })
+})
+
+describe('ozalit leader-first approval order', () => {
+  const leaderSigned = (extra = {}) =>
+    ozalitProject({
+      ozalit_approvals: [{ id: 'L1', role: 'team_leader', name: 'Ayşenur', at: '2026-01-01T00:00:00.000Z' }],
+      ...extra,
+    })
+
+  it('a designer cannot approve before any team leader has', () => {
+    assert.throws(() => computeApproval(ozalitProject(), D1, ctx), /Önce ekip lideri onaylamalıdır/)
+  })
+
+  it('one leader approval opens the gate for the designer', () => {
+    const { project: next } = computeApproval(leaderSigned(), D1, ctx)
+    assert.equal(next.ozalit_approvals.length, 2)
+    assert.equal(next.ozalit_approvals[1].id, 'D1')
+  })
+
+  it('the designer does not need EVERY leader first, just one', () => {
+    // L2 still owes an approval — the project can't advance yet, but D1's
+    // sign-off is accepted and recorded.
+    const { project: next } = computeApproval(leaderSigned(), D1, ctx)
+    assert.equal(next.stage, 'ozalit_onay')
+    const { project: done } = computeApproval(next, L2, ctx)
+    assert.equal(done.stage, 'uretime_hazir')
+  })
+
+  it('a leader rejection closes the gate again for the next round', () => {
+    // The rejection wipes the ledger, so the re-delivered proof needs a fresh
+    // leader sign-off before the designer may approve it.
+    const { project: rejected } = computeRejection(
+      leaderSigned(), 'renkler', [], 'matbaa', { actorName: L1.name, actor: L1 },
+    )
+    const redelivered = { ...rejected, stage: 'ozalit_onay', ozalit_received: true }
+    assert.throws(() => computeApproval(redelivered, D1, ctx), /Önce ekip lideri onaylamalıdır/)
+  })
+
+  it('with no active team leader the designer is not stranded', () => {
+    // No leader is in the required set either, so nobody could ever open the
+    // gate — enforcing the order there would park the project forever.
+    const soloCtx = { teamLeaderIds: [], designerIds: ['D1'] }
+    const { project: next } = computeApproval(ozalitProject(), D1, soloCtx)
+    assert.equal(next.stage, 'uretime_hazir')
+  })
+
+  it('the receipt gate still comes first for the designer', () => {
+    const pending = leaderSigned({ ozalit_received: false })
+    assert.throws(() => computeApproval(pending, D1, ctx), /Teslim Alındı/)
   })
 })
 

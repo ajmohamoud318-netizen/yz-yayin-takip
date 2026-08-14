@@ -596,7 +596,8 @@ export function computeOzalitNotReceived(project, actor, ctx = {}) {
 
 function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
   // Multi-party approval: EVERY active team leader AND every assigned designer
-  // must approve before the project advances to Üretime Hazır. ctx carries the
+  // must approve before the project advances to Üretime Hazır, and a team
+  // leader has to go FIRST (see the leader-first gate below). ctx carries the
   // required approver ids (the approve route loads them). Each approval is
   // recorded; the project stays at ozalit_onay until the set is complete.
   const teamLeaderIds = ctx.teamLeaderIds ?? []
@@ -615,8 +616,26 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
     badRequest('Önce ozalit "Teslim Alındı" olarak işaretlenmelidir.')
   }
 
-  // Record this approver (idempotent — approving twice is a no-op).
   const approvals = Array.isArray(project.ozalit_approvals) ? project.ozalit_approvals : []
+
+  // Leader-first: the ozalit is the leadership's call, and a designer only
+  // counter-signs a proof a team leader has already accepted. Until one leader
+  // has approved, a designer's Onayla is refused — the required set is
+  // unchanged (everyone still signs), this only fixes the ORDER, so the ledger
+  // can never show designer sign-offs on a proof no leader has looked at.
+  // Any one leader opens the gate; the rest can approve in any order after.
+  //
+  // Skipped when there is no active team leader at all: none would be in the
+  // required set either, so enforcing it would strand the project at
+  // ozalit_onay with nobody able to open the gate.
+  const leaderApproved = approvals.some(
+    (a) => a.role === 'team_leader' || teamLeaderIds.includes(a.id),
+  )
+  if (isAssignedDesigner && teamLeaderIds.length > 0 && !leaderApproved) {
+    badRequest('Önce ekip lideri onaylamalıdır, tasarımcı onayı ondan sonra verilebilir.')
+  }
+
+  // Record this approver (idempotent — approving twice is a no-op).
   const already = approvals.some((a) => a.id === actor?.id)
   const nextApprovals = already
     ? approvals

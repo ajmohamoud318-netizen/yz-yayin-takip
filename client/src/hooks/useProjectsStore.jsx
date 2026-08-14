@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, createElement } from 'react'
 import api from '@/api'
 import { useAuth } from './useAuth.js'
+import { useOnResume } from './useOnResume.js'
 import { hydrateProductInfo } from '@/data/productCatalog'
 
 const ProjectsContext = createContext(null)
@@ -69,7 +70,15 @@ export function ProjectsProvider({ children }) {
     }
 
     refetch()
-    const t = setInterval(refetch, 30_000)
+    // Skip ticks while the app is in the background. On iOS the timer is
+    // frozen there anyway; on Android it just burns the phone's data plan
+    // polling a dashboard nobody is looking at. Coming back to the
+    // foreground refetches immediately (see useOnResume below), so nothing
+    // is lost by staying quiet.
+    const t = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      refetch()
+    }, 30_000)
 
     // Subscribe to cross-aggregate mutations (order reassignment,
     // handover confirm, etc.) so the bell red-dots and project cards
@@ -80,6 +89,21 @@ export function ProjectsProvider({ children }) {
       unsubscribe?.()
     }
   }, [bootstrapping, isAuthenticated, refetch, updateOne])
+
+  // Refresh the moment the app is foregrounded.
+  //
+  // The 30 s interval alone is not a refresh strategy for an installed PWA.
+  // iOS suspends the page when the app is backgrounded: the timer stops, and
+  // any request that was in flight is killed — which lands in refetch()'s
+  // catch and leaves `error` set. Resume an hour later and the app shows
+  // either an hour-old pipeline or the red "Projeler yüklenemedi" card, with
+  // no way out until a tick lands. That is the "I have to close it and open
+  // it again" symptom: force-quitting was just the user's way of forcing a
+  // refetch. refetch() clears `error` on entry, so this recovers both.
+  useOnResume(() => {
+    if (bootstrapping || !isAuthenticated) return
+    refetch()
+  })
 
   // Imported backlist products (`origin: 'legacy'` — see migration 031 and
   // AGENTS.md → "Kayıtlı ürünler (legacy)") are real projects sitting at a

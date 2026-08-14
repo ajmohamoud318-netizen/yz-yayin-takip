@@ -99,8 +99,12 @@ export function createHttpAuthRepository() {
      * Upload / replace the caller's avatar. Sends the file as
      * multipart/form-data to PUT /users/me/avatar; the server writes it
      * to disk, updates `users.avatar_url` + `avatar_updated_at`, and
-     * returns `{ avatarUrl }` (the relative URL the <img> tag should
-     * fetch).
+     * returns `{ avatarUrl, avatarUpdatedAt }` — the relative URL the
+     * <img> tag should fetch, plus the stamp the SPA appends as `?v=` so
+     * a replaced photo isn't served from the browser cache.
+     *
+     * Callers downscale before handing the file over (see lib/image.js),
+     * so this is tens of KB rather than a multi-MB camera photo.
      */
     async uploadAvatar(file) {
       if (!file) throw new Error('Dosya bulunamadı.')
@@ -108,6 +112,12 @@ export function createHttpAuthRepository() {
       fd.append('file', file)
       const { data } = await httpClient.put('/users/me/avatar', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        // Opt out of the client-wide 20 s ceiling: that budget is sized for
+        // JSON round trips, and a phone photo on a weak connection can
+        // legitimately take longer. An upload the user explicitly started is
+        // also visibly in progress, so a hang here is not the silent
+        // blank-screen failure the default timeout exists to prevent.
+        timeout: 0,
       })
       return data
     },

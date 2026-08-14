@@ -38,8 +38,9 @@ Demo Onay
     ↓
 Özalit Teslim
     ↓
-Özalit Onay — single-step
-    ✓ Ayşenur approves → Üretime Hazır
+Özalit Onay — multi-party, leader-first
+    ✓ a team leader approves first, then every other leader + every assigned
+      designer counter-signs → Üretime Hazır (only when the set is complete)
     ✗ Ayşenur rejects (reason REQUIRED, target = matbaa|designer) → back to Tasarım (ozalit_attempt +1)
     ↓
 Üretime Hazır
@@ -133,6 +134,7 @@ Enforced by:
 - `team_leader` can reject at any stage
 - At Özalit rejection, the leader picks the loop target: `matbaa` (Matbaa re-delivers ozalit) or `designer` (Tasarımcı reworks first)
 - **"Teslim Alındı" (received) — the ozalit receipt gate (migration `035__ozalit_received.sql`)**: the delivered ozalit must be acknowledged by the team leader or an assigned designer before *anyone* can sign off on it. `computeOzalitOnayApproval` refuses with "Önce ozalit «Teslim Alındı» olarak işaretlenmelidir." until `ozalit_received` is true, and `availableActions` hides Onayla/Reddet until then — you can't approve a physical proof nobody has taken delivery of. One acknowledgment covers the whole multi-party round (there is only one proof), and the matbaa's delivery clears it again so every ozalit round needs its own. Route: `POST /api/projects/:id/ozalit-receive`. This mirrors the demo gate from migration 021 — whose note that ozalit is "intentionally NOT gated" no longer holds.
+- **Leader-first approval order**: ozalit onay is multi-party (every active team leader + every assigned designer must approve), but the approvals are *ordered* — a designer may only counter-sign a proof a team leader has already approved. `computeOzalitOnayApproval` refuses a designer with "Önce ekip lideri onaylamalıdır, tasarımcı onayı ondan sonra verilebilir." while the ledger holds no `team_leader` entry. Any **one** leader opens the gate (a second leader's approval is not a second gate), and after that everyone remaining signs in any order; a rejection or a "Teslim Alınamadı" wipes the ledger, so the next round needs a fresh leader sign-off. The rule is skipped when there is no active team leader at all — none would be in the required set either, and enforcing it would strand the project at `ozalit_onay`. Client mirror: `ozalitLeaderApproved` / `canApproveOzalitNow` in `client/src/domain/services/pipeline.js`, used by the project detail action row, the Onaylar queue, the spec-sheet approve dialog, and the designer's sidebar badge, so a designer never sees an Onayla the server would refuse.
 - **"Teslim Alınamadı" (not received)**: the counterpart, for when the delivered ozalit never reached the leader/designer — only valid before it's been acknowledged. `computeOzalitNotReceived` sends the project back to `ozalit_teslim` with the matbaa re-delivery lock (`reject_target: 'matbaa'`, same mechanism as reject-to-matbaa), wipes the partial multi-party approval ledger, and bumps `ozalit_attempt`. Route: `POST /api/projects/:id/ozalit-not-received`.
 - Both teslim decisions are behind an "emin misiniz?" confirm in the UI (`ConfirmDialog` on the project detail, an inline yes/no inside the spec-sheet and approval dialogs) — they're one click, adjacent to each other, and neither can be undone from the app. Same for the demo pair.
 
@@ -782,16 +784,31 @@ POST   /api/notifications/seen         mark all seen (bell open; badge clear) �
 ```
 ### Users
 ```
-GET    /api/users                     any authenticated user → { id, name, role, is_active } minimal roster
+GET    /api/users                     any authenticated user → { id, name, role, is_active,
+                                       avatar_url, avatar_updated_at } minimal roster
                                        (assignee-name lookups); team_leader gets the full roster
                                        (email, invited/joined, daily_status, work_log_today)
 POST   /api/users/invite              { name, email, role: 'designer'|'printer'|'satis' } → sends email [team_leader]
 PATCH  /api/users/:id/deactivate      [team_leader]
 PATCH  /api/users/:id/reactivate      [team_leader]
+PUT    /api/users/me/avatar           multipart `file` → { avatarUrl, avatarUpdatedAt } (own avatar only)
+DELETE /api/users/me/avatar           clears both columns + the file on disk
+GET    /api/users/:id/avatar/file     the image bytes; unauthenticated (an <img> can't send X-User-Id)
 ```
 `GET /api/users` also returns, per row, `work_log_today` (today's Çalışma
 Defteri entries as a JSON array) and `daily_status` (the newest of them) —
 both derived in SQL, so /team renders everyone's day with no extra request.
+
+**Avatar caching.** `/api/users/:id/avatar/file` returns different bytes
+for the same URL after someone replaces their photo, so the SPA appends
+`?v=<avatar_updated_at as epoch ms>` (`avatarSrc()` in
+`client/src/components/UserAvatar.jsx`) and the route caches accordingly:
+`immutable` for a year when `?v=` is present, `no-cache` + `ETag` (→ 304)
+without it. That is why `avatar_updated_at` must travel alongside
+`avatar_url` in every payload that feeds a `<UserAvatar>` — drop it and a
+changed photo sits stale in the browser cache. Uploads are downscaled to a
+512×512 JPEG in the browser first (`client/src/lib/image.js`), which keeps
+a phone photo under the 2 MB server cap and off the mobile uplink.
 
 ### Work Log (Çalışma Defteri)
 > **Disabled in the UI.** `WORK_LOG_ENABLED` in `client/src/lib/work-log.js`

@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Loader2 } from 'lucide-react'
 
 import { useAuth } from './hooks/useAuth.js'
 import { TooltipProvider } from './components/ui/tooltip.jsx'
@@ -38,13 +39,34 @@ import RouteFallback from './components/RouteFallback.jsx'
    circular import (AppShell wraps <Outlet /> in <Suspense fallback=…>,
    and the fallback component itself must not live in either file). */
 
+/**
+ * Shown only while the cookie session is being checked and there's nothing
+ * cached to render optimistically. This used to be a bare `null`, which on a
+ * warm reload is invisible — but a cold launch from the Home Screen goes
+ * straight from the iOS splash into a white void for as long as `/auth/me`
+ * takes, and a white void reads as a crashed app. A spinner on the app's own
+ * background says "connecting", which is the truth.
+ */
+function AuthSplash() {
+  return (
+    <div
+      className="flex min-h-[100dvh] items-center justify-center bg-background"
+      role="status"
+      aria-live="polite"
+      aria-label="Oturum kontrol ediliyor"
+    >
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
+    </div>
+  )
+}
+
 function RequireAuth({ children }) {
   const { isAuthenticated, bootstrapping } = useAuth()
   const location = useLocation()
   // While the initial cookie-session check is in flight and we have no
-  // cached user yet, render nothing rather than bouncing to /login — a
-  // valid httpOnly session may be about to rehydrate us.
-  if (!isAuthenticated && bootstrapping) return null
+  // cached user yet, hold rather than bouncing to /login — a valid httpOnly
+  // session may be about to rehydrate us.
+  if (!isAuthenticated && bootstrapping) return <AuthSplash />
   if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location }} />
   return children
 }

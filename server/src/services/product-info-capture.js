@@ -144,15 +144,30 @@ export async function captureProductInfoFromSpec(client, { project, actor }) {
   // projects have no ozalit stage at all (STAGE_FLOW.CIN), so they fall
   // through to their latest demo sheet. Ordering `kind = 'ozalit'` first does
   // both in one query.
+  //
+  // "Prefer" means "prefer a sheet that HAS a spec", not "take the ozalit row
+  // and give up". On a project with no catalog yet — the exact case this
+  // capture exists for — the leader's ozalit form opens empty (SpecFormDialog
+  // seeds `selectedComponents` from catalogComponents, which is []), so
+  // clicking "Matbaaya Gönder" without retyping the spec stores an ozalit
+  // payload with no rows at all. Taking that one row and stopping meant the
+  // demo sheet holding the designer's actual spec was never read and the
+  // project entered production with zero ürün bilgileri — the bug this whole
+  // module was written to prevent. So walk the sheets in preference order and
+  // capture the first one that yields anything.
   const { rows: specRows } = await client.query(
     `SELECT payload
        FROM demos
       WHERE project_id = $1
       ORDER BY (kind = 'ozalit') DESC, attempt DESC, created_at DESC
-      LIMIT 1`,
+      LIMIT 50`,
     [project.id],
   )
-  const captured = componentsFromSpecPayload(specRows[0]?.payload, project.title)
+  let captured = []
+  for (const row of specRows) {
+    captured = componentsFromSpecPayload(row.payload, project.title)
+    if (captured.length > 0) break
+  }
   if (captured.length === 0) return null
 
   // FOR UPDATE so a leader saving Ürün Bilgileri at this exact moment can't

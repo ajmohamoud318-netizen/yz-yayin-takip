@@ -117,6 +117,37 @@ function pickWritableRoot() {
 
 export const ACTIVE_AVATAR_DIR = pickWritableRoot()
 
+/**
+ * Response headers for a served avatar.
+ *
+ * The stored URL (`/api/users/<id>/avatar/file`) is identical before and
+ * after someone replaces their photo, so it can only be cached safely
+ * when the caller has told us WHICH version it wants. The SPA does that
+ * by appending `?v=<avatar_updated_at epoch ms>` (see avatarSrc()):
+ *
+ *   versioned   → the bytes behind this exact URL can never change, so
+ *                 cache them for a year. A new upload bumps `v`, i.e. a
+ *                 different URL, so the new photo shows up immediately.
+ *   unversioned → an older client, or a user record fetched before the
+ *                 list route carried `avatar_updated_at`. We must not pin
+ *                 anything here; `no-cache` still lets the browser keep
+ *                 the bytes, it just has to revalidate, and the ETag makes
+ *                 that a 304 instead of a re-download.
+ *
+ * A blanket `max-age` (this route used to send 300) is what made a
+ * changed photo take minutes to appear.
+ */
+export function avatarCacheHeaders({ versioned, userId, updatedAt }) {
+  const stamp = updatedAt ? new Date(updatedAt).getTime() : 0
+  return {
+    cacheControl: versioned
+      ? 'private, max-age=31536000, immutable'
+      : 'private, no-cache',
+    // Identity of the *content*: which user, and when it was last written.
+    etag: `"av-${userId}-${Number.isFinite(stamp) ? stamp : 0}"`,
+  }
+}
+
 export function extForMime(mime) {
   return ALLOWED_MIME.get(String(mime || '').toLowerCase()) ?? null
 }

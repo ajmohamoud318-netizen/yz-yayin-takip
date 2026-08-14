@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Camera, Check, Eye, EyeOff, KeyRound, LoaderCircle, LogOut, Mail, Pencil, ShieldCheck, User } from 'lucide-react'
 import { toast } from 'sonner'
@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import api, { ROLE_LABELS } from '@/api'
+import { MAX_SOURCE_BYTES, prepareAvatarFile } from '@/lib/image'
 import { initials } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
@@ -24,6 +25,17 @@ export default function Settings() {
   // Avatar upload state
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [removingAvatar, setRemovingAvatar] = useState(false)
+  // Object URL for the just-picked photo. The upload itself is a round
+  // trip, and re-fetching the stored file afterwards is another — showing
+  // the local bytes right away means the new face appears the instant it's
+  // chosen instead of after the network settles. These are the exact bytes
+  // we upload, so it is a preview, not a guess. Kept out of `updateUser`
+  // on purpose: a blob: URL is dead after a reload and must never reach
+  // the localStorage-mirrored auth user.
+  const [preview, setPreview] = useState(null)
+  // Revoke on replace and on unmount — the cleanup closes over the URL
+  // being replaced, so this is the only place that needs to free one.
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview) }, [preview])
 
   async function handleAvatarChange(e) {
     const file = e.target.files?.[0]
@@ -34,16 +46,34 @@ export default function Settings() {
       toast.error('Desteklenen formatlar: JPEG, PNG, WebP.')
       return
     }
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('Dosya 2 MB sınırını aşıyor.')
+    if (file.size > MAX_SOURCE_BYTES) {
+      toast.error('Dosya çok büyük. Lütfen daha küçük bir fotoğraf seç.')
       return
     }
     setUploadingAvatar(true)
     try {
-      const { avatarUrl } = await api.uploadAvatar(file)
-      updateUser({ avatar_url: avatarUrl, avatar_updated_at: new Date().toISOString() })
+      // Downscale first: a camera-roll photo is several MB, which is both
+      // slow to upload on mobile data and over the server's 2 MB cap. The
+      // 512×512 JPEG that comes back is a few tens of KB.
+      const upload = await prepareAvatarFile(file)
+      if (upload.size > 2 * 1024 * 1024) {
+        toast.error('Dosya 2 MB sınırını aşıyor.')
+        return
+      }
+      setPreview(URL.createObjectURL(upload))
+      const { avatarUrl, avatarUpdatedAt } = await api.uploadAvatar(upload)
+      // `avatar_updated_at` is what avatarSrc() turns into the `?v=` cache
+      // buster, so it has to change on every upload or the browser keeps
+      // serving the previous photo from cache. Prefer the server's stamp;
+      // fall back to local time if an older build didn't send one.
+      updateUser({
+        avatar_url: avatarUrl,
+        avatar_updated_at: avatarUpdatedAt ?? new Date().toISOString(),
+      })
       toast.success('Profil fotoğrafın güncellendi.')
     } catch (err) {
+      // Drop the optimistic preview — nothing was stored.
+      setPreview(null)
       toast.error(err?.message || 'Fotoğraf yüklenemedi.')
     } finally {
       setUploadingAvatar(false)
@@ -54,6 +84,7 @@ export default function Settings() {
     setRemovingAvatar(true)
     try {
       await api.deleteAvatar()
+      setPreview(null)
       updateUser({ avatar_url: null, avatar_updated_at: null })
       toast.success('Profil fotoğrafı kaldırıldı.')
     } catch (err) {
@@ -62,6 +93,10 @@ export default function Settings() {
       setRemovingAvatar(false)
     }
   }
+
+  // What the big avatar on this page renders: the local pick while it's
+  // fresh, otherwise whatever the session says is stored.
+  const shownUser = preview ? { ...user, avatar_url: preview, avatar_updated_at: null } : user
 
   // Change-password form state
   const [currentPassword, setCurrentPassword] = useState('')
@@ -135,12 +170,25 @@ export default function Settings() {
                 aria-label="Profil fotoğrafını düzenle"
                 className="group relative block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
               >
-                <UserAvatar user={user} size="2xl" />
-                <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-black/35 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                {/* 80 px on a phone, 96 px once there's room. This is the
+                    one screen where the photo is the subject rather than a
+                    label on a row, so it gets to be big enough to actually
+                    look at — and big enough to hit without aiming. */}
+                <UserAvatar user={shownUser} size="3xl" className="sm:h-24 sm:w-24" />
+                {/* Hover reveals the camera hint on desktop — but there is
+                    no hover on a phone, so force the overlay on while the
+                    upload is in flight or it looks like nothing happened. */}
+                <span
+                  className={cn(
+                    'pointer-events-none absolute inset-0 flex items-center justify-center',
+                    'rounded-full bg-black/35 text-white transition-opacity',
+                    uploadingAvatar ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+                  )}
+                >
                   {uploadingAvatar ? (
-                    <LoaderCircle className="h-5 w-5 animate-spin" />
+                    <LoaderCircle className="h-6 w-6 animate-spin" />
                   ) : (
-                    <Camera className="h-5 w-5" />
+                    <Camera className="h-6 w-6" />
                   )}
                 </span>
               </button>

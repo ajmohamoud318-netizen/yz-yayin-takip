@@ -43,6 +43,7 @@ import { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import { cn, formatDateTr, initials } from '@/lib/utils'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { isSubtaskDone } from '@/domain/services/progress'
+import { canApproveOzalitNow, ozalitLeaderApproved } from '@/domain'
 
 export default function ProjectDetail() {
   const { id } = useParams()
@@ -856,6 +857,16 @@ export default function ProjectDetail() {
                 <p className="text-sm font-semibold text-emerald-800">
                   Ozalit onayı, tüm ekip liderleri ve atanmış tasarımcılar onaylamalı
                 </p>
+                {/* Leader-first: designers counter-sign after a leader has
+                    approved, so say whose move it is instead of leaving them
+                    hunting for a button they don't have yet. */}
+                {!ozalitLeaderApproved(project) && (
+                  <p className="mt-1 text-xs text-emerald-700">
+                    {user?.role === 'designer'
+                      ? 'Önce ekip lideri onaylayacak, ardından onayınız açılır.'
+                      : 'Onay sırası ekip liderinde, tasarımcı onayı ondan sonra verilebilir.'}
+                  </p>
+                )}
                 {(project.ozalit_approvals ?? []).length > 0 ? (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {(project.ozalit_approvals ?? []).map((a) => (
@@ -1381,7 +1392,10 @@ function availableActions({ project, user }) {
     // Each leader/designer approves once. A leader who hasn't decided yet sees
     // both Onayla and Reddet; once they approve, BOTH disappear (they've
     // committed) — a different leader who hasn't approved still sees Reddet.
-    if ((role === 'team_leader' || isAssignedDesigner) && !alreadyApproved) {
+    // canApproveOzalitNow also carries the leader-first rule: an assigned
+    // designer gets no Onayla until a team leader has signed off (the server
+    // refuses it too), so the button is never offered as a dead end.
+    if (canApproveOzalitNow(user, project) && !alreadyApproved) {
       set.add('approve')
     }
     if (role === 'team_leader' && !alreadyApproved) {

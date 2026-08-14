@@ -198,18 +198,50 @@ test('a delivered ozalit asks for receipt, not for an approval that is blocked',
   }
 })
 
-test('acknowledging an ozalit asks everyone who must sign off — except the clicker', async () => {
-  // Ozalit onay is multi-party (every leader AND every assigned designer), so
-  // unlike the demo there is no leader-only split here.
+test('acknowledging an ozalit asks the leader first, designers only for info', async () => {
+  // Ozalit onay is multi-party but leader-first: at receipt time a designer
+  // still cannot approve, so telling them "onayınızı bekliyor" would name an
+  // action the server refuses. Same split as the demo leg.
   const client = fakeClient()
   await notifyOzalitReceived(client, {
     project, actor: { id: 'u-aylin', name: 'Aylin' }, assignees,
   })
-  assert.deepEqual(client.rows.map((r) => r.userId).sort(), ['u-ayse', 'u-feyza'])
+  const byUser = Object.fromEntries(client.rows.map((r) => [r.userId, r]))
+  assert.ok(!('u-aylin' in byUser), 'the acknowledging designer must not ping themselves')
+  assert.equal(byUser['u-ayse'].type, 'ozalit_approval_pending')
+  assert.match(byUser['u-ayse'].body, /onayınızı bekliyor/)
+  assert.equal(byUser['u-feyza'].type, 'ozalit_received')
+  assert.ok(!/onayınızı/.test(byUser['u-feyza'].body))
+})
+
+test('a leader ozalit sign-off is the designers\' cue, not a re-run of the delivery ping', async () => {
+  // Partial approval keeps the stage put (from === to). The naive switch would
+  // fall into `ozalit_onay` and re-announce "matbaa teslim etti" to people who
+  // already took delivery; what they actually need is "your turn".
+  const client = fakeClient()
+  await notifyProjectTransition(client, {
+    project: { ...project, ozalit_approvals: [{ id: 'u-ayse', role: 'team_leader' }] },
+    fromStage: 'ozalit_onay', toStage: 'ozalit_onay', action: 'approve',
+    actor: { id: 'u-ayse', name: 'Ayşenur' }, assignees,
+  })
+  assert.deepEqual(client.rows.map((r) => r.userId).sort(), ['u-aylin', 'u-feyza'])
   for (const r of client.rows) {
     assert.equal(r.type, 'ozalit_approval_pending')
-    assert.match(r.body, /onayınızı bekliyor/)
+    assert.match(r.body, /onayladı, onayınız bekleniyor/)
   }
+})
+
+test('an approver who already signed is not asked again on the next sign-off', async () => {
+  const client = fakeClient()
+  await notifyProjectTransition(client, {
+    project: {
+      ...project,
+      ozalit_approvals: [{ id: 'u-ayse', role: 'team_leader' }, { id: 'u-aylin', role: 'designer' }],
+    },
+    fromStage: 'ozalit_onay', toStage: 'ozalit_onay', action: 'approve',
+    actor: { id: 'u-aylin', name: 'Aylin' }, assignees,
+  })
+  assert.deepEqual(client.rows.map((r) => r.userId), ['u-feyza'])
 })
 
 test('a ÇİN demo approval reaches the designers who drew it', async () => {

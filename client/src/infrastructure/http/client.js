@@ -35,6 +35,18 @@ export const API_ORIGIN = baseURL.replace(/\/api\/?$/, '')
 
 const client = axios.create({
   baseURL,
+  // A request that never settles is worse than one that fails outright.
+  // Axios waits FOREVER by default, and an installed PWA relaunched from the
+  // Home Screen routinely fires its first request while the radio is still
+  // waking up — iOS neither completes nor rejects that connection. Without a
+  // ceiling, `GET /auth/me` hangs, `bootstrapping` never flips false,
+  // <RequireAuth> keeps rendering null, and the user stares at a blank screen
+  // until they force-quit the app and reopen it (the exact "I have to close
+  // it and come back" report). 20 s clears a slow-but-working mobile round
+  // trip and still fails fast enough to show a real error.
+  //
+  // Long uploads opt out per-request (see uploadAvatar's `timeout: 0`).
+  timeout: 20_000,
   // Send the httpOnly session cookie on every request. A no-op for the
   // default same-origin setup (where cookies are sent anyway), but kept
   // so the VITE_API_BASE_URL escape hatch still works cross-origin — the
@@ -110,7 +122,15 @@ client.interceptors.response.use(
   (resp) => resp,
   (err) => {
     const status = err?.response?.status
-    const message = err?.response?.data?.error ?? err?.response?.data?.message ?? err.message
+    // No `response` at all means the request never reached the API: timed out,
+    // offline, radio still waking after a PWA relaunch, proxy down. Axios's own
+    // wording for these ("timeout of 20000ms exceeded", "Network Error") is
+    // English and reads like a crash, so it gets replaced before it can reach a
+    // toast or an error card.
+    const offline = !err?.response
+    const message = offline
+      ? 'Sunucuya ulaşılamadı. Bağlantını kontrol edip tekrar dene.'
+      : err?.response?.data?.error ?? err?.response?.data?.message ?? err.message
 
     // A 401 from the API means the session/header is no longer accepted.
     // The right UX is to drop the cached credentials and bounce to the
@@ -147,6 +167,11 @@ client.interceptors.response.use(
 
     return Promise.reject(Object.assign(new Error(message), {
       status,
+      // `offline: true` = the API never answered, so nothing about the
+      // session can be inferred. Callers that would otherwise treat a
+      // failure as "signed out" (AuthProvider) check this before tearing
+      // anything down.
+      offline,
       code: err?.response?.data?.code,
       cause: err,
     }))

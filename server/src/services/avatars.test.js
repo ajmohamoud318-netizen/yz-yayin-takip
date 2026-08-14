@@ -91,3 +91,56 @@ test('deleteAvatar removes files across both new + legacy locations', async () =
     await fs.unlink(path.join(root, `${uid}.png`)).catch(() => {})
   }
 })
+
+/**
+ * Cache policy for the served avatar file.
+ *
+ * The URL `/api/users/<id>/avatar/file` is byte-unstable: replacing a
+ * photo changes what it returns without changing the string. The old
+ * blanket `Cache-Control: private, max-age=300` therefore left browsers
+ * showing the previous photo for up to five minutes — the "it takes ages
+ * to update" report. Caching is now conditional on the SPA's `?v=` stamp.
+ */
+test('avatarCacheHeaders pins only the versioned URL', () => {
+  const versioned = avatars.avatarCacheHeaders({
+    versioned: true,
+    userId: 'u1',
+    updatedAt: '2026-08-14T09:00:00.000Z',
+  })
+  assert.match(versioned.cacheControl, /immutable/)
+  assert.match(versioned.cacheControl, /max-age=31536000/)
+})
+
+test('avatarCacheHeaders never pins an unversioned URL', () => {
+  const plain = avatars.avatarCacheHeaders({
+    versioned: false,
+    userId: 'u1',
+    updatedAt: '2026-08-14T09:00:00.000Z',
+  })
+  // Anything with a positive max-age here re-creates the stale-photo bug.
+  assert.equal(plain.cacheControl, 'private, no-cache')
+})
+
+test('avatarCacheHeaders etag changes when the photo is replaced', () => {
+  const before = avatars.avatarCacheHeaders({
+    versioned: false, userId: 'u1', updatedAt: '2026-08-14T09:00:00.000Z',
+  }).etag
+  const after = avatars.avatarCacheHeaders({
+    versioned: false, userId: 'u1', updatedAt: '2026-08-14T09:05:00.000Z',
+  }).etag
+  assert.notEqual(after, before, 'a re-upload must invalidate the cached copy')
+  // Same photo, second request: unchanged, so the browser gets a 304.
+  assert.equal(
+    avatars.avatarCacheHeaders({
+      versioned: false, userId: 'u1', updatedAt: '2026-08-14T09:00:00.000Z',
+    }).etag,
+    before,
+  )
+})
+
+test('avatarCacheHeaders tolerates a missing / unparseable stamp', () => {
+  for (const updatedAt of [null, undefined, 'not-a-date']) {
+    const { etag } = avatars.avatarCacheHeaders({ versioned: false, userId: 'u1', updatedAt })
+    assert.doesNotMatch(etag, /NaN/, `etag must stay well-formed for ${String(updatedAt)}`)
+  }
+})

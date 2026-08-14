@@ -54,7 +54,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
-import api, { ROLE_LABELS, STATUS_META, statusKeyForProject, canRequestHandover } from '@/api'
+import api, { ROLE_LABELS, STATUS_META, statusKeyForProject, canRequestHandover, ozalitLeaderApproved } from '@/api'
 import { cn, initials } from '@/lib/utils'
 import NewProjectDialog from '@/components/NewProjectDialog'
 import WorkLogPill from '@/components/WorkLogPill'
@@ -132,9 +132,12 @@ export default function AppShell() {
       if (role === 'printer' && p.stage === 'uretime_hazir') productionReady++
       if (role === 'printer' && canRequestHandover(p)) handoverEligible++
       if (role === 'designer' && (p.assignees ?? []).some((a) => a.id === user?.id)) myProjects++
-      // Designer's pending ozalit approvals: assigned, at ozalit_onay, not yet approved by them.
+      // Designer's pending ozalit approvals: assigned, at ozalit_onay, a team
+      // leader has already signed off (approval is leader-first, so before that
+      // there is nothing they can do), and they haven't approved yet.
       if (role === 'designer' && p.stage === 'ozalit_onay' &&
           (p.assignees ?? []).some((a) => a.id === user?.id) &&
+          ozalitLeaderApproved(p) &&
           !(p.ozalit_approvals ?? []).some((a) => a.id === user?.id)) {
         designerOzalitApprovals++
       }
@@ -673,6 +676,7 @@ const TYPE_ICON = {
   ozalit_requestable: FileText,
   ozalit_delivery_pending: Send,
   ozalit_receipt_pending: Truck,
+  ozalit_received: PackageCheck,
   ozalit_approval_pending: BadgeCheck,
   production_ready: Factory,
   in_production: Factory,

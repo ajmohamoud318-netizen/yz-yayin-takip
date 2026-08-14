@@ -20,6 +20,8 @@ export {
   canRequestHandover,
   assertHandoverEligible,
   isOzalitApprover,
+  ozalitLeaderApproved,
+  canApproveOzalitNow,
   isDemoApprover,
   canRejectAtStage,
   canEditProductInfo,

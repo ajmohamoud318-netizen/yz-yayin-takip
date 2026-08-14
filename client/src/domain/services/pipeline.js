@@ -181,6 +181,9 @@ export function assertDemoCanAdvance(progress) {
  *
  *   isOzalitApprover  — advance `ozalit_onay → uretime_hazir`
  *                       owner: team_leader only
+ *   ozalitLeaderApproved / canApproveOzalitNow
+ *                     — sign off at `ozalit_onay` (multi-party, leader-first)
+ *                       owner: team_leader, then the assigned designers
  *   isDemoApprover    — advance `demo_onay | cin_demo_onay → ozalit_teslim |
  *                              uretime_hazir`
  *                       owner: team_leader  OR  printer
@@ -198,6 +201,41 @@ export function isOzalitApprover(user) {
   if (!user) return false
   if (user.role === 'team_leader') return true
   return false
+}
+
+/**
+ * Ozalit onay is multi-party AND leader-first: every active team leader and
+ * every assigned designer must sign off, but a designer may only counter-sign
+ * a proof a team leader has already approved. The server enforces this in
+ * `computeOzalitOnayApproval`; this is the UI's copy of the rule, so the
+ * designer sees "ekip lideri onayı bekleniyor" instead of an Onayla button
+ * that errors.
+ *
+ * The client can't see the active-leader list, so it reads the ledger's own
+ * recorded roles — which is what the server writes on every approval.
+ *
+ * @param {{ ozalit_approvals?: Array<{ role?: string }> }} project
+ */
+export function ozalitLeaderApproved(project) {
+  return (project?.ozalit_approvals ?? []).some((a) => a.role === 'team_leader')
+}
+
+/**
+ * Can this user approve THIS project's ozalit right now? Combines the role
+ * check (leader or assigned designer), the receipt gate (migration 035) and
+ * the leader-first order above. Does not consider whether they already
+ * approved — callers hide the button on that separately.
+ *
+ * @param {{ id: string, role: string }} user
+ * @param {{ ozalit_received?: boolean, assignees?: Array<{ id: string }> }} project
+ */
+export function canApproveOzalitNow(user, project) {
+  if (!user || !project) return false
+  if (!project.ozalit_received) return false
+  if (user.role === 'team_leader') return true
+  const isAssignedDesigner =
+    user.role === 'designer' && (project.assignees ?? []).some((a) => a.id === user.id)
+  return isAssignedDesigner && ozalitLeaderApproved(project)
 }
 
 /**

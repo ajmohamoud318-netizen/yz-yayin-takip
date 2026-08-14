@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useNotifications } from '@/hooks/useNotifications'
 import { useAuth } from '@/hooks/useAuth.js'
+import { useOnResume } from '@/hooks/useOnResume.js'
 import { takePendingPushTarget } from '@/lib/push-target.js'
 
 /**
@@ -149,18 +150,13 @@ export default function PushBridge() {
     }
   }, [drain])
 
-  // A push that arrived while the tab was in the background should be reflected
-  // the moment the user comes back, without waiting for the 15s poll. Kept on
-  // `visibilitychange` alone — the resume listeners above deliberately overlap
-  // (focus fires alongside it on desktop), and one refetch per return is
-  // enough. A tap that routes somewhere refetches via `go()` regardless.
-  useEffect(() => {
-    function onVisible() {
-      if (document.visibilityState === 'visible') refetch()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [refetch])
+  // A push that arrived while the app was in the background should be reflected
+  // the moment the user comes back, without waiting for the 15s poll (which is
+  // now paused while hidden, making this the only thing that refreshes the bell
+  // on return). `useOnResume` covers the same three events as the drain above
+  // and throttles the overlap, so one return still means one refetch. A tap
+  // that routes somewhere refetches via `go()` regardless.
+  useOnResume(refetch)
 
   return null
 }
