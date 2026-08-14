@@ -20,6 +20,11 @@ export default defineConfig({
     // trivial and it unblocks future tests.
     environment: 'jsdom',
     globals: true,
+    // Stubs the canvas 2D context jsdom doesn't implement. Required at
+    // IMPORT time, not render time: lottie-web draws on a canvas while its
+    // module is evaluated, so anything reaching it (App.jsx →
+    // CelebrationOverlay) throws on import without this. See the file.
+    setupFiles: ['./src/test-setup.js'],
     include: ['src/**/*.test.{js,jsx}'],
     // mirror `useProjects`/etc naming for future UI tests
     exclude: ['node_modules', 'dist'],
