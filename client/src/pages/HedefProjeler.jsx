@@ -4,7 +4,6 @@ import { toast } from 'sonner'
 
 import { API_ORIGIN } from '@/api'
 import { useTargetProjectIdeas } from '@/hooks/useTargetProjectIdeas'
-import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -43,11 +42,11 @@ export default function HedefProjeler() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <header className="flex items-center justify-between gap-3">
-        <div className="inline-flex items-center gap-2">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary">
-            <Target className="h-4 w-4" />
+        <div className="inline-flex items-center gap-2.5">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+            <Target className="h-[18px] w-[18px]" />
           </span>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Hedef Projeler</h1>
@@ -65,20 +64,20 @@ export default function HedefProjeler() {
       </header>
 
       {loading ? (
-        <div className="space-y-2.5">
-          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-20" />)}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2].map((i) => <Skeleton key={i} className="aspect-[4/5] rounded-2xl" />)}
         </div>
       ) : ideas.length === 0 ? (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <Target className="mx-auto mb-2 h-8 w-8 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">Henüz hedef proje eklenmedi.</p>
-          </CardContent>
-        </Card>
+        <div className="grid place-items-center gap-3 rounded-2xl border border-dashed bg-card/50 px-6 py-16 text-center">
+          <span className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+            <Target className="h-6 w-6" />
+          </span>
+          <p className="text-sm text-muted-foreground">Henüz hedef proje eklenmedi.</p>
+        </div>
       ) : (
-        <div className="space-y-2.5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {ideas.map((idea) => (
-            <TargetIdeaRow
+            <TargetIdeaCard
               key={idea.id}
               idea={idea}
               canRemove={canRemove(idea)}
@@ -109,7 +108,7 @@ function ideaImageSrc(idea) {
   return `${API_ORIGIN}${idea.image_url}${v}`
 }
 
-function TargetIdeaRow({ idea, canRemove, onRemove, onUploadImage, onRemoveImage }) {
+function TargetIdeaCard({ idea, canRemove, onRemove, onUploadImage, onRemoveImage }) {
   const [removing, setRemoving] = useState(false)
   const [imageBusy, setImageBusy] = useState(false)
   const fileInputRef = useRef(null)
@@ -150,92 +149,99 @@ function TargetIdeaRow({ idea, canRemove, onRemove, onUploadImage, onRemoveImage
 
   const href = idea.link && (/^https?:\/\//i.test(idea.link) ? idea.link : `https://${idea.link}`)
   const imgSrc = ideaImageSrc(idea)
+  const active = canRemove && !idea.pending
 
   return (
-    <Card className={cn('transition-colors', (idea.pending || removing) && 'opacity-50')}>
-      <CardContent className="flex items-start gap-3 p-4">
-        {imgSrc ? (
-          <a href={imgSrc} target="_blank" rel="noopener noreferrer" className="shrink-0">
-            <img
-              src={imgSrc}
-              alt=""
-              className="h-14 w-14 rounded-md object-cover ring-1 ring-border"
-            />
-          </a>
-        ) : (
-          <span className="grid h-14 w-14 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
-            <Target className="h-6 w-6" />
-          </span>
-        )}
+    <div
+      className={cn(
+        'group flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-all duration-200',
+        (idea.pending || removing) ? 'opacity-50' : 'hover:-translate-y-px hover:border-primary/30 hover:shadow-md',
+      )}
+    >
+      {imgSrc ? (
+        <a href={imgSrc} target="_blank" rel="noopener noreferrer" className="block aspect-[4/3] w-full shrink-0 overflow-hidden bg-muted">
+          <img
+            src={imgSrc}
+            alt=""
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          />
+        </a>
+      ) : (
+        <div className="grid aspect-[4/3] w-full shrink-0 place-items-center bg-primary/[0.05] text-primary/30">
+          <Target className="h-9 w-9" />
+        </div>
+      )}
 
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold leading-snug">{idea.name}</p>
-          {idea.notes && (
-            <p className="mt-0.5 whitespace-pre-wrap text-xs text-muted-foreground">{idea.notes}</p>
+      <div className="flex flex-1 flex-col gap-2.5 p-4">
+        <div className="flex items-start justify-between gap-2">
+          <p className="min-w-0 flex-1 text-sm font-semibold leading-snug">{idea.name}</p>
+          {active && (
+            <button
+              type="button"
+              onClick={handleRemove}
+              disabled={removing}
+              aria-label="Fikri sil"
+              title="Fikri sil"
+              className="-mr-1.5 -mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
           )}
-
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-            {href && (
-              <a
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-              >
-                <LinkIcon className="h-3 w-3" />
-                Bağlantı
-              </a>
-            )}
-            {canRemove && !idea.pending && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={imageBusy}
-                  className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                >
-                  <ImagePlus className="h-3 w-3" />
-                  {imgSrc ? 'Görseli değiştir' : 'Görsel ekle'}
-                </button>
-                {imgSrc && (
-                  <button
-                    type="button"
-                    onClick={handleRemoveImage}
-                    disabled={imageBusy}
-                    className="text-xs text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
-                  >
-                    Görseli kaldır
-                  </button>
-                )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handlePickImage}
-                />
-              </>
-            )}
-          </div>
-
-          <p className="mt-1.5 text-[11px] text-muted-foreground">
-            {idea.created_by_name ?? 'Ekipten biri'} · {formatDateTr(idea.created_at)}
-          </p>
         </div>
 
-        {canRemove && !idea.pending && (
-          <button
-            type="button"
-            onClick={handleRemove}
-            disabled={removing}
-            aria-label="Fikri sil"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+        {idea.notes && (
+          <p className="line-clamp-3 whitespace-pre-wrap text-xs text-muted-foreground">{idea.notes}</p>
         )}
-      </CardContent>
-    </Card>
+
+        <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1">
+          {href && (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              <LinkIcon className="h-3 w-3" />
+              Bağlantı
+            </a>
+          )}
+          {active && (
+            <>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={imageBusy}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+              >
+                <ImagePlus className="h-3 w-3" />
+                {imgSrc ? 'Görseli değiştir' : 'Görsel ekle'}
+              </button>
+              {imgSrc && (
+                <button
+                  type="button"
+                  onClick={handleRemoveImage}
+                  disabled={imageBusy}
+                  className="text-xs text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+                >
+                  Görseli kaldır
+                </button>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePickImage}
+              />
+            </>
+          )}
+        </div>
+
+        <p className="border-t border-dashed pt-2 text-[11px] text-muted-foreground">
+          {idea.created_by_name ?? 'Ekipten biri'} · {formatDateTr(idea.created_at)}
+        </p>
+      </div>
+    </div>
   )
 }
 
