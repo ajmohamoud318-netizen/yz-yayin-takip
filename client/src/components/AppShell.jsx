@@ -14,6 +14,7 @@ import {
   CalendarDays,
   BadgeCheck,
   Printer,
+  Target,
   Briefcase,
   MoreVertical,
   Settings,
@@ -889,6 +890,7 @@ const PAGE_TITLES = [
   { match: (p) => p.startsWith('/siparis-talepleri'), label: 'Sipariş Talepleri' },
   { match: (p) => p.startsWith('/siparis-onay'), label: 'Sipariş Onayları' },
   { match: (p) => p.startsWith('/uretime-hazir'), label: 'Üretime Hazır' },
+  { match: (p) => p.startsWith('/hedef-projeler'), label: 'Hedef Projeler' },
   { match: (p) => p.startsWith('/teslim-talepleri'), label: 'Teslim Talepleri' },
   { match: (p) => p.startsWith('/teslim-onaylari'), label: 'Teslim Onayları' },
   { match: (p) => p.startsWith('/projects/'), label: 'Proje Detayı' },
@@ -921,6 +923,12 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
       badge: counts.production,
       badgeTone: 'pink',
       roles: ['team_leader', 'designer', 'printer'],
+    },
+    {
+      to: '/hedef-projeler',
+      label: 'Hedef Projeler',
+      icon: Target,
+      roles: ['team_leader', 'designer'],
     },
     { label: 'Toplantılar', icon: CalendarDays, soon: true, roles: ['team_leader', 'designer', 'printer'] },
     // Sales-only items

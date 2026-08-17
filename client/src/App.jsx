@@ -22,6 +22,7 @@ const ResetPassword       = lazy(() => import('./pages/ResetPassword.jsx'))
 const MyProjects          = lazy(() => import('./pages/MyProjects.jsx'))
 const Documents           = lazy(() => import('./pages/Documents.jsx'))
 const BaskiListesi        = lazy(() => import('./pages/BaskiListesi.jsx'))
+const HedefProjeler       = lazy(() => import('./pages/HedefProjeler.jsx'))
 const UrunBilgileri       = lazy(() => import('./pages/UrunBilgileri.jsx'))
 const Urunler             = lazy(() => import('./pages/Urunler.jsx'))
 const SiparisListesi      = lazy(() => import('./pages/SiparisListesi.jsx'))
@@ -194,6 +195,14 @@ export default function App() {
             />
             <Route path="/documents" element={<Documents />} />
             <Route path="/baski-listesi" element={<BaskiListesi />} />
+            <Route
+              path="/hedef-projeler"
+              element={
+                <RoleGuard allow={['team_leader', 'designer']}>
+                  <HedefProjeler />
+                </RoleGuard>
+              }
+            />
             <Route
               path="/urunler"
               element={
