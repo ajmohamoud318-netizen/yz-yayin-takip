@@ -216,6 +216,33 @@ const workLogUpdate = {
   },
 }
 
+// ─── target project ideas (Hedef Projeler) ──────────────────────────────
+//
+// Lightweight idea board on Baskı Listesi. See migration
+// 036__target_project_ideas.sql.
+
+const targetProjectIdeaCreate = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['name'],
+    properties: {
+      name: { type: 'string', minLength: 1, maxLength: 200 },
+      notes: { type: 'string', maxLength: 2000 },
+      link: { type: 'string', maxLength: 2000 },
+    },
+  },
+}
+
+const targetProjectIdeaIdParams = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id'],
+    properties: { id: { type: 'string', minLength: 1, maxLength: 64 } },
+  },
+}
+
 // Notification id path param (e.g. PATCH /notifications/:id/read). Bounds the
 // value so a malformed/oversized id is rejected with 400 before the DB query.
 const notificationIdParams = {
@@ -788,4 +815,6 @@ export const schemas = {
   ordersReject,
   handoversCreate,
   handoversConfirm,
+  targetProjectIdeaCreate,
+  targetProjectIdeaIdParams,
 }

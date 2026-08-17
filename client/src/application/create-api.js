@@ -18,6 +18,7 @@ import { createHttpHandoverRepository } from '../infrastructure/http/repositorie
 import { createHttpNotificationRepository } from '../infrastructure/http/repositories/http-notification.repository.js'
 import { createHttpPushRepository } from '../infrastructure/http/repositories/http-push.repository.js'
 import { createHttpWorkLogRepository } from '../infrastructure/http/repositories/http-work-log.repository.js'
+import { createHttpTargetProjectIdeaRepository } from '../infrastructure/http/repositories/http-target-project-idea.repository.js'
 import { makeAdvanceOrderRequest } from './use-cases/orders/advance-order-request.js'
 import { makeCreateOrderRequest } from './use-cases/orders/create-order-request.js'
 import { makeRejectOrderRequest } from './use-cases/orders/reject-order-request.js'
@@ -36,6 +37,7 @@ export function createApi() {
   const notificationRepo = createHttpNotificationRepository()
   const pushRepo = createHttpPushRepository()
   const workLogRepo = createHttpWorkLogRepository()
+  const targetProjectIdeaRepo = createHttpTargetProjectIdeaRepository()
 
   return {
     // Auth
@@ -64,6 +66,11 @@ export function createApi() {
     addWorkLogEntry: (entry) => workLogRepo.addWorkLogEntry(entry),
     updateWorkLogEntry: (id, patch) => workLogRepo.updateWorkLogEntry(id, patch),
     deleteWorkLogEntry: (id) => workLogRepo.deleteWorkLogEntry(id),
+
+    // Hedef Projeler — idea board on Baskı Listesi.
+    listTargetProjectIdeas: () => targetProjectIdeaRepo.listTargetProjectIdeas(),
+    addTargetProjectIdea: (payload) => targetProjectIdeaRepo.addTargetProjectIdea(payload),
+    deleteTargetProjectIdea: (id) => targetProjectIdeaRepo.deleteTargetProjectIdea(id),
 
     // Projects
     listProjects: () => projectRepo.listProjects(),

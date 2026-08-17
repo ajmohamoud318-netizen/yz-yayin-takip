@@ -636,6 +636,29 @@ export async function notifyProductCatalogChanged(client, { project, actor, hidd
   })
 }
 
+/* --------------------------- hedef projeler ------------------------------- */
+
+/**
+ * A new Hedef Proje idea was added on Baskı Listesi (migration
+ * 036__target_project_ideas.sql). Only fires when the author isn't a team
+ * leader — the leader is the one curating this list, so their own additions
+ * need no ping; anyone else's does, since otherwise it's only noticed by
+ * chance the next time the leader happens to open the page.
+ */
+export async function notifyTargetProjectIdeaCreated(client, { idea, actor }) {
+  if (actor?.role === 'team_leader') return 0
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  return emit(client, {
+    recipientIds: leaders,
+    actorId: actor?.id,
+    type: 'target_project_idea',
+    title: idea.name,
+    body: `${actor?.name ?? 'Ekipten biri'} yeni bir hedef proje ekledi`,
+    tone: 'blue',
+    link: '/baski-listesi',
+  })
+}
+
 /* ------------------------------- orders ---------------------------------- */
 
 const ORDER_STEP_BODY = {
