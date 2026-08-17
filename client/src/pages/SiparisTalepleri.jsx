@@ -201,7 +201,8 @@ function RequestCard({ request, onSign, onView, onOzalit }) {
               {needsLeaderAction && (
                 <Button
                   size="sm"
-                  variant={request.status === 'matbaa_onay' ? 'default' : 'outline'}
+                  variant="default"
+                  className={cn(request.status === 'pending' && 'bg-amber-500 text-white shadow-sm hover:bg-amber-600')}
                   onClick={onSign}
                 >
                   <PenLine className="h-3.5 w-3.5" />
