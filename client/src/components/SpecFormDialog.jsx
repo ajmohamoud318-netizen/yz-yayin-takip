@@ -1019,28 +1019,28 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                           <p className="text-[12px] leading-snug text-foreground">{r.value || '—'}</p>
                         </div>
                       ) : (
-                        <div key={r.id} className="space-y-1 border-b pb-2 last:border-b-0 last:pb-0">
+                        <div key={r.id} className="space-y-1.5">
                           <div className="flex items-center gap-1.5">
-                            <input
+                            <Input
                               value={r.label}
                               onChange={(e) => updateComponentRow(c.id, r.id, 'label', e.target.value)}
                               placeholder="ALAN ADI"
-                              className="min-w-0 flex-1 bg-transparent text-[10px] font-semibold uppercase tracking-wide text-muted-foreground outline-none placeholder:text-muted-foreground/50"
+                              className="h-8 min-w-0 flex-1 text-[11px] font-semibold uppercase tracking-wide placeholder:normal-case placeholder:tracking-normal placeholder:font-normal"
                             />
                             <button
                               type="button"
                               onClick={() => removeComponentRow(c.id, r.id)}
                               aria-label="Satırı sil"
-                              className="shrink-0 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive"
+                              className="shrink-0 rounded p-1.5 text-muted-foreground transition active:scale-90 hover:text-destructive"
                             >
                               <X className="h-3.5 w-3.5" />
                             </button>
                           </div>
-                          <input
+                          <Input
                             value={r.value}
                             onChange={(e) => updateComponentRow(c.id, r.id, 'value', e.target.value)}
                             placeholder="Değer"
-                            className="w-full bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/50"
+                            className="h-8 text-[12px]"
                           />
                         </div>
                       ),
