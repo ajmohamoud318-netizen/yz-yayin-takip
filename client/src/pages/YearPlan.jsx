@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, CalendarOff } from 'lucide-react'
 
 import { useProjects } from '@/hooks/useProjects'
+import { useOpenOrdersByProject } from '@/hooks/useOpenOrders'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { STAGE_LABELS, STATUS_META, TYPE_LABELS, statusKeyForProject } from '@/api'
+import OrderBadge from '@/components/OrderBadge'
+import { STAGE_LABELS, STATUS_META, TYPE_LABELS, statusKeyForProject, ORDER_STEP_LABELS } from '@/api'
 import { cn, initials } from '@/lib/utils'
 
 const TR_MONTHS_SHORT = [
@@ -29,6 +31,7 @@ function barText(key) {
 
 export default function YearPlan() {
   const { projects, loading } = useProjects()
+  const openOrders = useOpenOrdersByProject()
   const navigate = useNavigate()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
@@ -194,6 +197,7 @@ export default function YearPlan() {
                     const meta = STATUS_META[key]
                     const leftPct = (start / 12) * 100
                     const widthPct = ((end - start + 1) / 12) * 100
+                    const order = openOrders.get(p.id)
                     // Stagger: cap at 10 rows, 50ms each = 500ms total — matches
                     // the animate.md budget. 11th+ rows land together at 500ms.
                     const staggerIdx = Math.min(rowIdx, 10)
@@ -214,7 +218,7 @@ export default function YearPlan() {
                           <button
                             type="button"
                             onClick={() => navigate(`/projects/${p.id}`)}
-                            title={`${p.title} · ${STAGE_LABELS[p.stage]} · ${TYPE_LABELS[p.type]} · ${p.assigned_name} · %${p.progress}`}
+                            title={`${p.title} · ${STAGE_LABELS[p.stage]} · ${TYPE_LABELS[p.type]} · ${p.assigned_name} · %${p.progress}${order ? ` · Sipariş: ${ORDER_STEP_LABELS[order.status] ?? order.status}` : ''}`}
                             style={{
                               left: `calc(${leftPct}% + 4px)`,
                               width: `calc(${widthPct}% - 8px)`,
@@ -241,6 +245,7 @@ export default function YearPlan() {
                               <span className="truncate text-[11px] font-semibold leading-none">
                                 {p.title}
                               </span>
+                              <OrderBadge order={order} className="h-3 w-3 shrink-0 opacity-90" />
                               <span className="ml-auto shrink-0 text-[10px] font-semibold tabular-nums opacity-90">
                                 %{p.progress}
                               </span>
@@ -289,6 +294,7 @@ export default function YearPlan() {
                     >
                       <span className={cn('h-1.5 w-1.5 rounded-full', meta.dot)} />
                       {p.title}
+                      <OrderBadge order={openOrders.get(p.id)} className="h-3 w-3 shrink-0 text-amber-600" />
                     </button>
                   )
                 })}

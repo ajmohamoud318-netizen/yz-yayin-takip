@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { Search, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react'
 
 import { useProjects } from '@/hooks/useProjects'
+import { useOpenOrdersByProject } from '@/hooks/useOpenOrders'
 import FilterChip from '@/components/FilterChip'
 import { Card, CardContent } from '@/components/ui/card'
 import AssigneeAvatars from '@/components/AssigneeAvatars'
+import OrderBadge from '@/components/OrderBadge'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -21,6 +23,7 @@ const GROUP_LABELS = { all: 'Tümü', yeni_proje: 'Yeni Proje', devam_eden: 'Dev
 
 export default function AllProjects() {
   const { projects, loading } = useProjects()
+  const openOrders = useOpenOrdersByProject()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
@@ -140,6 +143,7 @@ export default function AllProjects() {
                     <div className="flex items-start gap-2">
                       <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', meta.dot)} />
                       <p className="text-sm font-semibold leading-snug">{p.title}</p>
+                      <OrderBadge order={openOrders.get(p.id)} className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span className="truncate">{TYPE_LABELS[p.type]} · {STAGE_LABELS[p.stage]}</span>
@@ -191,6 +195,7 @@ export default function AllProjects() {
                           <div className="flex items-center gap-2.5">
                             <span className={cn('h-2 w-2 shrink-0 rounded-full', meta.dot)} />
                             <span className="font-medium text-foreground">{p.title}</span>
+                            <OrderBadge order={openOrders.get(p.id)} />
                           </div>
                         </td>
                         <td className="px-4 py-3">

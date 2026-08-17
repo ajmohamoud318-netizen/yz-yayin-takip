@@ -5,6 +5,7 @@ import { Search, ShoppingCart, Package, PenLine, Eye } from 'lucide-react'
 import api, { ORDER_STEP_LABELS } from '@/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useProjects } from '@/hooks/useProjects'
+import { useOpenOrdersByProject } from '@/hooks/useOpenOrders'
 import FilterChip from '@/components/FilterChip'
 import { Card, CardContent } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
@@ -12,6 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
+import OrderBadge from '@/components/OrderBadge'
 import { STAGE_LABELS, STATUS_META, TYPE_LABELS, statusKeyForProject } from '@/api'
 import { cn, formatTargetDate } from '@/lib/utils'
 
@@ -24,6 +26,7 @@ const STAGE_GROUPS = {
 export default function MyProjects() {
   const { user } = useAuth()
   const { projects, loading } = useProjects()
+  const openOrders = useOpenOrdersByProject()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
@@ -183,6 +186,7 @@ export default function MyProjects() {
                     <div className="flex items-start gap-2">
                       <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', meta.dot)} />
                       <p className="text-sm font-semibold leading-snug">{p.title}</p>
+                      <OrderBadge order={openOrders.get(p.id)} className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span className="truncate">{TYPE_LABELS[p.type]} · {STAGE_LABELS[p.stage]} · {p.assigned_name}</span>
@@ -231,6 +235,7 @@ export default function MyProjects() {
                           <div className="flex items-center gap-2.5">
                             <span className={cn('h-2 w-2 shrink-0 rounded-full', meta.dot)} />
                             <span className="font-medium text-foreground">{p.title}</span>
+                            <OrderBadge order={openOrders.get(p.id)} />
                           </div>
                         </td>
                         <td className="px-4 py-3">
