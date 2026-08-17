@@ -1008,40 +1008,40 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                   <div className="border-b bg-muted/30 px-3 py-2 text-center text-[11px] font-bold uppercase tracking-wide text-foreground">
                     {c.component}
                   </div>
-                  <div className="px-2 py-1">
+                  <div className="space-y-2 px-3 py-2">
                     {(c.rows ?? []).length === 0 && readOnly && (
-                      <p className="px-1 py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
+                      <p className="py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
                     )}
                     {(c.rows ?? []).map((r) =>
                       readOnly ? (
-                        <div key={r.id} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1.3fr)] items-center gap-1 border-b py-1 last:border-b-0">
-                          <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{r.label}</span>
-                          <span className="text-xs font-bold text-muted-foreground">:</span>
-                          <span className="min-w-0 text-[12px]">{r.value}</span>
+                        <div key={r.id} className="space-y-0.5 border-b pb-2 last:border-b-0 last:pb-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{r.label}</p>
+                          <p className="text-[12px] leading-snug text-foreground">{r.value || '—'}</p>
                         </div>
                       ) : (
-                        <div key={r.id} className="flex items-center gap-1.5 border-b py-1 last:border-b-0">
-                          <input
-                            value={r.label}
-                            onChange={(e) => updateComponentRow(c.id, r.id, 'label', e.target.value)}
-                            placeholder="ALAN"
-                            className="w-24 shrink-0 bg-transparent text-[11px] font-semibold uppercase tracking-wide outline-none placeholder:text-muted-foreground/50"
-                          />
-                          <span className="text-xs font-bold text-muted-foreground">:</span>
+                        <div key={r.id} className="space-y-1 border-b pb-2 last:border-b-0 last:pb-0">
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              value={r.label}
+                              onChange={(e) => updateComponentRow(c.id, r.id, 'label', e.target.value)}
+                              placeholder="ALAN ADI"
+                              className="min-w-0 flex-1 bg-transparent text-[10px] font-semibold uppercase tracking-wide text-muted-foreground outline-none placeholder:text-muted-foreground/50"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeComponentRow(c.id, r.id)}
+                              aria-label="Satırı sil"
+                              className="shrink-0 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                           <input
                             value={r.value}
                             onChange={(e) => updateComponentRow(c.id, r.id, 'value', e.target.value)}
                             placeholder="Değer"
-                            className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/50"
+                            className="w-full bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/50"
                           />
-                          <button
-                            type="button"
-                            onClick={() => removeComponentRow(c.id, r.id)}
-                            aria-label="Satırı sil"
-                            className="shrink-0 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
                         </div>
                       ),
                     )}
@@ -1049,7 +1049,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                       <button
                         type="button"
                         onClick={() => addComponentRow(c.id)}
-                        className="mt-1 inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
+                        className="inline-flex items-center gap-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
                       >
                         <Plus className="h-3 w-3" /> Satır Ekle
                       </button>

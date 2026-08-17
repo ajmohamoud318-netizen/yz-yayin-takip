@@ -33,9 +33,15 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
  *
  * Short dialogs don't need it — the base DialogContent below already keeps
  * itself inside the viewport and scrolls.
+ *
+ * The [X] close button (see DialogContent) is absolutely positioned at
+ * `top-2 right-2`, measured from this sheet's own top-0 edge — i.e. it
+ * ignores the pt-safe-top padding above and sits right where a notch/status
+ * bar covers it, unreachable. The `[&_[data-dialog-close]]` overrides below
+ * pin it to the safe area instead, same as the header content.
  */
 export const DIALOG_MOBILE_SHEET =
-  'max-sm:left-0 max-sm:top-0 max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-x-0 max-sm:p-4 max-sm:pt-[max(1rem,var(--safe-top))] max-sm:pb-[max(1rem,var(--safe-bottom))]'
+  'max-sm:left-0 max-sm:top-0 max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:w-screen max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:border-x-0 max-sm:p-4 max-sm:pt-[max(1rem,var(--safe-top))] max-sm:pb-[max(1rem,var(--safe-bottom))] max-sm:[&_[data-dialog-close]]:top-[max(0.5rem,var(--safe-top))] max-sm:[&_[data-dialog-close]]:right-[max(0.5rem,var(--safe-right))]'
 
 const DialogContent = React.forwardRef(({ className, children, ...props }, ref) => (
   <DialogPortal>
@@ -55,8 +61,13 @@ const DialogContent = React.forwardRef(({ className, children, ...props }, ref) 
     >
       {children}
       {/* h-9 w-9 hit area (the 16px glyph alone was well under the 44px HIG
-          minimum and sat in the corner where a thumb reaches for it). */}
-      <DialogPrimitive.Close className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-md opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none sm:right-3 sm:top-3">
+          minimum and sat in the corner where a thumb reaches for it).
+          data-dialog-close lets DIALOG_MOBILE_SHEET re-pin this to the safe
+          area on full-screen sheets — see the comment on that constant. */}
+      <DialogPrimitive.Close
+        data-dialog-close
+        className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-md bg-background/80 opacity-70 ring-offset-background backdrop-blur transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none sm:right-3 sm:top-3"
+      >
         <X className="h-4 w-4" />
         <span className="sr-only">Kapat</span>
       </DialogPrimitive.Close>
