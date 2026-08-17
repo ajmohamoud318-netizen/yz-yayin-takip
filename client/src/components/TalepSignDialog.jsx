@@ -1363,19 +1363,32 @@ function openOrderPrintWindow(order, stepFilter) {
     td .sub{padding-left:14px;color:#444}
     td{height:26px}
     td.spec-label{width:42%;font-weight:700;font-size:9.5pt;text-transform:uppercase;letter-spacing:.02em;color:#333}
-    .comp-header{background:#f3f4f6;font-weight:700;font-size:9pt;text-transform:uppercase;letter-spacing:.06em;text-align:center;padding:6px}
+    .sheet{padding:18mm 20mm;page-break-after:always}
+    .sheet:last-child{page-break-after:auto}
     .sig{display:flex;border:1px solid #000;border-top:0}
     .sig .cell{flex:1;border-right:1px solid #000;padding:8px 10px;min-height:70px}
     .sig .cell:last-child{border-right:0}
     .sig .cap{font-size:9pt;text-align:center;color:#333}
     .sig .name{font-family:'Alex Brush',cursive;font-size:20pt;color:#3d283499;text-align:center;margin-top:10px}
-    @media print{body{padding:12mm 14mm}@page{size:A4;margin:0}}`
+    @media print{body{padding:12mm 14mm}.sheet{padding:12mm 14mm}@page{size:A4;margin:0}}`
 
   let bodyContent
+  // Ozalit-style print (below) renders one full <section class="sheet"> per
+  // parça — its own letterhead, meta, table, and signature block — instead of
+  // the single shared page. Marks the wrapper below to skip the top-level
+  // head/sig it would otherwise add once for the whole document.
+  let isMultiSheet = false
   const bookTitle = order.project_title?.replace(/ \/ /g, ' ') ?? ''
 
   if (activeStep === 'tasarimci_onay' || activeStep === 'matbaa_onay') {
-    // Ozalit-style print: product specs + Esra's ordered ADET
+    // Ozalit-style print: product specs + Esra's ordered ADET — one physical
+    // sheet PER parça (mirrors the Demo/Ozalit dialog's own multi-sheet print,
+    // specPrint.js#printSpecSheets), each with its own letterhead and
+    // signature block. This used to cram every parça into one shared table
+    // under one signature: a KUTU parça's sheet read the KİTAPLAR parça's
+    // name twice (once as "İşin Adı", again as its own section header right
+    // below it), and a single signature stood in for parças that may print
+    // and ship on different schedules.
     const comps = loadProductComps(order.project_id)
     const stepSubtitle = activeStep === 'tasarimci_onay' ? 'Tasarımcı → Matbaa' : 'Matbaa Teslimi'
 
@@ -1390,7 +1403,25 @@ function openOrderPrintWindow(order, stepFilter) {
       return order.quantity != null ? order.quantity.toLocaleString('tr-TR') : null
     }
 
-    const compSections = comps.length > 0
+    const ozalitSheet = (title, specRows) => `<section class="sheet">
+    <div class="head">
+      <img src="${logoUrl}" alt="Yükselen Zeka" width="120" height="36" loading="lazy" decoding="async"/>
+      <div class="co">Yükselen Zeka Yayıncılık</div>
+    </div>
+    <div class="doc-title">Ozalit Üretim Formu</div>
+    <div class="doc-sub">${escapeHtml(stepSubtitle)}</div>
+    <div class="meta">
+      <div><div class="label">İşin Adı</div><strong>${escapeHtml(title)}</strong></div>
+      <div class="right">
+        <div><span class="label">Sipariş Tarihi :</span> ${escapeHtml(dateStr)}</div>
+        <div><span class="label">Sipariş Veren :</span> ${escapeHtml(esra)}</div>
+      </div>
+    </div>
+    <table><tbody>${specRows}</tbody></table>
+    <div class="sig">${sigHtml}</div>
+  </section>`
+
+    bodyContent = comps.length > 0
       ? comps.map((comp) => {
           const orderedQty = printQtyForComp(comp.component)
           const fields = (comp.fields ?? []).filter((f) => f.k?.toUpperCase() !== 'İŞİN ADI')
@@ -1399,23 +1430,12 @@ function openOrderPrintWindow(order, stepFilter) {
             const val = isAdet && orderedQty != null ? orderedQty : (f.v ?? '')
             return `<tr><td class="spec-label">${escapeHtml(f.k)}</td><td>${escapeHtml(val)}</td></tr>`
           }).join('')
-          return `<tr><td colspan="2" class="comp-header">${escapeHtml(comp.component)}</td></tr>${specRows}`
+          return ozalitSheet(comp.component, specRows)
         }).join('')
-      : order.quantity != null
-        ? `<tr><td class="adet-label">ADET</td><td class="adet-val">${escapeHtml(order.quantity.toLocaleString('tr-TR'))}</td></tr>`
-        : ''
-
-    bodyContent = `
-  <div class="doc-title">Ozalit Üretim Formu</div>
-  <div class="doc-sub">${escapeHtml(stepSubtitle)}</div>
-  <div class="meta">
-    <div><div class="label">İşin Adı</div><strong>${escapeHtml(bookTitle)}</strong></div>
-    <div class="right">
-      <div><span class="label">Sipariş Tarihi :</span> ${escapeHtml(dateStr)}</div>
-      <div><span class="label">Sipariş Veren :</span> ${escapeHtml(esra)}</div>
-    </div>
-  </div>
-  <table><tbody>${compSections}</tbody></table>`
+      : ozalitSheet(bookTitle, order.quantity != null
+          ? `<tr><td class="spec-label">ADET</td><td>${escapeHtml(order.quantity.toLocaleString('tr-TR'))}</td></tr>`
+          : '')
+    isMultiSheet = true
   } else {
     // Generic Sipariş Formu for pending / goruldu / onaylandi steps
     const hasSub = items.length > 0
@@ -1453,13 +1473,13 @@ function openOrderPrintWindow(order, stepFilter) {
   const html = `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"/>
   <link href="https://fonts.googleapis.com/css2?family=Alex+Brush&display=swap" rel="stylesheet"/>
   <title>Sipariş Formu — ${escapeHtml(order.project_title ?? '')}</title>
-  <style>${commonStyles}</style></head><body>
-  <div class="head">
-    <img src="${logoUrl}" alt="Yükselen Zeka" width={120} height={36} loading="lazy" decoding="async"/>
+  <style>${commonStyles}</style></head><body${isMultiSheet ? ' style="padding:0"' : ''}>
+  ${isMultiSheet ? '' : `<div class="head">
+    <img src="${logoUrl}" alt="Yükselen Zeka" width="120" height="36" loading="lazy" decoding="async"/>
     <div class="co">Yükselen Zeka Yayıncılık</div>
-  </div>
+  </div>`}
   ${bodyContent}
-  <div class="sig">${sigHtml}</div>
+  ${isMultiSheet ? '' : `<div class="sig">${sigHtml}</div>`}
   </body></html>`
 
   const win = window.open('', '_blank', 'width=800,height=1000')
