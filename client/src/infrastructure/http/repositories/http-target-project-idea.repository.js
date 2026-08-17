@@ -23,5 +23,23 @@ export function createHttpTargetProjectIdeaRepository() {
     async deleteTargetProjectIdea(id) {
       await httpClient.delete(`/target-project-ideas/${id}`)
     },
+    /**
+     * Upload / replace an idea's photo. Same multipart shape as
+     * uploadAvatar — see that method for why `timeout: 0`.
+     */
+    async uploadTargetProjectIdeaImage(id, file) {
+      if (!file) throw new Error('Dosya bulunamadı.')
+      const fd = new FormData()
+      fd.append('file', file)
+      const { data } = await httpClient.put(`/target-project-ideas/${id}/image`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 0,
+      })
+      return data
+    },
+    async deleteTargetProjectIdeaImage(id) {
+      const { data } = await httpClient.delete(`/target-project-ideas/${id}/image`)
+      return data
+    },
   }
 }

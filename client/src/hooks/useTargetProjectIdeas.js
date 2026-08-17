@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import api from '@/api'
 import { useAuth } from '@/hooks/useAuth.js'
+import { MAX_SOURCE_BYTES, prepareIdeaImageFile } from '@/lib/image'
 
 /**
- * Hedef Projeler — the idea board on Baskı Listesi (see server migration
- * 036__target_project_ideas.sql). Unlike useWorkLog this list is shared
- * across the whole team, not per-user, so it fetches once on mount rather
- * than re-keying off the signed-in user.
+ * Hedef Projeler — the idea board at /hedef-projeler (see server migration
+ * 036__target_project_ideas.sql, image support in 037). Unlike useWorkLog
+ * this list is shared across the whole team, not per-user, so it fetches
+ * once on mount rather than re-keying off the signed-in user.
  *
  * Mutations are optimistic, same shape as useWorkLog: the previous array is
  * kept in a closure and restored if the request fails.
@@ -81,15 +82,45 @@ export function useTargetProjectIdeas() {
     [ideas],
   )
 
+  /** Downscale in-browser, upload, and splice the returned row into state. */
+  const uploadImage = useCallback(
+    async (id, file) => {
+      if (file.size > MAX_SOURCE_BYTES) throw new Error('Dosya çok büyük (25 MB üzeri).')
+      setBusy(true)
+      try {
+        const prepared = await prepareIdeaImageFile(file)
+        const saved = await api.uploadTargetProjectIdeaImage(id, prepared)
+        setIdeas((cur) => cur.map((i) => (i.id === id ? saved : i)))
+        return saved
+      } finally {
+        setBusy(false)
+      }
+    },
+    [],
+  )
+
+  const removeImage = useCallback(async (id) => {
+    setBusy(true)
+    try {
+      const saved = await api.deleteTargetProjectIdeaImage(id)
+      setIdeas((cur) => cur.map((i) => (i.id === id ? saved : i)))
+      return saved
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
   // Designers and the team leader can add; the leader (or the idea's own
-  // author) can remove. Mirrors the server's requireRole / owner check in
-  // routes/target-project-ideas.js — this only hides the controls, the API
-  // is the real gate.
+  // author) can remove or change the image. Mirrors the server's
+  // requireRole / assertCanModify checks in routes/target-project-ideas.js
+  // — this only hides the controls, the API is the real gate.
   const canAdd = user?.role === 'designer' || user?.role === 'team_leader'
   const canRemove = useCallback(
     (idea) => user?.role === 'team_leader' || idea.created_by === user?.id,
     [user],
   )
 
-  return { ideas, loading, busy, add, remove, refetch, canAdd, canRemove }
+  return {
+    ideas, loading, busy, add, remove, refetch, canAdd, canRemove, uploadImage, removeImage,
+  }
 }

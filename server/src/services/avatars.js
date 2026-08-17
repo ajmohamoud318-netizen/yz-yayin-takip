@@ -27,6 +27,11 @@ const ALLOWED_MIME = new Map([
 ])
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024  // 2 MB
 
+// Shared with any other image-upload feature (e.g. services/idea-images.js)
+// that needs to enumerate "every extension we might have written" without
+// duplicating the mime table above.
+export const ALLOWED_IMAGE_EXTENSIONS = [...ALLOWED_MIME.values()]
+
 /**
  * Resolves the avatar directory in this order:
  *  1. `AVATAR_DIR` env var — explicit override for operators who need a

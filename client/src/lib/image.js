@@ -128,3 +128,66 @@ export async function prepareAvatarFile(
     if (typeof source?.close === 'function') source.close()
   }
 }
+
+/**
+ * Idea images (Hedef Projeler) show at moderate sizes — a list thumbnail
+ * and a full-view tap-through — so 1600 px on the long edge is plenty and
+ * keeps the encoded JPEG a few hundred KB instead of a multi-MB camera
+ * photo or Instagram screenshot.
+ */
+export const IDEA_IMAGE_MAX_PX = 1600
+export const IDEA_IMAGE_QUALITY = 0.85
+
+/**
+ * Scale down (never crop, never upscale) so the longest edge is at most
+ * `size`. Unlike `drawSquare`, this keeps the original aspect ratio —
+ * cropping a book cover or a screenshot to a square would cut off the
+ * part someone actually meant to save.
+ */
+function drawContain(source, size) {
+  const w = source.width
+  const h = source.height
+  if (!w || !h) throw new Error('Görüntü boyutu okunamadı.')
+  const scale = Math.min(1, size / Math.max(w, h))
+  const targetW = Math.max(1, Math.round(w * scale))
+  const targetH = Math.max(1, Math.round(h * scale))
+
+  const canvas = document.createElement('canvas')
+  canvas.width = targetW
+  canvas.height = targetH
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas kullanılamıyor.')
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, targetW, targetH)
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(source, 0, 0, targetW, targetH)
+  return canvas
+}
+
+/**
+ * Downscale a picked image into an upload-ready JPEG File, preserving
+ * aspect ratio. Same fallback contract as prepareAvatarFile: any failure
+ * in the canvas path hands back the ORIGINAL file untouched.
+ */
+export async function prepareIdeaImageFile(
+  file,
+  { size = IDEA_IMAGE_MAX_PX, quality = IDEA_IMAGE_QUALITY } = {},
+) {
+  if (!file) throw new Error('Dosya bulunamadı.')
+  let source
+  try {
+    source = await decodeImage(file)
+    const canvas = drawContain(source, size)
+    const blob = await canvasToBlob(canvas, 'image/jpeg', quality)
+    if (blob.size >= file.size) return file
+    return new File([blob], 'idea.jpg', {
+      type: 'image/jpeg',
+      lastModified: Date.now(),
+    })
+  } catch {
+    return file
+  } finally {
+    if (typeof source?.close === 'function') source.close()
+  }
+}

@@ -71,6 +71,9 @@ export function createApi() {
     listTargetProjectIdeas: () => targetProjectIdeaRepo.listTargetProjectIdeas(),
     addTargetProjectIdea: (payload) => targetProjectIdeaRepo.addTargetProjectIdea(payload),
     deleteTargetProjectIdea: (id) => targetProjectIdeaRepo.deleteTargetProjectIdea(id),
+    uploadTargetProjectIdeaImage: (id, file) =>
+      targetProjectIdeaRepo.uploadTargetProjectIdeaImage(id, file),
+    deleteTargetProjectIdeaImage: (id) => targetProjectIdeaRepo.deleteTargetProjectIdeaImage(id),
 
     // Projects
     listProjects: () => projectRepo.listProjects(),

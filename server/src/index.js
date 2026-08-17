@@ -105,15 +105,18 @@ export async function buildServer() {
   // available. Must be registered before routes and the auth middleware.
   await fastify.register(cookie)
 
-  // Multipart body parser (avatar uploads). Must be registered before
-  // any route module that calls `request.file()`.
+  // Multipart body parser (avatar + Hedef Projeler idea image uploads).
+  // Must be registered before any route module that calls `request.file()`.
   //
   // The global `bodyLimit` on the Fastify instance (8 MB) is the upper
-  // bound; the avatar route enforces a tighter 2 MB cap during read
-  // so an oversized upload fails fast with a clear 400.
+  // bound; this is the shared plugin-level ceiling under it. Each route
+  // enforces its own tighter cap during read (2 MB for avatars, 5 MB for
+  // idea images — see MAX_AVATAR_BYTES / MAX_IDEA_IMAGE_BYTES) so an
+  // oversized upload fails fast with a clear 400 rather than a plugin-level
+  // stream error.
   await fastify.register(multipart, {
     limits: {
-      fileSize: 2 * 1024 * 1024,
+      fileSize: 6 * 1024 * 1024,
       files: 1,
     },
   })
