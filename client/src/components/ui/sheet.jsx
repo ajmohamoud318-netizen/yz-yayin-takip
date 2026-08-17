@@ -44,7 +44,16 @@ const SheetContent = React.forwardRef(({ side = 'right', className, children, sh
     <DialogPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
       {children}
       {showCloseButton && (
-        <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
+        // top/left/right sheets touch the physical top edge (left/right via
+        // h-full) — top-4 alone sits under a notch/status bar there, same
+        // issue as the dialog's close button (see DIALOG_MOBILE_SHEET). The
+        // bottom variant never reaches the top edge, so it keeps a plain top-4.
+        <DialogPrimitive.Close
+          className={cn(
+            'absolute right-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+            side === 'bottom' ? 'top-4' : 'top-[max(1rem,var(--safe-top))]',
+          )}
+        >
           <X className="h-4 w-4" />
           <span className="sr-only">Kapat</span>
         </DialogPrimitive.Close>
