@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
@@ -385,17 +386,17 @@ function openMultiPrint({ form, customRows, project, attemptNo, kind, selectedCo
 
 function Row({ label, name, value, onChange, readOnly }) {
   return (
-    <div className="grid grid-cols-[1fr_auto_2fr] items-center border-b last:border-b-0">
-      <span className="py-1.5 pr-3 text-[13px] font-semibold uppercase tracking-wide text-foreground">
+    <div className="space-y-1.5">
+      <Label htmlFor={name} className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
-      </span>
-      <span className="px-2 py-1.5 text-sm font-bold">:</span>
+      </Label>
       <Input
+        id={name}
         name={name}
         value={value}
         onChange={onChange}
         readOnly={readOnly}
-        className="h-8 rounded-none border-0 border-l px-2 py-1 text-sm shadow-none focus-visible:ring-0 read-only:bg-transparent read-only:cursor-default"
+        className="read-only:bg-muted/30 read-only:cursor-default"
       />
     </div>
   )
@@ -403,32 +404,30 @@ function Row({ label, name, value, onChange, readOnly }) {
 
 function CustomRow({ id, label, value, onChange, onRemove, readOnly }) {
   return (
-    <div className="grid grid-cols-[1fr_auto_2fr] items-center border-b last:border-b-0">
+    <div className="flex items-center gap-2">
       <Input
         value={label}
         onChange={(e) => onChange(id, 'label', e.target.value)}
         placeholder="Alan adı"
         readOnly={readOnly}
-        className="h-8 rounded-none border-0 bg-white px-2 py-1 text-[13px] font-semibold uppercase tracking-wide shadow-none placeholder:normal-case placeholder:tracking-normal placeholder:font-normal focus-visible:ring-0 read-only:cursor-default"
+        className="w-2/5 text-[13px] font-semibold uppercase tracking-wide placeholder:normal-case placeholder:tracking-normal placeholder:font-normal read-only:bg-muted/30 read-only:cursor-default"
       />
-      <span className="px-2 py-1.5 text-sm font-bold">:</span>
-      <div className="relative">
-        <Input
-          value={value}
-          onChange={(e) => onChange(id, 'value', e.target.value)}
-          readOnly={readOnly}
-          className="h-8 rounded-none border-0 border-l bg-white pr-7 px-2 py-1 text-sm shadow-none focus-visible:ring-0 read-only:bg-transparent read-only:cursor-default"
-        />
-        {!readOnly && (
-          <button
-            type="button"
-            onClick={() => onRemove(id)}
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-destructive"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
+      <Input
+        value={value}
+        onChange={(e) => onChange(id, 'value', e.target.value)}
+        readOnly={readOnly}
+        className="flex-1 read-only:bg-muted/30 read-only:cursor-default"
+      />
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={() => onRemove(id)}
+          aria-label="Satırı sil"
+          className="shrink-0 rounded p-1.5 text-muted-foreground transition active:scale-90 hover:text-destructive"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
     </div>
   )
 }
@@ -933,140 +932,144 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           </div>
         ) : (
         <>
-        <div className="rounded-lg border bg-white">
-          <div className="border-b px-4 py-3 text-center">
-            <h2 className="text-base font-bold uppercase tracking-widest text-foreground">{project.title}</h2>
+        {/* Subject + attempt badge */}
+        <div className="flex items-start justify-between gap-3 border-b pb-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">İş</p>
+            <p className="mt-1 truncate text-[15px] font-semibold leading-tight text-foreground">{project.title}</p>
           </div>
-          <div className="border-b px-4 py-2 text-right">
-            <span className="text-sm font-bold">{attemptNo}. {variant.attemptUpper}</span>
-          </div>
+          <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+            {attemptNo}. {variant.attemptUpper}
+          </span>
+        </div>
 
-          {/* Per-component picker — only when the project has product info */}
-          {hasCatalog && !readOnly && (
-            <div className="border-b bg-muted/20 px-4 py-3">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Parçalar (ürün bilgilerinden)
-                </p>
-                <div className="flex items-center gap-3 text-[11px]">
-                  <button
-                    type="button"
-                    onClick={selectAllComponents}
-                    className="font-semibold text-primary hover:underline"
-                  >
-                    Tümünü Seç
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearComponents}
-                    className="font-semibold text-muted-foreground hover:underline"
-                  >
-                    Hiçbiri
-                  </button>
-                </div>
+        {/* Per-component picker — only when the project has product info */}
+        {hasCatalog && !readOnly && (
+          <div className="space-y-2.5 rounded-xl border bg-muted/20 p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Parçalar (ürün bilgilerinden)
+              </p>
+              <div className="flex items-center gap-3 text-[11px]">
+                <button
+                  type="button"
+                  onClick={selectAllComponents}
+                  className="font-semibold text-primary hover:underline"
+                >
+                  Tümünü Seç
+                </button>
+                <button
+                  type="button"
+                  onClick={clearComponents}
+                  className="font-semibold text-muted-foreground hover:underline"
+                >
+                  Hiçbiri
+                </button>
               </div>
-              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                {catalogComponents.map((c) => {
-                  const checked = selectedComponents.some((s) => s.id === c.id)
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => toggleComponent(c.id)}
-                      className={`flex items-center gap-2 rounded-md border bg-white px-2.5 py-1.5 text-left text-xs transition active:scale-[0.99] ${
-                        checked ? 'border-primary/50 ring-1 ring-primary/30' : 'hover:border-primary/30'
-                      }`}
-                    >
-                      {checked
-                        ? <CheckSquare className="h-4 w-4 shrink-0 text-primary" />
-                        : <Square className="h-4 w-4 shrink-0 text-muted-foreground" />}
-                      <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide">{c.component}</span>
-                      <span className="shrink-0 text-[10px] text-muted-foreground">{c.rows.length} satır</span>
-                    </button>
-                  )
-                })}
-              </div>
-              {selectedComponents.length > 0 && (
-                <p className="mt-2 text-[10px] text-muted-foreground">
-                  Yazdır / Gönder dediğinizde <strong>{selectedComponents.length}</strong> ayrı form oluşturulur, her parça kendi imza bloğuyla birlikte.
-                </p>
-              )}
             </div>
-          )}
+            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              {catalogComponents.map((c) => {
+                const checked = selectedComponents.some((s) => s.id === c.id)
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => toggleComponent(c.id)}
+                    className={`flex items-center gap-2 rounded-md border bg-white px-2.5 py-1.5 text-left text-xs transition active:scale-[0.99] ${
+                      checked ? 'border-primary/50 ring-1 ring-primary/30' : 'hover:border-primary/30'
+                    }`}
+                  >
+                    {checked
+                      ? <CheckSquare className="h-4 w-4 shrink-0 text-primary" />
+                      : <Square className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                    <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide">{c.component}</span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground">{c.rows.length} satır</span>
+                  </button>
+                )
+              })}
+            </div>
+            {selectedComponents.length > 0 && (
+              <p className="text-[11px] text-muted-foreground">
+                Yazdır / Gönder dediğinizde <strong>{selectedComponents.length}</strong> ayrı form oluşturulur, her parça kendi imza bloğuyla birlikte.
+              </p>
+            )}
+          </div>
+        )}
 
-          {/* Selected parçalar, auto-filled side by side (scrolls horizontally).
-              Edits here flow back to Ürün Bilgileri on save. When the project
-              has a catalog but nothing is selected, or has no catalog at all,
-              we fall back to the single İŞİN ADI + custom-rows sheet below. */}
-          {hasCatalog && selectedComponents.length > 0 ? (
-            <div className="border-b bg-muted/10 px-3 py-3">
-              <div className="flex gap-3 overflow-x-auto pb-1">
-                {selectedComponents.map((c) => (
-                  <div key={c.id} className="flex w-72 shrink-0 flex-col overflow-hidden rounded-lg border bg-white">
-                    <div className="border-b bg-muted/30 px-3 py-2 text-center text-[11px] font-bold uppercase tracking-wide text-foreground">
-                      {c.component}
-                    </div>
-                    <div className="px-2 py-1">
-                      {(c.rows ?? []).length === 0 && readOnly && (
-                        <p className="px-1 py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
-                      )}
-                      {(c.rows ?? []).map((r) =>
-                        readOnly ? (
-                          <div key={r.id} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1.3fr)] items-center gap-1 border-b py-1 last:border-b-0">
-                            <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{r.label}</span>
-                            <span className="text-xs font-bold text-muted-foreground">:</span>
-                            <span className="min-w-0 text-[12px]">{r.value}</span>
-                          </div>
-                        ) : (
-                          <div key={r.id} className="flex items-center gap-1.5 border-b py-1 last:border-b-0">
-                            <input
-                              value={r.label}
-                              onChange={(e) => updateComponentRow(c.id, r.id, 'label', e.target.value)}
-                              placeholder="ALAN"
-                              className="w-24 shrink-0 bg-transparent text-[11px] font-semibold uppercase tracking-wide outline-none placeholder:text-muted-foreground/50"
-                            />
-                            <span className="text-xs font-bold text-muted-foreground">:</span>
-                            <input
-                              value={r.value}
-                              onChange={(e) => updateComponentRow(c.id, r.id, 'value', e.target.value)}
-                              placeholder="Değer"
-                              className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/50"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeComponentRow(c.id, r.id)}
-                              aria-label="Satırı sil"
-                              className="shrink-0 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        ),
-                      )}
-                      {!readOnly && (
-                        <button
-                          type="button"
-                          onClick={() => addComponentRow(c.id)}
-                          className="mt-1 inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
-                        >
-                          <Plus className="h-3 w-3" /> Satır Ekle
-                        </button>
-                      )}
-                    </div>
+        {/* Selected parçalar, auto-filled side by side (scrolls horizontally).
+            Edits here flow back to Ürün Bilgileri on save. When the project
+            has a catalog but nothing is selected, or has no catalog at all,
+            we fall back to the single İŞİN ADI + custom-rows sheet below. */}
+        {hasCatalog && selectedComponents.length > 0 ? (
+          <div className="space-y-2">
+            <div className="flex gap-3 overflow-x-auto pb-1">
+              {selectedComponents.map((c) => (
+                <div key={c.id} className="flex w-72 shrink-0 flex-col overflow-hidden rounded-xl border bg-white">
+                  <div className="border-b bg-muted/30 px-3 py-2 text-center text-[11px] font-bold uppercase tracking-wide text-foreground">
+                    {c.component}
                   </div>
-                ))}
-              </div>
-              {!readOnly && (
-                <p className="mt-2 px-1 text-[10px] text-muted-foreground">
-                  Buradaki düzenlemeler Ürün Bilgileri'ne de kaydedilir.
-                </p>
-              )}
+                  <div className="px-2 py-1">
+                    {(c.rows ?? []).length === 0 && readOnly && (
+                      <p className="px-1 py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
+                    )}
+                    {(c.rows ?? []).map((r) =>
+                      readOnly ? (
+                        <div key={r.id} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1.3fr)] items-center gap-1 border-b py-1 last:border-b-0">
+                          <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{r.label}</span>
+                          <span className="text-xs font-bold text-muted-foreground">:</span>
+                          <span className="min-w-0 text-[12px]">{r.value}</span>
+                        </div>
+                      ) : (
+                        <div key={r.id} className="flex items-center gap-1.5 border-b py-1 last:border-b-0">
+                          <input
+                            value={r.label}
+                            onChange={(e) => updateComponentRow(c.id, r.id, 'label', e.target.value)}
+                            placeholder="ALAN"
+                            className="w-24 shrink-0 bg-transparent text-[11px] font-semibold uppercase tracking-wide outline-none placeholder:text-muted-foreground/50"
+                          />
+                          <span className="text-xs font-bold text-muted-foreground">:</span>
+                          <input
+                            value={r.value}
+                            onChange={(e) => updateComponentRow(c.id, r.id, 'value', e.target.value)}
+                            placeholder="Değer"
+                            className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/50"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeComponentRow(c.id, r.id)}
+                            aria-label="Satırı sil"
+                            className="shrink-0 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ),
+                    )}
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => addComponentRow(c.id)}
+                        className="mt-1 inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
+                      >
+                        <Plus className="h-3 w-3" /> Satır Ekle
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
-          ) : (
-            <>
-              {/* İŞİN ADI + user-added rows (no catalog / nothing selected) */}
-              <div className="border-b px-4 py-1">
-                <Row label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly={systemRowReadOnly} />
+            {!readOnly && (
+              <p className="px-1 text-[11px] text-muted-foreground">
+                Buradaki düzenlemeler Ürün Bilgileri'ne de kaydedilir.
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* İŞİN ADI + user-added rows (no catalog / nothing selected) */}
+            <Row label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly={systemRowReadOnly} />
+            {customRows.length > 0 && (
+              <div className="space-y-2">
                 {customRows.map((r) => (
                   <CustomRow
                     key={r.id}
@@ -1079,43 +1082,41 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                   />
                 ))}
               </div>
+            )}
 
-              {/* + Satır Ekle — hidden in read-only mode */}
-              {!readOnly && (
-                <div className="border-b px-4 py-2.5">
-                  <button
-                    type="button"
-                    onClick={addCustomRow}
-                    className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Satır Ekle
-                  </button>
-                </div>
-              )}
+            {/* + Satır Ekle — hidden in read-only mode */}
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={addCustomRow}
+                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+              >
+                <Plus className="h-4 w-4" />
+                Satır Ekle
+              </button>
+            )}
+          </div>
+        )}
+
+        {/*
+          Auto-filled bottom fields.
+          These are system-driven (today / signed-in user / assigned approver).
+        */}
+        <div className="space-y-3 border-t pt-4">
+          {/* İSTEM rows are shown to every role — the matbaa needs to know
+              who requested the demo/ozalit and when, not just its own
+              delivery stamp. */}
+          <Row label={variant.dateLabel}   name={variant.dateField}   value={form[variant.dateField]}   onChange={handleChange} readOnly={systemRowReadOnly} />
+          <Row label={variant.personLabel} name={variant.personField} value={form[variant.personField]} onChange={handleChange} readOnly />
+          {/* Blank until handleAdvance stamps them at the moment of teslimat. */}
+          {(user?.role === 'printer' || form.teslimTarihi || form.teslimEdenKisi) && (
+            <>
+              <Row label="TESLİM TARİHİ"    name="teslimTarihi"   value={form.teslimTarihi   ?? ''} onChange={handleChange} readOnly={systemRowReadOnly} />
+              <Row label="TESLİM EDEN KİŞİ" name="teslimEdenKisi" value={form.teslimEdenKisi ?? ''} onChange={handleChange} readOnly />
             </>
           )}
-
-          {/*
-            Auto-filled bottom fields.
-            These are system-driven (today / signed-in user / assigned approver).
-          */}
-          <div className="px-4 py-1">
-            {/* İSTEM rows are shown to every role — the matbaa needs to know
-                who requested the demo/ozalit and when, not just its own
-                delivery stamp. */}
-            <Row label={variant.dateLabel}   name={variant.dateField}   value={form[variant.dateField]}   onChange={handleChange} readOnly={systemRowReadOnly} />
-            <Row label={variant.personLabel} name={variant.personField} value={form[variant.personField]} onChange={handleChange} readOnly />
-            {/* Blank until handleAdvance stamps them at the moment of teslimat. */}
-            {(user?.role === 'printer' || form.teslimTarihi || form.teslimEdenKisi) && (
-              <>
-                <Row label="TESLİM TARİHİ"    name="teslimTarihi"   value={form.teslimTarihi   ?? ''} onChange={handleChange} readOnly={systemRowReadOnly} />
-                <Row label="TESLİM EDEN KİŞİ" name="teslimEdenKisi" value={form.teslimEdenKisi ?? ''} onChange={handleChange} readOnly />
-              </>
-            )}
-            {form.matbaaYetkilisi && <Row label="MATBAA YETKİLİSİ" name="matbaaYetkilisi" value={form.matbaaYetkilisi} onChange={handleChange} readOnly />}
-            {form.onaylayanKisi && <Row label="ONAYLAYAN KİŞİ" name="onaylayanKisi" value={form.onaylayanKisi} onChange={handleChange} readOnly />}
-          </div>
+          {form.matbaaYetkilisi && <Row label="MATBAA YETKİLİSİ" name="matbaaYetkilisi" value={form.matbaaYetkilisi} onChange={handleChange} readOnly />}
+          {form.onaylayanKisi && <Row label="ONAYLAYAN KİŞİ" name="onaylayanKisi" value={form.onaylayanKisi} onChange={handleChange} readOnly />}
         </div>
 
         {readOnly && (

@@ -374,7 +374,7 @@ export default function Settings() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Button variant="destructive" onClick={handleLogout} className="w-full sm:w-auto">
+          <Button variant="outline" onClick={handleLogout} className="w-full sm:w-auto">
             <LogOut className="h-4 w-4" />
             Çıkış Yap
           </Button>
