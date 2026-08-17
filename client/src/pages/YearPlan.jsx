@@ -30,16 +30,25 @@ function barText(key) {
 }
 
 export default function YearPlan() {
-  const { projects, loading } = useProjects()
+  const { projects, allProjects, loading } = useProjects()
   const openOrders = useOpenOrdersByProject()
   const navigate = useNavigate()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
 
+  // Legacy (backlist) projects are excluded from the main pipeline list (see
+  // useProjectsStore), but one with an open sipariş is live work again, so
+  // surface it here — it'll land in the Tarihsiz bucket below since backlist
+  // imports carry no target_month.
+  const visibleProjects = useMemo(() => {
+    const extra = allProjects.filter((p) => p.origin === 'legacy' && openOrders.has(p.id))
+    return extra.length ? [...projects, ...extra] : projects
+  }, [projects, allProjects, openOrders])
+
   const { bars, undated } = useMemo(() => {
     const undatedList = []
     const barList = []
-    for (const p of projects) {
+    for (const p of visibleProjects) {
       if (!p.target_month) {
         undatedList.push(p)
         continue
@@ -53,7 +62,7 @@ export default function YearPlan() {
     }
     barList.sort((a, b) => (b.p.created_at ?? '').localeCompare(a.p.created_at ?? ''))
     return { bars: barList, undated: undatedList }
-  }, [projects, year])
+  }, [visibleProjects, year])
 
   const currentMonth = now.getMonth()
   const isThisYear = year === now.getFullYear()

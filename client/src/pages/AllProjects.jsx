@@ -22,7 +22,7 @@ import { cn, formatTargetDate } from '@/lib/utils'
 const GROUP_LABELS = { all: 'Tümü', yeni_proje: 'Yeni Proje', devam_eden: 'Devam Eden' }
 
 export default function AllProjects() {
-  const { projects, loading } = useProjects()
+  const { projects, allProjects, loading } = useProjects()
   const openOrders = useOpenOrdersByProject()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
@@ -30,9 +30,18 @@ export default function AllProjects() {
   const [groupFilter, setGroupFilter] = useState('all')
   const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' })
 
+  // Legacy (Kayıtlı ürünler / backlist) projects are filtered out of the
+  // main pipeline list on purpose (see useProjectsStore) to keep ~90 dormant
+  // backlist titles out of Tüm Projeler. But once one has an open sipariş
+  // it's live work again, so surface it here for the duration of that order.
+  const visibleProjects = useMemo(() => {
+    const extra = allProjects.filter((p) => p.origin === 'legacy' && openOrders.has(p.id))
+    return extra.length ? [...projects, ...extra] : projects
+  }, [projects, allProjects, openOrders])
+
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
-    let list = projects.filter((p) => {
+    let list = visibleProjects.filter((p) => {
       if (typeFilter !== 'all' && p.type !== typeFilter) return false
       if (groupFilter !== 'all' && groupKeyForProject(p) !== groupFilter) return false
       if (!q) return true
@@ -60,7 +69,7 @@ export default function AllProjects() {
       return 0
     })
     return list
-  }, [projects, query, typeFilter, groupFilter, sort])
+  }, [visibleProjects, query, typeFilter, groupFilter, sort])
 
   function toggleSort(key) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))

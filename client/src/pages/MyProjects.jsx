@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import OrderBadge from '@/components/OrderBadge'
 import { STAGE_LABELS, STATUS_META, TYPE_LABELS, statusKeyForProject } from '@/api'
+import { isOrderAssignedToDesigner } from '@/domain/constants/orders'
 import { cn, formatTargetDate } from '@/lib/utils'
 
 const STAGE_GROUPS = {
@@ -25,7 +26,7 @@ const STAGE_GROUPS = {
 
 export default function MyProjects() {
   const { user } = useAuth()
-  const { projects, loading } = useProjects()
+  const { projects, allProjects, loading } = useProjects()
   const openOrders = useOpenOrdersByProject()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
@@ -42,27 +43,44 @@ export default function MyProjects() {
   // server (the /api/projects list endpoint hydrates an `assignees`
   // array from it), but we also fall back to `assigned_to` so a stale
   // or older list payload still routes the project here correctly.
-  const mine = useMemo(
-    () => projects.filter((p) => {
+  //
+  // Legacy (Kayıtlı ürünler / backlist) projects are excluded from
+  // `projects` on purpose (see useProjectsStore) — they have no designer,
+  // no subtasks. But a sipariş placed against one carries its own
+  // `assignee_ids`, so once that order is live the project should show up
+  // here for the designer it was actually assigned to, same as any other
+  // project. Pulled from `allProjects` and matched via `openOrders` +
+  // `isOrderAssignedToDesigner` (same authoritative check SiparisOnay uses).
+  const mine = useMemo(() => {
+    const pipelineMine = projects.filter((p) => {
       if ((p.assignees ?? []).some((a) => a.id === user?.id)) return true
       if (p.assigned_to && p.assigned_to === user?.id) return true
       return false
-    }),
-    [projects, user?.id],
-  )
+    })
+    const pipelineIds = new Set(pipelineMine.map((p) => p.id))
+    const legacyMine = allProjects.filter((p) => {
+      if (p.origin !== 'legacy' || pipelineIds.has(p.id)) return false
+      const order = openOrders.get(p.id)
+      return !!order && isOrderAssignedToDesigner(order, user?.id, pipelineIds)
+    })
+    return legacyMine.length ? [...pipelineMine, ...legacyMine] : pipelineMine
+  }, [projects, allProjects, openOrders, user?.id])
 
   const myProjectIds = useMemo(() => new Set(mine.map((p) => p.id)), [mine])
 
   useEffect(() => {
     if (user?.role !== 'designer') return
     api.listOrderRequests().then((reqs) => {
-      // Designer signs orders that are at 'goruldu' status for their projects
+      // Designer signs orders that are at 'goruldu' status. Check the
+      // order's own assignee_ids first (authoritative — see
+      // isOrderAssignedToDesigner), falling back to project assignment only
+      // for legacy orders written before assignee_ids was populated.
       const relevant = reqs.filter(
-        (r) => r.status === 'goruldu' && myProjectIds.has(r.project_id),
+        (r) => r.status === 'goruldu' && isOrderAssignedToDesigner(r, user?.id, myProjectIds),
       )
       setSiparisQueue(relevant)
     }).catch(() => {})
-  }, [user?.role, myProjectIds])
+  }, [user?.id, user?.role, myProjectIds])
 
   function handleOrderSigned(updated) {
     setSiparisQueue((prev) => prev.filter((r) => r.id !== updated.id))
