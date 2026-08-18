@@ -3,11 +3,11 @@
 export const ORDER_STEPS = ['pending', 'goruldu', 'tasarimci_onay', 'matbaa_onay', 'onaylandi']
 
 export const ORDER_STEP_LABELS = {
-  pending: 'Talep Gönderildi',
+  pending: 'Talep',
   goruldu: 'Tasarımcıya Aktarıldı',
-  tasarimci_onay: 'Tasarımcı Onayı',
-  matbaa_onay: 'Matbaa Teslimi',
-  onaylandi: 'Üretime Alındı',
+  tasarimci_onay: 'Ozalit İstendi',
+  matbaa_onay: 'Onay Bekleniyor',
+  onaylandi: 'Üretimde',
 }
 
 // `matbaa_onay` is multi-party, leader-first (every active team leader AND

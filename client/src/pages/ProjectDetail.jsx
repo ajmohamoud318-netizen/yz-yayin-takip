@@ -56,16 +56,35 @@ import { canApproveOzalitNow, ozalitLeaderApproved } from '@/domain'
 // ever one.
 const isActiveOrder = (o) => o.status !== 'onaylandi' && o.status !== 'rejected'
 
+// The order's own status only ever reaches 'onaylandi' (Üretimde) — what
+// happens after that (Matbaa requesting handover, Satış confirming it) is
+// real project/handover state, not a status this order will ever carry.
+// Appending it here as two derived steps is what lets the tracker keep
+// filling in for real after approval instead of freezing dead on Üretimde
+// forever.
+const DISPLAY_ORDER_STEPS = [...ORDER_STEPS, 'teslim_bekleniyor', 'satista']
+const DISPLAY_ORDER_STEP_LABELS = {
+  ...ORDER_STEP_LABELS,
+  teslim_bekleniyor: 'Teslim Bekleniyor',
+  satista: 'Satışta',
+}
+
 /**
- * Compact stepper for a single sipariş order's own steps (Beklemede →
- * Onaylandı) — separate from the project's main design/production pipeline
+ * Compact stepper for a single sipariş order's own steps (Talep →
+ * Satışta) — separate from the project's main design/production pipeline
  * (StageBar), which doesn't move while an order is in flight and says
  * nothing about it. Clicking opens the full sign-off history via
  * `onOpen`, matching the click affordance ProjectHistory's order entries
- * already use.
+ * already use. `sold` (project.stage === 'satista') and `handoverPending`
+ * (Matbaa raised a teslim request Satış hasn't confirmed yet) advance the
+ * two derived final steps as those real events actually happen.
  */
-function OrderProgressStepper({ order, onOpen }) {
-  const currentIndex = Math.max(0, ORDER_STEPS.indexOf(order.status))
+function OrderProgressStepper({ order, sold, handoverPending, onOpen }) {
+  const currentIndex = sold
+    ? DISPLAY_ORDER_STEPS.length - 1
+    : handoverPending
+      ? DISPLAY_ORDER_STEPS.length - 2
+      : Math.max(0, ORDER_STEPS.indexOf(order.status))
   return (
     <button
       type="button"
@@ -74,10 +93,10 @@ function OrderProgressStepper({ order, onOpen }) {
     >
       <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <Package className="h-3.5 w-3.5" />
-        Aktif Baskı Talebi
+        Baskı Talebi
       </div>
       <ol className="flex items-center">
-        {ORDER_STEPS.map((step, i) => {
+        {DISPLAY_ORDER_STEPS.map((step, i) => {
           const done = i < currentIndex
           const current = i === currentIndex
           return (
@@ -101,10 +120,10 @@ function OrderProgressStepper({ order, onOpen }) {
                     current ? 'font-semibold text-brand-700' : 'text-muted-foreground',
                   )}
                 >
-                  {ORDER_STEP_LABELS[step]}
+                  {DISPLAY_ORDER_STEP_LABELS[step]}
                 </span>
               </div>
-              {i < ORDER_STEPS.length - 1 && (
+              {i < DISPLAY_ORDER_STEPS.length - 1 && (
                 <span
                   aria-hidden="true"
                   className={cn('mx-1.5 mb-4 h-0.5 flex-1', i < currentIndex ? 'bg-brand-500' : 'bg-muted')}
@@ -157,12 +176,41 @@ export default function ProjectDetail() {
   const [updatingSubId, setUpdatingSubId] = useState(null) // per-subtask "what changed" note
   const [updateNote, setUpdateNote] = useState('')
   const [projectOrders, setProjectOrders] = useState([])
+  const [projectHandover, setProjectHandover] = useState(null)
   const [orderFormViewer, setOrderFormViewer] = useState(null)
+
+  // Orders worth showing their own tracker for: any still-active one, plus
+  // (until the project actually sells) the single most recently approved
+  // order — otherwise its tracker would vanish the instant it hits
+  // 'onaylandi', even though it hasn't reached 'Satışta' yet. Once the
+  // project's stage flips to 'satista' the main StageBar above already
+  // says so, so there's nothing left for a per-order tracker to add.
+  const sold = project?.stage === 'satista'
+  // Matbaa raises a real handover request once printing is done, and it
+  // sits 'pending' until Satış confirms it — that's the actual gap between
+  // "Üretimde" and "Satışta", not a made-up in-between step.
+  const handoverPending = projectHandover?.status === 'pending'
+  const trackedOrders = useMemo(() => {
+    const active = projectOrders.filter(isActiveOrder)
+    if (sold) return active
+    const lastApproved = projectOrders
+      .filter((o) => o.status === 'onaylandi')
+      .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0]
+    return lastApproved ? [...active, lastApproved] : active
+  }, [projectOrders, sold])
 
   useEffect(() => {
     if (!id) return
     api.listOrderRequests()
       .then((reqs) => setProjectOrders(reqs.filter((r) => r.project_id === id)))
+      .catch(() => {})
+    api.listHandovers()
+      .then((rows) => {
+        const mine = rows
+          .filter((h) => h.project_id === id)
+          .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+        setProjectHandover(mine[0] ?? null)
+      })
       .catch(() => {})
   }, [id])
 
@@ -997,24 +1045,31 @@ export default function ProjectDetail() {
               <Progress value={project.progress} className="h-2" />
             </div>
 
-            {/* `-mx-1` lets the StageBar bleed to the card edge so the scroll
-                affordance (if needed at narrow widths) sits flush; padding is
-                restored on the scroll container itself. */}
-            <div className="-mx-1 rounded-lg bg-muted/30 py-5">
-              <div className="overflow-x-auto px-1">
-                <StageBar type={project.type} stage={project.stage} />
+            {/* The main pipeline freezes while a sipariş is in flight or
+                still awaiting its sale (the project's stage only moves on
+                final order approval and, later, handover confirmation) —
+                showing it alongside a tracker that isn't moving is just
+                confusing, so it's replaced by the order's own tracker(s)
+                below for as long as any are tracked. `-mx-1` lets the
+                StageBar bleed to the card edge so the scroll affordance (if
+                needed at narrow widths) sits flush; padding is restored on
+                the scroll container itself. */}
+            {trackedOrders.length === 0 && (
+              <div className="-mx-1 rounded-lg bg-muted/30 py-5">
+                <div className="overflow-x-auto px-1">
+                  <StageBar type={project.type} stage={project.stage} />
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* The main pipeline above is frozen while a sipariş is in
-                flight (the project's stage only moves on final approval) —
-                show that order's own steps too, so it isn't a mystery why
-                nothing above is changing. More than one can be active at
-                once now that concurrent orders are allowed. */}
-            {projectOrders.filter(isActiveOrder).map((o) => (
+            {/* More than one can be active at once now that concurrent
+                orders are allowed. */}
+            {trackedOrders.map((o) => (
               <OrderProgressStepper
                 key={o.id}
                 order={o}
+                sold={sold && o.status === 'onaylandi'}
+                handoverPending={handoverPending && o.status === 'onaylandi'}
                 onOpen={() => setOrderFormViewer({ order: o })}
               />
             ))}

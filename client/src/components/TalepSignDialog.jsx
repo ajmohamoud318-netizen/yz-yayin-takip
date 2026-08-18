@@ -1194,11 +1194,11 @@ function SignedStepRow({ step, onForm }) {
 }
 
 const STAGE_DEFS = [
-  { step: 'pending',         label: 'Baskı Talebi',   color: '#e11d48' },
-  { step: 'goruldu',         label: 'Ön İnceleme',    color: '#f97316' },
-  { step: 'tasarimci_onay',  label: 'Ozalit İstendi', color: '#10b981' },
-  { step: 'matbaa_onay',     label: 'Matbaa Teslimi', color: '#3b82f6' },
-  { step: 'onaylandi',       label: 'Üretimde',       color: '#8b5cf6' },
+  { step: 'pending',         label: 'Talep',               color: '#e11d48' },
+  { step: 'goruldu',         label: 'Tasarımcıya Aktarıldı', color: '#f97316' },
+  { step: 'tasarimci_onay',  label: 'Ozalit İstendi',      color: '#10b981' },
+  { step: 'matbaa_onay',     label: 'Onay Bekleniyor',     color: '#3b82f6' },
+  { step: 'onaylandi',       label: 'Üretimde',            color: '#8b5cf6' },
 ]
 
 // ── Order-step progress helpers ──────────────────────────────────────────────
@@ -1326,7 +1326,7 @@ function HorizontalStages({ order, onSelect }) {
 }
 
 function PendingStepRow({ step }) {
-  const labels = { goruldu: 'Tasarımcıya Aktarıldı', tasarimci_onay: 'Tasarımcı Onayı', matbaa_onay: 'Matbaa Teslimi', onaylandi: 'Üretime Alındı' }
+  const labels = { goruldu: 'Tasarımcıya Aktarıldı', tasarimci_onay: 'Ozalit İstendi', matbaa_onay: 'Onay Bekleniyor', onaylandi: 'Üretimde' }
   return (
     <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-3 opacity-60">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
@@ -1689,9 +1689,9 @@ function stepShortLabel(step) {
   const map = {
     pending: 'Talep',
     goruldu: 'Aktarıldı',
-    tasarimci_onay: 'Tasarımcı',
-    matbaa_onay: 'Teslim',
-    onaylandi: 'Onaylandı',
+    tasarimci_onay: 'Ozalit',
+    matbaa_onay: 'Onay',
+    onaylandi: 'Üretimde',
   }
   return map[step] ?? step
 }
