@@ -3,7 +3,7 @@ import { withTx, getPool } from '../db/pool.js'
 import { schemas } from '../schemas/index.js'
 import { badRequest, notFound, HttpError } from '../domain/errors.js'
 import {
-  list, create, remove, assertCanModify, setImage, clearImage,
+  list, create, update, remove, assertCanModify, setImage, clearImage,
 } from '../services/target-project-ideas.js'
 import { notifyTargetProjectIdeaCreated } from '../services/notifications.js'
 import { extForMime, isAllowedMime, sniffImageMime } from '../services/avatars.js'
@@ -17,6 +17,7 @@ import {
  *
  *  GET    /api/target-project-ideas             → anyone signed in
  *  POST   /api/target-project-ideas             → designer + team_leader
+ *  PATCH  /api/target-project-ideas/:id         → team_leader, or the idea's own author
  *  DELETE /api/target-project-ideas/:id         → team_leader, or the idea's own author
  *  PUT    /api/target-project-ideas/:id/image   → team_leader, or the idea's own author
  *  DELETE /api/target-project-ideas/:id/image   → team_leader, or the idea's own author
@@ -42,6 +43,15 @@ export async function targetProjectIdeaRoutes(fastify) {
       })
       reply.code(201)
       return idea
+    },
+  )
+
+  fastify.patch(
+    '/target-project-ideas/:id',
+    { schema: schemas.targetProjectIdeaUpdate },
+    async (request) => {
+      await attachUser(request)
+      return update(getPool(), request.params.id, request.user, request.body)
     },
   )
 

@@ -20,6 +20,14 @@ export function createHttpTargetProjectIdeaRepository() {
       })
       return data
     },
+    async updateTargetProjectIdea(id, { name, notes, link }) {
+      const { data } = await httpClient.patch(`/target-project-ideas/${id}`, {
+        ...(name !== undefined ? { name } : {}),
+        ...(notes !== undefined ? { notes: notes?.trim() || '' } : {}),
+        ...(link !== undefined ? { link: link?.trim() || '' } : {}),
+      })
+      return data
+    },
     async deleteTargetProjectIdea(id) {
       await httpClient.delete(`/target-project-ideas/${id}`)
     },

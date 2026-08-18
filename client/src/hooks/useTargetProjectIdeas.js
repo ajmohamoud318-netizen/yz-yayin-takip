@@ -65,6 +65,27 @@ export function useTargetProjectIdeas() {
     [ideas, user],
   )
 
+  const update = useCallback(
+    async (id, { name, notes, link }) => {
+      const prev = ideas
+      setIdeas((cur) => cur.map((i) => (i.id === id
+        ? { ...i, name: name?.trim() || i.name, notes: notes?.trim() || null, link: link?.trim() || null }
+        : i)))
+      setBusy(true)
+      try {
+        const saved = await api.updateTargetProjectIdea(id, { name, notes, link })
+        setIdeas((cur) => cur.map((i) => (i.id === id ? saved : i)))
+        return saved
+      } catch (err) {
+        setIdeas(prev)
+        throw err
+      } finally {
+        setBusy(false)
+      }
+    },
+    [ideas],
+  )
+
   const remove = useCallback(
     async (id) => {
       const prev = ideas
@@ -121,6 +142,6 @@ export function useTargetProjectIdeas() {
   )
 
   return {
-    ideas, loading, busy, add, remove, refetch, canAdd, canRemove, uploadImage, removeImage,
+    ideas, loading, busy, add, update, remove, refetch, canAdd, canRemove, uploadImage, removeImage,
   }
 }

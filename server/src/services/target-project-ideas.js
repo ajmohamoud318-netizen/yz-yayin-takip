@@ -53,6 +53,39 @@ export async function assertCanModify(pool, id, actor) {
   }
 }
 
+export async function update(pool, id, actor, patch) {
+  await assertCanModify(pool, id, actor)
+
+  const sets = []
+  const values = []
+  let i = 1
+
+  if (patch.name !== undefined) {
+    const trimmed = (patch.name ?? '').trim()
+    if (!trimmed) badRequest('İsim boş olamaz.')
+    sets.push(`name = $${i++}`)
+    values.push(trimmed)
+  }
+  if (patch.notes !== undefined) {
+    sets.push(`notes = $${i++}`)
+    values.push(patch.notes?.trim() || null)
+  }
+  if (patch.link !== undefined) {
+    sets.push(`link = $${i++}`)
+    values.push(patch.link?.trim() || null)
+  }
+
+  if (!sets.length) badRequest('Güncellenecek alan yok.')
+
+  values.push(id)
+  const { rows } = await pool.query(
+    `UPDATE target_project_ideas SET ${sets.join(', ')} WHERE id = $${i} RETURNING ${COLUMNS}`,
+    values,
+  )
+  if (!rows[0]) notFound('Kayıt bulunamadı.')
+  return rows[0]
+}
+
 export async function remove(pool, id, actor) {
   await assertCanModify(pool, id, actor)
   await pool.query(`DELETE FROM target_project_ideas WHERE id = $1`, [id])

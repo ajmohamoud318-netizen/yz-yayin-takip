@@ -19,6 +19,7 @@ import { createHttpNotificationRepository } from '../infrastructure/http/reposit
 import { createHttpPushRepository } from '../infrastructure/http/repositories/http-push.repository.js'
 import { createHttpWorkLogRepository } from '../infrastructure/http/repositories/http-work-log.repository.js'
 import { createHttpTargetProjectIdeaRepository } from '../infrastructure/http/repositories/http-target-project-idea.repository.js'
+import { createHttpMeetingRepository } from '../infrastructure/http/repositories/http-meeting.repository.js'
 import { makeAdvanceOrderRequest } from './use-cases/orders/advance-order-request.js'
 import { makeCreateOrderRequest } from './use-cases/orders/create-order-request.js'
 import { makeRejectOrderRequest } from './use-cases/orders/reject-order-request.js'
@@ -38,6 +39,7 @@ export function createApi() {
   const pushRepo = createHttpPushRepository()
   const workLogRepo = createHttpWorkLogRepository()
   const targetProjectIdeaRepo = createHttpTargetProjectIdeaRepository()
+  const meetingRepo = createHttpMeetingRepository()
 
   return {
     // Auth
@@ -70,10 +72,17 @@ export function createApi() {
     // Hedef Projeler — idea board on Baskı Listesi.
     listTargetProjectIdeas: () => targetProjectIdeaRepo.listTargetProjectIdeas(),
     addTargetProjectIdea: (payload) => targetProjectIdeaRepo.addTargetProjectIdea(payload),
+    updateTargetProjectIdea: (id, patch) => targetProjectIdeaRepo.updateTargetProjectIdea(id, patch),
     deleteTargetProjectIdea: (id) => targetProjectIdeaRepo.deleteTargetProjectIdea(id),
     uploadTargetProjectIdeaImage: (id, file) =>
       targetProjectIdeaRepo.uploadTargetProjectIdeaImage(id, file),
     deleteTargetProjectIdeaImage: (id) => targetProjectIdeaRepo.deleteTargetProjectIdeaImage(id),
+
+    // Toplantılar — meeting log.
+    listMeetings: () => meetingRepo.listMeetings(),
+    addMeeting: (payload) => meetingRepo.addMeeting(payload),
+    updateMeeting: (id, patch) => meetingRepo.updateMeeting(id, patch),
+    deleteMeeting: (id) => meetingRepo.deleteMeeting(id),
 
     // Projects
     listProjects: () => projectRepo.listProjects(),

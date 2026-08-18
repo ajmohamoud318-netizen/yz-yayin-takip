@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Target, Trash2, Link as LinkIcon, Plus, ImagePlus, X } from 'lucide-react'
+import { Target, Trash2, Pencil, Link as LinkIcon, Plus, ImagePlus, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { API_ORIGIN } from '@/api'
@@ -29,9 +29,20 @@ import { cn, formatDateTr } from '@/lib/utils'
  */
 export default function HedefProjeler() {
   const {
-    ideas, loading, busy, add, remove, canAdd, canRemove, uploadImage, removeImage,
+    ideas, loading, busy, add, update, remove, canAdd, canRemove, uploadImage, removeImage,
   } = useTargetProjectIdeas()
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingIdea, setEditingIdea] = useState(null)
+
+  function openAddDialog() {
+    setEditingIdea(null)
+    setDialogOpen(true)
+  }
+
+  function openEditDialog(idea) {
+    setEditingIdea(idea)
+    setDialogOpen(true)
+  }
 
   async function handleRemove(idea) {
     try {
@@ -56,7 +67,7 @@ export default function HedefProjeler() {
           </div>
         </div>
         {canAdd && (
-          <Button size="sm" className="shrink-0 gap-1.5" onClick={() => setDialogOpen(true)}>
+          <Button size="sm" className="shrink-0 gap-1.5" onClick={openAddDialog}>
             <Plus className="h-3.5 w-3.5" />
             Ekle
           </Button>
@@ -81,6 +92,7 @@ export default function HedefProjeler() {
               key={idea.id}
               idea={idea}
               canRemove={canRemove(idea)}
+              onEdit={() => openEditDialog(idea)}
               onRemove={() => handleRemove(idea)}
               onUploadImage={(file) => uploadImage(idea.id, file)}
               onRemoveImage={() => removeImage(idea.id)}
@@ -92,7 +104,9 @@ export default function HedefProjeler() {
       <AddTargetIdeaDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
+        editingIdea={editingIdea}
         onAdd={add}
+        onUpdate={update}
         onUploadImage={uploadImage}
         busy={busy}
       />
@@ -108,7 +122,7 @@ function ideaImageSrc(idea) {
   return `${API_ORIGIN}${idea.image_url}${v}`
 }
 
-function TargetIdeaCard({ idea, canRemove, onRemove, onUploadImage, onRemoveImage }) {
+function TargetIdeaCard({ idea, canRemove, onEdit, onRemove, onUploadImage, onRemoveImage }) {
   const [removing, setRemoving] = useState(false)
   const [imageBusy, setImageBusy] = useState(false)
   const fileInputRef = useRef(null)
@@ -176,16 +190,27 @@ function TargetIdeaCard({ idea, canRemove, onRemove, onUploadImage, onRemoveImag
         <div className="flex items-start justify-between gap-2">
           <p className="min-w-0 flex-1 text-sm font-semibold leading-snug">{idea.name}</p>
           {active && (
-            <button
-              type="button"
-              onClick={handleRemove}
-              disabled={removing}
-              aria-label="Fikri sil"
-              title="Fikri sil"
-              className="-mr-1.5 -mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            <div className="-mr-1.5 -mt-1 flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                onClick={onEdit}
+                aria-label="Fikri düzenle"
+                title="Fikri düzenle"
+                className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleRemove}
+                disabled={removing}
+                aria-label="Fikri sil"
+                title="Fikri sil"
+                className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
           )}
         </div>
 
@@ -245,7 +270,9 @@ function TargetIdeaCard({ idea, canRemove, onRemove, onUploadImage, onRemoveImag
   )
 }
 
-function AddTargetIdeaDialog({ open, onOpenChange, onAdd, onUploadImage, busy }) {
+function AddTargetIdeaDialog({
+  open, onOpenChange, editingIdea, onAdd, onUpdate, onUploadImage, busy,
+}) {
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
   const [link, setLink] = useState('')
@@ -253,19 +280,21 @@ function AddTargetIdeaDialog({ open, onOpenChange, onAdd, onUploadImage, busy })
   const [imagePreview, setImagePreview] = useState(null)
   const fileInputRef = useRef(null)
 
-  // Reset the form each time the dialog opens rather than on close, so the
+  const isEditing = !!editingIdea
+
+  // Reset/prefill each time the dialog opens rather than on close, so the
   // fields don't visibly blank out while the closing animation is playing.
   useEffect(() => {
     if (!open) return
-    setName('')
-    setNotes('')
-    setLink('')
+    setName(editingIdea?.name ?? '')
+    setNotes(editingIdea?.notes ?? '')
+    setLink(editingIdea?.link ?? '')
     setImageFile(null)
     setImagePreview((prev) => {
       if (prev) URL.revokeObjectURL(prev)
       return null
     })
-  }, [open])
+  }, [open, editingIdea])
 
   function handlePickImage(e) {
     const file = e.target.files?.[0]
@@ -294,18 +323,23 @@ function AddTargetIdeaDialog({ open, onOpenChange, onAdd, onUploadImage, busy })
       return
     }
     try {
-      const saved = await onAdd({ name: trimmed, notes, link })
-      if (imageFile && saved?.id) {
-        try {
-          await onUploadImage(saved.id, imageFile)
-        } catch (err) {
-          toast.error(err?.message || 'Fikir eklendi ama görsel yüklenemedi.')
+      if (isEditing) {
+        await onUpdate(editingIdea.id, { name: trimmed, notes, link })
+        toast.success('Hedef proje güncellendi.')
+      } else {
+        const saved = await onAdd({ name: trimmed, notes, link })
+        if (imageFile && saved?.id) {
+          try {
+            await onUploadImage(saved.id, imageFile)
+          } catch (err) {
+            toast.error(err?.message || 'Fikir eklendi ama görsel yüklenemedi.')
+          }
         }
+        toast.success('Hedef proje eklendi.')
       }
-      toast.success('Hedef proje eklendi.')
       onOpenChange(false)
     } catch (err) {
-      toast.error(err?.message || 'Eklenemedi.')
+      toast.error(err?.message || (isEditing ? 'Güncellenemedi.' : 'Eklenemedi.'))
     }
   }
 
@@ -315,7 +349,7 @@ function AddTargetIdeaDialog({ open, onOpenChange, onAdd, onUploadImage, busy })
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Target className="h-4 w-4" />
-            Hedef Proje Ekle
+            {isEditing ? 'Hedef Projeyi Düzenle' : 'Hedef Proje Ekle'}
           </DialogTitle>
           <DialogDescription>
             İleride proje olabilecek bir fikir.
@@ -352,6 +386,7 @@ function AddTargetIdeaDialog({ open, onOpenChange, onAdd, onUploadImage, busy })
               rows={3}
             />
           </div>
+          {!isEditing && (
           <div className="space-y-1.5">
             <Label>Görsel</Label>
             {imagePreview ? (
@@ -390,12 +425,13 @@ function AddTargetIdeaDialog({ open, onOpenChange, onAdd, onUploadImage, busy })
               onChange={handlePickImage}
             />
           </div>
+          )}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               İptal
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? 'Ekleniyor…' : 'Ekle'}
+              {busy ? 'Kaydediliyor…' : isEditing ? 'Kaydet' : 'Ekle'}
             </Button>
           </DialogFooter>
         </form>
