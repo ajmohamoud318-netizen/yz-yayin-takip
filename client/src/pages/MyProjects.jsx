@@ -325,9 +325,27 @@ function normalizeItems(items, quantity) {
 }
 
 function SiparisOrderRow({ order, onSign, onView }) {
+  const navigate = useNavigate()
   const items = normalizeItems(order.items, order.quantity)
+  // matbaa_onay has two distinct sub-steps: the ozalit must be marked
+  // received before anyone can approve it (see TalepSignDialog's receipt
+  // gate). Label the button for whichever action is actually next so it
+  // doesn't read "Onayla" while approval is still blocked on receipt.
+  const signLabel =
+    order.status !== 'matbaa_onay' ? 'İncele ve Gönder' : order.matbaa_received ? 'Onayla' : 'Teslim Al'
   return (
-    <Card className="border-amber-200 bg-amber-50/30">
+    <Card
+      tabIndex={0}
+      aria-label={`${order.project_title} – proje detaylarını aç`}
+      className="cursor-pointer border-amber-200 bg-amber-50/30 transition-colors hover:border-amber-300 hover:bg-amber-50/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={() => navigate(`/projects/${order.project_id}`)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          navigate(`/projects/${order.project_id}`)
+        }
+      }}
+    >
       <CardContent className="p-3">
         <div className="flex flex-wrap items-start gap-3">
           <Package className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
@@ -357,12 +375,27 @@ function SiparisOrderRow({ order, onSign, onView }) {
               {ORDER_STEP_LABELS[order.status] ?? order.status}
             </Badge>
             <div className="flex gap-1">
-              <Button size="sm" variant="ghost" className="h-7 flex-1 px-2 sm:flex-none" onClick={onView}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 flex-1 px-2 sm:flex-none"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onView()
+                }}
+              >
                 <Eye className="h-3.5 w-3.5" />
                 <span className="sr-only">Form</span>
               </Button>
-              <Button size="sm" className="h-7 flex-1 px-2.5 sm:flex-none" onClick={onSign}>
-                {order.status === 'matbaa_onay' ? 'Onayla' : 'İncele ve Gönder'}
+              <Button
+                size="sm"
+                className="h-7 flex-1 px-2.5 sm:flex-none"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onSign()
+                }}
+              >
+                {signLabel}
               </Button>
             </div>
           </div>
