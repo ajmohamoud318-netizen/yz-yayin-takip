@@ -52,9 +52,9 @@ export default function SiparisTalepleri() {
     setSignOrder(null)
   }
 
-  // "Teslim Alındı" doesn't close the dialog — see TalepSignDialog's
-  // onUpdated contract (the leader typically continues straight on to
-  // approve in the same dialog).
+  // "Teslim Alındı" closes its own (compact) dialog — this just keeps the
+  // held row in sync so the card's button flips to "Onayla" (see
+  // TalepSignDialog's onUpdated contract).
   function handleUpdated(updated) {
     setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
     setSignOrder(updated)

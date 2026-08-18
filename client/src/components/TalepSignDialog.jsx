@@ -91,8 +91,9 @@ async function saveSubtaskFlags(orderId, subtasks, originalJson) {
  *   onSigned    – (updatedOrder) => void  — called after successful advance
  *                  (order leaves the caller's queue, dialog closes)
  *   onUpdated   – (updatedOrder) => void  — called after "Teslim Alındı"
- *                  (mid-flow state change; dialog STAYS open so the same
- *                  user can continue on to approve — see handleMatbaaReceive)
+ *                  (mid-flow state change; the dialog still closes itself,
+ *                  this just keeps the caller's list row in sync — see
+ *                  handleMatbaaReceive)
  */
 export default function TalepSignDialog({ order, open, onOpenChange, onSigned, onUpdated }) {
   const { user } = useAuth()
@@ -353,19 +354,20 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     }
   }
 
-  // "Teslim Alındı" — the matbaa_onay receipt gate. Deliberately does NOT
-  // close the dialog / call onSigned: the same user who just acknowledged
-  // receipt typically continues straight on to approve, and onSigned's
-  // contract (used by handleSign/handleReject above) is "this order left my
-  // queue," which isn't true yet. onUpdated instead pushes the fresh order
-  // back up so the parent's held `order` state (and this dialog's props)
-  // reflect matbaa_received without unmounting anything.
+  // "Teslim Alındı" — the matbaa_onay receipt gate. This is a one-question
+  // dialog (see the compact early-return render below), so it closes once
+  // answered rather than chaining into the full approval form — approving is
+  // a separate, deliberate action the user takes later via the list's own
+  // "Onayla" button. Not onSigned: the order hasn't left the queue, just
+  // picked up matbaa_received, so onUpdated pushes the fresh order back up
+  // to keep the parent's list in sync.
   async function handleMatbaaReceive() {
     setMatbaaBusy(true)
     try {
       const updated = await api.matbaaReceiveOrder(order.id)
       toast.success('Matbaa ozaliti teslim alındı.')
       onUpdated?.(updated)
+      onOpenChange(false)
     } catch (err) {
       toast.error(err.message || 'İşlem başarısız.')
     } finally {

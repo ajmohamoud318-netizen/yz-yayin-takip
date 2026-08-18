@@ -63,8 +63,8 @@ export default function SiparisOnay() {
   }
 
   // "Teslim Alındı" doesn't remove the order from the queue — it just
-  // updates the held order in place so the still-open dialog can move on to
-  // the approve step (see TalepSignDialog's onUpdated contract).
+  // updates the held order in place so the card's button flips to "Onayla"
+  // (see TalepSignDialog's onUpdated contract; the dialog itself closes).
   function handleUpdated(updated) {
     setOrders((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
     setSignOrder(updated)
