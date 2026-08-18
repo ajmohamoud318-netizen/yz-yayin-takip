@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
-import { isOrderAssignedToDesigner } from '@/domain/constants/orders'
+import { canApproveMatbaaOnayNow, isOrderAssignedToDesigner } from '@/domain/constants/orders'
 import { cn, formatNumber } from '@/lib/utils'
 
 export default function SiparisOnay() {
@@ -135,6 +135,7 @@ function normalizeItems(items, quantity) {
 }
 
 function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
+  const { user } = useAuth()
   const items = normalizeItems(order.items, order.quantity)
   const date = order.created_at
     ? new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(order.created_at))
@@ -145,6 +146,12 @@ function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
   // matbaa_onay is a different action from goruldu's "review and forward" —
   // this designer is here to approve a delivered ozalit, not edit the spec.
   const isMatbaaOnay = order.status === 'matbaa_onay'
+  // Leader-first: once the ozalit is received, a designer can't approve
+  // until a team leader already has (see canApproveMatbaaOnayNow). Hide
+  // "Onayla" rather than show a button that just bounces off the dialog's
+  // own gate.
+  const signLabel = !isMatbaaOnay ? 'İncele ve Gönder' : !order.matbaa_received ? 'Teslim Al' : 'Onayla'
+  const canAct = !isMatbaaOnay || !order.matbaa_received || canApproveMatbaaOnayNow(user, order)
 
   return (
     <Card className="border-amber-200">
@@ -205,9 +212,15 @@ function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
                 <FileText className="h-3.5 w-3.5" />
                 Ozalit Formu
               </Button>
-              <Button size="sm" onClick={onSign}>
-                {isMatbaaOnay ? 'Onayla' : 'İncele ve Gönder'}
-              </Button>
+              {canAct ? (
+                <Button size="sm" onClick={onSign}>
+                  {signLabel}
+                </Button>
+              ) : (
+                <span className="flex items-center px-2.5 text-xs text-muted-foreground">
+                  Lider onayı bekleniyor
+                </span>
+              )}
             </div>
           </div>
         </div>

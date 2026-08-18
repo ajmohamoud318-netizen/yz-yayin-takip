@@ -15,7 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import OrderBadge from '@/components/OrderBadge'
 import { STAGE_LABELS, STATUS_META, TYPE_LABELS, statusKeyForProject } from '@/api'
-import { isOrderAssignedToDesigner } from '@/domain/constants/orders'
+import { canApproveMatbaaOnayNow, isOrderAssignedToDesigner } from '@/domain/constants/orders'
 import { cn, formatTargetDate, formatNumber } from '@/lib/utils'
 
 const STAGE_GROUPS = {
@@ -325,14 +325,18 @@ function normalizeItems(items, quantity) {
 }
 
 function SiparisOrderRow({ order, onSign, onView }) {
+  const { user } = useAuth()
   const navigate = useNavigate()
   const items = normalizeItems(order.items, order.quantity)
+  const isMatbaaOnay = order.status === 'matbaa_onay'
   // matbaa_onay has two distinct sub-steps: the ozalit must be marked
-  // received before anyone can approve it (see TalepSignDialog's receipt
-  // gate). Label the button for whichever action is actually next so it
-  // doesn't read "Onayla" while approval is still blocked on receipt.
-  const signLabel =
-    order.status !== 'matbaa_onay' ? 'İncele ve Gönder' : order.matbaa_received ? 'Onayla' : 'Teslim Al'
+  // received before anyone can approve it, and once received, approval is
+  // leader-first — a designer can't approve until a team leader has (see
+  // canApproveMatbaaOnayNow). Label the button for whichever action is
+  // actually next, and hide "Onayla" entirely rather than show a dead-end
+  // button a designer's click will just bounce off.
+  const signLabel = !isMatbaaOnay ? 'İncele ve Gönder' : !order.matbaa_received ? 'Teslim Al' : 'Onayla'
+  const canAct = !isMatbaaOnay || !order.matbaa_received || canApproveMatbaaOnayNow(user, order)
   return (
     <Card
       tabIndex={0}
@@ -387,16 +391,22 @@ function SiparisOrderRow({ order, onSign, onView }) {
                 <Eye className="h-3.5 w-3.5" />
                 <span className="sr-only">Form</span>
               </Button>
-              <Button
-                size="sm"
-                className="h-7 flex-1 px-2.5 sm:flex-none"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onSign()
-                }}
-              >
-                {signLabel}
-              </Button>
+              {canAct ? (
+                <Button
+                  size="sm"
+                  className="h-7 flex-1 px-2.5 sm:flex-none"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSign()
+                  }}
+                >
+                  {signLabel}
+                </Button>
+              ) : (
+                <span className="flex flex-1 items-center justify-center rounded-md px-2.5 text-[11px] text-muted-foreground sm:flex-none">
+                  Lider onayı bekleniyor
+                </span>
+              )}
             </div>
           </div>
         </div>

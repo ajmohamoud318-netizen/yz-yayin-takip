@@ -8,6 +8,7 @@ import {
   Clock,
   FileText,
   Lock,
+  Package,
   PackageX,
   Pencil,
   Save,
@@ -22,7 +23,10 @@ import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
 import { useProject } from '@/hooks/useProjects'
-import api, { STAGE_LABELS, TYPE_LABELS, IN_FLIGHT_DEMO_OZALIT_STAGES, isLegacyProject } from '@/api'
+import api, {
+  STAGE_LABELS, TYPE_LABELS, IN_FLIGHT_DEMO_OZALIT_STAGES, isLegacyProject,
+  ORDER_STEPS, ORDER_STEP_LABELS,
+} from '@/api'
 import StageBar from '@/components/StageBar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -44,6 +48,75 @@ import { cn, formatDateTr, initials } from '@/lib/utils'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { isSubtaskDone } from '@/domain/services/progress'
 import { canApproveOzalitNow, ozalitLeaderApproved } from '@/domain'
+
+// "Open" mirrors useOpenOrdersByProject/findOpenByProject — not yet at a
+// terminal step. A project can have more than one of these in flight at
+// once (concurrent sipariş orders on the same product are allowed), so this
+// page shows one stepper per active order rather than assuming there's only
+// ever one.
+const isActiveOrder = (o) => o.status !== 'onaylandi' && o.status !== 'rejected'
+
+/**
+ * Compact stepper for a single sipariş order's own steps (Beklemede →
+ * Onaylandı) — separate from the project's main design/production pipeline
+ * (StageBar), which doesn't move while an order is in flight and says
+ * nothing about it. Clicking opens the full sign-off history via
+ * `onOpen`, matching the click affordance ProjectHistory's order entries
+ * already use.
+ */
+function OrderProgressStepper({ order, onOpen }) {
+  const currentIndex = Math.max(0, ORDER_STEPS.indexOf(order.status))
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="w-full rounded-lg border bg-background px-3 py-2.5 text-left transition hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <Package className="h-3.5 w-3.5" />
+        Aktif Baskı Talebi
+      </div>
+      <ol className="flex items-center">
+        {ORDER_STEPS.map((step, i) => {
+          const done = i < currentIndex
+          const current = i === currentIndex
+          return (
+            <li key={step} className="flex flex-1 items-center last:flex-none">
+              <div className="flex flex-col items-center">
+                <span
+                  className={cn(
+                    'flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold',
+                    done
+                      ? 'bg-brand-500 text-white'
+                      : current
+                        ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500'
+                        : 'bg-muted text-muted-foreground',
+                  )}
+                >
+                  {done ? '✓' : i + 1}
+                </span>
+                <span
+                  className={cn(
+                    'mt-1 max-w-[60px] text-center text-[9px] leading-tight',
+                    current ? 'font-semibold text-brand-700' : 'text-muted-foreground',
+                  )}
+                >
+                  {ORDER_STEP_LABELS[step]}
+                </span>
+              </div>
+              {i < ORDER_STEPS.length - 1 && (
+                <span
+                  aria-hidden="true"
+                  className={cn('mx-1.5 mb-4 h-0.5 flex-1', i < currentIndex ? 'bg-brand-500' : 'bg-muted')}
+                />
+              )}
+            </li>
+          )
+        })}
+      </ol>
+    </button>
+  )
+}
 
 export default function ProjectDetail() {
   const { id } = useParams()
@@ -932,6 +1005,19 @@ export default function ProjectDetail() {
                 <StageBar type={project.type} stage={project.stage} />
               </div>
             </div>
+
+            {/* The main pipeline above is frozen while a sipariş is in
+                flight (the project's stage only moves on final approval) —
+                show that order's own steps too, so it isn't a mystery why
+                nothing above is changing. More than one can be active at
+                once now that concurrent orders are allowed. */}
+            {projectOrders.filter(isActiveOrder).map((o) => (
+              <OrderProgressStepper
+                key={o.id}
+                order={o}
+                onOpen={() => setOrderFormViewer({ order: o })}
+              />
+            ))}
           </CardContent>
         </Card>
 
