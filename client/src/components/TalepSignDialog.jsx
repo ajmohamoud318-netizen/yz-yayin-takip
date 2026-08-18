@@ -101,7 +101,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   const [saving, setSaving] = useState(false)
   // matbaa_onay receipt gate — "Teslim Alındı" / "Teslim Alınamadı".
   const [matbaaBusy, setMatbaaBusy] = useState(false)
-  const [confirmMatbaaReceive, setConfirmMatbaaReceive] = useState(false)
   const [confirmMatbaaNotReceived, setConfirmMatbaaNotReceived] = useState(false)
   // Designer step (status 'goruldu') can revise the product spec before signing.
   const isDesignerStep = user?.role === 'designer' && order?.status === 'goruldu'
@@ -209,7 +208,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   // stale "are you sure" from a previously opened order shouldn't carry over.
   useEffect(() => {
     if (!open) return
-    setConfirmMatbaaReceive(false)
     setConfirmMatbaaNotReceived(false)
   }, [open, order?.id])
 
@@ -366,7 +364,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     setMatbaaBusy(true)
     try {
       const updated = await api.matbaaReceiveOrder(order.id)
-      setConfirmMatbaaReceive(false)
       toast.success('Matbaa ozaliti teslim alındı.')
       onUpdated?.(updated)
     } catch (err) {
@@ -402,6 +399,66 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     setRejectRoute('matbaa')
     setAssignIds([])
     onOpenChange(false)
+  }
+
+  // matbaa_onay's receipt gate has exactly one useful action before receipt
+  // is acknowledged — the approve button stays disabled until then, and
+  // rejecting the ozalit only makes sense once it's actually been seen. So
+  // skip the full approval form (cart summary, pipeline, signature, notes —
+  // all irrelevant here) and ask the one question that matters.
+  if (canActOnMatbaaOnay && !matbaaReceived && !showReject) {
+    return (
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Ozalit Teslim Alma</DialogTitle>
+            <DialogDescription>{order.project_title?.replace(/ \/ /g, ' ')}</DialogDescription>
+          </DialogHeader>
+
+          {confirmMatbaaNotReceived ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Matbaa teslimi hiç ulaşmadı mı? Talep, yeniden teslim için matbaaya geri gönderilecek.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={() => setConfirmMatbaaNotReceived(false)} disabled={matbaaBusy}>
+                  Vazgeç
+                </Button>
+                <Button type="button" variant="destructive" onClick={handleMatbaaNotReceived} disabled={matbaaBusy}>
+                  {matbaaBusy ? 'İşleniyor…' : 'Evet, ulaşmadı'}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-foreground">Ozaliti teslim aldınız mı?</p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-1">
+                  <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setConfirmMatbaaNotReceived(true)}>
+                    Teslim Alınamadı
+                  </Button>
+                  {canReject && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setShowReject(true)}>
+                      Reddet
+                    </Button>
+                  )}
+                </div>
+                <Button type="button" variant="success" onClick={handleMatbaaReceive} disabled={matbaaBusy}>
+                  <Check className="h-4 w-4" />
+                  {matbaaBusy ? 'İşleniyor…' : 'Evet, teslim aldım'}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={handleClose} disabled={matbaaBusy}>
+              İptal
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )
   }
 
   return (
@@ -708,76 +765,31 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
           )}
 
           {/* matbaa_onay receipt gate — the approve button below stays
-              disabled until the proof is acknowledged. Mirrors the ozalit
-              gate in SpecFormDialog, plus "Teslim Alınamadı" in the same
-              card (the project pipeline puts that on ProjectDetail's action
-              row instead, but orders have no such page — this dialog is the
-              only place a sipariş action ever happens). */}
-          {canActOnMatbaaOnay && !showReject && (
-            matbaaReceived ? (
-              matbaaAwaitingLeader ? (
-                <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-                  <Check className="h-4 w-4 shrink-0" />
-                  <span>
-                    Matbaa ozaliti teslim alındı{order.matbaa_received_by ? `, ${order.matbaa_received_by}` : ''}.
-                    Onay sırası ekip liderinde, o onayladıktan sonra onaylayabilirsiniz.
-                  </span>
-                </div>
-              ) : matbaaAlreadyApproved ? (
-                <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
-                  <Check className="h-4 w-4 shrink-0" />
-                  <span>Onayınızı verdiniz, diğer onaylar bekleniyor.</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
-                  <Check className="h-4 w-4 shrink-0" />
-                  <span>
-                    Matbaa ozaliti teslim alındı{order.matbaa_received_by ? `, ${order.matbaa_received_by}` : ''}. Onaylayabilirsiniz.
-                  </span>
-                </div>
-              )
+              disabled until the proof is acknowledged. The "not yet
+              received" state itself is handled by the compact early-return
+              dialog above; by the time this form renders, receipt has
+              already been confirmed (or this is the reject flow, where the
+              gate is irrelevant and hidden via !showReject). */}
+          {canActOnMatbaaOnay && !showReject && matbaaReceived && (
+            matbaaAwaitingLeader ? (
+              <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                <Check className="h-4 w-4 shrink-0" />
+                <span>
+                  Matbaa ozaliti teslim alındı{order.matbaa_received_by ? `, ${order.matbaa_received_by}` : ''}.
+                  Onay sırası ekip liderinde, o onayladıktan sonra onaylayabilirsiniz.
+                </span>
+              </div>
+            ) : matbaaAlreadyApproved ? (
+              <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
+                <Check className="h-4 w-4 shrink-0" />
+                <span>Onayınızı verdiniz, diğer onaylar bekleniyor.</span>
+              </div>
             ) : (
-              <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-                <p>
-                  Onaydan önce matbaa ozaliti teslim alınıp <strong>"Teslim Alındı"</strong> olarak
-                  işaretlenmelidir (atanmış tasarımcı veya ekip lideri).
-                </p>
-                {confirmMatbaaReceive ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-medium">Ozaliti teslim aldınız mı?</span>
-                    <Button type="button" size="sm" variant="success" onClick={handleMatbaaReceive} disabled={matbaaBusy}>
-                      <Check className="h-4 w-4" />
-                      {matbaaBusy ? 'İşleniyor…' : 'Evet, teslim aldım'}
-                    </Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmMatbaaReceive(false)} disabled={matbaaBusy}>
-                      Vazgeç
-                    </Button>
-                  </div>
-                ) : confirmMatbaaNotReceived ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-medium">Matbaa teslimi hiç ulaşmadı mı?</span>
-                    <Button type="button" size="sm" variant="destructive" onClick={handleMatbaaNotReceived} disabled={matbaaBusy}>
-                      {matbaaBusy ? 'İşleniyor…' : 'Evet, ulaşmadı'}
-                    </Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmMatbaaNotReceived(false)} disabled={matbaaBusy}>
-                      Vazgeç
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" size="sm" variant="outline" onClick={() => setConfirmMatbaaReceive(true)}>
-                      <Check className="h-4 w-4" />
-                      Teslim Alındı olarak işaretle
-                    </Button>
-                    <Button
-                      type="button" size="sm" variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => setConfirmMatbaaNotReceived(true)}
-                    >
-                      Teslim Alınamadı
-                    </Button>
-                  </div>
-                )}
+              <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
+                <Check className="h-4 w-4 shrink-0" />
+                <span>
+                  Matbaa ozaliti teslim alındı{order.matbaa_received_by ? `, ${order.matbaa_received_by}` : ''}. Onaylayabilirsiniz.
+                </span>
               </div>
             )
           )}
