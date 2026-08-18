@@ -10,6 +10,11 @@ export const ORDER_STEP_LABELS = {
   onaylandi: 'Üretime Alındı',
 }
 
+// `matbaa_onay` is multi-party, leader-first (every active team leader AND
+// every order assignee must approve — see computeMatbaaOnayApproval on the
+// server, `canApproveMatbaaOnayNow` below), NOT a flat single-owner step.
+// The 'team_leader' value below is only documentary here — the /advance
+// route special-cases matbaa_onay before ever consulting this map.
 export const ORDER_STEP_OWNER = {
   pending: 'team_leader',
   goruldu: 'designer',
@@ -80,4 +85,26 @@ export function isOrderAssignedToDesigner(order, designerId, fallbackProjectIds)
   const ids = Array.isArray(order.assignee_ids) ? order.assignee_ids : []
   if (ids.length > 0) return ids.includes(designerId)
   return fallbackProjectIds?.has?.(order.project_id) ?? false
+}
+
+/**
+ * Client-side mirror of the server's matbaa_onay leader-first gate
+ * (computeMatbaaOnayApproval), used to hide/disable the approve button
+ * before hitting the server. Direct port of `ozalitLeaderApproved` /
+ * `canApproveOzalitNow` in `domain/services/pipeline.js`, adapted to
+ * `order.assignee_ids` — a flat id array, unlike a project's `assignees`
+ * (`{id, name}` objects) — since the order already carries its own snapshot
+ * of who was picked, no `loadProjectAssignees`-style merge needed.
+ */
+export function matbaaOnayLeaderApproved(order) {
+  return (order?.matbaa_approvals ?? []).some((a) => a.role === 'team_leader')
+}
+
+export function canApproveMatbaaOnayNow(user, order) {
+  if (!user || !order) return false
+  if (!order.matbaa_received) return false
+  if (user.role === 'team_leader') return true
+  const isAssignedDesigner =
+    user.role === 'designer' && (order.assignee_ids ?? []).includes(user.id)
+  return isAssignedDesigner && matbaaOnayLeaderApproved(order)
 }

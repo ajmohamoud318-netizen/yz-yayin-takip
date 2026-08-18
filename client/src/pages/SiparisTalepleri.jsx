@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ShoppingCart, Package, Eye, PenLine, CheckCircle2, FileText } from 'lucide-react'
+import { ShoppingCart, Package, Eye, CheckCircle2, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 
 import api, { ORDER_STEP_LABELS, ORDER_STEP_NEXT } from '@/api'
@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
-import { cn } from '@/lib/utils'
+import { cn, formatNumber } from '@/lib/utils'
 
 // Statuses that the team leader acts on:
 //   pending      → görüldü   (first acknowledgement)
@@ -52,6 +52,14 @@ export default function SiparisTalepleri() {
     setSignOrder(null)
   }
 
+  // "Teslim Alındı" doesn't close the dialog — see TalepSignDialog's
+  // onUpdated contract (the leader typically continues straight on to
+  // approve in the same dialog).
+  function handleUpdated(updated) {
+    setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
+    setSignOrder(updated)
+  }
+
   const actionCount = requests.filter((r) => LEADER_ACTION_STEPS.has(r.status)).length
 
   const filtered = requests.filter((r) => {
@@ -66,7 +74,7 @@ export default function SiparisTalepleri() {
     <>
       <div className="space-y-6">
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight">Sipariş Talepleri</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Baskı Talepleri</h1>
         </header>
 
         <Tabs value={tab} onValueChange={setTab}>
@@ -116,6 +124,7 @@ export default function SiparisTalepleri() {
         open={!!signOrder}
         onOpenChange={(v) => !v && setSignOrder(null)}
         onSigned={handleSigned}
+        onUpdated={handleUpdated}
       />
       <TalepHistoryViewer
         order={viewOrder}
@@ -148,7 +157,9 @@ function RequestCard({ request, onSign, onView, onOzalit }) {
     ? new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(request.created_at))
     : '—'
 
-  const actionLabel = request.status === 'pending' ? 'Tasarımcıya Aktar' : 'Son Onay'
+  // matbaa_onay is multi-party now — a single click here is one vote, not
+  // necessarily the final one (see TalepSignDialog's isMatbaaOnayStep note).
+  const actionLabel = request.status === 'pending' ? 'Tasarımcıya Aktar' : 'Onayla'
 
   return (
     <Card className={cn(needsLeaderAction && 'border-amber-200')}>
@@ -170,12 +181,12 @@ function RequestCard({ request, onSign, onView, onOzalit }) {
                 {items.map((item) => (
                   <span key={item.name} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
                     {item.name}
-                    <span className="font-normal text-primary/70">· {item.quantity.toLocaleString('tr-TR')}</span>
+                    <span className="font-normal text-primary/70">· {formatNumber(item.quantity)}</span>
                   </span>
                 ))}
               </div>
             ) : (
-              <p className="text-sm font-medium">{request.quantity?.toLocaleString('tr-TR')} adet</p>
+              <p className="text-sm font-medium">{formatNumber(request.quantity)} adet</p>
             )}
 
             {request.notes && (
@@ -185,7 +196,7 @@ function RequestCard({ request, onSign, onView, onOzalit }) {
             <p className="text-xs text-muted-foreground">{date}</p>
           </div>
 
-          <div className="flex shrink-0 flex-col items-end gap-2">
+          <div className="flex w-full flex-col items-end gap-2 sm:w-auto sm:shrink-0">
             <Badge variant="outline" className={cn('text-[11px]', statusBadge)}>
               {statusLabel}
             </Badge>
@@ -205,7 +216,6 @@ function RequestCard({ request, onSign, onView, onOzalit }) {
                   className={cn(request.status === 'pending' && 'bg-amber-500 text-white shadow-sm hover:bg-amber-600')}
                   onClick={onSign}
                 >
-                  <PenLine className="h-3.5 w-3.5" />
                   {actionLabel}
                 </Button>
               )}

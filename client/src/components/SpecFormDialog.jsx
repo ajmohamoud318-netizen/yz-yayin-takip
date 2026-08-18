@@ -90,7 +90,7 @@ export const VARIANTS = {
     saveRequiresEditable: true,
     // Only the team leader authors the ozalit spec. Everyone else views it:
     //   • the matbaa (printer) receives, signs, and forwards it — never edits;
-    //   • the designer can open it (e.g. from Sipariş Onayı) but must not
+    //   • the designer can open it (e.g. from Baskı Onayı) but must not
     //     change the spec — they only see and print it.
     // History snapshots are read-only for everyone.
     isReadOnly: ({ mode, user }) =>

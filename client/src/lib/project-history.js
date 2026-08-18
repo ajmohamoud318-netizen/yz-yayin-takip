@@ -89,7 +89,7 @@ export const HISTORY_FILTERS = [
   { value: 'stage', label: 'Aşamalar' },
   { value: 'approval', label: 'Onaylar' },
   { value: 'subtask', label: 'Alt Görevler' },
-  { value: 'order', label: 'Sipariş' },
+  { value: 'order', label: 'Baskı' },
 ]
 
 const EVENTS = {
@@ -132,11 +132,11 @@ const EVENTS = {
   handover_request: { icon: Truck, tone: 'pending', weight: 'major', group: 'order', label: 'Teslim Talebi Oluşturuldu' },
   handover_confirm: { icon: Package, tone: 'positive', weight: 'major', group: 'order', label: 'Teslim Onaylandı' },
 
-  order_request: { icon: ShoppingCart, tone: 'order', weight: 'major', group: 'order', label: 'Sipariş Talebi Oluşturuldu' },
+  order_request: { icon: ShoppingCart, tone: 'order', weight: 'major', group: 'order', label: 'Baskı Talebi Oluşturuldu' },
   order_transfer: { icon: ShoppingCart, tone: 'order', weight: 'major', group: 'order', label: 'Tasarımcı Atandı' },
-  order_advance: { icon: ShoppingCart, tone: 'order', weight: 'major', group: 'order', label: 'Sipariş İlerletildi' },
-  order_final: { icon: ShoppingCart, tone: 'order', weight: 'major', group: 'order', label: 'Sipariş Onaylandı' },
-  order_reject: { icon: ShoppingCart, tone: 'negative', weight: 'major', group: 'order', label: 'Sipariş Reddedildi' },
+  order_advance: { icon: ShoppingCart, tone: 'order', weight: 'major', group: 'order', label: 'Baskı İlerletildi' },
+  order_final: { icon: ShoppingCart, tone: 'order', weight: 'major', group: 'order', label: 'Baskı Onaylandı' },
+  order_reject: { icon: ShoppingCart, tone: 'negative', weight: 'major', group: 'order', label: 'Baskı Reddedildi' },
 }
 
 // Coarse fallback for legacy rows written before `event` existed (migration
@@ -172,7 +172,7 @@ const ADVANCE_LABELS = {
   ozalit_teslim: "Ozalit'e Gönderildi",
   ozalit_onay: 'Ozalit',
   uretime_hazir: 'Üretime Hazır',
-  uretimde: 'Üretime Alındı (Sipariş)',
+  uretimde: 'Üretime Alındı (Baskı)',
   gumruk: 'Gümrüğe Gönderildi',
   satista: 'Satışa Çıkarıldı',
 }
@@ -205,7 +205,7 @@ export function historyMeta(h) {
   // Order rows carry their step label from the server; it's more specific
   // than anything this table could reconstruct.
   if (isOrderEntry(h) && h.order_step_label) {
-    return { ...base, label: `Sipariş, ${h.order_step_label}` }
+    return { ...base, label: `Baskı, ${h.order_step_label}` }
   }
   if (base.label) return base
 
@@ -220,7 +220,7 @@ export function historyMeta(h) {
   }
   if (h.action === 'approve') return { ...base, label: APPROVE_LABELS[h.from_stage] ?? 'Onaylandı' }
   if (h.action === 'reject') return { ...base, label: REJECT_LABELS[h.from_stage] ?? 'Reddedildi' }
-  if (h.action === 'order') return { ...base, label: 'Sipariş' }
+  if (h.action === 'order') return { ...base, label: 'Baskı' }
   return { ...base, label: 'İlerletildi' }
 }
 

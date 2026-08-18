@@ -39,12 +39,12 @@ export function assertOrderable(project) {
   // Delisted gets its own message: such a product looks perfectly orderable
   // (finished stage, spec filled in), so the generic text would mislead.
   if (project && project.catalog_hidden) {
-    const err = new Error('Bu ürün katalogdan kaldırıldı; sipariş talebi oluşturulamaz.')
+    const err = new Error('Bu ürün katalogdan kaldırıldı; baskı talebi oluşturulamaz.')
     err.status = 400
     throw err
   }
   if (!project || !ORDERABLE_STAGES.has(project.stage) || !project.has_product_info) {
-    const err = new Error('Sipariş talebi yalnızca üretime hazır aşamasına ulaşmış ve Ürün Bilgileri girilmiş ürünler için oluşturulabilir.')
+    const err = new Error('Baskı talebi yalnızca üretime hazır aşamasına ulaşmış ve Ürün Bilgileri girilmiş ürünler için oluşturulabilir.')
     err.status = 400
     throw err
   }
@@ -75,7 +75,7 @@ export function isLegacyProject(project) {
  */
 export function assertNotLegacy(project) {
   if (isLegacyProject(project)) {
-    const err = new Error('Kayıtlı ürün pipeline üzerinde ilerletilemez. Yeni bir baskı için sipariş talebi oluşturun.')
+    const err = new Error('Kayıtlı ürün pipeline üzerinde ilerletilemez. Yeni bir baskı talebi oluşturun.')
     err.status = 400
     throw err
   }

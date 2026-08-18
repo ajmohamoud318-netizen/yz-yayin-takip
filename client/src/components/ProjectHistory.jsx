@@ -319,7 +319,7 @@ function MajorRow({
                 icon={ShoppingCart}
                 tone="order"
               >
-                Sipariş Formu
+                Baskı Formu
               </FormButton>
             )}
           </div>

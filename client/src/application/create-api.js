@@ -125,6 +125,9 @@ export function createApi() {
     createOrderRequest: makeCreateOrderRequest(),
     advanceOrderRequest: makeAdvanceOrderRequest(),
     rejectOrderRequest: makeRejectOrderRequest(),
+    matbaaReceiveOrder: (id) => orderRepo.matbaaReceiveOrder(id),
+    matbaaNotReceivedOrder: (id) => orderRepo.matbaaNotReceivedOrder(id),
+    updateOrderSubtask: (orderId, subtaskId, patch) => orderRepo.updateOrderSubtask(orderId, subtaskId, patch),
 
     // Handovers (Matbaa → Sales "teslim")
     listHandovers: () => handoverRepo.listHandovers(),

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ThumbsUp, ThumbsDown, Inbox, Send, ShoppingCart, Eye, PenLine } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, Inbox, Send, ShoppingCart, Eye } from 'lucide-react'
 
 import api, { ORDER_STEP_LABELS } from '@/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -16,7 +16,7 @@ import OzalitFormDialog from '@/components/OzalitFormDialog'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
 import { canRejectAtStage, isDemoApprover, isOzalitApprover, ozalitLeaderApproved } from '@/domain'
-import { formatTargetDate } from '@/lib/utils'
+import { formatTargetDate, formatNumber } from '@/lib/utils'
 
 /**
  * Approval queue — demo/ozalit tabs for the design pipeline, plus a sipariş
@@ -98,7 +98,7 @@ export default function Approvals({ tab = 'demo' }) {
       <>
         <div className="space-y-5">
           <header>
-            <h1 className="text-2xl font-semibold tracking-tight">Sipariş Teslimi</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Baskı Teslimi</h1>
           </header>
 
           {ordersLoading ? (
@@ -109,7 +109,7 @@ export default function Approvals({ tab = 'demo' }) {
             <Card>
               <CardContent className="grid place-items-center gap-2 p-10 text-center">
                 <ShoppingCart className="h-8 w-8 text-muted-foreground" />
-                <p className="text-sm font-medium">Onay bekleyen sipariş yok.</p>
+                <p className="text-sm font-medium">Onay bekleyen baskı yok.</p>
                 <p className="text-xs text-muted-foreground">Tasarımcı onayladığında burada görünecek.</p>
               </CardContent>
             </Card>
@@ -380,7 +380,7 @@ function SiparisOrderCard({ order, onSign, onView }) {
             </p>
           </div>
           <Badge variant="outline" className="shrink-0 bg-indigo-50 text-indigo-700 border-indigo-200 text-[10px]">
-            Sipariş Ozalit İsteniyor
+            Baskı Ozalit İsteniyor
           </Badge>
         </div>
 
@@ -389,12 +389,12 @@ function SiparisOrderCard({ order, onSign, onView }) {
             {items.map((item) => (
               <span key={item.name} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
                 {item.name}
-                <span className="font-normal text-primary/70">· {item.quantity.toLocaleString('tr-TR')}</span>
+                <span className="font-normal text-primary/70">· {formatNumber(item.quantity)}</span>
               </span>
             ))}
           </div>
         ) : (
-          <p className="text-sm">{order.quantity?.toLocaleString('tr-TR')} adet</p>
+          <p className="text-sm">{formatNumber(order.quantity)} adet</p>
         )}
 
         {order.notes && (
@@ -407,7 +407,6 @@ function SiparisOrderCard({ order, onSign, onView }) {
             Formu Görüntüle
           </Button>
           <Button size="sm" className="flex-1" onClick={onSign}>
-            <PenLine className="h-3.5 w-3.5" />
             Teslim Et
           </Button>
         </div>

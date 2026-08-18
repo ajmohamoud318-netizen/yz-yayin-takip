@@ -173,9 +173,14 @@ export default function AppShell() {
         // exactly — a badge counting differently than the page it points at is
         // how "3 bekliyor" ends up opening an empty list (or vice versa).
         const myIds = new Set(projects.filter((p) => (p.assignees ?? []).some((a) => a.id === user.id)).map((p) => p.id))
-        setDesignerOrders(orders.filter(
-          (o) => o.status === 'goruldu' && isOrderAssignedToDesigner(o, user.id, myIds),
-        ).length)
+        setDesignerOrders(orders.filter((o) => {
+          if (!isOrderAssignedToDesigner(o, user.id, myIds)) return false
+          if (o.status === 'goruldu') return true
+          if (o.status === 'matbaa_onay') {
+            return !(o.matbaa_approvals ?? []).some((a) => a.id === user.id)
+          }
+          return false
+        }).length)
       }
     }).catch(() => {})
 
@@ -876,7 +881,7 @@ function UserMenu({ user, onLogout }) {
 const PAGE_TITLES = [
   { match: (p) => p === '/', label: 'Genel Bakış' },
   { match: (p) => p.startsWith('/kanban'), label: 'İş Akışı' },
-  { match: (p) => p.startsWith('/approvals/siparis'), label: 'Sipariş Onayı' },
+  { match: (p) => p.startsWith('/approvals/siparis'), label: 'Baskı Teslimi' },
   { match: (p) => p.startsWith('/approvals'), label: 'Onaylar' },
   { match: (p) => p.startsWith('/team'), label: 'Ekip' },
   { match: (p) => p.startsWith('/deleted-projects'), label: 'Silinen Projeler' },
@@ -887,8 +892,8 @@ const PAGE_TITLES = [
   { match: (p) => p.startsWith('/urun-bilgileri'), label: 'Ürün Bilgileri' },
   { match: (p) => p.startsWith('/urunler'), label: 'Ürünler' },
   { match: (p) => p.startsWith('/siparis-talebi'), label: 'Taleplerim' },
-  { match: (p) => p.startsWith('/siparis-talepleri'), label: 'Sipariş Talepleri' },
-  { match: (p) => p.startsWith('/siparis-onay'), label: 'Sipariş Onayları' },
+  { match: (p) => p.startsWith('/siparis-talepleri'), label: 'Baskı Talepleri' },
+  { match: (p) => p.startsWith('/siparis-onay'), label: 'Baskı Onayları' },
   { match: (p) => p.startsWith('/uretime-hazir'), label: 'Üretime Hazır' },
   { match: (p) => p.startsWith('/hedef-projeler'), label: 'Hedef Projeler' },
   { match: (p) => p.startsWith('/teslim-talepleri'), label: 'Teslim Talepleri' },
@@ -948,7 +953,7 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
     },
     {
       to: '/approvals/siparis',
-      label: 'Sipariş Teslimi',
+      label: 'Baskı Teslimi',
       icon: PackageCheck,
       badge: printerOrders,
       badgeTone: 'amber',
@@ -966,7 +971,7 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
     },
     {
       to: '/siparis-onay',
-      label: 'Sipariş Onayları',
+      label: 'Baskı Onayları',
       icon: ClipboardCheck,
       badge: designerOrders || undefined,
       badgeTone: 'amber',
@@ -975,7 +980,7 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
     },
     {
       to: '/siparis-talepleri',
-      label: 'Sipariş Talepleri',
+      label: 'Baskı Talepleri',
       icon: ClipboardList,
       badge: pendingOrders,
       badgeTone: 'amber',

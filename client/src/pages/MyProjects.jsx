@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, ShoppingCart, Package, PenLine, Eye } from 'lucide-react'
+import { Search, ShoppingCart, Package, Eye } from 'lucide-react'
 
 import api, { ORDER_STEP_LABELS } from '@/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -16,7 +16,7 @@ import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialo
 import OrderBadge from '@/components/OrderBadge'
 import { STAGE_LABELS, STATUS_META, TYPE_LABELS, statusKeyForProject } from '@/api'
 import { isOrderAssignedToDesigner } from '@/domain/constants/orders'
-import { cn, formatTargetDate } from '@/lib/utils'
+import { cn, formatTargetDate, formatNumber } from '@/lib/utils'
 
 const STAGE_GROUPS = {
   all: 'Tümü',
@@ -71,13 +71,20 @@ export default function MyProjects() {
   useEffect(() => {
     if (user?.role !== 'designer') return
     api.listOrderRequests().then((reqs) => {
-      // Designer signs orders that are at 'goruldu' status. Check the
+      // Designer signs orders at 'goruldu', and at 'matbaa_onay' until they've
+      // added their own approval to the multi-party ledger (see
+      // /siparis-onay's identical filter — must match exactly). Check the
       // order's own assignee_ids first (authoritative — see
       // isOrderAssignedToDesigner), falling back to project assignment only
       // for legacy orders written before assignee_ids was populated.
-      const relevant = reqs.filter(
-        (r) => r.status === 'goruldu' && isOrderAssignedToDesigner(r, user?.id, myProjectIds),
-      )
+      const relevant = reqs.filter((r) => {
+        if (!isOrderAssignedToDesigner(r, user?.id, myProjectIds)) return false
+        if (r.status === 'goruldu') return true
+        if (r.status === 'matbaa_onay') {
+          return !(r.matbaa_approvals ?? []).some((a) => a.id === user?.id)
+        }
+        return false
+      })
       setSiparisQueue(relevant)
     }).catch(() => {})
   }, [user?.id, user?.role, myProjectIds])
@@ -85,6 +92,13 @@ export default function MyProjects() {
   function handleOrderSigned(updated) {
     setSiparisQueue((prev) => prev.filter((r) => r.id !== updated.id))
     setSignOrder(null)
+  }
+
+  // "Teslim Alındı" doesn't remove the order from the queue — see
+  // TalepSignDialog's onUpdated contract.
+  function handleOrderUpdated(updated) {
+    setSiparisQueue((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
+    setSignOrder(updated)
   }
 
   const rows = useMemo(() => {
@@ -116,7 +130,7 @@ export default function MyProjects() {
             <div className="flex items-center gap-2">
               <ShoppingCart className="h-4 w-4 text-amber-600" />
               <h2 className="text-sm font-semibold text-amber-700">
-                Sipariş Onayı Bekliyor, {siparisQueue.length} talep
+                Baskı Onayı Bekliyor, {siparisQueue.length} talep
               </h2>
             </div>
             <div className="space-y-2">
@@ -293,6 +307,7 @@ export default function MyProjects() {
         open={!!signOrder}
         onOpenChange={(v) => !v && setSignOrder(null)}
         onSigned={handleOrderSigned}
+        onUpdated={handleOrderUpdated}
       />
       <TalepHistoryViewer
         order={viewOrder}
@@ -328,18 +343,18 @@ function SiparisOrderRow({ order, onSign, onView }) {
                 {items.map((item) => (
                   <span key={item.name} className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px]">
                     <span className="font-medium">{item.name}</span>
-                    <span className="text-amber-700/70">· {item.quantity.toLocaleString('tr-TR')}</span>
+                    <span className="text-amber-700/70">· {formatNumber(item.quantity)}</span>
                   </span>
                 ))}
               </div>
             ) : (
-              <p className="mt-0.5 text-xs font-medium">{order.quantity?.toLocaleString('tr-TR')} adet</p>
+              <p className="mt-0.5 text-xs font-medium">{formatNumber(order.quantity)} adet</p>
             )}
             {order.notes && <p className="mt-0.5 text-xs text-muted-foreground">{order.notes}</p>}
           </div>
           <div className="flex w-full shrink-0 flex-col items-stretch gap-1.5 sm:w-auto sm:items-end">
             <Badge variant="outline" className="self-start bg-blue-50 text-blue-700 border-blue-200 text-[10px] sm:self-auto">
-              {ORDER_STEP_LABELS.goruldu}
+              {ORDER_STEP_LABELS[order.status] ?? order.status}
             </Badge>
             <div className="flex gap-1">
               <Button size="sm" variant="ghost" className="h-7 flex-1 px-2 sm:flex-none" onClick={onView}>
@@ -347,8 +362,7 @@ function SiparisOrderRow({ order, onSign, onView }) {
                 <span className="sr-only">Form</span>
               </Button>
               <Button size="sm" className="h-7 flex-1 px-2.5 sm:flex-none" onClick={onSign}>
-                <PenLine className="h-3.5 w-3.5" />
-                İncele ve Gönder
+                {order.status === 'matbaa_onay' ? 'Onayla' : 'İncele ve Gönder'}
               </Button>
             </div>
           </div>

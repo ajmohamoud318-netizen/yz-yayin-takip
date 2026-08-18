@@ -11,7 +11,7 @@ import {
 import { Card, CardContent } from '../components/ui/card.jsx'
 import { Skeleton } from '../components/ui/skeleton.jsx'
 import { Button } from '../components/ui/button.jsx'
-import { cn, initials } from '../lib/utils.js'
+import { cn, initials, formatNumber } from '../lib/utils.js'
 
 // The seven status color keys, in legend order.
 // Order = pipeline order (Yeni → Devam → Demo → Özalit → Üretime Hazır → Üretimde → Satışta)
@@ -397,7 +397,7 @@ function SummaryCard({ label, value, colorKey }) {
           isTotal ? 'text-background' : meta?.onSurface,
         )}
       >
-        {value}
+        {formatNumber(value)}
       </p>
     </div>
   )

@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TalepHistoryViewer } from '@/components/TalepSignDialog'
-import { cn } from '@/lib/utils'
+import { cn, formatNumber } from '@/lib/utils'
 
 const STATUS_BADGE = {
   pending:        'bg-amber-50 text-amber-700 border-amber-200',
@@ -60,14 +60,14 @@ export default function SiparisListesi() {
             )}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Gönderdiğiniz sipariş taleplerinin durumu. Yeni sipariş vermek için Ürünler sayfasını kullanın.
+            Gönderdiğiniz baskı taleplerinin durumu. Yeni baskı vermek için Ürünler sayfasını kullanın.
           </p>
         </header>
 
         {requests.length === 0 ? (
           <Card>
             <CardContent className="p-10 text-center text-sm text-muted-foreground">
-              Henüz sipariş talebiniz yok.
+              Henüz baskı talebiniz yok.
             </CardContent>
           </Card>
         ) : (
@@ -122,13 +122,13 @@ function RequestRow({ request, onView }) {
                 {items.map((item) => (
                   <span key={item.name} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px]">
                     <span className="font-medium">{item.name}</span>
-                    <span className="text-muted-foreground">· {item.quantity.toLocaleString('tr-TR')} adet</span>
+                    <span className="text-muted-foreground">· {formatNumber(item.quantity)} adet</span>
                   </span>
                 ))}
               </div>
             ) : (
               <p className="mt-0.5 text-xs">
-                <span className="font-medium text-foreground">{request.quantity?.toLocaleString('tr-TR')} adet</span>
+                <span className="font-medium text-foreground">{formatNumber(request.quantity)} adet</span>
               </p>
             )}
             {request.notes && <p className="mt-1 text-xs text-muted-foreground">{request.notes}</p>}

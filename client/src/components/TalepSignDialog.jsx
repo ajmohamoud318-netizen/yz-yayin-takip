@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
-import { PenLine, ShoppingCart, ChevronDown, ChevronLeft, Package, Pencil, Plus, X, Check, ListChecks, Printer, FileText, RefreshCw } from 'lucide-react'
+import { ShoppingCart, ChevronDown, ChevronLeft, Package, Pencil, Plus, X, Check, ListChecks, Printer, FileText, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
-import api, { ORDER_STEP_LABELS, ORDER_STEP_NEXT, ORDER_REJECT_TO, ORDER_REJECT_TARGETS } from '@/api'
+import api, {
+  ORDER_STEP_LABELS, ORDER_STEP_NEXT, ORDER_REJECT_TO, ORDER_REJECT_TARGETS,
+  canApproveMatbaaOnayNow, matbaaOnayLeaderApproved,
+} from '@/api'
 import { getComponentsForProject, saveComponentsForProject, primeProductInfoCache } from '@/data/productCatalog'
 import { buildAdetRows } from '@/data/orderAdet'
 import { useAuth } from '@/hooks/useAuth'
@@ -20,7 +23,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { cn } from '@/lib/utils'
+import { cn, formatNumber } from '@/lib/utils'
 
 const deepClone = (x) => JSON.parse(JSON.stringify(x ?? []))
 // Reads the shared, server-backed spec (cache → local mirror → seed).
@@ -33,12 +36,18 @@ function saveProductComps(projectId, comps) {
   return saveComponentsForProject(projectId, comps)
 }
 
-// Per-subtask fields PATCH /api/subtasks/:id accepts from the designer.
+// Per-subtask fields PATCH /api/order-requests/:orderId/subtasks/:id accepts
+// from the designer.
 const SUBTASK_PATCH_FIELDS = ['needs_revize', 'is_done', 'pages_done', 'stickers_done']
 
 /**
  * Persist the designer's Revize flags by PATCHing only the rows that actually
  * changed.
+ *
+ * These are `order_subtasks` rows — this order's own snapshot of the
+ * project's alt görevler (migration 039), not the shared `subtasks` table —
+ * so two concurrent orders on the same project never see or overwrite each
+ * other's rework tracking.
  *
  * This deliberately does NOT use `PUT /projects/:id/subtasks`. That endpoint
  * replaces the whole list and belongs to the team leader, who owns the list's
@@ -51,7 +60,7 @@ const SUBTASK_PATCH_FIELDS = ['needs_revize', 'is_done', 'pages_done', 'stickers
  * could not sign at all, while their ürün bilgileri edit (saved just above)
  * had already gone through.
  */
-async function saveSubtaskFlags(subtasks, originalJson) {
+async function saveSubtaskFlags(orderId, subtasks, originalJson) {
   const before = new Map(JSON.parse(originalJson).map((s) => [s.id, s]))
   for (const s of subtasks) {
     const prev = before.get(s.id)
@@ -68,7 +77,7 @@ async function saveSubtaskFlags(subtasks, originalJson) {
       }
       patch[f] = s[f]
     }
-    if (Object.keys(patch).length > 0) await api.updateSubtask(s.id, patch)
+    if (Object.keys(patch).length > 0) await api.updateOrderSubtask(orderId, s.id, patch)
   }
 }
 
@@ -80,12 +89,20 @@ async function saveSubtaskFlags(subtasks, originalJson) {
  *   open        – boolean
  *   onOpenChange – (bool) => void
  *   onSigned    – (updatedOrder) => void  — called after successful advance
+ *                  (order leaves the caller's queue, dialog closes)
+ *   onUpdated   – (updatedOrder) => void  — called after "Teslim Alındı"
+ *                  (mid-flow state change; dialog STAYS open so the same
+ *                  user can continue on to approve — see handleMatbaaReceive)
  */
-export default function TalepSignDialog({ order, open, onOpenChange, onSigned }) {
+export default function TalepSignDialog({ order, open, onOpenChange, onSigned, onUpdated }) {
   const { user } = useAuth()
   const celebrate = useDesignerCelebration()
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  // matbaa_onay receipt gate — "Teslim Alındı" / "Teslim Alınamadı".
+  const [matbaaBusy, setMatbaaBusy] = useState(false)
+  const [confirmMatbaaReceive, setConfirmMatbaaReceive] = useState(false)
+  const [confirmMatbaaNotReceived, setConfirmMatbaaNotReceived] = useState(false)
   // Designer step (status 'goruldu') can revise the product spec before signing.
   const isDesignerStep = user?.role === 'designer' && order?.status === 'goruldu'
   const [comps, setComps] = useState([])
@@ -124,6 +141,12 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
       // Subtasks first (open); product info collapsed until needed.
       setSubsOpen(true)
       setEditorOpen(false)
+      // This order's own alt görevler snapshot (order_subtasks) — already
+      // embedded on the order object from GET /order-requests, no fetch
+      // needed, and no risk of reading another concurrent order's rows.
+      const subs = deepClone(order.subtasks ?? [])
+      setSubtasks(subs)
+      originalSubsRef.current = JSON.stringify(subs)
       let cancelled = false
       // Pull the authoritative spec from the server (the cache may be cold on
       // this browser) and prime the shared cache so every view agrees.
@@ -136,30 +159,25 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
           originalRef.current = JSON.stringify(fresh)
         })
         .catch(() => {})
-      api.getProject(order.project_id)
-        .then((p) => {
-          if (cancelled) return
-          const subs = deepClone(p.subtasks ?? [])
-          setSubtasks(subs)
-          originalSubsRef.current = JSON.stringify(subs)
-        })
-        .catch(() => {})
       return () => { cancelled = true }
     }
+    // Deliberately keyed on order?.id, not order?.subtasks — this should
+    // seed local edit state once when the dialog opens for this order, not
+    // reset in-progress edits every time the order object is refetched
+    // elsewhere (polling, onSigned/onUpdated) while the dialog stays open.
   }, [open, order?.id, isDesignerStep])
 
-  // Load the project's alt görevler for the leader's reject picker, and reset
-  // the selection each time the dialog reopens so a previous rejection's
-  // choices can't leak into the next one.
+  // Prime the leader's reject picker from the order's own alt görevler
+  // snapshot, and reset the selection each time the dialog reopens so a
+  // previous rejection's choices can't leak into the next one. Keyed on
+  // order?.id (not order?.subtasks) for the same reason as the designer-step
+  // effect above — don't clear an in-progress selection on a background
+  // order refresh.
   useEffect(() => {
     if (!(open && order && canReject)) return
     setRevizeIds([])
-    let cancelled = false
-    api.getProject(order.project_id)
-      .then((p) => { if (!cancelled) setRejectSubtasks(p.subtasks ?? []) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [open, order?.id, order?.project_id, canReject])
+    setRejectSubtasks(order.subtasks ?? [])
+  }, [open, order?.id, canReject])
 
   // Load designers + default selection (the project's current designers) when
   // the team leader is on the assign step.
@@ -187,11 +205,45 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
     }
   }, [open, order?.id, order?.project_id, isAssignStep])
 
+  // Each (re)open starts the receipt-gate confirm prompts collapsed — a
+  // stale "are you sure" from a previously opened order shouldn't carry over.
+  useEffect(() => {
+    if (!open) return
+    setConfirmMatbaaReceive(false)
+    setConfirmMatbaaNotReceived(false)
+  }, [open, order?.id])
+
   if (!order) return null
 
   const nextStep = ORDER_STEP_NEXT[order.status]
   const nextLabel = ORDER_STEP_LABELS[nextStep] ?? 'Onayla'
   const currentStepLabel = ORDER_STEP_LABELS[order.status] ?? order.status
+
+  // matbaa_onay is multi-party, leader-first — full parity with the main
+  // pipeline's ozalit_onay gate (see domain/constants/orders.js). Nobody can
+  // approve until the delivered proof is "Teslim Alındı", and a designer only
+  // counter-signs once a team leader has. A click here never claims finality
+  // ("Son Onay") — the client can't see the full required-approver set, only
+  // whether ITS OWN vote clears; the server decides when the round is done.
+  const isMatbaaOnayStep = order.status === 'matbaa_onay'
+  const isAssignedMatbaaDesigner =
+    user?.role === 'designer' && (order.assignee_ids ?? []).includes(user?.id)
+  const canActOnMatbaaOnay = isMatbaaOnayStep && (user?.role === 'team_leader' || isAssignedMatbaaDesigner)
+  const matbaaReceived = !!order.matbaa_received
+  const matbaaAwaitingLeader =
+    isMatbaaOnayStep && isAssignedMatbaaDesigner && !matbaaOnayLeaderApproved(order)
+  const matbaaAlreadyApproved =
+    isMatbaaOnayStep && (order.matbaa_approvals ?? []).some((a) => a.id === user?.id)
+
+  // Non-designer steps each have their own plain-language action, matching the
+  // trigger button that opened this dialog — no "İmzala" wording, no pen icon.
+  const actionLabel = isAssignStep
+    ? 'Tasarımcıya Aktar'
+    : order.status === 'tasarimci_onay'
+      ? 'Teslim Et'
+      : isMatbaaOnayStep
+        ? 'Onayla'
+        : 'Son Onay'
 
   const items = normalizeItems(order.items, order.quantity)
   // Only completed alt görevler can be sent back for revision — an unfinished
@@ -228,7 +280,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
         await saveProductComps(order.project_id, comps)
         const compsChanged = JSON.stringify(comps) !== originalRef.current
         const subsChanged = JSON.stringify(subtasks) !== originalSubsRef.current
-        if (subsChanged) await saveSubtaskFlags(subtasks, originalSubsRef.current)
+        if (subsChanged) await saveSubtaskFlags(order.id, subtasks, originalSubsRef.current)
         const parts = []
         if (compsChanged) parts.push('ürün bilgileri')
         if (subsChanged) parts.push('alt görevler')
@@ -247,13 +299,20 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
         expectedVersion: order.version ?? null,
         ...(isAssignStep ? { assignees: assignIds } : {}),
       })
-      toast.success(`${nextLabel}, İmzalandı.`)
+      // A matbaa_onay click doesn't always complete the round — the client
+      // can't tell in advance whether its own vote is the last one needed
+      // (see the note above actionLabel), so it checks the server's answer.
+      if (isMatbaaOnayStep && updated.status === order.status) {
+        toast.success('Onayınız kaydedildi, diğer onaylar bekleniyor.')
+      } else {
+        toast.success(`${nextLabel}.`)
+      }
       if (isDesignerStep) celebrate()
       setNotes('')
       onOpenChange(false)
       onSigned?.(updated)
     } catch (err) {
-      toast.error(err.message || 'İmzalama başarısız.')
+      toast.error(err.message || 'İşlem başarısız.')
     } finally {
       setSaving(false)
     }
@@ -277,11 +336,11 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
       toast.success(
         rejectRoute === 'designer'
           ? revizeIds.length > 0
-            ? `Sipariş ozaliti reddedildi, ${revizeIds.length} alt görev revize için tasarımcıya gönderildi.`
-            : 'Sipariş ozaliti reddedildi, tasarımcıya geri gönderildi.'
+            ? `Baskı ozaliti reddedildi, ${revizeIds.length} alt görev revize için tasarımcıya gönderildi.`
+            : 'Baskı ozaliti reddedildi, tasarımcıya geri gönderildi.'
           : rejectRoute === 'reassign'
-          ? 'Sipariş reddedildi, tasarımcı kadrosu yeniden seçilecek.'
-          : 'Sipariş ozaliti reddedildi, matbaaya geri gönderildi.',
+          ? 'Baskı reddedildi, tasarımcı kadrosu yeniden seçilecek.'
+          : 'Baskı ozaliti reddedildi, matbaaya geri gönderildi.',
       )
       setRejectReason('')
       setRejectRoute('matbaa')
@@ -293,6 +352,45 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
       toast.error(err.message || 'Reddetme başarısız.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  // "Teslim Alındı" — the matbaa_onay receipt gate. Deliberately does NOT
+  // close the dialog / call onSigned: the same user who just acknowledged
+  // receipt typically continues straight on to approve, and onSigned's
+  // contract (used by handleSign/handleReject above) is "this order left my
+  // queue," which isn't true yet. onUpdated instead pushes the fresh order
+  // back up so the parent's held `order` state (and this dialog's props)
+  // reflect matbaa_received without unmounting anything.
+  async function handleMatbaaReceive() {
+    setMatbaaBusy(true)
+    try {
+      const updated = await api.matbaaReceiveOrder(order.id)
+      setConfirmMatbaaReceive(false)
+      toast.success('Matbaa ozaliti teslim alındı.')
+      onUpdated?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'İşlem başarısız.')
+    } finally {
+      setMatbaaBusy(false)
+    }
+  }
+
+  // "Teslim Alınamadı" — the counterpart. The order actually leaves
+  // matbaa_onay here (back to tasarimci_onay for re-delivery), so this DOES
+  // close the dialog and call onSigned, same as a rejection.
+  async function handleMatbaaNotReceived() {
+    setMatbaaBusy(true)
+    try {
+      const updated = await api.matbaaNotReceivedOrder(order.id)
+      toast.success('Matbaa teslimi alınamadı, matbaaya geri gönderildi.')
+      setConfirmMatbaaNotReceived(false)
+      onOpenChange(false)
+      onSigned?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'İşlem başarısız.')
+    } finally {
+      setMatbaaBusy(false)
     }
   }
 
@@ -311,8 +409,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
       <DialogContent className={cn('max-w-md', DIALOG_MOBILE_SHEET, isDesignerStep && 'max-w-lg')}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <PenLine className="h-4 w-4" />
-            {isDesignerStep ? 'İncele ve Gönder' : `İmzala, ${nextLabel}`}
+            {isDesignerStep ? 'İncele ve Gönder' : actionLabel}
           </DialogTitle>
           <DialogDescription>
             {isDesignerStep
@@ -339,14 +436,14 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
                       >
                         {item.name}
                         <span className="font-normal text-primary/70">
-                          · {item.quantity.toLocaleString('tr-TR')}
+                          · {formatNumber(item.quantity)}
                         </span>
                       </span>
                     ))}
                   </div>
                 ) : (
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {order.quantity?.toLocaleString('tr-TR')} adet
+                    {formatNumber(order.quantity)} adet
                   </p>
                 )}
                 {order.notes && (
@@ -404,12 +501,12 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
                       ? items.map((it) => (
                           <span key={it.name} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground/80">
                             {it.name}
-                            <span className="text-muted-foreground">{it.quantity.toLocaleString('tr-TR')} adet</span>
+                            <span className="text-muted-foreground">{formatNumber(it.quantity)} adet</span>
                           </span>
                         ))
                       : order.quantity != null && (
                           <span className="inline-flex items-center whitespace-nowrap rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground/80">
-                            {order.quantity.toLocaleString('tr-TR')} adet
+                            {formatNumber(order.quantity)} adet
                           </span>
                         )}
                   </div>
@@ -610,6 +707,81 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
             </div>
           )}
 
+          {/* matbaa_onay receipt gate — the approve button below stays
+              disabled until the proof is acknowledged. Mirrors the ozalit
+              gate in SpecFormDialog, plus "Teslim Alınamadı" in the same
+              card (the project pipeline puts that on ProjectDetail's action
+              row instead, but orders have no such page — this dialog is the
+              only place a sipariş action ever happens). */}
+          {canActOnMatbaaOnay && !showReject && (
+            matbaaReceived ? (
+              matbaaAwaitingLeader ? (
+                <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                  <Check className="h-4 w-4 shrink-0" />
+                  <span>
+                    Matbaa ozaliti teslim alındı{order.matbaa_received_by ? `, ${order.matbaa_received_by}` : ''}.
+                    Onay sırası ekip liderinde, o onayladıktan sonra onaylayabilirsiniz.
+                  </span>
+                </div>
+              ) : matbaaAlreadyApproved ? (
+                <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
+                  <Check className="h-4 w-4 shrink-0" />
+                  <span>Onayınızı verdiniz, diğer onaylar bekleniyor.</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
+                  <Check className="h-4 w-4 shrink-0" />
+                  <span>
+                    Matbaa ozaliti teslim alındı{order.matbaa_received_by ? `, ${order.matbaa_received_by}` : ''}. Onaylayabilirsiniz.
+                  </span>
+                </div>
+              )
+            ) : (
+              <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                <p>
+                  Onaydan önce matbaa ozaliti teslim alınıp <strong>"Teslim Alındı"</strong> olarak
+                  işaretlenmelidir (atanmış tasarımcı veya ekip lideri).
+                </p>
+                {confirmMatbaaReceive ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium">Ozaliti teslim aldınız mı?</span>
+                    <Button type="button" size="sm" variant="success" onClick={handleMatbaaReceive} disabled={matbaaBusy}>
+                      <Check className="h-4 w-4" />
+                      {matbaaBusy ? 'İşleniyor…' : 'Evet, teslim aldım'}
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmMatbaaReceive(false)} disabled={matbaaBusy}>
+                      Vazgeç
+                    </Button>
+                  </div>
+                ) : confirmMatbaaNotReceived ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium">Matbaa teslimi hiç ulaşmadı mı?</span>
+                    <Button type="button" size="sm" variant="destructive" onClick={handleMatbaaNotReceived} disabled={matbaaBusy}>
+                      {matbaaBusy ? 'İşleniyor…' : 'Evet, ulaşmadı'}
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmMatbaaNotReceived(false)} disabled={matbaaBusy}>
+                      Vazgeç
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={() => setConfirmMatbaaReceive(true)}>
+                      <Check className="h-4 w-4" />
+                      Teslim Alındı olarak işaretle
+                    </Button>
+                    <Button
+                      type="button" size="sm" variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setConfirmMatbaaNotReceived(true)}
+                    >
+                      Teslim Alınamadı
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )
+          )}
+
           <DialogFooter className="gap-2 sm:justify-between">
             <div>
               {canReject && !showReject && (
@@ -635,9 +807,11 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned })
                   {saving ? 'Reddediliyor…' : 'Reddi Onayla'}
                 </Button>
               ) : (
-                <Button type="submit" disabled={saving}>
-                  <PenLine className="h-4 w-4" />
-                  {saving ? 'İmzalanıyor…' : isDesignerStep ? 'İncele ve Gönder' : `İmzala, ${nextLabel}`}
+                <Button
+                  type="submit"
+                  disabled={saving || (isMatbaaOnayStep && (!canApproveMatbaaOnayNow(user, order) || matbaaAlreadyApproved))}
+                >
+                  {saving ? 'Kaydediliyor…' : isDesignerStep ? 'İncele ve Gönder' : actionLabel}
                 </Button>
               )}
             </div>
@@ -691,7 +865,7 @@ export function TalepHistoryViewer({ order, open, onOpenChange, initialStep = nu
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShoppingCart className="h-4 w-4" />
-            Sipariş Formu — {bookTitle}
+            Baskı Formu — {bookTitle}
           </DialogTitle>
           <DialogDescription>
             {viewStep
@@ -753,19 +927,19 @@ function OrderSheet({ order, tableRows, dateStr, timeStr, footer }) {
           Yükselen Zeka Yayıncılık
         </p>
         <h2 className="mt-3 text-xl font-bold uppercase tracking-[0.18em] text-foreground">
-          Sipariş Formu
+          Baskı Formu
         </h2>
       </div>
 
       {/* Meta line */}
       <div className="flex flex-wrap items-start justify-between gap-2 border-b px-6 py-3">
         <div className="text-sm">
-          <p className="text-[11px] text-muted-foreground">Sipariş Veren</p>
+          <p className="text-[11px] text-muted-foreground">Talep Eden</p>
           <p className="font-semibold">{order.requested_by_name}</p>
         </div>
         <div className="text-right text-xs leading-relaxed">
-          <p><span className="text-muted-foreground">Sipariş Tarihi : </span><span className="font-medium">{dateStr}</span></p>
-          <p><span className="text-muted-foreground">Sipariş Saati : </span><span className="font-medium">{timeStr}</span></p>
+          <p><span className="text-muted-foreground">Baskı Tarihi : </span><span className="font-medium">{dateStr}</span></p>
+          <p><span className="text-muted-foreground">Baskı Saati : </span><span className="font-medium">{timeStr}</span></p>
         </div>
       </div>
 
@@ -781,7 +955,7 @@ function OrderSheet({ order, tableRows, dateStr, timeStr, footer }) {
           {tableRows.map((it, i) => (
             <tr key={i} className="border-b last:border-b-0">
               <td className="border-r px-3 py-2 text-center tabular-nums">
-                {it && it.quantity != null ? it.quantity.toLocaleString('tr-TR') : ' '}
+                {it && it.quantity != null ? formatNumber(it.quantity) : ' '}
               </td>
               <td className="px-3 py-2">
                 {it ? (
@@ -823,9 +997,9 @@ function OzalitStepSheet({ order, step, footer }) {
       )
       // Fall back to the first item if no name match (single-item orders)
       const qty = (match ?? orderItems[0])?.quantity
-      return qty != null ? qty.toLocaleString('tr-TR') : null
+      return qty != null ? formatNumber(qty) : null
     }
-    return order.quantity != null ? order.quantity.toLocaleString('tr-TR') : null
+    return order.quantity != null ? formatNumber(order.quantity) : null
   }
 
   const created = order.created_at ? new Date(order.created_at) : null
@@ -856,8 +1030,8 @@ function OzalitStepSheet({ order, step, footer }) {
           <p className="font-semibold">{order.project_title?.replace(/ \/ /g, ' ')}</p>
         </div>
         <div className="text-right text-xs leading-relaxed">
-          <p><span className="text-muted-foreground">Sipariş Tarihi : </span><span className="font-medium">{dateStr}</span></p>
-          <p><span className="text-muted-foreground">Sipariş Veren : </span><span className="font-medium">{order.requested_by_name}</span></p>
+          <p><span className="text-muted-foreground">Baskı Tarihi : </span><span className="font-medium">{dateStr}</span></p>
+          <p><span className="text-muted-foreground">Talep Eden : </span><span className="font-medium">{order.requested_by_name}</span></p>
         </div>
       </div>
 
@@ -899,7 +1073,7 @@ function OzalitStepSheet({ order, step, footer }) {
             {order.quantity != null && (
               <tr className="border-b">
                 <td className="w-2/5 border-r px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Adet</td>
-                <td className="px-4 py-2 text-sm">{order.quantity.toLocaleString('tr-TR')}</td>
+                <td className="px-4 py-2 text-sm">{formatNumber(order.quantity)}</td>
               </tr>
             )}
             {order.notes && (
@@ -934,11 +1108,20 @@ function StepSignatureFooter({ step, order }) {
   const gorulduSigner = signer('goruldu')
   const tasarimciSigner = signer('tasarimci_onay')
   const matbaaSigner = signer('matbaa_onay')
-  const leaderSigner = signer('onaylandi') || gorulduSigner
+  // matbaa_onay is multi-party: leader-first guarantees a team leader signed
+  // SOMEWHERE in the round, but not that they were the one whose click
+  // completed it (that could be the last designer to sign). So "onaylandi"'s
+  // signer isn't reliably the leader — find the actual team_leader-authored
+  // entry across the round (matbaa_approve = a partial approval, onaylandi =
+  // the completing one) instead of assuming the completing signer is it.
+  const leaderApproval = history.find(
+    (h) => (h.step === 'matbaa_approve' || h.step === 'onaylandi') && h.signed_by_role === 'team_leader',
+  )
+  const leaderSigner = leaderApproval?.signed_by_name || signer('onaylandi') || gorulduSigner
 
   const configs = {
-    pending:        [{ role: 'Sipariş Veren', name: esra }],
-    goruldu:        [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Sipariş Veren', name: esra }],
+    pending:        [{ role: 'Talep Eden', name: esra }],
+    goruldu:        [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Talep Eden', name: esra }],
     tasarimci_onay: [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Tasarımcı', name: tasarimciSigner }],
     matbaa_onay:    [{ role: 'Matbaa Yetkilisi', name: matbaaSigner }],
     onaylandi:      [{ role: 'Ekip Lideri', name: leaderSigner }, { role: 'Tasarımcı', name: tasarimciSigner }, { role: 'Matbaa Yetkilisi', name: matbaaSigner }],
@@ -1011,7 +1194,7 @@ function SignedStepRow({ step, onForm }) {
 }
 
 const STAGE_DEFS = [
-  { step: 'pending',         label: 'Sipariş Talebi', color: '#e11d48' },
+  { step: 'pending',         label: 'Baskı Talebi',   color: '#e11d48' },
   { step: 'goruldu',         label: 'Ön İnceleme',    color: '#f97316' },
   { step: 'tasarimci_onay',  label: 'Ozalit İstendi', color: '#10b981' },
   { step: 'matbaa_onay',     label: 'Matbaa Teslimi', color: '#3b82f6' },
@@ -1314,7 +1497,7 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 }
 
-// Printable "Sipariş Formu" — letterhead + Miktar/Cinsi table + signature footer.
+// Printable "Baskı Formu" — letterhead + Miktar/Cinsi table + signature footer.
 // stepFilter: if provided, show only that step's signature layout; otherwise show final (onaylandi) layout.
 function openOrderPrintWindow(order, stepFilter) {
   const items = normalizeItems(order.items, order.quantity)
@@ -1330,12 +1513,18 @@ function openOrderPrintWindow(order, stepFilter) {
   const gorulduSigner = signerOf('goruldu')
   const tasarimciSigner = signerOf('tasarimci_onay')
   const matbaaSigner = signerOf('matbaa_onay')
-  const leaderSigner = signerOf('onaylandi') || gorulduSigner
+  // See the identical note in StepSignatureFooter above: matbaa_onay is
+  // multi-party, so the "onaylandi" entry's signer isn't reliably the team
+  // leader — it's whoever's click happened to complete the round.
+  const leaderApproval = history.find(
+    (h) => (h.step === 'matbaa_approve' || h.step === 'onaylandi') && h.signed_by_role === 'team_leader',
+  )
+  const leaderSigner = leaderApproval?.signed_by_name || signerOf('onaylandi') || gorulduSigner
 
   const activeStep = stepFilter ?? 'onaylandi'
   const sigCells = {
-    pending:        [{ role: 'Sipariş Veren', name: esra }],
-    goruldu:        [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Sipariş Veren', name: esra }],
+    pending:        [{ role: 'Talep Eden', name: esra }],
+    goruldu:        [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Talep Eden', name: esra }],
     tasarimci_onay: [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Tasarımcı', name: tasarimciSigner }],
     matbaa_onay:    [{ role: 'Matbaa Yetkilisi', name: matbaaSigner }],
     onaylandi:      [{ role: 'Ekip Lideri', name: leaderSigner }, { role: 'Tasarımcı', name: tasarimciSigner }, { role: 'Matbaa Yetkilisi', name: matbaaSigner }],
@@ -1398,9 +1587,9 @@ function openOrderPrintWindow(order, stepFilter) {
       if (printOrderItems.length > 0) {
         const match = printOrderItems.find((it) => it.name?.toUpperCase() === compName?.toUpperCase())
         const qty = (match ?? printOrderItems[0])?.quantity
-        return qty != null ? qty.toLocaleString('tr-TR') : null
+        return qty != null ? formatNumber(qty) : null
       }
-      return order.quantity != null ? order.quantity.toLocaleString('tr-TR') : null
+      return order.quantity != null ? formatNumber(order.quantity) : null
     }
 
     const ozalitSheet = (title, specRows) => `<section class="sheet">
@@ -1413,8 +1602,8 @@ function openOrderPrintWindow(order, stepFilter) {
     <div class="meta">
       <div><div class="label">İşin Adı</div><strong>${escapeHtml(title)}</strong></div>
       <div class="right">
-        <div><span class="label">Sipariş Tarihi :</span> ${escapeHtml(dateStr)}</div>
-        <div><span class="label">Sipariş Veren :</span> ${escapeHtml(esra)}</div>
+        <div><span class="label">Baskı Tarihi :</span> ${escapeHtml(dateStr)}</div>
+        <div><span class="label">Talep Eden :</span> ${escapeHtml(esra)}</div>
       </div>
     </div>
     <table><tbody>${specRows}</tbody></table>
@@ -1433,11 +1622,11 @@ function openOrderPrintWindow(order, stepFilter) {
           return ozalitSheet(comp.component, specRows)
         }).join('')
       : ozalitSheet(bookTitle, order.quantity != null
-          ? `<tr><td class="spec-label">ADET</td><td>${escapeHtml(order.quantity.toLocaleString('tr-TR'))}</td></tr>`
+          ? `<tr><td class="spec-label">ADET</td><td>${escapeHtml(formatNumber(order.quantity))}</td></tr>`
           : '')
     isMultiSheet = true
   } else {
-    // Generic Sipariş Formu for pending / goruldu / onaylandi steps
+    // Generic Baskı Formu for pending / goruldu / onaylandi steps
     const hasSub = items.length > 0
     const totalQty = order.quantity ?? items.reduce((n, it) => Math.max(n, it.quantity || 0), 0)
     const MIN_ROWS = 16
@@ -1448,7 +1637,7 @@ function openOrderPrintWindow(order, stepFilter) {
     while (rows.length < MIN_ROWS) rows.push(null)
     const tableRowsHtml = rows.map((it) => {
       if (!it) return '<tr><td class="qty"></td><td class="cins"></td></tr>'
-      const qty = it.quantity != null ? escapeHtml(it.quantity.toLocaleString('tr-TR')) : ''
+      const qty = it.quantity != null ? escapeHtml(formatNumber(it.quantity)) : ''
       const name = it.sub
         ? `<span class="sub">– ${escapeHtml(it.name)}</span>`
         : `<strong>${escapeHtml(it.name)}</strong>`
@@ -1456,12 +1645,12 @@ function openOrderPrintWindow(order, stepFilter) {
     }).join('')
 
     bodyContent = `
-  <div class="doc-title">Sipariş Formu</div>
+  <div class="doc-title">Baskı Formu</div>
   <div class="meta">
-    <div><div class="label">Sipariş Veren</div><strong>${escapeHtml(order.requested_by_name ?? '')}</strong></div>
+    <div><div class="label">Talep Eden</div><strong>${escapeHtml(order.requested_by_name ?? '')}</strong></div>
     <div class="right">
-      <div><span class="label">Sipariş Tarihi :</span> ${escapeHtml(dateStr)}</div>
-      <div><span class="label">Sipariş Saati :</span> ${escapeHtml(timeStr)}</div>
+      <div><span class="label">Baskı Tarihi :</span> ${escapeHtml(dateStr)}</div>
+      <div><span class="label">Baskı Saati :</span> ${escapeHtml(timeStr)}</div>
     </div>
   </div>
   <table>
@@ -1472,7 +1661,7 @@ function openOrderPrintWindow(order, stepFilter) {
 
   const html = `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"/>
   <link href="https://fonts.googleapis.com/css2?family=Alex+Brush&display=swap" rel="stylesheet"/>
-  <title>Sipariş Formu — ${escapeHtml(order.project_title ?? '')}</title>
+  <title>Baskı Formu — ${escapeHtml(order.project_title ?? '')}</title>
   <style>${commonStyles}</style></head><body${isMultiSheet ? ' style="padding:0"' : ''}>
   ${isMultiSheet ? '' : `<div class="head">
     <img src="${logoUrl}" alt="Yükselen Zeka" width="120" height="36" loading="lazy" decoding="async"/>

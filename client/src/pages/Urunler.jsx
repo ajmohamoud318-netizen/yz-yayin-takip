@@ -189,7 +189,7 @@ export default function Urunler() {
             {canOrderRole && (
               <Button onClick={() => openOrderFor(null)} className="w-full sm:w-auto">
                 <Plus className="h-4 w-4" />
-                Sipariş Oluştur
+                Baskı Oluştur
               </Button>
             )}
           </div>
@@ -198,13 +198,13 @@ export default function Urunler() {
         {listedProducts.length === 0 && hiddenProducts.length === 0 ? (
           <Card>
             <CardContent className="p-10 text-center text-sm text-muted-foreground">
-              Şu anda sipariş verilebilecek ürün bulunmuyor.
+              Şu anda baskı verilebilecek ürün bulunmuyor.
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-6">
             <ProductGroup
-              title="Sipariş İçin Hazır"
+              title="Baskı İçin Hazır"
               hint="Üretimi tamamlanmış, henüz satışı bitmemiş"
               products={readyProducts}
               canOrderRole={canOrderRole}
@@ -232,7 +232,7 @@ export default function Urunler() {
                 the row moves down here instead of disappearing. */}
             <ProductGroup
               title="Katalogdan Kaldırıldı"
-              hint="Satış ekibi göremez, sipariş veremez"
+              hint="Satış ekibi göremez, baskı veremez"
               products={hiddenProducts}
               canOrderRole={false}
               onOrder={openOrderFor}
@@ -349,7 +349,7 @@ function ProductRow({
             Ürün bilgisi var
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1.5 text-xs text-amber-600" title="Sipariş verilmeden önce takım lideri Ürün Bilgileri'ni doldurmalı">
+          <span className="inline-flex items-center gap-1.5 text-xs text-amber-600" title="Baskı verilmeden önce takım lideri Ürün Bilgileri'ni doldurmalı">
             <AlertTriangle className="h-3.5 w-3.5" />
             Ürün bilgisi eksik
           </span>
@@ -365,18 +365,18 @@ function ProductRow({
             <button
               type="button"
               onClick={onOrder}
-              title="Sipariş talebi oluştur"
+              title="Baskı talebi oluştur"
               className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-2 py-1.5 text-[11px] sm:py-1 font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
             >
               <Plus className="h-3 w-3" />
-              Sipariş
+              Baskı
             </button>
           ) : (
             <span
               className="shrink-0 cursor-not-allowed rounded-md bg-muted px-2 py-1.5 text-[11px] sm:py-1 font-medium text-muted-foreground"
-              title="Sipariş verilmeden önce Ürün Bilgileri'nde kaydı olmalı"
+              title="Baskı verilmeden önce Ürün Bilgileri'nde kaydı olmalı"
             >
-              Sipariş veremezsiniz
+              Baskı veremezsiniz
             </span>
           )
         )}
@@ -411,7 +411,7 @@ function ProductRow({
             type="button"
             onClick={onDelist}
             disabled={busy}
-            title="Ürünü katalogdan kaldır, satış ekibi artık sipariş veremez"
+            title="Ürünü katalogdan kaldır, satış ekibi artık baskı veremez"
             className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1.5 text-[11px] sm:py-1 font-semibold text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
           >
             <EyeOff className="h-3 w-3" />

@@ -762,7 +762,7 @@ export default function UrunBilgileri() {
           <span className="text-sm font-medium text-foreground">
             {selectedSeeds.size} kayıtlı ürün seçildi
             <span className="ml-2 text-[12px] font-normal text-muted-foreground">
-              Satış ekibinin sipariş verebilmesi için ürün olarak eklenmeli
+              Satış ekibinin baskı verebilmesi için ürün olarak eklenmeli
             </span>
           </span>
           <div className="flex items-center gap-2">

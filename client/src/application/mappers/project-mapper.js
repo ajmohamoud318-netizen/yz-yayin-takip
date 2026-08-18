@@ -207,7 +207,7 @@ function generateHistory(p, assignees, subtasksDone, subtasksTotal) {
   if (isCin) {
     // approve landed on 'uretime_hazir' (afterDemoOnay). Order pushes to üretim.
     if (p.stage === 'uretime_hazir') return h
-    h.push({ id: `${p.id}-hoh`, action: 'advance', from_stage: 'uretime_hazir', to_stage: 'uretimde', done_by_name: 'Esra Kılıç', created_at: tick(2), note: 'Sipariş alındı' })
+    h.push({ id: `${p.id}-hoh`, action: 'advance', from_stage: 'uretime_hazir', to_stage: 'uretimde', done_by_name: 'Esra Kılıç', created_at: tick(2), note: 'Baskı alındı' })
     if (p.stage === 'uretimde') return h
     h.push({ id: `${p.id}-hug`, action: 'advance', from_stage: 'uretimde', to_stage: 'gumruk', done_by_name: 'Ayşenur Kanak', created_at: tick(7) })
     if (p.stage === 'gumruk') return h
@@ -256,7 +256,7 @@ function generateHistory(p, assignees, subtasksDone, subtasksTotal) {
   if (p.stage === 'uretime_hazir') return h
 
   // ── Sipariş alındı → üretimde ─────────────────────────────────────────────
-  h.push({ id: `${p.id}-hoh`, action: 'advance', from_stage: 'uretime_hazir', to_stage: 'uretimde', done_by_name: 'Esra Kılıç', created_at: tick(2), note: 'Sipariş alındı' })
+  h.push({ id: `${p.id}-hoh`, action: 'advance', from_stage: 'uretime_hazir', to_stage: 'uretimde', done_by_name: 'Esra Kılıç', created_at: tick(2), note: 'Baskı alındı' })
   if (p.stage === 'uretimde') return h
 
   h.push({ id: `${p.id}-hus`, action: 'advance', from_stage: 'uretimde', to_stage: 'satista', done_by_name: 'Ayşenur Kanak', created_at: tick(10) })

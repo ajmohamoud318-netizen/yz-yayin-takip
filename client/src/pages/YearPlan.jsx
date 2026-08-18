@@ -227,7 +227,7 @@ export default function YearPlan() {
                           <button
                             type="button"
                             onClick={() => navigate(`/projects/${p.id}`)}
-                            title={`${p.title} · ${STAGE_LABELS[p.stage]} · ${TYPE_LABELS[p.type]} · ${p.assigned_name} · %${p.progress}${order ? ` · Sipariş: ${ORDER_STEP_LABELS[order.status] ?? order.status}` : ''}`}
+                            title={`${p.title} · ${STAGE_LABELS[p.stage]} · ${TYPE_LABELS[p.type]} · ${p.assigned_name} · %${p.progress}${order ? ` · Baskı: ${ORDER_STEP_LABELS[order.status] ?? order.status}` : ''}`}
                             style={{
                               left: `calc(${leftPct}% + 4px)`,
                               width: `calc(${widthPct}% - 8px)`,

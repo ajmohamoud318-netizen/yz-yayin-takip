@@ -5,6 +5,8 @@ import {
   ORDER_REJECT_TARGETS,
   ORDER_REJECT_TO,
   isOrderAssignedToDesigner,
+  matbaaOnayLeaderApproved,
+  canApproveMatbaaOnayNow,
 } from './orders.js'
 
 describe('order workflow step graph', () => {
@@ -75,5 +77,42 @@ describe('isOrderAssignedToDesigner', () => {
     expect(isOrderAssignedToDesigner(null, 'u-aylin', new Set())).toBe(false)
     expect(isOrderAssignedToDesigner(order(['u-aylin']), undefined, new Set())).toBe(false)
     expect(isOrderAssignedToDesigner(order(null), 'u-aylin', undefined)).toBe(false)
+  })
+})
+
+describe('canApproveMatbaaOnayNow (multi-party, leader-first — mirrors canApproveOzalitNow)', () => {
+  const AYSE = { id: 'u-ayse', role: 'team_leader' }
+  const AYLIN = { id: 'u-aylin', role: 'designer' }
+  const NUR = { id: 'u-nur', role: 'designer' }
+  const OKTAY = { id: 'u-oktay', role: 'printer' }
+
+  const base = { id: 'o-1', assignee_ids: ['u-aylin'], matbaa_received: true, matbaa_approvals: [] }
+  const leaderSigned = { ...base, matbaa_approvals: [{ id: 'u-ayse', role: 'team_leader' }] }
+  const designerOnly = { ...base, matbaa_approvals: [{ id: 'u-aylin', role: 'designer' }] }
+
+  it('a team leader may always approve once received, regardless of sign order', () => {
+    expect(canApproveMatbaaOnayNow(AYSE, base)).toBe(true)
+  })
+
+  it('an assigned designer must wait for a leader to sign first', () => {
+    expect(canApproveMatbaaOnayNow(AYLIN, base)).toBe(false)
+    expect(canApproveMatbaaOnayNow(AYLIN, leaderSigned)).toBe(true)
+  })
+
+  it('a designer approval alone does not open the gate for other designers', () => {
+    expect(matbaaOnayLeaderApproved(designerOnly)).toBe(false)
+    expect(canApproveMatbaaOnayNow(AYLIN, designerOnly)).toBe(false)
+  })
+
+  it('nobody may approve before the receipt gate', () => {
+    expect(canApproveMatbaaOnayNow(AYSE, { ...leaderSigned, matbaa_received: false })).toBe(false)
+    expect(canApproveMatbaaOnayNow(AYLIN, { ...leaderSigned, matbaa_received: false })).toBe(false)
+  })
+
+  it('an unassigned designer, a printer, and missing args are all refused', () => {
+    expect(canApproveMatbaaOnayNow(NUR, leaderSigned)).toBe(false)
+    expect(canApproveMatbaaOnayNow(OKTAY, leaderSigned)).toBe(false)
+    expect(canApproveMatbaaOnayNow(undefined, leaderSigned)).toBe(false)
+    expect(canApproveMatbaaOnayNow(AYSE, undefined)).toBe(false)
   })
 })

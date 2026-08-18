@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ShoppingCart, Package, PenLine, Eye, Inbox, FileText } from 'lucide-react'
+import { ShoppingCart, Package, Eye, Inbox, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 
 import api from '@/api'
@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import { isOrderAssignedToDesigner } from '@/domain/constants/orders'
-import { cn } from '@/lib/utils'
+import { cn, formatNumber } from '@/lib/utils'
 
 export default function SiparisOnay() {
   const { user } = useAuth()
@@ -43,9 +43,16 @@ export default function SiparisOnay() {
   useEffect(() => {
     api.listOrderRequests()
       .then((reqs) => {
-        setOrders(reqs.filter(
-          (r) => r.status === 'goruldu' && isOrderAssignedToDesigner(r, user?.id, myProjectIds),
-        ))
+        setOrders(reqs.filter((r) => {
+          if (!isOrderAssignedToDesigner(r, user?.id, myProjectIds)) return false
+          if (r.status === 'goruldu') return true
+          // matbaa_onay is multi-party — stay in the queue until THIS
+          // designer has approved, even if a leader already has.
+          if (r.status === 'matbaa_onay') {
+            return !(r.matbaa_approvals ?? []).some((a) => a.id === user?.id)
+          }
+          return false
+        }))
       })
       .finally(() => setLoading(false))
   }, [myProjectIds, user?.id])
@@ -55,11 +62,19 @@ export default function SiparisOnay() {
     setSignOrder(null)
   }
 
+  // "Teslim Alındı" doesn't remove the order from the queue — it just
+  // updates the held order in place so the still-open dialog can move on to
+  // the approve step (see TalepSignDialog's onUpdated contract).
+  function handleUpdated(updated) {
+    setOrders((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
+    setSignOrder(updated)
+  }
+
   return (
     <>
       <div className="space-y-6">
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight">Sipariş Onayı</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Baskı Onayı</h1>
         </header>
 
         {loading ? (
@@ -70,7 +85,7 @@ export default function SiparisOnay() {
           <Card>
             <CardContent className="grid place-items-center gap-2 p-12 text-center">
               <Inbox className="h-8 w-8 text-muted-foreground/40" />
-              <p className="text-sm font-medium text-foreground">Onay bekleyen sipariş yok.</p>
+              <p className="text-sm font-medium text-foreground">Onay bekleyen baskı yok.</p>
               <p className="text-xs text-muted-foreground">
                 Ekip lideri bir talebi onayına gönderdiğinde burada görünecek.
               </p>
@@ -96,6 +111,7 @@ export default function SiparisOnay() {
         open={!!signOrder}
         onOpenChange={(v) => !v && setSignOrder(null)}
         onSigned={handleSigned}
+        onUpdated={handleUpdated}
       />
       <TalepHistoryViewer
         order={viewOrder}
@@ -126,6 +142,9 @@ function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
 
   // Find the görüldü step to show who signed it
   const gorulduStep = (order.order_history ?? []).find((h) => h.step === 'goruldu')
+  // matbaa_onay is a different action from goruldu's "review and forward" —
+  // this designer is here to approve a delivered ozalit, not edit the spec.
+  const isMatbaaOnay = order.status === 'matbaa_onay'
 
   return (
     <Card className="border-amber-200">
@@ -152,13 +171,13 @@ function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
                   >
                     {item.name}
                     <span className="font-normal text-primary/70">
-                      · {item.quantity.toLocaleString('tr-TR')}
+                      · {formatNumber(item.quantity)}
                     </span>
                   </span>
                 ))}
               </div>
             ) : (
-              <p className="text-sm font-medium">{order.quantity?.toLocaleString('tr-TR')} adet</p>
+              <p className="text-sm font-medium">{formatNumber(order.quantity)} adet</p>
             )}
 
             {order.notes && (
@@ -173,9 +192,9 @@ function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
             )}
           </div>
 
-          <div className="flex shrink-0 flex-col items-end gap-2">
+          <div className="flex w-full flex-col items-end gap-2 sm:w-auto sm:shrink-0">
             <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[11px]">
-              Onay Bekliyor
+              {isMatbaaOnay ? 'Matbaa Onayı Bekliyor' : 'Onay Bekliyor'}
             </Badge>
             <div className="flex flex-wrap justify-end gap-1.5">
               <Button size="sm" variant="outline" onClick={onView}>
@@ -187,8 +206,7 @@ function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
                 Ozalit Formu
               </Button>
               <Button size="sm" onClick={onSign}>
-                <PenLine className="h-3.5 w-3.5" />
-                İncele ve Gönder
+                {isMatbaaOnay ? 'Onayla' : 'İncele ve Gönder'}
               </Button>
             </div>
           </div>

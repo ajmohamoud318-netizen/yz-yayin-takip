@@ -7,8 +7,8 @@ export default function OrderBadge({ order, className = 'h-3.5 w-3.5 text-amber-
   return (
     <Package
       className={className}
-      aria-label="Sipariş bekliyor"
-      title={`Sipariş: ${ORDER_STEP_LABELS[order.status] ?? order.status}`}
+      aria-label="Baskı bekliyor"
+      title={`Baskı: ${ORDER_STEP_LABELS[order.status] ?? order.status}`}
     />
   )
 }

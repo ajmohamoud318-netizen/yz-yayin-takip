@@ -148,7 +148,7 @@ export default function PromoteRecordDialog({ open, onClose, seeds, items, onDon
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Sistemden önce yayımlanmış ürünler. Eklenenler için Satış ekibi sipariş talebi oluşturabilir;
+            Sistemden önce yayımlanmış ürünler. Eklenenler için Satış ekibi baskı talebi oluşturabilir;
             bu kayıtlar iş akışında (Kanban, Tüm Projeler) görünmez.
           </p>
 
@@ -253,7 +253,7 @@ export default function PromoteRecordDialog({ open, onClose, seeds, items, onDon
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
                 {missingSpec} ürünün parça bilgisi yok, Ürünler listesinde görünür ama Ürün Bilgileri
-                girilene kadar sipariş verilemez.
+                girilene kadar baskı verilemez.
               </span>
             </p>
           )}

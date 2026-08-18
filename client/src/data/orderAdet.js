@@ -1,3 +1,5 @@
+import { formatNumber } from '@/lib/utils'
+
 const KEY = 'yz_order_adet_v1'
 
 /** Called when Esra submits a sipariş talebi — stores the ordered quantity by project. */
@@ -43,13 +45,13 @@ export function buildAdetRows(projectId) {
     return items.map((item) => ({
       id: `order-adet-${item.name}-${Date.now()}`,
       label: `ADET (${item.name})`,
-      value: item.quantity?.toLocaleString('tr-TR') ?? '',
+      value: formatNumber(item.quantity),
     }))
   }
 
   return [{
     id: `order-adet-${Date.now()}`,
     label: 'ADET',
-    value: quantity?.toLocaleString('tr-TR') ?? '',
+    value: formatNumber(quantity),
   }]
 }
