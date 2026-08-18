@@ -19,6 +19,19 @@ export function assertCanEnterProduction(nextStage, progress) {
   }
 }
 
+// True once a project has reached `stage` or moved past it in its own
+// pipeline. Used to make a sipariş's final approval forward-only: two
+// concurrent orders on the same project both flip it to 'uretimde' on
+// approval, and without this guard the second approval would regress a
+// project that another order (or the main pipeline) already advanced past
+// that point (e.g. all the way to 'satista').
+export function isAtOrPastStage(project, stage) {
+  const pipeline = getPipeline(project.type)
+  const currentIdx = pipeline.indexOf(project.stage)
+  const targetIdx = pipeline.indexOf(stage)
+  return targetIdx !== -1 && currentIdx !== -1 && currentIdx >= targetIdx
+}
+
 /**
  * True when a product is listed in the Ürünler catalog at all.
  *
@@ -38,12 +51,12 @@ export function assertOrderable(project) {
   // perfectly orderable to Sales (finished stage, spec filled in), so the
   // generic "üretime hazır olmalı" text would be actively misleading.
   if (project && project.catalog_hidden) {
-    const err = new Error('Bu ürün katalogdan kaldırıldı; sipariş talebi oluşturulamaz.')
+    const err = new Error('Bu ürün katalogdan kaldırıldı; baskı talebi oluşturulamaz.')
     err.status = 400
     throw err
   }
   if (!project || !ORDERABLE_STAGES.has(project.stage) || !project.has_product_info) {
-    const err = new Error('Sipariş talebi yalnızca üretime hazır aşamasına ulaşmış ve Ürün Bilgileri girilmiş ürünler için oluşturulabilir.')
+    const err = new Error('Baskı talebi yalnızca üretime hazır aşamasına ulaşmış ve Ürün Bilgileri girilmiş ürünler için oluşturulabilir.')
     err.status = 400
     throw err
   }
@@ -71,7 +84,7 @@ export function isLegacyProject(project) {
  */
 export function assertNotLegacy(project) {
   if (isLegacyProject(project)) {
-    const err = new Error('Kayıtlı ürün pipeline üzerinde ilerletilemez. Yeni bir baskı için sipariş talebi oluşturun.')
+    const err = new Error('Kayıtlı ürün pipeline üzerinde ilerletilemez. Yeni bir baskı talebi oluşturun.')
     err.status = 400
     throw err
   }

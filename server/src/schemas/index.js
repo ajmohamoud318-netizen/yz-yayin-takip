@@ -558,6 +558,32 @@ const subtasksRevize = {
   },
 }
 
+// A sipariş's own per-order copy of the checklist (order_subtasks) — same
+// fields as subtasksPatch, scoped by orderId+id instead of just id. See
+// server/db/migrations/039__order_subtasks.sql.
+const orderSubtasksPatch = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['orderId', 'id'],
+    properties: {
+      orderId: { type: 'string', minLength: 1, maxLength: 64 },
+      id: { type: 'string', minLength: 1, maxLength: 64 },
+    },
+  },
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    minProperties: 1,
+    properties: {
+      is_done: { type: 'boolean' },
+      pages_done: { type: 'integer', minimum: 0, maximum: 100000 },
+      stickers_done: { type: 'integer', minimum: 0, maximum: 100000 },
+      needs_revize: { type: 'boolean' },
+    },
+  },
+}
+
 const projectsSubtasksPut = {
   params: projectsIdParams.params,
   body: {
@@ -676,13 +702,17 @@ const ordersAdvance = {
   },
 }
 
-const ordersReject = {
+const ordersIdParams = {
   params: {
     type: 'object',
     additionalProperties: false,
     required: ['id'],
     properties: { id: { type: 'string', minLength: 1, maxLength: 64 } },
   },
+}
+
+const ordersReject = {
+  ...ordersIdParams,
   body: {
     type: 'object',
     additionalProperties: false,
@@ -813,6 +843,8 @@ export const schemas = {
   ordersCreate,
   ordersAdvance,
   ordersReject,
+  ordersIdParams,
+  orderSubtasksPatch,
   handoversCreate,
   handoversConfirm,
   targetProjectIdeaCreate,

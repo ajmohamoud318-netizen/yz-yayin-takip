@@ -12,6 +12,7 @@ import {
   canRequestOrder, assertOrderable, isCatalogListed,
   canRequestHandover, assertHandoverEligible,
   isLegacyProject, assertNotLegacy,
+  isAtOrPastStage,
 } from './pipeline.js'
 
 describe('pipeline', () => {
@@ -70,6 +71,20 @@ describe('pipeline', () => {
     assert.equal(canRequestOrder({ stage: 'uretimde', has_product_info: true }), true)
     assert.equal(canRequestOrder({ stage: 'gumruk', has_product_info: true }), true)
     assert.equal(canRequestOrder({ stage: 'tasarim', has_product_info: true }), false)
+  })
+
+  it('isAtOrPastStage makes a sipariş final approval forward-only', () => {
+    // A project already past uretimde (e.g. sold through, or another
+    // concurrent order got there first) must not be regressed by a second
+    // order's approval.
+    assert.equal(isAtOrPastStage({ type: 'TR', stage: 'satista' }, 'uretimde'), true)
+    assert.equal(isAtOrPastStage({ type: 'TR', stage: 'uretimde' }, 'uretimde'), true)
+    // Still short of uretimde — the approval should be allowed to advance it.
+    assert.equal(isAtOrPastStage({ type: 'TR', stage: 'uretime_hazir' }, 'uretimde'), false)
+    assert.equal(isAtOrPastStage({ type: 'TR', stage: 'tasarim' }, 'uretimde'), false)
+    // CIN pipeline: gumruk sits after uretimde, so it's also "past".
+    assert.equal(isAtOrPastStage({ type: 'CIN', stage: 'gumruk' }, 'uretimde'), true)
+    assert.equal(isAtOrPastStage({ type: 'CIN', stage: 'uretime_hazir' }, 'uretimde'), false)
   })
 })
 

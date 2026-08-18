@@ -630,7 +630,7 @@ export async function notifyProductCatalogChanged(client, { project, actor, hidd
     type: hidden ? 'product_delisted' : 'product_relisted',
     tone: hidden ? 'amber' : 'green',
     body: hidden
-      ? 'Ürün katalogdan kaldırıldı, sipariş verilemez'
+      ? 'Ürün katalogdan kaldırıldı, baskı verilemez'
       : 'Ürün katalogda tekrar yayında',
     link: '/urunler',
   })
@@ -662,19 +662,17 @@ export async function notifyTargetProjectIdeaCreated(client, { idea, actor }) {
 /* ------------------------------- orders ---------------------------------- */
 
 const ORDER_STEP_BODY = {
-  pending: 'Yeni sipariş talebi, onayınızı bekliyor',
-  goruldu: 'Sipariş kontrolünüzü bekliyor',
-  tasarimci_onay: 'Sipariş ozalit isteniyor',
-  matbaa_onay: 'Sipariş ozalit onayınızı bekliyor',
+  pending: 'Yeni baskı talebi, onayınızı bekliyor',
+  goruldu: 'Baskı kontrolünüzü bekliyor',
+  tasarimci_onay: 'Baskı ozalit isteniyor',
 }
 const ORDER_STEP_LINK = {
   pending: '/siparis-talepleri',
   goruldu: '/siparis-onay',
   tasarimci_onay: '/approvals/siparis',
-  matbaa_onay: '/siparis-talepleri',
 }
 const ORDER_STEP_TONE = {
-  pending: 'amber', goruldu: 'green', tasarimci_onay: 'blue', matbaa_onay: 'amber',
+  pending: 'amber', goruldu: 'green', tasarimci_onay: 'blue',
 }
 
 /**
@@ -686,7 +684,7 @@ const ORDER_STEP_TONE = {
 export async function notifyOrderTransition(client, {
   order, project, newStatus, actor, requesterId, assigneeIds = [],
 }) {
-  const title = project?.title ?? order?.project_title ?? 'Sipariş'
+  const title = project?.title ?? order?.project_title ?? 'Baskı'
   const base = { actorId: actor?.id, title, projectId: order?.project_id ?? project?.id, orderId: order?.id }
 
   if (newStatus === 'onaylandi') {
@@ -694,6 +692,26 @@ export async function notifyOrderTransition(client, {
       ...base, recipientIds: [requesterId], type: 'order_approved', tone: 'green',
       body: 'Talebiniz onaylandı, üretime alındı', link: '/siparis-talebi',
     })
+  }
+
+  // Matbaa just delivered the reprint's ozalit: nobody can approve it yet —
+  // computeMatbaaOnayApproval refuses until "Teslim Alındı" is marked, and
+  // that's the leader's OR an assigned designer's to give. Mirrors
+  // notifyProjectTransition's `ozalit_receipt_pending` case. Split into two
+  // emits (unlike that one) because the two audiences land on different
+  // pages here — leaders review from /siparis-talepleri, designers from
+  // /siparis-onay.
+  if (newStatus === 'matbaa_onay') {
+    const leaders = await activeUserIdsByRole(client, 'team_leader')
+    const a = await emit(client, {
+      ...base, recipientIds: leaders, type: 'matbaa_receipt_pending', tone: 'amber',
+      body: 'Matbaa ozaliti teslim etti, "Teslim Alındı" bekleniyor', link: '/siparis-talepleri',
+    })
+    const b = await emit(client, {
+      ...base, recipientIds: assigneeIds, type: 'matbaa_receipt_pending', tone: 'amber',
+      body: 'Matbaa ozaliti teslim etti, "Teslim Alındı" bekleniyor', link: '/siparis-onay',
+    })
+    return a + b
   }
 
   const owner = ORDER_STEP_OWNER[newStatus]
@@ -706,7 +724,7 @@ export async function notifyOrderTransition(client, {
 
   return emit(client, {
     ...base, recipientIds, type: 'order_step', tone: ORDER_STEP_TONE[newStatus] ?? 'blue',
-    body: ORDER_STEP_BODY[newStatus] ?? 'Sipariş güncellendi', link: ORDER_STEP_LINK[newStatus] ?? '/siparis-talepleri',
+    body: ORDER_STEP_BODY[newStatus] ?? 'Baskı güncellendi', link: ORDER_STEP_LINK[newStatus] ?? '/siparis-talepleri',
   })
 }
 
@@ -716,13 +734,60 @@ export async function notifyOrderRejected(client, { order, project, actor, reque
     actorId: actor?.id,
     recipientIds: [requesterId],
     type: 'order_rejected',
-    title: project?.title ?? order?.project_title ?? 'Sipariş',
-    body: reason ? `Sipariş reddedildi: ${reason}` : 'Sipariş reddedildi',
+    title: project?.title ?? order?.project_title ?? 'Baskı',
+    body: reason ? `Baskı reddedildi: ${reason}` : 'Baskı reddedildi',
     tone: 'rose',
     projectId: order?.project_id ?? project?.id,
     orderId: order?.id,
     link: '/siparis-talebi',
   })
+}
+
+/**
+ * A delivered matbaa ozalit was just marked "Teslim Alındı" — the sipariş
+ * twin of notifyOzalitReceived. Matbaa approval is multi-party but
+ * leader-first: acknowledging the proof unblocks the team leaders, and the
+ * order's assigned designers counter-sign after one of them approves
+ * (computeMatbaaOnayApproval). Split into two emits since the audiences land
+ * on different pages (see notifyOrderTransition's matbaa_onay case above).
+ */
+export async function notifyMatbaaReceived(client, { order, project, actor, assigneeIds = [] }) {
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  const who = actor?.name ?? 'Ekipten biri'
+  const base = {
+    actorId: actor?.id, title: who, projectId: order?.project_id ?? project?.id, orderId: order?.id,
+  }
+  const a = await emit(client, {
+    ...base, recipientIds: leaders, type: 'matbaa_approval_pending', tone: 'amber',
+    body: `${project?.title ?? order?.project_title ?? 'Baskı'} ozaliti teslim alındı, onayınız bekleniyor`,
+    link: '/siparis-talepleri',
+  })
+  const b = await emit(client, {
+    ...base, recipientIds: assigneeIds, type: 'matbaa_received', tone: 'blue',
+    body: `${project?.title ?? order?.project_title ?? 'Baskı'} ozaliti teslim alındı, ekip lideri onayı bekleniyor`,
+    link: '/siparis-onay',
+  })
+  return a + b
+}
+
+/**
+ * One party signed off on the matbaa ozalit but the round isn't complete —
+ * ping whoever still owes an approval. Twin of the partial-approval branch in
+ * notifyProjectTransition for ozalit_onay.
+ */
+export async function notifyMatbaaApprovalPending(client, { order, project, actor, teamLeaderIds = [], designerIds = [] }) {
+  const approved = new Set((order?.matbaa_approvals ?? []).map((a) => a.id))
+  const pendingLeaders = teamLeaderIds.filter((id) => !approved.has(id))
+  const pendingDesigners = designerIds.filter((id) => !approved.has(id))
+  const base = {
+    actorId: actor?.id, title: project?.title ?? order?.project_title ?? 'Baskı',
+    projectId: order?.project_id ?? project?.id, orderId: order?.id,
+    type: 'matbaa_approval_pending', tone: 'amber',
+    body: `${actor?.name ?? 'Ekipten biri'} baskı ozaliti onayladı, onayınız bekleniyor`,
+  }
+  const a = await emit(client, { ...base, recipientIds: pendingLeaders, link: '/siparis-talepleri' })
+  const b = await emit(client, { ...base, recipientIds: pendingDesigners, link: '/siparis-onay' })
+  return a + b
 }
 
 /* ------------------------------ handovers -------------------------------- */
