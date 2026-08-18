@@ -13,7 +13,6 @@ import {
   LayoutGrid,
   CalendarDays,
   BadgeCheck,
-  Printer,
   Target,
   Briefcase,
   MoreVertical,
@@ -896,6 +895,7 @@ const PAGE_TITLES = [
   { match: (p) => p.startsWith('/siparis-onay'), label: 'Baskı Onayları' },
   { match: (p) => p.startsWith('/uretime-hazir'), label: 'Üretime Hazır' },
   { match: (p) => p.startsWith('/hedef-projeler'), label: 'Hedef Projeler' },
+  { match: (p) => p.startsWith('/toplanti'), label: 'Toplantılar' },
   { match: (p) => p.startsWith('/teslim-talepleri'), label: 'Teslim Talepleri' },
   { match: (p) => p.startsWith('/teslim-onaylari'), label: 'Teslim Onayları' },
   { match: (p) => p.startsWith('/projects/'), label: 'Proje Detayı' },
@@ -922,20 +922,12 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
     { to: '/projects', label: 'Tüm Projeler', icon: LayoutGrid, end: true, badge: counts.total, roles: ['team_leader', 'designer', 'printer'] },
     { to: '/urunler', label: 'Ürünler', icon: Package, roles: ['satis', 'team_leader'] },
     {
-      to: '/baski-listesi',
-      label: 'Baskı Listesi',
-      icon: Printer,
-      badge: counts.production,
-      badgeTone: 'pink',
-      roles: ['team_leader', 'designer', 'printer'],
-    },
-    {
       to: '/hedef-projeler',
       label: 'Hedef Projeler',
       icon: Target,
       roles: ['team_leader', 'designer'],
     },
-    { label: 'Toplantılar', icon: CalendarDays, soon: true, roles: ['team_leader', 'designer', 'printer'] },
+    { to: '/toplanti', label: 'Toplantılar', icon: CalendarDays, roles: ['team_leader', 'designer', 'printer'] },
     // Sales-only items
     { to: '/siparis-talebi', label: 'Taleplerim', icon: ClipboardPlus, roles: ['satis'] },
   ].filter((i) => !i.roles || i.roles.includes(role))

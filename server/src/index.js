@@ -14,6 +14,7 @@ import { notificationRoutes } from './routes/notifications.js'
 import { pushRoutes } from './routes/push.js'
 import { workLogRoutes } from './routes/work-log.js'
 import { targetProjectIdeaRoutes } from './routes/target-project-ideas.js'
+import { meetingRoutes } from './routes/meetings.js'
 import { config } from './config.js'
 import { HttpError } from './domain/errors.js'
 import { up as migrateUp } from './services/migrate.js'
@@ -157,6 +158,7 @@ export async function buildServer() {
   await fastify.register(pushRoutes, { prefix: '/api' })
   await fastify.register(workLogRoutes, { prefix: '/api' })
   await fastify.register(targetProjectIdeaRoutes, { prefix: '/api' })
+  await fastify.register(meetingRoutes, { prefix: '/api' })
 
   // Health — used by Dokploy's container probe AND for human-readable
   // "is this the new build?" checks. The `commit` field is sourced from

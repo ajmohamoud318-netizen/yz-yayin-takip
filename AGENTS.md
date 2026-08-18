@@ -832,7 +832,7 @@ DELETE /api/work-log/:id          → 204 — owner-scoped
 | `satis`      | Sipariş Talebi    | Sipariş Talebi (raise new orders for projects at `uretime_hazir`/`uretimde`/`gumruk`/`satista`), Teslim Onayları (confirm Alındı → moves to `satista`), Tüm Ürünler (catalog, order entry point), Ayarlar |
 
 Sidebar grouping is computed in `AppShell.navGroups()` and groups items into:
-1. **Ana menü** — Dashboard, Projelerim / Tüm Projeler, İş Akışı, Baskı Listesi, Toplantılar (yakında), Satış-only: Sipariş Talebi, Tüm Ürünler
+1. **Ana menü** — Dashboard, Projelerim / Tüm Projeler, İş Akışı, Hedef Projeler (`team_leader`/`designer`), Toplantılar (`team_leader`/`designer`/`printer`, see migration `040__meetings.sql`), Satış-only: Sipariş Talebi, Tüm Ürünler
 2. **Onaylar** (printer + team_leader; satis only sees Teslim Onayları)
 3. **Yönetim / kaynaklar** — Ekip (team_leader only), Dökümanlar, Ürün Bilgileri (team_leader only). Çalışma Defteri used to sit here; it is off behind `WORK_LOG_ENABLED`
 4. **Acil İşler** (yakında) — pinned projects sorted by attempt counter. Shown to `team_leader` + `designer` only; `printer` and `satis` don't get this group, the pinned list, or the "Bu Dönem" period widget below it (re-send pressure and the satışa-çıkar goal aren't their workload)

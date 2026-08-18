@@ -659,6 +659,28 @@ export async function notifyTargetProjectIdeaCreated(client, { idea, actor }) {
   })
 }
 
+/* ----------------------------- toplantılar --------------------------------- */
+
+/**
+ * A new meeting was logged (migration 040__meetings.sql). Only fires when
+ * the author isn't a team leader, same reasoning as
+ * notifyTargetProjectIdeaCreated — the leader is the one who most needs to
+ * know a designer or printer scheduled/logged a meeting.
+ */
+export async function notifyMeetingCreated(client, { meeting, actor }) {
+  if (actor?.role === 'team_leader') return 0
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  return emit(client, {
+    recipientIds: leaders,
+    actorId: actor?.id,
+    type: 'meeting',
+    title: meeting.title,
+    body: `${actor?.name ?? 'Ekipten biri'} yeni bir toplantı ekledi`,
+    tone: 'blue',
+    link: '/toplanti',
+  })
+}
+
 /* ------------------------------- orders ---------------------------------- */
 
 const ORDER_STEP_BODY = {

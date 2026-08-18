@@ -243,6 +243,65 @@ const targetProjectIdeaIdParams = {
   },
 }
 
+const targetProjectIdeaUpdate = {
+  ...targetProjectIdeaIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    minProperties: 1,
+    properties: {
+      name: { type: 'string', minLength: 1, maxLength: 200 },
+      notes: { type: 'string', maxLength: 2000 },
+      link: { type: 'string', maxLength: 2000 },
+    },
+  },
+}
+
+// ─── meetings (Toplantılar) ──────────────────────────────────────────────
+//
+// Meeting log activated in the sidebar alongside Hedef Projeler. See
+// migration 040__meetings.sql.
+
+const meetingCreate = {
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['title', 'meeting_at'],
+    properties: {
+      title: { type: 'string', minLength: 1, maxLength: 200 },
+      meeting_at: { type: 'string', minLength: 1, maxLength: 64 },
+      notes: { type: 'string', maxLength: 2000 },
+      project_id: projectId,
+    },
+  },
+}
+
+const meetingIdParams = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id'],
+    properties: { id: { type: 'string', minLength: 1, maxLength: 64 } },
+  },
+}
+
+const meetingUpdate = {
+  ...meetingIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    minProperties: 1,
+    properties: {
+      title: { type: 'string', minLength: 1, maxLength: 200 },
+      meeting_at: { type: 'string', minLength: 1, maxLength: 64 },
+      notes: { type: 'string', maxLength: 2000 },
+      // Nullable (unlike meetingCreate's project_id) so a client can
+      // explicitly clear an existing link, not just omit it.
+      project_id: { anyOf: [projectId, { type: 'null' }] },
+    },
+  },
+}
+
 // Notification id path param (e.g. PATCH /notifications/:id/read). Bounds the
 // value so a malformed/oversized id is rejected with 400 before the DB query.
 const notificationIdParams = {
@@ -849,4 +908,8 @@ export const schemas = {
   handoversConfirm,
   targetProjectIdeaCreate,
   targetProjectIdeaIdParams,
+  targetProjectIdeaUpdate,
+  meetingCreate,
+  meetingIdParams,
+  meetingUpdate,
 }
