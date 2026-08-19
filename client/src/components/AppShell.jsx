@@ -742,6 +742,22 @@ function NotificationBell() {
   const { items, unseen, markRead, markAllRead, markSeen } = useNotifications()
   const [menuOpen, setMenuOpen] = useState(false)
 
+  // Radix's dismissable-layer close can leave `pointer-events: none` stuck on
+  // <body> when the menu closes right before a route change — hit this exact
+  // bug before with the old project-detail Sheet. The setTimeout below defers
+  // navigation, but doesn't guarantee Radix's own teardown has finished, so
+  // reset the lock once the menu is actually closed rather than relying on
+  // that race.
+  useEffect(() => {
+    if (menuOpen) return undefined
+    const id = requestAnimationFrame(() => {
+      if (document.body.style.pointerEvents === 'none') {
+        document.body.style.pointerEvents = ''
+      }
+    })
+    return () => cancelAnimationFrame(id)
+  }, [menuOpen])
+
   function handleOpenChange(open) {
     setMenuOpen(open)
     // Opening the bell clears the badge (seen) but not the bold (is_read).
