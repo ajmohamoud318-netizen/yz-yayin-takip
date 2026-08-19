@@ -4,6 +4,7 @@ export const STAGE_LABELS = {
   demo_onay: 'Demo Onay',
   ozalit_teslim: 'Ozalit Teslim',
   ozalit_onay: 'Ozalit Onay',
+  baski_onay: 'Baskı Onayı',
   cin_demo_teslim: 'Çin Demo Teslim',
   cin_demo_onay: 'Çin Demo Onay',
   uretime_hazir: 'Üretime Hazır',
@@ -13,7 +14,7 @@ export const STAGE_LABELS = {
 }
 
 export const STAGE_PIPELINE = {
-  TR:  ['tasarim', 'demo_teslim', 'demo_onay', 'ozalit_teslim', 'ozalit_onay', 'uretime_hazir', 'uretimde', 'satista'],
+  TR:  ['tasarim', 'demo_teslim', 'demo_onay', 'ozalit_teslim', 'ozalit_onay', 'baski_onay', 'uretime_hazir', 'uretimde', 'satista'],
   CIN: ['tasarim', 'cin_demo_teslim', 'cin_demo_onay', 'uretime_hazir', 'uretimde', 'gumruk', 'satista'],
 }
 
@@ -37,6 +38,6 @@ export const HANDOVER_ELIGIBLE_STAGE = { TR: 'uretimde', CIN: 'gumruk' }
  * designer finishes and a second demo is sent.
  */
 export const STAGES_REQUIRING_FULL_PROGRESS = new Set([
-  'ozalit_teslim', 'ozalit_onay',
+  'ozalit_teslim', 'ozalit_onay', 'baski_onay',
   'uretime_hazir', 'uretimde', 'gumruk', 'satista',
 ])

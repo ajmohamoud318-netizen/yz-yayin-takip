@@ -12,11 +12,12 @@ import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
 import {
   applyAdvance, applyApproval, applyDemoReceive, applyDemoNotReceived,
-  applyOzalitReceive, applyOzalitNotReceived, applyRejection,
+  applyOzalitReceive, applyOzalitNotReceived, applyBaskiOnayPrepare, applyRejection,
 } from '../services/project-transitions.js'
 import {
   notifyProjectCreated, notifyProjectTransition, notifyProjectDeleted,
   notifyProductCatalogChanged, notifyDemoReceived, notifyOzalitReceived,
+  notifyBaskiOnayPrepared,
 } from '../services/notifications.js'
 import { ORDERABLE_STAGES } from '../domain/stages.js'
 // Blocks main-pipeline transitions on imported backlist products — see the
@@ -552,6 +553,21 @@ export async function projectRoutes(fastify) {
       if (Object.prototype.hasOwnProperty.call(next, 'demo_held_by_name')) {
         fields.demo_held_by_name = next.demo_held_by_name
       }
+      // Cleared by the baski_onay approve branch once it actually advances to
+      // Üretime Hazır (migration 045's dual-approval pair resets for any
+      // hypothetical future round).
+      if (Object.prototype.hasOwnProperty.call(next, 'baski_onay_prepared')) {
+        fields.baski_onay_prepared = next.baski_onay_prepared
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'baski_onay_prepared_by')) {
+        fields.baski_onay_prepared_by = next.baski_onay_prepared_by
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'baski_onay_prepared_by_name')) {
+        fields.baski_onay_prepared_by_name = next.baski_onay_prepared_by_name
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'baski_onay_prepared_at')) {
+        fields.baski_onay_prepared_at = next.baski_onay_prepared_at
+      }
       const updated = await patchProject(client, project.id, fields)
       if (history) {
         await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
@@ -717,6 +733,37 @@ export async function projectRoutes(fastify) {
         await notifyProjectTransition(client, {
           project: updated, fromStage: history.from_stage, toStage: history.to_stage ?? updated.stage,
           action: history.action, actor: request.user, assignees: project.assignees,
+        })
+      }
+      return updated
+    })
+    return result
+  })
+
+  // Mark the Baskı Onay Formu "hazırlandı" — the maker half of migration
+  // 045's dual-approval pair. Any active team leader may prepare it; the
+  // later approve (computeApproval's baski_onay branch) then requires a
+  // DIFFERENT team leader, unless the preparer is the only one there is.
+  fastify.post('/projects/:id/baski-onay-prepare', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      const { project: next, history } = applyBaskiOnayPrepare(project, { user: request.user })
+      const updated = await patchProject(client, project.id, {
+        baski_onay_prepared: next.baski_onay_prepared,
+        baski_onay_prepared_by: next.baski_onay_prepared_by,
+        baski_onay_prepared_by_name: next.baski_onay_prepared_by_name,
+        baski_onay_prepared_at: next.baski_onay_prepared_at,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        const { rows: leaderRows } = await client.query(
+          "SELECT id FROM users WHERE role = 'team_leader' AND is_active = TRUE",
+        )
+        await notifyBaskiOnayPrepared(client, {
+          project: updated, actor: request.user, teamLeaderIds: leaderRows.map((r) => r.id),
         })
       }
       return updated

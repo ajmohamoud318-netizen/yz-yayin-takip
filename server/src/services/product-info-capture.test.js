@@ -236,9 +236,9 @@ describe('captureProductInfoFromSpec', () => {
     assert.equal(client.writes.length, 0)
   })
 
-  it('prefers the ozalit sheet, falling back to demo for ÇİN', async () => {
-    // The preference is expressed in SQL (ORDER BY kind = 'ozalit' DESC) rather
-    // than in JS, so assert the query actually carries it.
+  it('prefers baski_onay, then ozalit, falling back to demo for ÇİN', async () => {
+    // The preference is expressed in SQL (ORDER BY kind = 'baski_onay' DESC,
+    // kind = 'ozalit' DESC) rather than in JS, so assert the query carries it.
     const seen = []
     const client = {
       async query(sql) {
@@ -248,8 +248,19 @@ describe('captureProductInfoFromSpec', () => {
     }
     await captureProductInfoFromSpec(client, { project, actor })
     const demoQuery = seen.find((s) => /FROM demos/.test(s))
-    assert.match(demoQuery, /ORDER BY \(kind = 'ozalit'\) DESC/)
+    assert.match(demoQuery, /ORDER BY \(kind = 'baski_onay'\) DESC, \(kind = 'ozalit'\) DESC/)
     assert.match(demoQuery, /attempt DESC/, 'latest round of that kind wins')
+  })
+
+  it('a baski_onay sheet — a team leader\'s post-ozalit correction — wins over ozalit', async () => {
+    const client = makeFakeClient({
+      demoPayloads: [
+        { _selectedComponents: [{ component: 'KİTAP', rows: [row('EBAT', 'baski onay value')] }] },
+        { _selectedComponents: [{ component: 'KİTAP', rows: [row('EBAT', 'ozalit value')] }] },
+      ],
+    })
+    await captureProductInfoFromSpec(client, { project, actor })
+    assert.equal(client.writes[0].components[0].fields[1].v, 'baski onay value')
   })
 
   it('falls back to the demo sheet when the ozalit sheet carries no spec', async () => {

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   ASSIGNMENT_GREETINGS, pickAssignmentGreeting,
   notifyProjectTransition, notifyDemoReceived, notifyOzalitReceived,
+  notifyBaskiOnayPrepared,
 } from './notifications.js'
 
 /**
@@ -242,6 +243,48 @@ test('an approver who already signed is not asked again on the next sign-off', a
     actor: { id: 'u-aylin', name: 'Aylin' }, assignees,
   })
   assert.deepEqual(client.rows.map((r) => r.userId), ['u-feyza'])
+})
+
+/* ==========================================================================
+ *  Baskı Onay Formu — dual-approval (migration 045)
+ *
+ *  Two distinct events, two distinct audiences: everyone signing off on
+ *  ozalit lands the project on `baski_onay` and every active leader is asked
+ *  to PREPARE the form; once someone does, only the OTHER active leaders are
+ *  asked to APPROVE it — the preparer already knows they did it.
+ * ======================================================================== */
+
+test('everyone finishing ozalit asks every active leader to prepare the form', async () => {
+  const client = fakeClient()
+  await notifyProjectTransition(client, {
+    project, fromStage: 'ozalit_onay', toStage: 'baski_onay', action: 'approve',
+    actor: { id: 'u-aylin', name: 'Aylin' }, assignees,
+  })
+  assert.deepEqual(client.rows.map((r) => r.userId), ['u-ayse'])
+  assert.equal(client.rows[0].type, 'baski_onay_pending')
+  assert.match(client.rows[0].body, /hazırlanması bekleniyor/)
+})
+
+test('preparing the form asks the OTHER active leaders, not the preparer', async () => {
+  const client = fakeClient()
+  await notifyBaskiOnayPrepared(client, {
+    project, actor: { id: 'u-ayse', name: 'Ayşenur' },
+    teamLeaderIds: ['u-ayse', 'u-serpil'],
+  })
+  assert.deepEqual(client.rows.map((r) => r.userId), ['u-serpil'])
+  assert.equal(client.rows[0].type, 'baski_onay_prepared')
+  assert.equal(client.rows[0].title, 'Ayşenur', 'receipt-style: person in the title, book in the body')
+  assert.match(client.rows[0].body, /onayınız bekleniyor/)
+})
+
+test('preparing the form as the only active leader pings nobody (no error)', async () => {
+  const client = fakeClient()
+  const count = await notifyBaskiOnayPrepared(client, {
+    project, actor: { id: 'u-ayse', name: 'Ayşenur' },
+    teamLeaderIds: ['u-ayse'],
+  })
+  assert.equal(count, 0)
+  assert.deepEqual(client.rows, [])
 })
 
 test('a ÇİN demo approval reaches the designers who drew it', async () => {

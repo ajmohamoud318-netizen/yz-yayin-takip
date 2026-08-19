@@ -433,6 +433,23 @@ export async function notifyOzalitReceived(client, { project, actor, assignees }
 }
 
 /**
+ * The Baskı Onay Formu was just marked "hazırlandı" (prepared) — the maker
+ * half of migration 045's dual-approval pair. Only the OTHER active team
+ * leaders are told an approval is now owed; the preparer isn't (emit()
+ * drops the actor via actorId), and there are no designers/printers in this
+ * loop — the checker step is team_leader-only, same as the preparer step.
+ */
+export async function notifyBaskiOnayPrepared(client, { project, actor, teamLeaderIds }) {
+  const leaders = teamLeaderIds ?? (await activeUserIdsByRole(client, 'team_leader'))
+  const who = actor?.name ?? 'Ekipten biri'
+  return emit(client, {
+    actorId: actor?.id, title: who, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: leaders, type: 'baski_onay_prepared', tone: 'amber',
+    body: `${project.title} için baskı onay formunu hazırladı, onayınız bekleniyor`,
+  })
+}
+
+/**
  * A project pipeline transition (advance / approve / reject) just committed.
  * `toStage` / `fromStage` / `action` come straight from the history row the
  * route already built. We map the resulting state to the people who now need
@@ -532,6 +549,15 @@ export async function notifyProjectTransition(client, {
       return emit(client, {
         ...base, recipientIds: [...leaders, ...designers], type: 'ozalit_receipt_pending', tone: 'amber',
         body: 'Matbaa ozaliti teslim etti, "Teslim Alındı" bekleniyor', link: `/projects/${project.id}`,
+      })
+
+    // Everyone signed off on the ozalit — a team leader now needs to PREPARE
+    // the Baskı Onay Formu (migration 045's maker half); every active leader
+    // is told, since any one of them may do it.
+    case 'baski_onay':
+      return emit(client, {
+        ...base, recipientIds: leaders, type: 'baski_onay_pending', tone: 'amber',
+        body: 'Ozalit onaylandı, baskı onay formu hazırlanması bekleniyor', link: `/projects/${project.id}`,
       })
 
     // Production ready → matbaa can take it in.

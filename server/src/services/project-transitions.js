@@ -22,6 +22,7 @@ import {
   computeDemoNotReceived,
   computeOzalitReceive,
   computeOzalitNotReceived,
+  computeBaskiOnayPrepare,
   computeRejection,
 } from '../domain/transitions.js'
 
@@ -79,6 +80,15 @@ export function applyOzalitReceive(project, { user, designerIds = [] }) {
  */
 export function applyOzalitNotReceived(project, { user, designerIds = [] }) {
   return computeOzalitNotReceived(project, user, { designerIds })
+}
+
+/**
+ * `POST /projects/:id/baski-onay-prepare`. Any active team leader may prepare
+ * the Baskı Onay Formu; who prepared it is what the later approve branch of
+ * `applyApproval` checks against.
+ */
+export function applyBaskiOnayPrepare(project, { user }) {
+  return computeBaskiOnayPrepare(project, user)
 }
 
 /** `POST /projects/:id/reject`. */

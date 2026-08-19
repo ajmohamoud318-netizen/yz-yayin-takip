@@ -139,14 +139,17 @@ export function mergeComponents(existing, captured) {
 export async function captureProductInfoFromSpec(client, { project, actor }) {
   if (!project?.id) return null
 
-  // Prefer the ozalit sheet: it is the last proof every approver signed off
-  // on, so it reflects the product as it will actually be produced. ÇİN
-  // projects have no ozalit stage at all (STAGE_FLOW.CIN), so they fall
-  // through to their latest demo sheet. Ordering `kind = 'ozalit'` first does
-  // both in one query.
+  // Prefer the Baskı Onay Formu (migration 044): it's the literal final
+  // approval — team_leader-only, and the only sheet that may still have been
+  // hand-corrected after the ozalit proof was signed. Next, the ozalit sheet:
+  // it is the last PRINT proof every approver signed off on, so short of a
+  // baski_onay edit it reflects the product as it will actually be produced.
+  // ÇİN projects have neither baski_onay nor ozalit stages at all
+  // (STAGE_FLOW.CIN), so they fall through to their latest demo sheet.
+  // Ordering `kind` this way does all three in one query.
   //
-  // "Prefer" means "prefer a sheet that HAS a spec", not "take the ozalit row
-  // and give up". On a project with no catalog yet — the exact case this
+  // "Prefer" means "prefer a sheet that HAS a spec", not "take the top-ranked
+  // row and give up". On a project with no catalog yet — the exact case this
   // capture exists for — the leader's ozalit form opens empty (SpecFormDialog
   // seeds `selectedComponents` from catalogComponents, which is []), so
   // clicking "Matbaaya Gönder" without retyping the spec stores an ozalit
@@ -159,7 +162,7 @@ export async function captureProductInfoFromSpec(client, { project, actor }) {
     `SELECT payload
        FROM demos
       WHERE project_id = $1
-      ORDER BY (kind = 'ozalit') DESC, attempt DESC, created_at DESC
+      ORDER BY (kind = 'baski_onay') DESC, (kind = 'ozalit') DESC, attempt DESC, created_at DESC
       LIMIT 50`,
     [project.id],
   )

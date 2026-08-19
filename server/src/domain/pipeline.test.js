@@ -16,9 +16,9 @@ import {
 } from './pipeline.js'
 
 describe('pipeline', () => {
-  it('TR pipeline leads to satista in 8 stages', () => {
+  it('TR pipeline leads to satista in 9 stages', () => {
     const p = getPipeline('TR')
-    assert.equal(p.length, 8)
+    assert.equal(p.length, 9)
     assert.equal(p[p.length - 1], 'satista')
   })
 

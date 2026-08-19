@@ -330,6 +330,51 @@ export function computeApproval(project, actor, ctx = {}) {
     return computeOzalitOnayApproval(project, actor, now, actorName, ctx)
   }
 
+  // Baskı Onayı: dual-approval (migration 045). One team leader PREPARES the
+  // form (computeBaskiOnayPrepare, below) — that alone doesn't advance the
+  // stage. Only once prepared can this approve fire, and it must come from a
+  // DIFFERENT team leader than the preparer, unless the preparer is the only
+  // active team leader there is (ctx.teamLeaderIds) — enforcing "different
+  // person" there would strand the project with nobody left who could ever
+  // approve it. canApproveAt already restricts this to team_leader for any
+  // stage other than demo_onay/cin_demo_onay, but the explicit check gives a
+  // clear Turkish error instead of falling through to the generic 400 below.
+  if (project.stage === 'baski_onay') {
+    if (!canApproveAt(project.stage, actor)) {
+      badRequest('Baskı onayını yalnızca ekip lideri yapabilir.')
+    }
+    if (!project.baski_onay_prepared) {
+      badRequest('Önce baskı onay formu hazırlanmalıdır.')
+    }
+    const teamLeaderIds = ctx.teamLeaderIds ?? []
+    const otherActiveLeaders = teamLeaderIds.filter((id) => id !== project.baski_onay_prepared_by)
+    if (actor?.id === project.baski_onay_prepared_by && otherActiveLeaders.length > 0) {
+      badRequest('Baskı onay formunu hazırlayan kişi kendi onayını veremez, başka bir ekip lideri onaylamalıdır.')
+    }
+    const pipeline = pipelineFor(project)
+    const i = pipeline.indexOf(project.stage)
+    const next = pipeline[i + 1]
+    assertCanEnterProductionLocal(next, project.progress)
+    return {
+      project: {
+        ...project,
+        stage: next,
+        baski_onay_prepared: false,
+        baski_onay_prepared_by: null,
+        baski_onay_prepared_by_name: null,
+        baski_onay_prepared_at: null,
+        updated_at: now,
+      },
+      history: makeEntry(project, {
+        action: 'approve',
+        from_stage: project.stage,
+        to_stage: next,
+        done_by_name: actorName,
+        note: 'Baskı onaylandı, üretime alındı',
+      }),
+    }
+  }
+
   // Demo approval: leader OR printer can advance it.
   // New demo rule (see client pipeline.js#assertDemoCanAdvance): an approve
   // at <100% progress is recorded as a hold — the project stays at
@@ -594,6 +639,46 @@ export function computeOzalitNotReceived(project, actor, ctx = {}) {
   }
 }
 
+/* ============================================================================
+ *  baskiOnayPrepare(project, actor) → next project state
+ *
+ *  Marks the Baskı Onay Formu "hazırlandı" (prepared) — the maker half of the
+ *  maker-checker pair migration 045 introduced. Allowed only at baski_onay,
+ *  and only by a team leader (any active one — Serpil Hanım, Ayşenur, …).
+ *  Does NOT advance the stage; it only unlocks the approve branch in
+ *  computeApproval, which additionally requires a DIFFERENT team leader.
+ *  Re-preparing (e.g. after further edits) simply re-stamps who/when —
+ *  idempotent in the sense that it never errors, it just updates the ledger.
+ * ========================================================================== */
+export function computeBaskiOnayPrepare(project, actor) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (project.stage !== 'baski_onay') {
+    badRequest('Bu işlem yalnızca baskı onay aşamasında yapılabilir.')
+  }
+  if (actor?.role !== 'team_leader') {
+    badRequest('Baskı onay formunu yalnızca ekip lideri hazırlayabilir.')
+  }
+  return {
+    project: {
+      ...project,
+      baski_onay_prepared: true,
+      baski_onay_prepared_by: actor?.id ?? null,
+      baski_onay_prepared_by_name: actorName,
+      baski_onay_prepared_at: now,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'advance',
+      event: 'baski_onay_prepared',
+      from_stage: 'baski_onay',
+      to_stage: 'baski_onay',
+      done_by_name: actorName,
+      note: 'Baskı onay formu hazırlandı, onay bekleniyor',
+    }),
+  }
+}
+
 function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
   // Multi-party approval: EVERY active team leader AND every assigned designer
   // must approve before the project advances to Üretime Hazır, and a team
@@ -661,12 +746,15 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
     }
   }
 
-  // Everyone approved → advance to production-ready and clear the ledger.
-  assertCanEnterProductionLocal('uretime_hazir', project.progress)
+  // Everyone approved → the print proof itself is settled, but production
+  // doesn't start yet: the project lands on baski_onay first, where a team
+  // leader (Serpil Hanım / Ayşenur — see computeApproval's baski_onay branch)
+  // gives the final, single-signature "Baskı Onayı" before Üretime Hazır.
+  assertCanEnterProductionLocal('baski_onay', project.progress)
   return {
     project: {
       ...project,
-      stage: 'uretime_hazir',
+      stage: 'baski_onay',
       ozalit_approvals: [],
       ozalit_leader_approved: false,
       ozalit_leader_approved_by: null,
@@ -677,9 +765,9 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
     history: makeEntry(project, {
       action: 'approve',
       from_stage: 'ozalit_onay',
-      to_stage: 'uretime_hazir',
+      to_stage: 'baski_onay',
       done_by_name: actorName,
-      note: 'Ozalit onaylandı, üretime alındı',
+      note: 'Ozalit onaylandı, baskı onayına gönderildi',
     }),
   }
 }

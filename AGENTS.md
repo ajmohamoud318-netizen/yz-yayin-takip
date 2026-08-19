@@ -40,8 +40,11 @@ Demo Onay
     ↓
 Özalit Onay — multi-party, leader-first
     ✓ a team leader approves first, then every other leader + every assigned
-      designer counter-signs → Üretime Hazır (only when the set is complete)
+      designer counter-signs → Baskı Onayı (only when the set is complete)
     ✗ Ayşenur rejects (reason REQUIRED, target = matbaa|designer) → back to Tasarım (ozalit_attempt +1)
+    ↓
+Baskı Onayı — final print approval (migration 044)
+    ✓ a team leader (Serpil Hanım, Ayşenur, …) gives the final "Baskı Onayı" → Üretime Hazır
     ↓
 Üretime Hazır
     ↓
@@ -71,7 +74,7 @@ Satışta ✅
 ```
 
 ### Production Gate
-A project **cannot** enter Ozalit or any later stage until `progress === 100%`. Enforced by `assertCanEnterProduction` in `domain/services/pipeline.js`. `STAGES_REQUIRING_FULL_PROGRESS` = `ozalit_teslim, ozalit_onay, uretime_hazir, uretimde, gumruk, satista`.
+A project **cannot** enter Ozalit or any later stage until `progress === 100%`. Enforced by `assertCanEnterProduction` in `domain/services/pipeline.js`. `STAGES_REQUIRING_FULL_PROGRESS` = `ozalit_teslim, ozalit_onay, baski_onay, uretime_hazir, uretimde, gumruk, satista`.
 
 ### Ürün Bilgileri auto-capture (entering Üretime Hazır)
 The moment a project lands on **Üretime Hazır** its approved spec sheet is
@@ -137,6 +140,18 @@ Enforced by:
 - **Leader-first approval order**: ozalit onay is multi-party (every active team leader + every assigned designer must approve), but the approvals are *ordered* — a designer may only counter-sign a proof a team leader has already approved. `computeOzalitOnayApproval` refuses a designer with "Önce ekip lideri onaylamalıdır, tasarımcı onayı ondan sonra verilebilir." while the ledger holds no `team_leader` entry. Any **one** leader opens the gate (a second leader's approval is not a second gate), and after that everyone remaining signs in any order; a rejection or a "Teslim Alınamadı" wipes the ledger, so the next round needs a fresh leader sign-off. The rule is skipped when there is no active team leader at all — none would be in the required set either, and enforcing it would strand the project at `ozalit_onay`. Client mirror: `ozalitLeaderApproved` / `canApproveOzalitNow` in `client/src/domain/services/pipeline.js`, used by the project detail action row, the Onaylar queue, the spec-sheet approve dialog, and the designer's sidebar badge, so a designer never sees an Onayla the server would refuse.
 - **"Teslim Alınamadı" (not received)**: the counterpart, for when the delivered ozalit never reached the leader/designer — only valid before it's been acknowledged. `computeOzalitNotReceived` sends the project back to `ozalit_teslim` with the matbaa re-delivery lock (`reject_target: 'matbaa'`, same mechanism as reject-to-matbaa), wipes the partial multi-party approval ledger, and bumps `ozalit_attempt`. Route: `POST /api/projects/:id/ozalit-not-received`.
 - Both teslim decisions are behind an "emin misiniz?" confirm in the UI (`ConfirmDialog` on the project detail, an inline yes/no inside the spec-sheet and approval dialogs) — they're one click, adjacent to each other, and neither can be undone from the app. Same for the demo pair.
+
+### Baskı Onay Formu — the final print approval (migrations 044–045, TR only)
+Once every leader + assigned designer has signed off on the ozalit (Özalit Onay complete), the project does **not** jump straight to Üretime Hazır — it lands on a new gate stage, `baski_onay`, first. This is the last human checkpoint before a book is treated as production-ready.
+
+- **Edit rights are team_leader only** — in practice Serpil Hanım and Ayşenur, but enforced by role (`isBaskiOnayApprover` client-side, `canApproveAt`/the explicit `baski_onay` branch in `computeApproval` server-side), not by name. Every other role (designer, printer, satis) sees the form read-only.
+- **Comes to screen pre-filled with the last Özalit sheet's information.** The form is a `demos` row (`kind = 'baski_onay'`) that borrows the latest `kind = 'ozalit'` sheet's parça rows the first time it's opened empty — same "borrow once, then keep your own edits" shape the ozalit sheet uses to seed from the demo sheet (see `specWithDemoFallback`, reused for this fallback too). A team leader can then correct it before approving.
+- **Dual-approval, maker-checker (migration 045): one leader prepares, a DIFFERENT leader approves.** Any active team leader may open the form, correct it, and mark it "hazırlandı" (`POST /api/projects/:id/baski-onay-prepare`, `computeBaskiOnayPrepare`) — this alone does **not** advance the stage, it only records who prepared it (`baski_onay_prepared`, `_by`, `_by_name`, `_at`). The actual "Baskı Onayı" (`POST /api/projects/:id/approve`, the `baski_onay` branch of `computeApproval`) then requires a **different** team leader than the preparer — the same person's approve is refused ("kendi onayını veremez, başka bir ekip lideri onaylamalıdır") **unless they're the only active team leader there is**, in which case they may self-approve rather than strand the project. `SpecFormDialog`'s `baski_onay` variant switches its footer button between "Hazırla ve Onaya Gönder" and "Onayla" based on `project.baski_onay_prepared` — every team leader sees the same button once prepared; the server is the actual arbiter of "different person" (a same-person click surfaces the refusal as a toast).
+- Approving it runs the same-transaction Ürün Bilgileri capture (`captureProductInfoFromSpec`), same as before — it advances `baski_onay → uretime_hazir` and clears the prepared fields. The capture prefers a `baski_onay` sheet over the `ozalit` sheet it prefers over `demo`, so a team leader's correction on this final form is what actually reaches the product catalog.
+- **No reject flow.** Unlike every other approval gate, `baski_onay` has no Reddet button — a team leader who spots a problem edits the form directly (that's exactly what the edit right is for) rather than bouncing the project back through another round of ozalit.
+- **Notifications**: entering `baski_onay` pings every active team leader to prepare it (`baski_onay_pending`); preparing it pings every OTHER active team leader that an approval is owed (`baski_onay_prepared`, `notifyBaskiOnayPrepared` — the preparer is dropped via `emit()`'s actor suppression); reaching `uretime_hazir` pings the matbaa as usual (`production_ready`).
+- **Second door into production**: `reconcileOzalitApprovals` (`services/project-repository.js` — advances a stalled ozalit round when the last pending leader is deactivated) now also lands on `baski_onay`, not `uretime_hazir`; it no longer runs the Ürün Bilgileri capture itself, since the project doesn't enter production from that path anymore.
+- Surfaced in the **Onaylar** queue as its own "Baskı Onayı" tab (`/approvals/baski-onay`, team_leader only) alongside Demo/Ozalit, and on the project detail page via the same Onayla button pattern as Ozalit Onay.
 
 ---
 ## 🛒 Sipariş (Order) Mini-Workflow — sales re-prints
@@ -505,7 +520,7 @@ CREATE TABLE projects (
   stage         TEXT NOT NULL DEFAULT 'tasarim'
     CHECK (stage IN (
       'tasarim','demo_teslim','demo_onay',
-      'ozalit_teslim','ozalit_onay',
+      'ozalit_teslim','ozalit_onay','baski_onay',
       'cin_demo_teslim','cin_demo_onay',
       'uretime_hazir','uretimde','gumruk','satista'
     )),
@@ -681,13 +696,16 @@ POST   /api/projects/import           { dryRun?, items[] } [team_leader]
 > Every route in this block 400s on `origin = 'legacy'` via `assertNotLegacy` — see "Kayıtlı ürünler (legacy)".
 ```
 POST   /api/projects/:id/advance      move to next stage [designer or team_leader]
-POST   /api/projects/:id/approve      { stage } [printer for demo/ozalit, team_leader for cin]
+POST   /api/projects/:id/approve      { stage } [printer for demo/ozalit, team_leader for cin + baski_onay]
 POST   /api/projects/:id/reject       { stage, reason, reject_target? } [team_leader only]
                                        reject_target ∈ { 'matbaa' | 'designer' } for ozalit_onay
 POST   /api/projects/:id/receive               mark delivered demo "Teslim Alındı" [team_leader or assigned designer]
 POST   /api/projects/:id/demo-not-received     report a delivered demo never arrived → back to matbaa [team_leader or assigned designer]
 POST   /api/projects/:id/ozalit-receive        mark delivered ozalit "Teslim Alındı" [team_leader or assigned designer]
 POST   /api/projects/:id/ozalit-not-received   report a delivered ozalit never arrived → back to matbaa [team_leader or assigned designer]
+POST   /api/projects/:id/baski-onay-prepare    mark Baskı Onay Formu "hazırlandı" — the maker half of the
+                                                dual-approval pair (migration 045); does not advance the
+                                                stage [team_leader only]
 ```
 ### Subtasks
 ```
@@ -847,7 +865,7 @@ Delivery is **polling** (the SPA authenticates with a trusted `X-User-Id` header
 **Seen vs read (migration 024).** Two independent states, so the badge behaves like a real app without losing the to-do signal: `seen` drives the red **badge** and is cleared the moment the bell dropdown opens (a glance counts); `is_read` drives the per-item **bold** styling and is only cleared when the item is clicked (or "Tümünü okundu say"). Invariant: reading implies seeing (the service sets `seen` wherever it sets `is_read`). The bell shows a per-`type` icon in a tone-tinted circle (`TYPE_ICON` / `NotifIcon` in `AppShell.jsx`).
 
 Recipient rules live once, in the service (`notifyProjectTransition`, `notifyProjectCreated`, `notifyDemoReceived`, `notifyOrderTransition`, `notifyOrderRejected`, `notifyHandoverRequested`, `notifyHandoverConfirmed`). The actor is never notified of their own action; recipients are resolved against the **active** user set. Per role the feed surfaces:
-- `team_leader` — demo delivered / demo receipt acknowledged (→ approval unblocked), ozalit approvals pending, production-ready, new sipariş talep steps
+- `team_leader` — demo delivered / demo receipt acknowledged (→ approval unblocked), ozalit approvals pending, baskı onay formu hazırlanması bekleniyor (`baski_onay_pending`) → a DIFFERENT leader's approval owed once prepared (`baski_onay_prepared`, migration 045), production-ready, new sipariş talep steps
 - `printer` — demo/ozalit delivery pending, production-ready, sipariş ozalit steps
 - `designer` — new assignment, rejection ("Revizyon gerekiyor"), demo delivered, demo receipt acknowledged, demo held, ozalit-requestable, production-ready, assigned-order steps
 - `satis` — handover confirmation pending, "Talebiniz onaylandı, üretime alındı", on-sale

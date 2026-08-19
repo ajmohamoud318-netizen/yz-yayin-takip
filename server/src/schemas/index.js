@@ -37,7 +37,7 @@ const stage = {
   type: 'string',
   enum: [
     'tasarim', 'demo_teslim', 'demo_onay',
-    'ozalit_teslim', 'ozalit_onay',
+    'ozalit_teslim', 'ozalit_onay', 'baski_onay',
     'cin_demo_teslim', 'cin_demo_onay',
     'uretime_hazir', 'uretimde', 'gumruk', 'satista',
   ],
@@ -763,7 +763,7 @@ const demosCreate = {
     required: ['project_id'],
     properties: {
       project_id: projectId,
-      kind: { type: 'string', enum: ['demo', 'ozalit'] },
+      kind: { type: 'string', enum: ['demo', 'ozalit', 'baski_onay'] },
       payload: { type: 'object' },
       attempt: { type: 'integer', minimum: 0, maximum: 100 },
       // Skip the "formu gönderildi" history row (the spec-form dialog's

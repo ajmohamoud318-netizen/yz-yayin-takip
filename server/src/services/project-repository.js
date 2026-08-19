@@ -8,7 +8,6 @@
 
 import { getPool, withTx } from '../db/pool.js'
 import { nanoid } from 'nanoid'
-import { captureProductInfoFromSpec, captureHistoryNote } from './product-info-capture.js'
 
 const PROJECT_COLUMNS = `
   id, title, type, stage, assigned_to, created_by, target_month,
@@ -19,6 +18,7 @@ const PROJECT_COLUMNS = `
   demo_held, demo_held_at, demo_held_by_name,
   demo_received, demo_received_by, demo_received_at,
   ozalit_received, ozalit_received_by, ozalit_received_at,
+  baski_onay_prepared, baski_onay_prepared_by, baski_onay_prepared_by_name, baski_onay_prepared_at,
   demo_delivered_at, demo_delivered_by,
   ozalit_requested, reject_target, last_reject_type, last_reject_target,
   ozalit_approvals,
@@ -342,6 +342,14 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
   'ozalit_received',
   'ozalit_received_by',
   'ozalit_received_at',
+  // Baskı Onay Formu dual-approval (migration 045): one team leader prepares
+  // (sets these three), a DIFFERENT team leader approves — computeApproval's
+  // baski_onay branch refuses the same actor unless no other active leader
+  // exists. Reset once the project actually advances to Üretime Hazır.
+  'baski_onay_prepared',
+  'baski_onay_prepared_by',
+  'baski_onay_prepared_by_name',
+  'baski_onay_prepared_at',
   // Who/when the matbaa delivered the current demo round. Set by
   // computeDemoTeslimAdvance, nulled by a resend or "Teslim Alınamadı".
   // `demo_delivered_by` is the id everything now reads through; the _name
@@ -510,7 +518,9 @@ export async function logHistory(client, entry, user) {
  * team leader + every assigned designer must approve"; that required set only
  * gets re-checked when someone clicks Approve. So if the only outstanding
  * approval was a leader who just got deactivated, the project would otherwise
- * sit at ozalit_onay forever. This advances any such project to Üretime Hazır.
+ * sit at ozalit_onay forever. This advances any such project to Baskı Onayı
+ * (migration 044) — same destination as a normal completed round; the final
+ * print approval is still owed there before Üretime Hazır.
  *
  * Call it AFTER the deactivation is committed so the active-leaders query
  * excludes the deactivated user. `actor` is stamped on the history row.
@@ -547,7 +557,7 @@ export async function reconcileOzalitApprovals(actor) {
       if (!complete) return
 
       await patchProject(client, id, {
-        stage: 'uretime_hazir',
+        stage: 'baski_onay',
         version: (project.version ?? 0) + 1,
         ozalit_approvals: JSON.stringify([]),
         ozalit_leader_approved: false,
@@ -560,32 +570,16 @@ export async function reconcileOzalitApprovals(actor) {
         {
           project_id: id,
           from_stage: 'ozalit_onay',
-          to_stage: 'uretime_hazir',
+          to_stage: 'baski_onay',
           action: 'approve',
-          note: 'Ozalit onaylandı, üretime alındı (bekleyen lider devre dışı bırakıldı)',
+          note: 'Ozalit onaylandı, baskı onayına gönderildi (bekleyen lider devre dışı bırakıldı)',
         },
         actor,
       )
-      // This is the second door into production (the approve route is the
-      // first), so it owes the same Ürün Bilgileri capture — otherwise a
-      // project advanced this way would be the one product Sales can't order.
-      const captured = await captureProductInfoFromSpec(client, {
-        project: { ...project, stage: 'uretime_hazir' }, actor,
-      })
-      if (captured) {
-        await logHistory(
-          client,
-          {
-            project_id: id,
-            from_stage: 'uretime_hazir',
-            to_stage: 'uretime_hazir',
-            action: 'system',
-            event: 'product_info_auto',
-            note: captureHistoryNote(captured.added),
-          },
-          actor,
-        )
-      }
+      // Ürün Bilgileri capture is NOT done here — the project no longer enters
+      // production directly from this path, it lands on baski_onay like any
+      // other completed ozalit round. Capture happens once a team leader gives
+      // the final Baskı Onayı (routes/projects.js's approve route).
       advanced += 1
     })
   }
@@ -677,6 +671,16 @@ function rowToProject(r) {
     ozalit_received_at: r.ozalit_received_at instanceof Date
       ? r.ozalit_received_at.toISOString()
       : r.ozalit_received_at,
+    // Baskı Onay Formu dual-approval (migration 045): one team leader
+    // prepares the form, a DIFFERENT one approves it. `_by` is a user id
+    // (not just a name) so computeApproval can check "is the approver the
+    // same person who prepared it".
+    baski_onay_prepared: r.baski_onay_prepared ?? false,
+    baski_onay_prepared_by: r.baski_onay_prepared_by ?? null,
+    baski_onay_prepared_by_name: r.baski_onay_prepared_by_name ?? null,
+    baski_onay_prepared_at: r.baski_onay_prepared_at instanceof Date
+      ? r.baski_onay_prepared_at.toISOString()
+      : r.baski_onay_prepared_at,
     demo_delivered_at: r.demo_delivered_at instanceof Date
       ? r.demo_delivered_at.toISOString()
       : r.demo_delivered_at,

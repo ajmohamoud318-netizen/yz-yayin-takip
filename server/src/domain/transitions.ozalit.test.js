@@ -2,10 +2,12 @@
  * Multi-party ozalit approval.
  *
  * Every active team leader AND every assigned designer must approve before the
- * project advances from ozalit_onay → uretime_hazir. Only a team leader may
- * reject; a single rejection sends it back. Since migration 035 the whole round
- * is gated on the proof being marked "Teslim Alındı" first, so the fixture
- * below starts acknowledged — the gate itself is covered separately.
+ * project advances from ozalit_onay → baski_onay (migration 044 — Baskı Onay
+ * Formu, the final print-approval gate before Üretime Hazır; see the
+ * "baski_onay approval" describe block below). Only a team leader may reject;
+ * a single rejection sends it back. Since migration 035 the whole round is
+ * gated on the proof being marked "Teslim Alındı" first, so the fixture below
+ * starts acknowledged — the gate itself is covered separately.
  */
 
 import { describe, it } from 'node:test'
@@ -13,6 +15,7 @@ import assert from 'node:assert/strict'
 
 import {
   computeAdvance, computeApproval, computeOzalitReceive, computeRejection,
+  computeBaskiOnayPrepare,
 } from './transitions.js'
 
 const L1 = { id: 'L1', role: 'team_leader', name: 'Ayşenur' }
@@ -49,7 +52,7 @@ describe('multi-party ozalit approval', () => {
     const r2 = computeApproval(r1.project, L2, ctx)
     assert.equal(r2.project.stage, 'ozalit_onay')     // 2/3 — still waiting
     const r3 = computeApproval(r2.project, D1, ctx)
-    assert.equal(r3.project.stage, 'uretime_hazir')   // 3/3 → advance
+    assert.equal(r3.project.stage, 'baski_onay')      // 3/3 → Baskı Onayı gate
     assert.deepEqual(r3.project.ozalit_approvals, []) // ledger cleared
   })
 
@@ -101,7 +104,7 @@ describe('ozalit leader-first approval order', () => {
     const { project: next } = computeApproval(leaderSigned(), D1, ctx)
     assert.equal(next.stage, 'ozalit_onay')
     const { project: done } = computeApproval(next, L2, ctx)
-    assert.equal(done.stage, 'uretime_hazir')
+    assert.equal(done.stage, 'baski_onay')
   })
 
   it('a leader rejection closes the gate again for the next round', () => {
@@ -119,12 +122,66 @@ describe('ozalit leader-first approval order', () => {
     // gate — enforcing the order there would park the project forever.
     const soloCtx = { teamLeaderIds: [], designerIds: ['D1'] }
     const { project: next } = computeApproval(ozalitProject(), D1, soloCtx)
-    assert.equal(next.stage, 'uretime_hazir')
+    assert.equal(next.stage, 'baski_onay')
   })
 
   it('the receipt gate still comes first for the designer', () => {
     const pending = leaderSigned({ ozalit_received: false })
     assert.throws(() => computeApproval(pending, D1, ctx), /Teslim Alındı/)
+  })
+})
+
+describe('baski_onay dual-approval — prepare then a DIFFERENT leader approves (migration 045)', () => {
+  function baskiOnayProject(overrides = {}) {
+    return { id: 'p-1', type: 'TR', stage: 'baski_onay', progress: 100, ...overrides }
+  }
+
+  it('approving before anyone has prepared it is refused', () => {
+    assert.throws(() => computeApproval(baskiOnayProject(), L1, ctx), /Önce baskı onay formu hazırlanmalıdır/)
+  })
+
+  it('a designer cannot prepare it', () => {
+    assert.throws(() => computeBaskiOnayPrepare(baskiOnayProject(), D1), /yalnızca ekip lideri hazırlayabilir/)
+  })
+
+  it('preparing does not by itself advance the stage', () => {
+    const { project: next, history } = computeBaskiOnayPrepare(baskiOnayProject(), L1)
+    assert.equal(next.stage, 'baski_onay')
+    assert.equal(next.baski_onay_prepared, true)
+    assert.equal(next.baski_onay_prepared_by, 'L1')
+    assert.equal(next.baski_onay_prepared_by_name, 'Ayşenur')
+    assert.equal(history.to_stage, 'baski_onay')
+  })
+
+  it('the SAME leader who prepared it cannot approve when another leader is active', () => {
+    const { project: prepared } = computeBaskiOnayPrepare(baskiOnayProject(), L1)
+    assert.throws(() => computeApproval(prepared, L1, ctx), /kendi onayını veremez/)
+  })
+
+  it('a DIFFERENT leader approving advances to uretime_hazir and clears the ledger', () => {
+    const { project: prepared } = computeBaskiOnayPrepare(baskiOnayProject(), L1)
+    const { project: next, history } = computeApproval(prepared, L2, ctx)
+    assert.equal(next.stage, 'uretime_hazir')
+    assert.equal(next.baski_onay_prepared, false)
+    assert.equal(next.baski_onay_prepared_by, null)
+    assert.equal(history.to_stage, 'uretime_hazir')
+  })
+
+  it('a designer cannot approve, prepared or not', () => {
+    const { project: prepared } = computeBaskiOnayPrepare(baskiOnayProject(), L1)
+    assert.throws(() => computeApproval(prepared, D1, ctx), /yalnızca ekip lideri/)
+  })
+
+  it('a printer cannot approve', () => {
+    const { project: prepared } = computeBaskiOnayPrepare(baskiOnayProject(), L1)
+    assert.throws(() => computeApproval(prepared, printer, ctx), /yalnızca ekip lideri/)
+  })
+
+  it('solo-leader fallback: the preparer MAY self-approve when no other active leader exists', () => {
+    const soloCtx = { teamLeaderIds: ['L1'], designerIds: ['D1'] }
+    const { project: prepared } = computeBaskiOnayPrepare(baskiOnayProject(), L1)
+    const { project: next } = computeApproval(prepared, L1, soloCtx)
+    assert.equal(next.stage, 'uretime_hazir')
   })
 })
 
