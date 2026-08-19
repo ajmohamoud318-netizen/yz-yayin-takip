@@ -636,7 +636,7 @@ export async function orderRoutes(fastify) {
       }
       if (Number.isFinite(request.body.pages_done)) {
         if (sub.total_pages != null && request.body.pages_done > sub.total_pages) {
-          badRequest(`Sayfa sayısı toplam sayfa sayısını (${sub.total_pages}) aşamaz.`)
+          badRequest(`İç sayfalar toplam iç sayfa sayısını (${sub.total_pages}) aşamaz.`)
         }
         allowed.pages_done = request.body.pages_done
       }

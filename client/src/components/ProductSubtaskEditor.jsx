@@ -10,7 +10,7 @@ const deepCopy = (x) => JSON.parse(JSON.stringify(x))
 // Only these three exist in the DB (migration 003's CHECK constraint).
 const SUBTASK_KINDS = [
   { value: 'check', label: 'Tamamlandı işareti' },
-  { value: 'pages', label: 'Sayfa sayısı' },
+  { value: 'pages', label: 'İç sayfalar' },
   { value: 'sticker-count', label: 'Sticker sayısı' },
 ]
 

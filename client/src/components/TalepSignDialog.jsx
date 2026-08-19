@@ -246,7 +246,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
 
   const items = normalizeItems(order.items, order.quantity)
   // Only completed alt görevler can be sent back for revision — an unfinished
-  // one is already on the designer's plate. Kind-aware: a Sayfa Sayısı subtask
+  // one is already on the designer's plate. Kind-aware: an İç Sayfalar subtask
   // is "done" via pages_done, not is_done.
   const revisableSubtasks = rejectSubtasks.filter((s) => s.kind !== 'revize' && isSubtaskDone(s))
 

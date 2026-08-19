@@ -45,7 +45,7 @@ function normalizeProjectPayload(payload, existing = null) {
       const old = prev.find((s) => s.kind === 'pages')
       subs.push({
         id: old?.id ?? `st-${Date.now()}-sayfalar`,
-        title: 'Sayfa Sayısı',
+        title: 'İç Sayfalar',
         kind: 'pages',
         total_pages: Number(pageCount),
         pages_done: old?.pages_done ?? 0,
@@ -300,7 +300,7 @@ function buildProjectDetail(p) {
     subtasks.push({
       id: `${p.id}-sayfa`,
       project_id: p.id,
-      title: 'Sayfa Sayısı',
+      title: 'İç Sayfalar',
       kind: 'pages',
       total_pages: totalPages,
       pages_done: pagesDone,

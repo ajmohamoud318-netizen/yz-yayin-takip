@@ -58,7 +58,7 @@ describe('subtaskProgress', () => {
     expect(subtaskProgress(subs)).toBe(100)
   })
   it('treats pages with total_pages = 0 as never done', () => {
-    // A misconfigured "Sayfa Sayısı" subtask with total_pages=0 should
+    // A misconfigured "İç Sayfalar" subtask with total_pages=0 should
     // not trivially count as 100% complete. The server has the same
     // guard via `(s.total_pages ?? 0) > 0`.
     expect(

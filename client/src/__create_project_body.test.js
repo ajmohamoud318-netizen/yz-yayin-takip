@@ -83,8 +83,8 @@ describe('createProject HTTP body shape', () => {
     }
 
     const byTitle = Object.fromEntries(body.subtasks.map((s) => [s.title, s]))
-    expect(byTitle['Sayfa Sayısı'].kind).toBe('pages')
-    expect(byTitle['Sayfa Sayısı'].total_pages).toBe(32)
+    expect(byTitle['İç Sayfalar'].kind).toBe('pages')
+    expect(byTitle['İç Sayfalar'].total_pages).toBe(32)
     expect(byTitle['Sticker'].kind).toBe('sticker-count')
     expect(byTitle['Sticker'].total_stickers).toBe(1)
     expect(byTitle['Kapak'].kind).toBe('check')

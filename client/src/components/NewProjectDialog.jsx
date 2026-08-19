@@ -227,7 +227,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
       return
     }
     if (subtasks.sayfalar && (pageCount === '' || pageCount === null || Number(pageCount) < 1)) {
-      toast.error('Sayfa sayısı en az 1 olmalıdır (0 girilemez).')
+      toast.error('İç sayfalar en az 1 olmalıdır (0 girilemez).')
       return
     }
     if (subtasks.sticker && (stickerCount === '' || stickerCount === null || Number(stickerCount) < 1)) {
@@ -552,7 +552,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
             {subtasks.sayfalar && (
               <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/30 p-3">
                 <Label htmlFor="np-pages" className="text-sm">
-                  Toplam sayfa sayısı
+                  Toplam iç sayfa
                 </Label>
                 <Input
                   id="np-pages"
