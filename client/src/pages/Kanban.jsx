@@ -70,16 +70,17 @@ export default function Kanban() {
             <p className="label-eyebrow">İş Akışı</p>
             <h1 className="mt-1 text-3xl">{view === 'orders' ? 'Sipariş Panosu' : 'Pano'}</h1>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <FilterChip active={view === 'projects'} onClick={() => setView('projects')}>
-              Projeler
-            </FilterChip>
-            <FilterChip active={view === 'orders'} onClick={() => setView('orders')}>
-              Siparişler
-            </FilterChip>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-col items-stretch gap-1.5">
+              <FilterChip active={view === 'projects'} onClick={() => setView('projects')}>
+                Projeler
+              </FilterChip>
+              <FilterChip active={view === 'orders'} onClick={() => setView('orders')}>
+                Siparişler
+              </FilterChip>
+            </div>
             {view === 'projects' && (
-              <>
-                <span className="mx-1 h-4 w-px bg-border" />
+              <div className="flex flex-wrap items-center gap-1.5">
                 <FilterChip active={typeFilter === 'all'} onClick={() => setTypeFilter('all')}>
                   Tümü
                 </FilterChip>
@@ -89,7 +90,7 @@ export default function Kanban() {
                 <FilterChip active={typeFilter === 'CIN'} onClick={() => setTypeFilter('CIN')}>
                   {TYPE_LABELS.CIN}
                 </FilterChip>
-              </>
+              </div>
             )}
           </div>
         </header>
