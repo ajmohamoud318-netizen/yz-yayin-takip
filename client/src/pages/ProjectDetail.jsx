@@ -46,7 +46,7 @@ import ProjectHistory from '@/components/ProjectHistory'
 import { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import { cn, formatDateTr, initials } from '@/lib/utils'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
-import { isSubtaskDone } from '@/domain/services/progress'
+import { isSubtaskDone, countsTowardProgress } from '@/domain/services/progress'
 import { canApproveOzalitNow, ozalitLeaderApproved } from '@/domain'
 
 // "Open" mirrors useOpenOrdersByProject/findOpenByProject — not yet at a
@@ -568,6 +568,11 @@ export default function ProjectDetail() {
   // short-circuits when project itself is undefined. Use `?? []` here, and
   // `project?.subtasks ?? []` for readability.
   const subtasksSafe = project?.subtasks ?? []
+  // "Yazılım" never gates progress (see domain/services/progress.js) — the
+  // header "X / Y tamamlandı" count and the 100%-completion celebration
+  // below both need to agree with that, or the leader sees "2/3 tamamlandı"
+  // next to a 100% bar.
+  const progressCountedSubtasks = subtasksSafe.filter(countsTowardProgress)
   const hasSubtaskChanges =
     subtasksSafe.some(
       (s) => localDone[s.id] !== undefined && localDone[s.id] !== s.is_done,
@@ -593,7 +598,7 @@ export default function ProjectDetail() {
       isAssigned &&
       !wasInRevision &&
       (project?.progress ?? 0) < 100 &&
-      subtasksSafe.every((s) => {
+      progressCountedSubtasks.every((s) => {
         const done = localDone[s.id] !== undefined ? localDone[s.id] : s.is_done
         // Counter kinds ignore `is_done` — ask the shared predicate instead.
         if (s.kind === 'pages' || s.kind === 'sticker-count') return isSubtaskDone(s)
@@ -1148,7 +1153,7 @@ export default function ProjectDetail() {
                 <CardTitle>Alt Görevler</CardTitle>
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-muted-foreground">
-                    {(project.subtasks ?? []).filter((s) => subtaskChecked(s)).length} / {(project.subtasks ?? []).length} tamamlandı
+                    {progressCountedSubtasks.filter((s) => subtaskChecked(s)).length} / {progressCountedSubtasks.length} tamamlandı
                   </span>
                   {canEditSubtasks && hasSubtaskChanges && (
                     <Button size="sm" onClick={saveSubtaskChanges} disabled={saving}>

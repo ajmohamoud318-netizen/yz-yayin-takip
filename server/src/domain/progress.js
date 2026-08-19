@@ -13,10 +13,17 @@
 
 import { STAGES_REQUIRING_FULL_PROGRESS } from './stages.js'
 
+// "Yazılım" (software) is opt-in scope tracked alongside the rest of a
+// project's subtasks, but it doesn't gate the design being "done" — the
+// team leader can select it without it ever counting toward (or blocking)
+// the 100% needed to enter production. Keep in sync with the client.
+const EXCLUDED_FROM_PROGRESS_TITLE = 'Yazılım'
+
 export function subtaskProgress(subtasks = []) {
-  if (!Array.isArray(subtasks) || subtasks.length === 0) return 0
+  const counted = (subtasks ?? []).filter((s) => s.title !== EXCLUDED_FROM_PROGRESS_TITLE)
+  if (counted.length === 0) return 0
   let done = 0
-  for (const s of subtasks) {
+  for (const s of counted) {
     if (s.kind === 'pages') {
       if ((s.total_pages ?? 0) > 0 && (s.pages_done ?? 0) >= s.total_pages) done++
     } else if (s.kind === 'sticker-count') {
@@ -25,7 +32,7 @@ export function subtaskProgress(subtasks = []) {
       done++
     }
   }
-  return Math.round((done / subtasks.length) * 100)
+  return Math.round((done / counted.length) * 100)
 }
 
 export function progressFor(project, subtasks = []) {

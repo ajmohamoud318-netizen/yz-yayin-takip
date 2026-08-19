@@ -18,10 +18,22 @@
  * shouldn't briefly disagree with the header "X / Y tamamlandı"
  * counter.
  */
+// "Yazılım" (software) is excluded from progress on purpose — see
+// `server/src/domain/progress.js#EXCLUDED_FROM_PROGRESS_TITLE`. It's opt-in
+// scope the team leader can select without it ever counting toward (or
+// blocking) the 100% needed to enter production.
+const EXCLUDED_FROM_PROGRESS_TITLE = 'Yazılım'
+
+/** True for every subtask except "Yazılım", which never gates progress. */
+export function countsTowardProgress(s) {
+  return s?.title !== EXCLUDED_FROM_PROGRESS_TITLE
+}
+
 export function subtaskProgress(subs) {
-  if (!Array.isArray(subs) || subs.length === 0) return 0
-  const done = subs.filter(isSubtaskDone).length
-  return Math.round((done / subs.length) * 100)
+  const counted = Array.isArray(subs) ? subs.filter(countsTowardProgress) : []
+  if (counted.length === 0) return 0
+  const done = counted.filter(isSubtaskDone).length
+  return Math.round((done / counted.length) * 100)
 }
 
 /**
