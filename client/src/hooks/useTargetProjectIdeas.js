@@ -35,14 +35,14 @@ export function useTargetProjectIdeas() {
   }, [user, refetch])
 
   const add = useCallback(
-    async ({ name, notes, link }) => {
+    async ({ name, links }) => {
       const trimmed = name.trim()
       if (!trimmed) return null
+      const cleanLinks = (links ?? []).map((l) => l.trim()).filter(Boolean)
       const optimistic = {
         id: `tmp-${Date.now()}`,
         name: trimmed,
-        notes: notes?.trim() || null,
-        link: link?.trim() || null,
+        links: cleanLinks,
         created_by: user?.id ?? null,
         created_by_name: user?.name ?? null,
         created_at: new Date().toISOString(),
@@ -52,7 +52,7 @@ export function useTargetProjectIdeas() {
       setIdeas([optimistic, ...ideas])
       setBusy(true)
       try {
-        const saved = await api.addTargetProjectIdea({ name: trimmed, notes, link })
+        const saved = await api.addTargetProjectIdea({ name: trimmed, links: cleanLinks })
         setIdeas((cur) => cur.map((i) => (i.id === optimistic.id ? saved : i)))
         return saved
       } catch (err) {
@@ -66,14 +66,15 @@ export function useTargetProjectIdeas() {
   )
 
   const update = useCallback(
-    async (id, { name, notes, link }) => {
+    async (id, { name, links }) => {
+      const cleanLinks = links !== undefined ? links.map((l) => l.trim()).filter(Boolean) : undefined
       const prev = ideas
       setIdeas((cur) => cur.map((i) => (i.id === id
-        ? { ...i, name: name?.trim() || i.name, notes: notes?.trim() || null, link: link?.trim() || null }
+        ? { ...i, name: name?.trim() || i.name, links: cleanLinks ?? i.links }
         : i)))
       setBusy(true)
       try {
-        const saved = await api.updateTargetProjectIdea(id, { name, notes, link })
+        const saved = await api.updateTargetProjectIdea(id, { name, links: cleanLinks })
         setIdeas((cur) => cur.map((i) => (i.id === id ? saved : i)))
         return saved
       } catch (err) {

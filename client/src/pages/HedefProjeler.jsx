@@ -1,14 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { Target, Trash2, Pencil, Link as LinkIcon, Plus, ImagePlus, X } from 'lucide-react'
+import {
+  Target, Trash2, Pencil, Link as LinkIcon, ExternalLink, Images, MessageSquare, Send,
+  Plus, ImagePlus, X,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 import { API_ORIGIN } from '@/api'
 import { useTargetProjectIdeas } from '@/hooks/useTargetProjectIdeas'
+import { useTargetProjectIdeaDetail } from '@/hooks/useTargetProjectIdeaDetail'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { LinksListInput } from '@/components/LinksListInput'
 import {
   Dialog,
   DialogContent,
@@ -21,11 +26,13 @@ import { cn, formatDateTr } from '@/lib/utils'
 
 /**
  * Hedef Projeler — a shared scratchpad for book ideas that aren't real
- * projects yet, often just a link (and now optionally a photo) someone
- * spotted on Instagram. Designers and the team leader can add; the leader
- * (or an idea's own author) can remove, or attach/replace/remove the image.
- * See server migration 036__target_project_ideas.sql and
- * 037__target_project_idea_image.sql.
+ * projects yet: a name, any number of links (often something spotted on
+ * Instagram), a cover image, and — once opened in detail — a photo
+ * gallery and a timestamped notes log. Designers and the team leader can
+ * add; the leader (or an idea's own author) can remove, edit, or
+ * attach/replace/remove the cover image. See server migration
+ * 036__target_project_ideas.sql, 037__target_project_idea_image.sql, and
+ * the detail view in 042__target_project_idea_details.sql.
  */
 export default function HedefProjeler() {
   const {
@@ -33,6 +40,8 @@ export default function HedefProjeler() {
   } = useTargetProjectIdeas()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingIdea, setEditingIdea] = useState(null)
+  const [detailIdea, setDetailIdea] = useState(null)
+  const [detailOpen, setDetailOpen] = useState(false)
 
   function openAddDialog() {
     setEditingIdea(null)
@@ -42,6 +51,11 @@ export default function HedefProjeler() {
   function openEditDialog(idea) {
     setEditingIdea(idea)
     setDialogOpen(true)
+  }
+
+  function openDetail(idea) {
+    setDetailIdea(idea)
+    setDetailOpen(true)
   }
 
   async function handleRemove(idea) {
@@ -92,6 +106,7 @@ export default function HedefProjeler() {
               key={idea.id}
               idea={idea}
               canRemove={canRemove(idea)}
+              onOpenDetail={() => openDetail(idea)}
               onEdit={() => openEditDialog(idea)}
               onRemove={() => handleRemove(idea)}
               onUploadImage={(file) => uploadImage(idea.id, file)}
@@ -110,6 +125,14 @@ export default function HedefProjeler() {
         onUploadImage={uploadImage}
         busy={busy}
       />
+
+      <IdeaDetailDialog
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        idea={detailIdea}
+        canModifyIdea={detailIdea ? canRemove(detailIdea) : false}
+        canAddNote={canAdd}
+      />
     </div>
   )
 }
@@ -122,12 +145,19 @@ function ideaImageSrc(idea) {
   return `${API_ORIGIN}${idea.image_url}${v}`
 }
 
-function TargetIdeaCard({ idea, canRemove, onEdit, onRemove, onUploadImage, onRemoveImage }) {
+function normalizeHref(link) {
+  return /^https?:\/\//i.test(link) ? link : `https://${link}`
+}
+
+function TargetIdeaCard({
+  idea, canRemove, onOpenDetail, onEdit, onRemove, onUploadImage, onRemoveImage,
+}) {
   const [removing, setRemoving] = useState(false)
   const [imageBusy, setImageBusy] = useState(false)
   const fileInputRef = useRef(null)
 
-  async function handleRemove() {
+  async function handleRemove(e) {
+    e.stopPropagation()
     setRemoving(true)
     try {
       await onRemove()
@@ -150,7 +180,8 @@ function TargetIdeaCard({ idea, canRemove, onEdit, onRemove, onUploadImage, onRe
     }
   }
 
-  async function handleRemoveImage() {
+  async function handleRemoveImage(e) {
+    e.stopPropagation()
     setImageBusy(true)
     try {
       await onRemoveImage()
@@ -161,25 +192,29 @@ function TargetIdeaCard({ idea, canRemove, onEdit, onRemove, onUploadImage, onRe
     }
   }
 
-  const href = idea.link && (/^https?:\/\//i.test(idea.link) ? idea.link : `https://${idea.link}`)
   const imgSrc = ideaImageSrc(idea)
   const active = canRemove && !idea.pending
+  const links = idea.links ?? []
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpenDetail}
+      onKeyDown={(e) => { if (e.key === 'Enter') onOpenDetail() }}
       className={cn(
-        'group flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-all duration-200',
+        'group flex cursor-pointer flex-col overflow-hidden rounded-2xl border bg-card text-left shadow-sm transition-all duration-200',
         (idea.pending || removing) ? 'opacity-50' : 'hover:-translate-y-px hover:border-primary/30 hover:shadow-md',
       )}
     >
       {imgSrc ? (
-        <a href={imgSrc} target="_blank" rel="noopener noreferrer" className="block aspect-[4/3] w-full shrink-0 overflow-hidden bg-muted">
+        <div className="aspect-[4/3] w-full shrink-0 overflow-hidden bg-muted">
           <img
             src={imgSrc}
             alt=""
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
           />
-        </a>
+        </div>
       ) : (
         <div className="grid aspect-[4/3] w-full shrink-0 place-items-center bg-primary/[0.05] text-primary/30">
           <Target className="h-9 w-9" />
@@ -193,7 +228,7 @@ function TargetIdeaCard({ idea, canRemove, onEdit, onRemove, onUploadImage, onRe
             <div className="-mr-1.5 -mt-1 flex shrink-0 items-center gap-0.5">
               <button
                 type="button"
-                onClick={onEdit}
+                onClick={(e) => { e.stopPropagation(); onEdit() }}
                 aria-label="Fikri düzenle"
                 title="Fikri düzenle"
                 className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
@@ -214,27 +249,19 @@ function TargetIdeaCard({ idea, canRemove, onEdit, onRemove, onUploadImage, onRe
           )}
         </div>
 
-        {idea.notes && (
-          <p className="line-clamp-3 whitespace-pre-wrap text-xs text-muted-foreground">{idea.notes}</p>
+        {links.length > 0 && (
+          <span className="inline-flex w-fit items-center gap-1 text-xs font-medium text-primary">
+            <LinkIcon className="h-3 w-3" />
+            {links.length === 1 ? '1 bağlantı' : `${links.length} bağlantı`}
+          </span>
         )}
 
         <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1">
-          {href && (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-            >
-              <LinkIcon className="h-3 w-3" />
-              Bağlantı
-            </a>
-          )}
           {active && (
             <>
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click() }}
                 disabled={imageBusy}
                 className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
               >
@@ -256,6 +283,7 @@ function TargetIdeaCard({ idea, canRemove, onEdit, onRemove, onUploadImage, onRe
                 type="file"
                 accept="image/*"
                 className="hidden"
+                onClick={(e) => e.stopPropagation()}
                 onChange={handlePickImage}
               />
             </>
@@ -274,8 +302,7 @@ function AddTargetIdeaDialog({
   open, onOpenChange, editingIdea, onAdd, onUpdate, onUploadImage, busy,
 }) {
   const [name, setName] = useState('')
-  const [notes, setNotes] = useState('')
-  const [link, setLink] = useState('')
+  const [links, setLinks] = useState([])
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const fileInputRef = useRef(null)
@@ -287,8 +314,7 @@ function AddTargetIdeaDialog({
   useEffect(() => {
     if (!open) return
     setName(editingIdea?.name ?? '')
-    setNotes(editingIdea?.notes ?? '')
-    setLink(editingIdea?.link ?? '')
+    setLinks(editingIdea?.links?.length ? editingIdea.links : [])
     setImageFile(null)
     setImagePreview((prev) => {
       if (prev) URL.revokeObjectURL(prev)
@@ -322,12 +348,13 @@ function AddTargetIdeaDialog({
       toast.error('İsim zorunludur.')
       return
     }
+    const cleanLinks = links.map((l) => l.trim()).filter(Boolean)
     try {
       if (isEditing) {
-        await onUpdate(editingIdea.id, { name: trimmed, notes, link })
+        await onUpdate(editingIdea.id, { name: trimmed, links: cleanLinks })
         toast.success('Hedef proje güncellendi.')
       } else {
-        const saved = await onAdd({ name: trimmed, notes, link })
+        const saved = await onAdd({ name: trimmed, links: cleanLinks })
         if (imageFile && saved?.id) {
           try {
             await onUploadImage(saved.id, imageFile)
@@ -368,23 +395,8 @@ function AddTargetIdeaDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="tpi-link">Bağlantı</Label>
-            <Input
-              id="tpi-link"
-              value={link}
-              onChange={(e) => setLink(e.target.value)}
-              maxLength={2000}
-              placeholder="instagram.com/…"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="tpi-notes">Not</Label>
-            <Textarea
-              id="tpi-notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value.slice(0, 2000))}
-              rows={3}
-            />
+            <Label>Bağlantılar</Label>
+            <LinksListInput links={links} onChange={setLinks} />
           </div>
           {!isEditing && (
           <div className="space-y-1.5">
@@ -435,6 +447,231 @@ function AddTargetIdeaDialog({
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * Opened by clicking a card: the cover (view-only here — editing it stays
+ * on the card), the full links list, a photo gallery beyond the cover, and
+ * a timestamped notes log. Gallery/notes are fetched fresh each time this
+ * opens via useTargetProjectIdeaDetail, since the card grid never carries
+ * them.
+ */
+function IdeaDetailDialog({
+  open, onOpenChange, idea, canModifyIdea, canAddNote,
+}) {
+  const ideaId = open ? idea?.id : null
+  const {
+    detail, loading, busy, addGalleryImage, removeGalleryImage, addNote, removeNote, canModifyNote,
+  } = useTargetProjectIdeaDetail(ideaId)
+  const [noteText, setNoteText] = useState('')
+  const fileInputRef = useRef(null)
+
+  useEffect(() => {
+    if (open) setNoteText('')
+  }, [open, idea?.id])
+
+  async function handlePickGalleryImage(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try {
+      await addGalleryImage(file)
+    } catch (err) {
+      toast.error(err?.message || 'Görsel yüklenemedi.')
+    }
+  }
+
+  async function handleRemoveGalleryImage(imageId) {
+    try {
+      await removeGalleryImage(imageId)
+    } catch (err) {
+      toast.error(err?.message || 'Görsel kaldırılamadı.')
+    }
+  }
+
+  async function handleAddNote(e) {
+    e.preventDefault()
+    const trimmed = noteText.trim()
+    if (!trimmed) return
+    try {
+      await addNote(trimmed)
+      setNoteText('')
+    } catch (err) {
+      toast.error(err?.message || 'Not eklenemedi.')
+    }
+  }
+
+  async function handleRemoveNote(noteId) {
+    try {
+      await removeNote(noteId)
+    } catch (err) {
+      toast.error(err?.message || 'Not silinemedi.')
+    }
+  }
+
+  if (!idea) return null
+  const coverSrc = ideaImageSrc(idea)
+  const links = idea.links ?? []
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Target className="h-4 w-4" />
+            {idea.name}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-5">
+          {coverSrc && (
+            <a
+              href={coverSrc}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block max-h-64 overflow-hidden rounded-xl bg-muted"
+            >
+              <img src={coverSrc} alt="" className="mx-auto max-h-64 w-full object-contain" />
+            </a>
+          )}
+
+          {links.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <LinkIcon className="h-3.5 w-3.5" />
+                Bağlantılar
+              </p>
+              <ul className="space-y-1">
+                {links.map((link, i) => (
+                  // eslint-disable-next-line react/no-array-index-key -- links are a flat, unordered-by-id string list
+                  <li key={i}>
+                    <a
+                      href={normalizeHref(link)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 break-all text-sm text-primary hover:underline"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                      {link}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <Images className="h-3.5 w-3.5" />
+                Galeri
+              </p>
+              {canModifyIdea && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={busy}
+                  className="inline-flex items-center gap-1 text-xs text-primary transition-colors hover:underline disabled:opacity-50"
+                >
+                  <ImagePlus className="h-3.5 w-3.5" />
+                  Ekle
+                </button>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePickGalleryImage}
+              />
+            </div>
+            {loading ? (
+              <div className="grid grid-cols-4 gap-2">
+                {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="aspect-square rounded-lg" />)}
+              </div>
+            ) : detail?.images?.length ? (
+              <div className="grid grid-cols-4 gap-2">
+                {detail.images.map((img) => {
+                  const src = `${API_ORIGIN}${img.image_url}`
+                  return (
+                    <div key={img.id} className="group/gal relative aspect-square overflow-hidden rounded-lg bg-muted">
+                      <a href={src} target="_blank" rel="noopener noreferrer">
+                        <img src={src} alt="" className="h-full w-full object-cover" />
+                      </a>
+                      {canModifyIdea && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveGalleryImage(img.id)}
+                          aria-label="Görseli kaldır"
+                          className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-background/90 text-muted-foreground opacity-0 ring-1 ring-border transition-opacity group-hover/gal:opacity-100 hover:text-destructive"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">Henüz galeri görseli yok.</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <MessageSquare className="h-3.5 w-3.5" />
+              Notlar
+            </p>
+            <div className="max-h-52 space-y-2 overflow-y-auto rounded-lg border bg-muted/30 p-2">
+              {loading ? (
+                <Skeleton className="h-16 rounded-md" />
+              ) : detail?.notes?.length ? (
+                detail.notes.map((note) => (
+                  <div key={note.id} className="rounded-md bg-card p-2 shadow-sm">
+                    <p className="whitespace-pre-wrap text-sm">{note.body}</p>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <p className="text-[11px] text-muted-foreground">
+                        {note.created_by_name ?? 'Ekipten biri'} · {formatDateTr(note.created_at)}
+                      </p>
+                      {canModifyNote(note) && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveNote(note.id)}
+                          className="shrink-0 text-[11px] text-muted-foreground transition-colors hover:text-destructive"
+                        >
+                          Sil
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="px-1 py-2 text-xs text-muted-foreground">Henüz not yok.</p>
+              )}
+            </div>
+            {canAddNote && (
+              <form onSubmit={handleAddNote} className="flex items-start gap-2">
+                <Textarea
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value.slice(0, 2000))}
+                  placeholder="Not ekle…"
+                  rows={2}
+                  className="flex-1"
+                />
+                <Button type="submit" size="icon" disabled={busy || !noteText.trim()} className="shrink-0">
+                  <Send className="h-3.5 w-3.5" />
+                </Button>
+              </form>
+            )}
+          </div>
+
+          <p className="border-t border-dashed pt-2 text-[11px] text-muted-foreground">
+            {idea.created_by_name ?? 'Ekipten biri'} · {formatDateTr(idea.created_at)}
+          </p>
+        </div>
       </DialogContent>
     </Dialog>
   )
