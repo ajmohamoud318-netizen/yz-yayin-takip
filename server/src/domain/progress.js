@@ -3,7 +3,7 @@
  * — client sends the new subtask shape (or a single update), and we
  * recompute `projects.progress` in the same transaction.
  *
- * Numeric subtasks ("Sayfa Sayısı", "Sticker") count as done when their
+ * Numeric subtasks ("İç Sayfalar", "Sticker") count as done when their
  * done count >= total. Check subtasks count as done when `is_done` is
  * true.
  *
