@@ -275,10 +275,12 @@ export default function ProjectDetail() {
     project?.stage === 'tasarim' && (project?.subtasks ?? []).some((s) => s.needs_revize)
 
   // Per-subtask: if the subtask has a specific assigned_to, only that designer can edit it.
+  // Exception: 'pages' (İç Sayfalar) is often split across several designers working the
+  // same project, so any project-assignee can log pages toward it, not just its assigned_to.
   // During a revision cycle, lock only the done-and-unflagged subtasks.
   function canEditSubtask(sub) {
     if (!canEditBase) return false
-    if (sub.assigned_to && sub.assigned_to !== user?.id) return false
+    if (sub.kind !== 'pages' && sub.assigned_to && sub.assigned_to !== user?.id) return false
     if (inRevision && !sub.needs_revize && sub.is_done) return false
     return true
   }
@@ -622,7 +624,7 @@ export default function ProjectDetail() {
     }
   }
 
-  // Numeric subtasks ("Sayfa Sayısı", "Sticker") share one handler: the
+  // Numeric subtasks ("İç Sayfalar", "Sticker") share one handler: the
   // designer logs how many they finished, we clamp to the configured total
   // and PATCH the matching counter column. Both kinds derive `is_done`
   // server-side from the counter, so there's nothing to tick separately.
