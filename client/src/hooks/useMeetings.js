@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import api from '@/api'
 import { useAuth } from '@/hooks/useAuth.js'
+import { MAX_SOURCE_BYTES, prepareIdeaImageFile } from '@/lib/image'
 
 /**
  * Toplantılar — the meeting log at /toplanti (see server migration
@@ -34,14 +35,15 @@ export function useMeetings() {
   }, [user, refetch])
 
   const add = useCallback(
-    async ({ title, meetingAt, notes, projectId }) => {
+    async ({ title, meetingAt, links, projectId }) => {
       const trimmed = title.trim()
       if (!trimmed || !meetingAt) return null
+      const cleanLinks = (links ?? []).map((l) => l.trim()).filter(Boolean)
       const optimistic = {
         id: `tmp-${Date.now()}`,
         title: trimmed,
         meeting_at: meetingAt,
-        notes: notes?.trim() || null,
+        links: cleanLinks,
         project_id: projectId || null,
         created_by: user?.id ?? null,
         created_by_name: user?.name ?? null,
@@ -52,7 +54,7 @@ export function useMeetings() {
       setMeetings([optimistic, ...meetings])
       setBusy(true)
       try {
-        const saved = await api.addMeeting({ title: trimmed, meetingAt, notes, projectId })
+        const saved = await api.addMeeting({ title: trimmed, meetingAt, links: cleanLinks, projectId })
         setMeetings((cur) => cur.map((m) => (m.id === optimistic.id ? saved : m)))
         return saved
       } catch (err) {
@@ -66,20 +68,21 @@ export function useMeetings() {
   )
 
   const update = useCallback(
-    async (id, { title, meetingAt, notes, projectId }) => {
+    async (id, { title, meetingAt, links, projectId }) => {
+      const cleanLinks = links !== undefined ? links.map((l) => l.trim()).filter(Boolean) : undefined
       const prev = meetings
       setMeetings((cur) => cur.map((m) => (m.id === id
         ? {
           ...m,
           title: title?.trim() || m.title,
           meeting_at: meetingAt ?? m.meeting_at,
-          notes: notes?.trim() || null,
+          links: cleanLinks ?? m.links,
           project_id: projectId ?? null,
         }
         : m)))
       setBusy(true)
       try {
-        const saved = await api.updateMeeting(id, { title, meetingAt, notes, projectId })
+        const saved = await api.updateMeeting(id, { title, meetingAt, links: cleanLinks, projectId })
         setMeetings((cur) => cur.map((m) => (m.id === id ? saved : m)))
         return saved
       } catch (err) {
@@ -109,6 +112,34 @@ export function useMeetings() {
     [meetings],
   )
 
+  /** Downscale in-browser, upload, and splice the returned row into state. */
+  const uploadImage = useCallback(
+    async (id, file) => {
+      if (file.size > MAX_SOURCE_BYTES) throw new Error('Dosya çok büyük (25 MB üzeri).')
+      setBusy(true)
+      try {
+        const prepared = await prepareIdeaImageFile(file)
+        const saved = await api.uploadMeetingImage(id, prepared)
+        setMeetings((cur) => cur.map((m) => (m.id === id ? saved : m)))
+        return saved
+      } finally {
+        setBusy(false)
+      }
+    },
+    [],
+  )
+
+  const removeImage = useCallback(async (id) => {
+    setBusy(true)
+    try {
+      const saved = await api.deleteMeetingImage(id)
+      setMeetings((cur) => cur.map((m) => (m.id === id ? saved : m)))
+      return saved
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
   // Team leader, designers and the printer can add; the leader (or a
   // meeting's own author) can edit or remove it. Mirrors the server's
   // requireRole / assertCanModify checks in routes/meetings.js — this only
@@ -120,6 +151,6 @@ export function useMeetings() {
   )
 
   return {
-    meetings, loading, busy, add, update, remove, refetch, canAdd, canModify,
+    meetings, loading, busy, add, update, remove, refetch, canAdd, canModify, uploadImage, removeImage,
   }
 }

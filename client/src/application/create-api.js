@@ -71,18 +71,32 @@ export function createApi() {
 
     // Hedef Projeler — idea board on Baskı Listesi.
     listTargetProjectIdeas: () => targetProjectIdeaRepo.listTargetProjectIdeas(),
+    getTargetProjectIdeaDetail: (id) => targetProjectIdeaRepo.getTargetProjectIdeaDetail(id),
     addTargetProjectIdea: (payload) => targetProjectIdeaRepo.addTargetProjectIdea(payload),
     updateTargetProjectIdea: (id, patch) => targetProjectIdeaRepo.updateTargetProjectIdea(id, patch),
     deleteTargetProjectIdea: (id) => targetProjectIdeaRepo.deleteTargetProjectIdea(id),
     uploadTargetProjectIdeaImage: (id, file) =>
       targetProjectIdeaRepo.uploadTargetProjectIdeaImage(id, file),
     deleteTargetProjectIdeaImage: (id) => targetProjectIdeaRepo.deleteTargetProjectIdeaImage(id),
+    addTargetProjectIdeaGalleryImage: (id, file) =>
+      targetProjectIdeaRepo.addTargetProjectIdeaGalleryImage(id, file),
+    deleteTargetProjectIdeaGalleryImage: (id, imageId) =>
+      targetProjectIdeaRepo.deleteTargetProjectIdeaGalleryImage(id, imageId),
+    addTargetProjectIdeaNote: (id, body) => targetProjectIdeaRepo.addTargetProjectIdeaNote(id, body),
+    deleteTargetProjectIdeaNote: (id, noteId) => targetProjectIdeaRepo.deleteTargetProjectIdeaNote(id, noteId),
 
     // Toplantılar — meeting log.
     listMeetings: () => meetingRepo.listMeetings(),
+    getMeetingDetail: (id) => meetingRepo.getMeetingDetail(id),
     addMeeting: (payload) => meetingRepo.addMeeting(payload),
     updateMeeting: (id, patch) => meetingRepo.updateMeeting(id, patch),
     deleteMeeting: (id) => meetingRepo.deleteMeeting(id),
+    uploadMeetingImage: (id, file) => meetingRepo.uploadMeetingImage(id, file),
+    deleteMeetingImage: (id) => meetingRepo.deleteMeetingImage(id),
+    addMeetingGalleryImage: (id, file) => meetingRepo.addMeetingGalleryImage(id, file),
+    deleteMeetingGalleryImage: (id, imageId) => meetingRepo.deleteMeetingGalleryImage(id, imageId),
+    addMeetingNote: (id, body) => meetingRepo.addMeetingNote(id, body),
+    deleteMeetingNote: (id, noteId) => meetingRepo.deleteMeetingNote(id, noteId),
 
     // Projects
     listProjects: () => projectRepo.listProjects(),

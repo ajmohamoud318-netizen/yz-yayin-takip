@@ -221,6 +221,10 @@ const workLogUpdate = {
 // Lightweight idea board on Baskı Listesi. See migration
 // 036__target_project_ideas.sql.
 
+// Plain list of URLs — no per-link label. Shared shape for both Hedef
+// Projeler ideas and Toplantı meetings.
+const linksList = { type: 'array', maxItems: 10, items: { type: 'string', minLength: 1, maxLength: 2000 } }
+
 const targetProjectIdeaCreate = {
   body: {
     type: 'object',
@@ -228,8 +232,7 @@ const targetProjectIdeaCreate = {
     required: ['name'],
     properties: {
       name: { type: 'string', minLength: 1, maxLength: 200 },
-      notes: { type: 'string', maxLength: 2000 },
-      link: { type: 'string', maxLength: 2000 },
+      links: linksList,
     },
   },
 }
@@ -251,8 +254,41 @@ const targetProjectIdeaUpdate = {
     minProperties: 1,
     properties: {
       name: { type: 'string', minLength: 1, maxLength: 200 },
-      notes: { type: 'string', maxLength: 2000 },
-      link: { type: 'string', maxLength: 2000 },
+      links: linksList,
+    },
+  },
+}
+
+const targetProjectIdeaImageIdParams = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id', 'imageId'],
+    properties: {
+      id: { type: 'string', minLength: 1, maxLength: 64 },
+      imageId: { type: 'string', minLength: 1, maxLength: 64 },
+    },
+  },
+}
+
+const targetProjectIdeaNoteCreate = {
+  ...targetProjectIdeaIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['body'],
+    properties: { body: { type: 'string', minLength: 1, maxLength: 2000 } },
+  },
+}
+
+const targetProjectIdeaNoteIdParams = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id', 'noteId'],
+    properties: {
+      id: { type: 'string', minLength: 1, maxLength: 64 },
+      noteId: { type: 'string', minLength: 1, maxLength: 64 },
     },
   },
 }
@@ -270,7 +306,7 @@ const meetingCreate = {
     properties: {
       title: { type: 'string', minLength: 1, maxLength: 200 },
       meeting_at: { type: 'string', minLength: 1, maxLength: 64 },
-      notes: { type: 'string', maxLength: 2000 },
+      links: linksList,
       project_id: projectId,
     },
   },
@@ -294,10 +330,44 @@ const meetingUpdate = {
     properties: {
       title: { type: 'string', minLength: 1, maxLength: 200 },
       meeting_at: { type: 'string', minLength: 1, maxLength: 64 },
-      notes: { type: 'string', maxLength: 2000 },
+      links: linksList,
       // Nullable (unlike meetingCreate's project_id) so a client can
       // explicitly clear an existing link, not just omit it.
       project_id: { anyOf: [projectId, { type: 'null' }] },
+    },
+  },
+}
+
+const meetingImageIdParams = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id', 'imageId'],
+    properties: {
+      id: { type: 'string', minLength: 1, maxLength: 64 },
+      imageId: { type: 'string', minLength: 1, maxLength: 64 },
+    },
+  },
+}
+
+const meetingNoteCreate = {
+  ...meetingIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['body'],
+    properties: { body: { type: 'string', minLength: 1, maxLength: 2000 } },
+  },
+}
+
+const meetingNoteIdParams = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id', 'noteId'],
+    properties: {
+      id: { type: 'string', minLength: 1, maxLength: 64 },
+      noteId: { type: 'string', minLength: 1, maxLength: 64 },
     },
   },
 }
@@ -909,7 +979,13 @@ export const schemas = {
   targetProjectIdeaCreate,
   targetProjectIdeaIdParams,
   targetProjectIdeaUpdate,
+  targetProjectIdeaImageIdParams,
+  targetProjectIdeaNoteCreate,
+  targetProjectIdeaNoteIdParams,
   meetingCreate,
   meetingIdParams,
   meetingUpdate,
+  meetingImageIdParams,
+  meetingNoteCreate,
+  meetingNoteIdParams,
 }
