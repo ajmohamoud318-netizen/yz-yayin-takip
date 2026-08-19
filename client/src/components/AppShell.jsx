@@ -116,6 +116,7 @@ export default function AppShell() {
     let handoverEligible = 0
     let productionReady = 0
     let designerOzalitApprovals = 0
+    let baskiOnayApprovals = 0
     for (const p of projects) {
       if (p.stage !== 'satista') active++
       else satista++
@@ -127,6 +128,7 @@ export default function AppShell() {
         // A held demo has no pending approval action — exclude it from the count.
         if ((p.stage === 'demo_onay' || p.stage === 'cin_demo_onay') && p.demo_held !== true) demoApprovals++
         if (p.stage === 'ozalit_onay') ozalitApprovals++
+        if (p.stage === 'baski_onay') baskiOnayApprovals++
       }
       if (p.stage === 'uretimde' || p.stage === 'gumruk') production++
       if (role === 'printer' && p.stage === 'uretime_hazir') productionReady++
@@ -143,7 +145,7 @@ export default function AppShell() {
       }
       if ((p.demo_attempt ?? 0) >= 2 || (p.ozalit_attempt ?? 0) >= 2) urgent++
     }
-    return { active, demoApprovals, ozalitApprovals, production, satista, total: projects.length, myProjects, urgent, handoverEligible, productionReady, designerOzalitApprovals }
+    return { active, demoApprovals, ozalitApprovals, baskiOnayApprovals, production, satista, total: projects.length, myProjects, urgent, handoverEligible, productionReady, designerOzalitApprovals }
   }, [projects, user?.role, user?.id])
 
   const pinned = useMemo(
@@ -683,6 +685,7 @@ const TYPE_ICON = {
   ozalit_receipt_pending: Truck,
   ozalit_received: PackageCheck,
   ozalit_approval_pending: BadgeCheck,
+  baski_onay_pending: BadgeCheck,
   production_ready: Factory,
   in_production: Factory,
   in_customs: Ship,
@@ -905,6 +908,7 @@ const PAGE_TITLES = [
   { match: (p) => p.startsWith('/my-projects'), label: 'Projelerim' },
   { match: (p) => p.startsWith('/documents'), label: 'Dökümanlar' },
   { match: (p) => p.startsWith('/urun-bilgileri'), label: 'Ürün Bilgileri' },
+  { match: (p) => p.startsWith('/baski-receteleri'), label: 'Baskı Reçeteleri' },
   { match: (p) => p.startsWith('/urunler'), label: 'Ürünler' },
   { match: (p) => p.startsWith('/siparis-talebi'), label: 'Taleplerim' },
   { match: (p) => p.startsWith('/siparis-talepleri'), label: 'Baskı Talepleri' },
@@ -954,10 +958,19 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
       to: '/approvals/demo',
       label: 'Onaylar',
       icon: BadgeCheck,
-      badge: counts.demoApprovals + counts.ozalitApprovals,
+      badge: counts.demoApprovals + counts.ozalitApprovals + counts.baskiOnayApprovals,
       badgeTone: 'amber',
-      highlight: counts.demoApprovals + counts.ozalitApprovals > 0,
+      highlight: counts.demoApprovals + counts.ozalitApprovals + counts.baskiOnayApprovals > 0,
       roles: ['printer', 'team_leader'],
+    },
+    {
+      to: '/approvals/baski-onay',
+      label: 'Baskı Onayı',
+      icon: BadgeCheck,
+      badge: counts.baskiOnayApprovals || undefined,
+      badgeTone: 'amber',
+      highlight: counts.baskiOnayApprovals > 0,
+      roles: ['team_leader'],
     },
     {
       to: '/approvals/siparis',
@@ -1029,6 +1042,7 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
     { to: '/team', label: 'Ekip', icon: UsersRound, roles: ['team_leader'] },
     { to: '/documents', label: 'Dökümanlar', icon: Files, roles: ['team_leader', 'designer', 'printer'] },
     { to: '/urun-bilgileri', label: 'Ürün Bilgileri', icon: Boxes, roles: ['team_leader', 'designer'] },
+    { to: '/baski-receteleri', label: 'Baskı Reçeteleri', icon: FileText, roles: ['team_leader', 'designer'] },
     { to: '/deleted-projects', label: 'Silinen Projeler', icon: Trash2, roles: ['team_leader'] },
     // Çalışma Defteri — behind WORK_LOG_ENABLED (client/src/lib/work-log.js).
     // Dropping the item is what keeps the feature off: WorkLogPill is the only

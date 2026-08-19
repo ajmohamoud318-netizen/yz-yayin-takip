@@ -248,6 +248,14 @@ export function createHttpProjectRepository(userRepo) {
       cache.set(id, data)
       return data
     },
+    // Mark the Baskı Onay Formu "hazırlandı" — the dual-approval gate: any
+    // team leader may prepare it, but only notifies OTHER team leaders that
+    // approval is now needed (see computeApproval's baski_onay branch).
+    async prepareBaskiOnay(id) {
+      const { data } = await httpClient.post(`/projects/${id}/baski-onay-prepare`, {})
+      cache.set(id, data)
+      return data
+    },
     async rejectProject(id, reason, revizeIds, target) {
       const cached = cache.get(id)
       if (!cached) badRequest('Proje bilinmiyor, listeyi yenileyin.')

@@ -22,6 +22,7 @@ export {
   isOzalitApprover,
   ozalitLeaderApproved,
   canApproveOzalitNow,
+  isBaskiOnayApprover,
   isDemoApprover,
   canRejectAtStage,
   canEditProductInfo,

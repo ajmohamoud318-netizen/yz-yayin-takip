@@ -17,13 +17,15 @@ function esc(s) {
  *
  * @param component  { component, rows: [{label,value}] } | null
  * @param form       the saved form object (dates / requester / approver)
- * @param kind       'demo' | 'ozalit'
+ * @param kind       'demo' | 'ozalit' | 'baski_onay'
  */
 export function buildSpecRows({ component, form, kind }) {
   const rows = [['İŞİN ADI', component?.component ?? form?.isinAdi ?? '']]
   for (const r of component?.rows ?? []) rows.push([r.label, r.value])
   if (kind === 'ozalit') {
     rows.push(['OZALİT İSTEM TARİHİ', form?.ozalitIstemTarihi ?? ''], ['OZALİT İSTEYEN KİŞİ', form?.ozalitIsteyenKisi ?? ''])
+  } else if (kind === 'baski_onay') {
+    rows.push(['BASKI ONAY TARİHİ', form?.baskiOnayTarihi ?? ''], ['HAZIRLAYAN', form?.baskiOnayHazirlayan ?? ''])
   } else {
     rows.push(['DEMO İSTEM TARİHİ', form?.demoIstemTarihi ?? ''], ['DEMO İSTEYEN KİŞİ', form?.demoIsteyenKisi ?? ''])
   }

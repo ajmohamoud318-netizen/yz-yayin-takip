@@ -20,7 +20,6 @@ import { useAuth } from '@/hooks/useAuth'
 import { isSubtaskDone } from '@/domain/services/progress'
 import { cn } from '@/lib/utils'
 import {
-  restampOzalitRequester,
   specVariantForStage,
   stampSpecSignature,
 } from '@/components/SpecFormDialog'
@@ -34,7 +33,8 @@ const trDate = () =>
 // the order/handover flow, so announcing "Üretimde" here misled the user.
 const APPROVE_DEST = {
   demo_onay: { label: 'Onayla', stage: 'ozalit_teslim' },
-  ozalit_onay: { label: 'Üretime Al', stage: 'uretime_hazir' },
+  ozalit_onay: { label: 'Onayla', stage: 'baski_onay' },
+  baski_onay: { label: 'Üretime Al', stage: 'uretime_hazir' },
   cin_demo_onay: { label: 'Üretime Al', stage: 'uretime_hazir' },
 }
 
@@ -232,14 +232,6 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
             teslimTarihi: trDate(),
             matbaaYetkilisi: user?.name ?? '',
           }).catch(() => {})
-        }
-        // This bare confirm is also how a designer resubmits an ozalit after
-        // an ozalit-targeted rejection (tasarim -> ozalit_teslim in one step,
-        // see transitions.js) — that resend IS a fresh ozalit request, so
-        // re-stamp the requester instead of leaving the original attempt's
-        // name on the form.
-        if (project.stage === 'tasarim' && project.last_reject_type === 'ozalit') {
-          restampOzalitRequester(project.id, updated.ozalit_attempt, user?.name).catch(() => {})
         }
       }
       updateOne(updated)

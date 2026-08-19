@@ -100,6 +100,37 @@ export const VARIANTS = {
     advanceLabel: (user) => (user?.role === 'printer' ? 'Ozaliti Teslim Et' : 'Matbaaya Gönder'),
     saveToast: 'Ozalit formu kaydedildi.',
   },
+  // Baskı Onay Formu — the final print approval at the `baski_onay` gate
+  // between ozalit_onay and uretime_hazir. Comes to screen pre-filled with
+  // the last ozalit sheet's information (see the ozalit-fallback block in the
+  // load effect below) and may only be edited by a team_leader ("Serpil
+  // Hanım", Ayşenur, …) — every other role sees it read-only. Approval is
+  // dual-signature (migration 045): one team leader prepares it (handled
+  // below via handlePrepareBaskiOnay), a DIFFERENT team leader approves it
+  // (handleApprove) — see the isBaskiOnayApproval block further down. There
+  // is no advance mode: the form is auto-created on entering the stage,
+  // never requested.
+  baski_onay: {
+    kind: 'baski_onay',
+    storagePrefix: 'yz_baski_onay_form_',
+    dateField:   'baskiOnayTarihi',
+    personField: 'baskiOnayHazirlayan',
+    dateLabel:   'BASKI ONAY TARİHİ',
+    personLabel: 'HAZIRLAYAN',
+    attemptField: 'baski_onay_attempt',
+    title: 'Baskı Onay Formu',
+    attemptWord: 'Baskı Onay',
+    attemptUpper: 'BASKI ONAY',
+    systemFieldsEditable: true,
+    restoreSavedOnEdit: true,
+    celebrateOnAdvance: false,
+    saveRequiresEditable: true,
+    isReadOnly: ({ mode, user }) => mode === 'history' || user?.role !== 'team_leader',
+    canPrint: () => true,
+    advanceToast: () => 'Baskı onaya gönderildi.',
+    advanceLabel: () => 'Gönder',
+    saveToast: 'Baskı onay formu kaydedildi.',
+  },
 }
 
 /* ------------------------------------------------------------------ */
@@ -193,6 +224,7 @@ const STAGE_VARIANT = {
   cin_demo_onay: 'demo',
   ozalit_teslim: 'ozalit',
   ozalit_onay: 'ozalit',
+  baski_onay: 'baski_onay',
 }
 
 export function specVariantForStage(stage) {
@@ -237,46 +269,6 @@ function saveSnapshot(variant, id, attempt, data, customRows, selectedComponents
     _customRows: customRows,
     _selectedComponents: selectedComponents ?? null,
   }))
-}
-
-/**
- * The ozalit-revision resubmit (ProjectDetail: tasarim + last_reject_type ===
- * 'ozalit') advances straight back to ozalit_teslim via a bare confirm dialog
- * (ApprovalDialog), bypassing this form entirely — the spec itself doesn't
- * change on a resend. But per the server's canRequestOzalit rule, that resend
- * IS the designer (re-)requesting the ozalit (the server sets
- * ozalit_requested=true in the same step), so "OZALİT İSTEYEN KİŞİ" must
- * reflect whoever actually resent it — not whoever requested the very first
- * attempt, which is what was left stamped otherwise. Called from
- * ApprovalDialog right after that advance succeeds.
- */
-export async function restampOzalitRequester(projectId, attempt, requesterName) {
-  const variant = VARIANTS.ozalit
-  // A resend is a NEW attempt: carry the spec forward but drop the previous
-  // round's teslim/onay stamps, otherwise they'd be written into this
-  // attempt's snapshot and shown as if they happened on this round.
-  const existing =
-    stripStamps(loadSaved(variant, projectId)) ??
-    stripStamps(await fetchServerSnapshot(api, variant, projectId, null)) ??
-    { form: {}, customRows: [], selectedComponents: null }
-  const form = { ...existing.form, [variant.personField]: requesterName ?? '' }
-  saveForm(variant, projectId, form, existing.customRows ?? [], existing.selectedComponents ?? null)
-  if (attempt != null) {
-    saveSnapshot(variant, projectId, attempt, form, existing.customRows ?? [], existing.selectedComponents ?? null)
-  }
-  try {
-    await api.createDemo({
-      project_id: projectId,
-      kind: variant.kind,
-      attempt: attempt ?? null,
-      silent: true,
-      payload: {
-        ...form,
-        _customRows: existing.customRows ?? [],
-        _selectedComponents: existing.selectedComponents ?? null,
-      },
-    })
-  } catch { /* localStorage still has it; don't block the flow */ }
 }
 
 /**
@@ -360,7 +352,7 @@ function emptyForm(variant, project, user) {
  */
 function openMultiPrint({ form, customRows, project, attemptNo, kind, selectedComponents }) {
   const designerNames = (project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''
-  const attemptLabel = `${attemptNo}. ${kind === 'ozalit' ? 'OZALİT' : 'DEMO'}`
+  const attemptLabel = `${attemptNo}. ${kind === 'ozalit' ? 'OZALİT' : kind === 'baski_onay' ? 'BASKI ONAY' : 'DEMO'}`
   const selected = (selectedComponents ?? []).filter(Boolean)
   const comps = selected.length > 0
     ? selected
@@ -639,6 +631,17 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         if (cancelled) return
         spec = specWithDemoFallback(data, fromDemo)
       }
+      // Baskı Onay Formu always opens pre-filled with the LAST ozalit sheet's
+      // information (per the feature ask) until a team leader edits and saves
+      // their own — same borrow-once-then-keep-your-own-edits shape as the
+      // ozalit-from-demo fallback above.
+      if (variant.kind === 'baski_onay' && !hasSpecContent(data)) {
+        const fromOzalit =
+          loadSaved(VARIANTS.ozalit, project.id) ??
+          (await fetchServerSnapshot(api, VARIANTS.ozalit, project.id, null))
+        if (cancelled) return
+        spec = specWithDemoFallback(data, fromOzalit)
+      }
       const savedRows = spec?.customRows ?? []
       const hasAdet = savedRows.some((r) => r.label?.toUpperCase().startsWith('ADET'))
       setCustomRows(hasAdet ? savedRows : [...buildAdetRows(project.id), ...savedRows])
@@ -677,6 +680,17 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    */
   const ozalitAwaitingLeader =
     isOzalitApproval && user?.role === 'designer' && !ozalitLeaderApproved(project)
+
+  /* ── Baskı Onayı dual-approval (migration 045) ────────────────────────────
+   * One team leader PREPARES the form; a DIFFERENT team leader gives the
+   * actual "Baskı Onayı". The server is the source of truth for "different
+   * person" (it also lets a lone remaining leader self-approve rather than
+   * strand the project) — this dialog just switches which button it shows
+   * based on `baski_onay_prepared`, and lets a server error surface via toast
+   * on the rare self-approve-blocked click.
+   */
+  const isBaskiOnayApproval = mode === 'approve' && variantName === 'baski_onay'
+  const baskiOnayPrepared = !!project?.baski_onay_prepared
 
   // Each (re)open starts from the project's own state — a stale local ack
   // would otherwise unlock the button for the next project opened.
@@ -835,6 +849,12 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           teslimTarihi: today,
           matbaaYetkilisi: user?.name ?? '',
         }
+      } else if (variant.kind === 'ozalit') {
+        // Requesting the ozalit — the first ask or a resubmit after an
+        // ozalit rejection — is always the current user's ask, even though
+        // the field is read-only for designers and may still carry a
+        // previous round's name from the loaded snapshot.
+        payload = { ...form, [variant.personField]: user?.name ?? form[variant.personField] }
       }
       saveForm(variant, project.id, payload, customRows, selectedComponents)
       saveSnapshot(variant, project.id, attemptNo, payload, customRows, selectedComponents)
@@ -865,6 +885,30 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       const updated = await api.approveProject(project.id)
       updateOne(updated)
       toast.success('Onaylandı, proje üretime alındı.')
+      onDone?.(updated)
+      onOpenChange(false)
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally { setBusy(false) }
+  }
+
+  /**
+   * Baskı Onayı dual-approval, maker half: saves the form as-is and marks it
+   * "hazırlandı" — this does NOT advance the project. It stays at baski_onay
+   * until a different team leader approves (handleApprove above, once
+   * `baski_onay_prepared` is true).
+   */
+  async function handlePrepareBaskiOnay() {
+    if (!project) return
+    setBusy(true)
+    try {
+      saveForm(variant, project.id, form, customRows, selectedComponents)
+      saveSnapshot(variant, project.id, attemptNo, form, customRows, selectedComponents)
+      persistServerSnapshot(attemptNo, form)
+      await persistCatalogEdits()
+      const updated = await api.prepareBaskiOnay(project.id)
+      updateOne(updated)
+      toast.success('Baskı onay formu hazırlandı, başka bir ekip liderinin onayı bekleniyor.')
       onDone?.(updated)
       onOpenChange(false)
     } catch (err) {
@@ -1178,6 +1222,28 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           )
         )}
 
+        {/* Baskı Onayı dual-approval banner — mirrors the ozalit receipt gate's
+            inline copy above. Prepared: names who did it (everyone, including
+            the preparer, sees the same Onayla button below — the server is
+            what actually refuses a same-person approve, see handleApprove /
+            computeApproval). Not yet prepared: nudges toward Hazırla. */}
+        {isBaskiOnayApproval && (
+          baskiOnayPrepared ? (
+            <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
+              <Check className="h-4 w-4 shrink-0" />
+              <span>
+                Baskı onay formunu {project?.baski_onay_prepared_by_name ?? 'bir ekip lideri'} hazırladı.
+                Formu hazırlayandan başka bir ekip lideri onaylamalıdır.
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+              <FileText className="h-4 w-4 shrink-0" />
+              <span>Önce formu gözden geçirip "Hazırla ve Onaya Gönder" ile onaya açın.</span>
+            </div>
+          )
+        )}
+
         <DialogFooter className="flex-wrap gap-2">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             {readOnly ? 'Kapat' : 'İptal'}
@@ -1197,7 +1263,13 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               {busy ? 'Gönderiliyor…' : variant.advanceLabel(user)}
             </Button>
           )}
-          {mode === 'approve' && (
+          {isBaskiOnayApproval && !baskiOnayPrepared && (
+            <Button disabled={busy} onClick={handlePrepareBaskiOnay}>
+              <Send className="h-4 w-4" />
+              {busy ? 'Kaydediliyor…' : 'Hazırla ve Onaya Gönder'}
+            </Button>
+          )}
+          {mode === 'approve' && (!isBaskiOnayApproval || baskiOnayPrepared) && (
             <Button variant="success" disabled={busy || needsOzalitReceive || ozalitAwaitingLeader} onClick={handleApprove}>
               <Check className="h-4 w-4" />
               {busy ? 'İşleniyor…' : 'Onayla'}

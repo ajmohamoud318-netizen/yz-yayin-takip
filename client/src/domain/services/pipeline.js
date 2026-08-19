@@ -135,6 +135,7 @@ export function getNextStage(project) {
 export const STAGES_REQUIRING_FULL_PROGRESS = new Set([
   'ozalit_teslim',
   'ozalit_onay',
+  'baski_onay',
   'uretime_hazir',
   'uretimde',
   'gumruk',
@@ -236,6 +237,24 @@ export function canApproveOzalitNow(user, project) {
   const isAssignedDesigner =
     user.role === 'designer' && (project.assignees ?? []).some((a) => a.id === user.id)
   return isAssignedDesigner && ozalitLeaderApproved(project)
+}
+
+/**
+ * Baskı Onay Formu — the final print approval, gated at `baski_onay`
+ * (between ozalit_onay and uretime_hazir). team_leader only, both halves:
+ * this is the same set of people ("Serpil Hanım", Ayşenur, …) who may edit
+ * the form itself — see the `baski_onay` variant in SpecFormDialog. Approval
+ * is dual-signature (migration 045: one leader prepares, a DIFFERENT one
+ * approves) — this helper only answers the role question; the "different
+ * person" rule is enforced server-side (computeApproval's baski_onay branch)
+ * and surfaced via SpecFormDialog's prepare/approve button switch.
+ *
+ * @param {{ role: string }} user
+ */
+export function isBaskiOnayApprover(user) {
+  if (!user) return false
+  if (user.role === 'team_leader') return true
+  return false
 }
 
 /**

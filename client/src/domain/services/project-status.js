@@ -26,6 +26,7 @@ export function statusKeyForProject(p) {
       return 'pink'
     case 'ozalit_teslim':
     case 'ozalit_onay':
+    case 'baski_onay':
       return 'blue'
     case 'demo_teslim':
     case 'cin_demo_teslim':

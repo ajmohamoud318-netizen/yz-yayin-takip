@@ -41,6 +41,7 @@ import ApprovalDialog from '@/components/ApprovalDialog'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import NewProjectDialog from '@/components/NewProjectDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
+import BaskiOnayFormDialog from '@/components/BaskiOnayFormDialog'
 import DemoFormDialog from '@/components/DemoFormDialog'
 import ProjectHistory from '@/components/ProjectHistory'
 import { TalepHistoryViewer } from '@/components/TalepSignDialog'
@@ -163,6 +164,8 @@ export default function ProjectDetail() {
   const [demoFormMode, setDemoFormMode] = useState('advance') // 'advance' | 'view' | 'history'
   const [demoFormAttempt, setDemoFormAttempt] = useState(null)
   const [ozalitFormAttempt, setOzalitFormAttempt] = useState(null)
+  const [baskiOnayFormOpen, setBaskiOnayFormOpen] = useState(false)
+  const [baskiOnayFormMode, setBaskiOnayFormMode] = useState('approve') // 'approve' | 'view'
   const [toggling, setToggling] = useState(null)
   const [localDone, setLocalDone] = useState({})
   const [saving, setSaving] = useState(false)
@@ -794,7 +797,7 @@ export default function ProjectDetail() {
                   </Button>
                 )}
                 {/* Ozalit formu görüntüle — üretimde veya sonraki aşamalarda */}
-                {isLeader && ['uretimde', 'gumruk', 'satista'].includes(project.stage) && project.type === 'TR' && (
+                {isLeader && ['baski_onay', 'uretimde', 'gumruk', 'satista'].includes(project.stage) && project.type === 'TR' && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -804,6 +807,17 @@ export default function ProjectDetail() {
                     Ozalit Formu
                   </Button>
                 )}
+                {/* Baskı Onay Formu görüntüle — baski_onay aşaması geçildikten sonra da erişilebilir kalsın. */}
+                {isLeader && ['uretime_hazir', 'uretimde', 'gumruk', 'satista'].includes(project.stage) && project.type === 'TR' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setBaskiOnayFormMode('view'); setBaskiOnayFormOpen(true) }}
+                  >
+                    <FileText className="h-4 w-4" />
+                    Baskı Onay Formu
+                  </Button>
+                )}
                 {actions.includes('advance') && (
                   <Button
                     size="sm"
@@ -811,9 +825,12 @@ export default function ProjectDetail() {
                     title={pendingRevize ? 'Önce revize bekleyen alt görevleri revize edin.' : undefined}
                     onClick={() => {
                       // An ozalit-revision redesign resubmits straight to the
-                      // ozalit flow (a simple confirm), not the demo form.
+                      // ozalit flow — open the ozalit form so the resubmit
+                      // gets the same review step as the very first request.
                       if (project.stage === 'tasarim' && project.last_reject_type === 'ozalit') {
-                        setDialog('advance')
+                        setOzalitFormMode('advance')
+                        setOzalitFormAttempt(null)
+                        setOzalitFormOpen(true)
                         return
                       }
                       // Demo stages open the demo form: the designer requests it
@@ -906,6 +923,9 @@ export default function ProjectDetail() {
                       if (project.stage === 'ozalit_onay') {
                         setOzalitFormMode('approve')
                         setOzalitFormOpen(true)
+                      } else if (project.stage === 'baski_onay') {
+                        setBaskiOnayFormMode('approve')
+                        setBaskiOnayFormOpen(true)
                       } else {
                         setDialog('approve')
                       }
@@ -1323,6 +1343,14 @@ export default function ProjectDetail() {
         onDone={onActionDone}
       />
 
+      <BaskiOnayFormDialog
+        open={baskiOnayFormOpen}
+        onOpenChange={setBaskiOnayFormOpen}
+        project={project}
+        mode={baskiOnayFormMode}
+        onDone={onActionDone}
+      />
+
       <DemoFormDialog
         open={demoFormOpen}
         onOpenChange={(v) => { setDemoFormOpen(v); if (!v) setDemoFormAttempt(null) }}
@@ -1561,6 +1589,15 @@ function availableActions({ project, user }) {
       set.add('reject')
     }
   }
+  // Baskı Onayı: the final sign-off, team_leader only — same people (Serpil
+  // Hanım / Ayşenur, …) who may edit the form itself. Dual-approval
+  // (migration 045): the button opens the same dialog whether the form still
+  // needs preparing or is awaiting a different leader's approval — see
+  // BaskiOnayFormDialog / SpecFormDialog's isBaskiOnayApproval branch for
+  // which action it actually performs.
+  if (stage === 'baski_onay' && role === 'team_leader') {
+    set.add('approve')
+  }
   if (isAssignedDesigner && stage === 'tasarim') {
     set.add('advance')
   }
@@ -1632,6 +1669,10 @@ function approveActionLabel(project) {
       return 'Onayla'
     case 'cin_demo_onay':
       return 'Üretime Al'
+    case 'baski_onay':
+      // Dual-approval (migration 045): the outer button just opens the
+      // dialog, but its label should say which half is still owed.
+      return project.baski_onay_prepared ? 'Onayla' : 'Formu Hazırla'
     default:
       // Demo Onay and every other approval: the leader is approving the item
       // in front of them, so the button simply reads "Onayla".

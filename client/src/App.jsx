@@ -25,6 +25,7 @@ const BaskiListesi        = lazy(() => import('./pages/BaskiListesi.jsx'))
 const HedefProjeler       = lazy(() => import('./pages/HedefProjeler.jsx'))
 const Toplanti            = lazy(() => import('./pages/Toplanti.jsx'))
 const UrunBilgileri       = lazy(() => import('./pages/UrunBilgileri.jsx'))
+const BaskiReceteleri     = lazy(() => import('./pages/BaskiReceteleri.jsx'))
 const Urunler             = lazy(() => import('./pages/Urunler.jsx'))
 const SiparisListesi      = lazy(() => import('./pages/SiparisListesi.jsx'))
 const SiparisTalepleri    = lazy(() => import('./pages/SiparisTalepleri.jsx'))
@@ -179,6 +180,14 @@ export default function App() {
               }
             />
             <Route
+              path="/approvals/baski-onay"
+              element={
+                <RoleGuard allow={['team_leader']}>
+                  <Approvals tab="baski-onay" />
+                </RoleGuard>
+              }
+            />
+            <Route
               path="/approvals/siparis"
               element={
                 <RoleGuard allow={['printer']}>
@@ -225,6 +234,14 @@ export default function App() {
               element={
                 <RoleGuard allow={['team_leader', 'designer']}>
                   <UrunBilgileri />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/baski-receteleri"
+              element={
+                <RoleGuard allow={['team_leader', 'designer']}>
+                  <BaskiReceteleri />
                 </RoleGuard>
               }
             />

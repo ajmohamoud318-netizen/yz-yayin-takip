@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import ApprovalDialog from '@/components/ApprovalDialog'
 import DemoFormDialog from '@/components/DemoFormDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
+import BaskiOnayFormDialog from '@/components/BaskiOnayFormDialog'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
 import { canRejectAtStage, isDemoApprover, isOzalitApprover, ozalitLeaderApproved } from '@/domain'
@@ -29,6 +30,7 @@ export default function Approvals({ tab = 'demo' }) {
   const [dialog, setDialog] = useState(null)
   const [demoForm, setDemoForm] = useState(null)
   const [ozalitForm, setOzalitForm] = useState(null)
+  const [baskiOnayForm, setBaskiOnayForm] = useState(null)
 
   // Sipariş queue (printer's sign-off step: tasarimci_onay → matbaa_onay)
   const [orders, setOrders] = useState([])
@@ -40,7 +42,8 @@ export default function Approvals({ tab = 'demo' }) {
   const isLeader = user?.role === 'team_leader'
   const isDesigner = user?.role === 'designer'
   // Demo approvals: leader OR printer. Ozalit approvals are multi-party:
-  // every leader AND every assigned designer must approve.
+  // every leader AND every assigned designer must approve. Baskı Onayı is
+  // team_leader only — the same person who may edit the form itself.
   const canActOnDemo = isLeader || isPrinter
   const canActOnOzalit = isLeader || isDesigner
 
@@ -76,11 +79,17 @@ export default function Approvals({ tab = 'demo' }) {
         // Designer: only their assigned projects.
         return (p.assignees ?? []).some((a) => a.id === user?.id)
       }
+      // Baskı Onayı: dual-approval (prepare, then a different leader
+      // approves — migration 045), team_leader only either way.
+      if (sub === 'baski-onay') {
+        return isLeader && p.stage === 'baski_onay'
+      }
       return false
     })
 
   const demoQueue = useMemo(() => filterQueue('demo'), [projects, isPrinter])
   const ozalitQueue = useMemo(() => filterQueue('ozalit'), [projects, isPrinter])
+  const baskiOnayQueue = useMemo(() => filterQueue('baski-onay'), [projects, isPrinter, isLeader])
 
   function onDone() {}
 
@@ -89,8 +98,11 @@ export default function Approvals({ tab = 'demo' }) {
     setSignOrder(null)
   }
 
-  // Designers only have the ozalit queue — force them onto it.
-  const activeTab = isDesigner ? 'ozalit' : (tab === 'ozalit' ? 'ozalit' : 'demo')
+  // Designers only have the ozalit queue — force them onto it. Baskı Onayı
+  // is team_leader only, so it's never a printer/designer's active tab.
+  const activeTab = isDesigner
+    ? 'ozalit'
+    : (tab === 'ozalit' || (tab === 'baski-onay' && isLeader)) ? tab : 'demo'
 
   // Sipariş tab is printer-only
   if (tab === 'siparis' && isPrinter) {
@@ -251,11 +263,16 @@ export default function Approvals({ tab = 'demo' }) {
                         className="w-full sm:flex-1"
                         onClick={() => {
                           if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
+                          else if (sub === 'baski-onay') setBaskiOnayForm({ project: p, mode: 'approve' })
                           else setDialog({ project: p, mode: 'approve' })
                         }}
                       >
                         <ThumbsUp className="h-4 w-4" />
-                        Onayla
+                        {/* Dual-approval (migration 045): the card's button
+                            just opens the dialog, but the label should say
+                            which half is owed — the dialog itself decides
+                            Hazırla vs Onayla the same way (baski_onay_prepared). */}
+                        {sub === 'baski-onay' ? (p.baski_onay_prepared ? 'Onayla' : 'Formu Hazırla') : 'Onayla'}
                       </Button>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/30 px-2 py-1 text-xs font-medium text-muted-foreground sm:flex-1">
@@ -263,8 +280,9 @@ export default function Approvals({ tab = 'demo' }) {
                       </span>
                     )}
                     {/* Only a team leader who hasn't approved yet can reject —
-                        approving commits them, so Reddet disappears afterward. */}
-                    {isLeader && !alreadyApproved && (
+                        approving commits them, so Reddet disappears afterward.
+                        Baskı Onayı has no reject flow: edit the form itself. */}
+                    {isLeader && !alreadyApproved && sub !== 'baski-onay' && (
                       <Button
                         size="sm"
                         variant="destructive"
@@ -317,6 +335,17 @@ export default function Approvals({ tab = 'demo' }) {
                 </Badge>
               )}
             </TabsTrigger>
+            {/* Baskı Onayı: team_leader only — the final sign-off after ozalit. */}
+            {isLeader && (
+              <TabsTrigger value="baski-onay" className="gap-1.5">
+                Baskı Onayı
+                {baskiOnayQueue.length > 0 && (
+                  <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">
+                    {baskiOnayQueue.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            )}
           </TabsList>
           {!isDesigner && (
             <TabsContent value="demo" className="mt-4">
@@ -326,6 +355,11 @@ export default function Approvals({ tab = 'demo' }) {
           <TabsContent value="ozalit" className="mt-4">
             {renderQueue(ozalitQueue, 'ozalit')}
           </TabsContent>
+          {isLeader && (
+            <TabsContent value="baski-onay" className="mt-4">
+              {renderQueue(baskiOnayQueue, 'baski-onay')}
+            </TabsContent>
+          )}
         </Tabs>
       </div>
 
@@ -349,6 +383,13 @@ export default function Approvals({ tab = 'demo' }) {
         onOpenChange={(v) => setOzalitForm(v ? ozalitForm : null)}
         project={ozalitForm?.project}
         mode={ozalitForm?.mode ?? 'approve'}
+        onDone={onDone}
+      />
+      <BaskiOnayFormDialog
+        open={!!baskiOnayForm}
+        onOpenChange={(v) => setBaskiOnayForm(v ? baskiOnayForm : null)}
+        project={baskiOnayForm?.project}
+        mode={baskiOnayForm?.mode ?? 'approve'}
         onDone={onDone}
       />
     </>

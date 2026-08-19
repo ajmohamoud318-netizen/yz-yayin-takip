@@ -118,6 +118,7 @@ export function createApi() {
     reportDemoNotReceived: (id) => projectRepo.reportDemoNotReceived(id),
     receiveOzalit: (id) => projectRepo.receiveOzalit(id),
     reportOzalitNotReceived: (id) => projectRepo.reportOzalitNotReceived(id),
+    prepareBaskiOnay: (id) => projectRepo.prepareBaskiOnay(id),
     rejectProject: (id, reason, revizeIds, target) => projectRepo.rejectProject(id, reason, revizeIds, target),
 
     // Subtasks

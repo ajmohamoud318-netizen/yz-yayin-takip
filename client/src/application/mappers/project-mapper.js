@@ -251,8 +251,12 @@ function generateHistory(p, assignees, subtasksDone, subtasksTotal) {
   })
   if (p.stage === 'ozalit_teslim' || p.stage === 'ozalit_onay') return h
 
-  // ── Ozalit approved → üretime hazır ───────────────────────────────────────
-  h.push({ id: `${p.id}-hoa`, action: 'approve', from_stage: 'ozalit_onay', to_stage: 'uretime_hazir', done_by_name: 'Ayşenur Kanak', created_at: tick(0.5) })
+  // ── Ozalit approved → baskı onayı ─────────────────────────────────────────
+  h.push({ id: `${p.id}-hoa`, action: 'approve', from_stage: 'ozalit_onay', to_stage: 'baski_onay', done_by_name: 'Ayşenur Kanak', created_at: tick(0.5) })
+  if (p.stage === 'baski_onay') return h
+
+  // ── Baskı onaylandı → üretime hazır ───────────────────────────────────────
+  h.push({ id: `${p.id}-hbo`, action: 'approve', from_stage: 'baski_onay', to_stage: 'uretime_hazir', done_by_name: 'Ayşenur Kanak', created_at: tick(0.4) })
   if (p.stage === 'uretime_hazir') return h
 
   // ── Sipariş alındı → üretimde ─────────────────────────────────────────────
