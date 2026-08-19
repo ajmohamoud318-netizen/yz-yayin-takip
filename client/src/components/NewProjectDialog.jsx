@@ -408,48 +408,112 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                 // has only one assigned designer — no choice to make).
                 const showAssigneeSelect = assignedIds.length > 1
                 return (
-                  <div key={s.key} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-background">
-                    <Checkbox
-                      id={`st-${s.key}`}
-                      checked={isChecked}
-                      onCheckedChange={(v) => {
-                        setSubtasks((prev) => ({ ...prev, [s.key]: !!v }))
-                        if (!v) setSubtaskAssignees((prev) => ({ ...prev, [s.key]: '' }))
-                      }}
-                    />
-                    <label
-                      htmlFor={`st-${s.key}`}
-                      className="flex-1 cursor-pointer text-sm select-none"
-                    >
-                      {s.label}
-                    </label>
-                    {showAssigneeSelect && (
-                      <Select
-                        value={subtaskAssignees[s.key] || ''}
-                        onValueChange={(v) =>
-                          setSubtaskAssignees((prev) => ({ ...prev, [s.key]: v }))
-                        }
-                        disabled={!isChecked}
+                  <div key={s.key}>
+                    <div className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-background">
+                      <Checkbox
+                        id={`st-${s.key}`}
+                        checked={isChecked}
+                        onCheckedChange={(v) => {
+                          setSubtasks((prev) => ({ ...prev, [s.key]: !!v }))
+                          if (!v) setSubtaskAssignees((prev) => ({ ...prev, [s.key]: '' }))
+                        }}
+                      />
+                      <label
+                        htmlFor={`st-${s.key}`}
+                        className="flex-1 cursor-pointer text-sm select-none"
                       >
-                        <SelectTrigger
-                          className={cn(
-                            'h-7 w-36 text-xs',
-                            !isChecked && 'opacity-50',
-                          )}
-                          aria-disabled={!isChecked}
+                        {s.label}
+                      </label>
+                      {showAssigneeSelect && (
+                        <Select
+                          value={subtaskAssignees[s.key] || ''}
+                          onValueChange={(v) =>
+                            setSubtaskAssignees((prev) => ({ ...prev, [s.key]: v }))
+                          }
+                          disabled={!isChecked}
                         >
-                          <SelectValue placeholder={isChecked ? 'Tasarımcı seç…' : '—'} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {designers
-                            .filter((d) => assignedIds.includes(d.id))
-                            .map((d) => (
-                              <SelectItem key={d.id} value={d.id}>
-                                {d.name}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
+                          <SelectTrigger
+                            className={cn(
+                              'h-7 w-36 text-xs',
+                              !isChecked && 'opacity-50',
+                            )}
+                            aria-disabled={!isChecked}
+                          >
+                            <SelectValue placeholder={isChecked ? 'Tasarımcı seç…' : '—'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {designers
+                              .filter((d) => assignedIds.includes(d.id))
+                              .map((d) => (
+                                <SelectItem key={d.id} value={d.id}>
+                                  {d.name}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+
+                    {isChecked && s.key === 'sayfalar' && (
+                      <div className="ml-7 mb-1 flex flex-wrap items-center gap-3 rounded-md border bg-background/60 px-3 py-2">
+                        <Label htmlFor="np-pages" className="text-sm">
+                          Toplam iç sayfa
+                        </Label>
+                        <Input
+                          id="np-pages"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={pageCount}
+                          onChange={(e) => setPageCount(clampPositiveInt(e.target.value))}
+                          onBlur={(e) => setPageCount(clampPositiveInt(e.target.value))}
+                          onKeyDown={(e) => {
+                            // Block "-" / "e" / "+" and a leading "0" so the field
+                            // can never land on 0 via keystroke, paste, or arrow keys.
+                            if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') {
+                              e.preventDefault()
+                              return
+                            }
+                            if (e.key === '0' && (e.currentTarget.value === '' || e.currentTarget.value === '0')) {
+                              e.preventDefault()
+                            }
+                          }}
+                          className="h-9 w-28"
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          Tasarımcı bittikçe sayfa ekleyip ilerlemeyi günceller.
+                        </span>
+                      </div>
+                    )}
+
+                    {isChecked && s.key === 'sticker' && (
+                      <div className="ml-7 mb-1 flex flex-wrap items-center gap-3 rounded-md border bg-background/60 px-3 py-2">
+                        <Label htmlFor="np-stickers" className="text-sm">
+                          Toplam sticker adedi
+                        </Label>
+                        <Input
+                          id="np-stickers"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={stickerCount}
+                          onChange={(e) => setStickerCount(clampPositiveInt(e.target.value))}
+                          onBlur={(e) => setStickerCount(clampPositiveInt(e.target.value))}
+                          onKeyDown={(e) => {
+                            if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') {
+                              e.preventDefault()
+                              return
+                            }
+                            if (e.key === '0' && (e.currentTarget.value === '' || e.currentTarget.value === '0')) {
+                              e.preventDefault()
+                            }
+                          }}
+                          className="h-9 w-28"
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          Tasarımcı bittikçe sticker ekleyip ilerlemeyi günceller.
+                        </span>
+                      </div>
                     )}
                   </div>
                 )
@@ -548,68 +612,6 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                 </Button>
               </div>
             </div>
-
-            {subtasks.sayfalar && (
-              <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/30 p-3">
-                <Label htmlFor="np-pages" className="text-sm">
-                  Toplam iç sayfa
-                </Label>
-                <Input
-                  id="np-pages"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={pageCount}
-                  onChange={(e) => setPageCount(clampPositiveInt(e.target.value))}
-                  onBlur={(e) => setPageCount(clampPositiveInt(e.target.value))}
-                  onKeyDown={(e) => {
-                    // Block "-" / "e" / "+" and a leading "0" so the field
-                    // can never land on 0 via keystroke, paste, or arrow keys.
-                    if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') {
-                      e.preventDefault()
-                      return
-                    }
-                    if (e.key === '0' && (e.currentTarget.value === '' || e.currentTarget.value === '0')) {
-                      e.preventDefault()
-                    }
-                  }}
-                  className="h-9 w-28"
-                />
-                <span className="text-xs text-muted-foreground">
-                  Tasarımcı bittikçe sayfa ekleyip ilerlemeyi günceller.
-                </span>
-              </div>
-            )}
-
-            {subtasks.sticker && (
-              <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/30 p-3">
-                <Label htmlFor="np-stickers" className="text-sm">
-                  Toplam sticker adedi
-                </Label>
-                <Input
-                  id="np-stickers"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={stickerCount}
-                  onChange={(e) => setStickerCount(clampPositiveInt(e.target.value))}
-                  onBlur={(e) => setStickerCount(clampPositiveInt(e.target.value))}
-                  onKeyDown={(e) => {
-                    if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') {
-                      e.preventDefault()
-                      return
-                    }
-                    if (e.key === '0' && (e.currentTarget.value === '' || e.currentTarget.value === '0')) {
-                      e.preventDefault()
-                    }
-                  }}
-                  className="h-9 w-28"
-                />
-                <span className="text-xs text-muted-foreground">
-                  Tasarımcı bittikçe sticker ekleyip ilerlemeyi günceller.
-                </span>
-              </div>
-            )}
           </div>
 
           <DialogFooter>
