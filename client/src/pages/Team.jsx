@@ -54,6 +54,10 @@ export default function Team() {
   // How many active team leaders exist — used to protect the last one from
   // being deactivated/deleted (which would lock everyone out of management).
   const activeLeaderCount = users.filter((u) => u.role === 'team_leader' && u.is_active).length
+  // The founding leader (earliest-created team_leader row) can't be
+  // deactivated/deleted by other leaders — server enforces this too.
+  // GET /users orders by created_at, so the first team_leader in the list is it.
+  const foundingLeaderId = users.find((u) => u.role === 'team_leader')?.id
 
   useEffect(() => {
     setLoading(true)
@@ -158,6 +162,7 @@ export default function Team() {
                 isLastActiveLeader={
                   u.role === 'team_leader' && u.is_active && activeLeaderCount <= 1
                 }
+                isFounder={u.role === 'team_leader' && u.id === foundingLeaderId}
                 onToggle={toggleActive}
                 onRequestDelete={requestDelete}
               />
@@ -200,11 +205,12 @@ export default function Team() {
 }
 
 
-function UserCard({ user, canManage, isLastActiveLeader, onToggle, onRequestDelete }) {
-  // The last active team leader can't be deactivated or deleted (server
-  // enforces this too) — hide those actions so they aren't offered.
-  const canToggle = !user.is_active || !isLastActiveLeader // reactivate always ok
-  const canDelete = !isLastActiveLeader
+function UserCard({ user, canManage, isLastActiveLeader, isFounder, onToggle, onRequestDelete }) {
+  // The last active team leader can't be deactivated or deleted, and neither
+  // can the founding leader (server enforces both too) — hide those actions
+  // so they aren't offered.
+  const canToggle = !user.is_active || (!isLastActiveLeader && !isFounder) // reactivate always ok
+  const canDelete = !isLastActiveLeader && !isFounder
   const showMenu = canManage && (canToggle || canDelete)
   // Today's Çalışma Defteri, sent down with the user row by GET /users
   // (see workLogTodaySelect in server/src/services/work-log.js) — no extra

@@ -42,6 +42,16 @@ async function hasOtherActiveLeader(exceptId) {
   return rows.length > 0
 }
 
+// The founding leader is the team_leader with the earliest created_at row.
+// Leaders are otherwise peers (any leader can deactivate/delete any other),
+// but the founder is protected from being deactivated/deleted by anyone else.
+async function isFoundingLeader(id) {
+  const { rows } = await getPool().query(
+    `SELECT id FROM users WHERE role = 'team_leader' ORDER BY created_at ASC LIMIT 1`,
+  )
+  return rows[0]?.id === id
+}
+
 export async function userRoutes(fastify) {
   // Every role needs *some* user list — it's the only source for assignee
   // name lookups on project cards (see client's project-mapper.js), so this
@@ -207,6 +217,9 @@ export async function userRoutes(fastify) {
     if (target.rows[0].role === 'team_leader' && !(await hasOtherActiveLeader(id))) {
       forbidden('Son aktif takım liderini devre dışı bırakamazsınız.')
     }
+    if (target.rows[0].role === 'team_leader' && (await isFoundingLeader(id))) {
+      forbidden('Kurucu takım liderini devre dışı bırakamazsınız.')
+    }
     const { rows } = await getPool().query(
       `UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE id = $1
        RETURNING id, name, email, role, is_active`,
@@ -254,6 +267,9 @@ export async function userRoutes(fastify) {
     if (!target.rows[0]) return notFound('Kullanıcı bulunamadı.')
     if (target.rows[0].role === 'team_leader' && !(await hasOtherActiveLeader(id))) {
       forbidden('Son aktif takım liderini silemezsiniz.')
+    }
+    if (target.rows[0].role === 'team_leader' && (await isFoundingLeader(id))) {
+      forbidden('Kurucu takım liderini silemezsiniz.')
     }
     const { rows } = await getPool().query(
       `DELETE FROM users WHERE id = $1 RETURNING id`,
