@@ -251,7 +251,7 @@ function WorkLogPanel({ today, history, loading, busy, onAdd, onRemove }) {
               <CharCounter value={trimmed.length} max={WORK_LOG_MAX_BODY} />
 
               <Button size="sm" className="h-7 shrink-0 gap-1.5 px-2.5" disabled={!canSave} onClick={submit}>
-                {busy ? 'Ekleniyor…' : 'Ekle'}
+                {busy ? 'Ekleniyor…' : 'Ekleyin'}
                 <CornerDownLeft className="h-3 w-3 opacity-70" />
               </Button>
             </div>
@@ -397,7 +397,7 @@ function Timeline({ entries, onRemove, readOnly = false }) {
                 type="button"
                 onClick={() => handleRemove(entry)}
                 disabled={isRemoving}
-                aria-label="Kaydı sil"
+                aria-label="Kaydı silin"
                 className={cn(
                   'mt-1 grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground opacity-0',
                   'transition-[opacity,color,background-color] duration-150',

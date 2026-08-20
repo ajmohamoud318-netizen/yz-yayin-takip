@@ -51,7 +51,7 @@ export function ProjectsProvider({ children }) {
   // "30 gün hatırla" is ticked. So for every non-remembered session a cold
   // start found no token, gave up, and set loading=false with an EMPTY list:
   // `GET /auth/me` succeeded on the cookie, the user was plainly logged in,
-  // and the dashboard still showed nothing until they hit "Yenile" (which
+  // and the dashboard still showed nothing until they hit "Yenileyin" (which
   // calls refetch() directly, bypassing the gate — hence "refresh fixes it").
   // The same gate also killed the 30 s auto-refresh for those sessions.
   //

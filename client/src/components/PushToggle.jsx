@@ -110,10 +110,10 @@ export default function PushToggle() {
             ? <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
             : <BellRing className="h-3.5 w-3.5 shrink-0" />}
         <span className={cn('flex-1', subscribed ? 'text-muted-foreground' : 'font-medium text-foreground')}>
-          {subscribed ? 'Bu cihazda bildirimler açık' : 'Telefona bildirim gönder'}
+          {subscribed ? 'Bu cihazda bildirimler açık' : 'Telefona bildirim gönderin'}
         </span>
         <span className="text-[10px] text-muted-foreground">
-          {subscribed ? 'Kapat' : 'Aç'}
+          {subscribed ? 'Kapatın' : 'Açın'}
         </span>
       </button>
     </div>

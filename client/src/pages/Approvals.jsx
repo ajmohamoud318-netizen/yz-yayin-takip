@@ -228,7 +228,7 @@ export default function Approvals({ tab = 'demo' }) {
                       }}
                     >
                       <Send className="h-4 w-4" />
-                      {sub === 'demo' ? "Demo'yu Teslim Et" : 'Ozaliti Teslim Et'}
+                      {sub === 'demo' ? "Demo'yu Teslim Edin" : 'Ozaliti Teslim Edin'}
                     </Button>
                     <Button size="sm" variant="ghost" className="w-full sm:flex-1" onClick={() => navigate(`/projects/${p.id}`)}>
                       Detay
@@ -274,7 +274,7 @@ export default function Approvals({ tab = 'demo' }) {
                             just opens the dialog, but the label should say
                             which half is owed — the dialog itself decides
                             Hazırla vs Onayla the same way (baski_onay_prepared). */}
-                        {sub === 'baski-onay' ? (p.baski_onay_prepared ? 'Onayla' : 'Formu Hazırla') : 'Onayla'}
+                        {sub === 'baski-onay' ? (p.baski_onay_prepared ? 'Onaylayın' : 'Formu Hazırlayın') : 'Onaylayın'}
                       </Button>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/30 px-2 py-1 text-xs font-medium text-muted-foreground sm:flex-1">
@@ -292,7 +292,7 @@ export default function Approvals({ tab = 'demo' }) {
                         onClick={() => setDialog({ project: p, mode: 'reject' })}
                       >
                         <ThumbsDown className="h-4 w-4" />
-                        Reddet
+                        Reddedin
                       </Button>
                     )}
                     <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={() => navigate(`/projects/${p.id}`)}>
@@ -370,7 +370,7 @@ export default function Approvals({ tab = 'demo' }) {
         onOpenChange={(v) => setDialog(v ? dialog : null)}
         project={dialog?.project}
         mode={dialog?.mode ?? 'approve'}
-        advanceLabel="Onaya Gönder"
+        advanceLabel="Onaya Gönderin"
         onDone={onDone}
       />
       <DemoFormDialog
@@ -447,10 +447,10 @@ function SiparisOrderCard({ order, onSign, onView }) {
         <div className="flex items-center gap-2">
           <Button size="sm" variant="ghost" className="flex-1" onClick={onView}>
             <Eye className="h-3.5 w-3.5" />
-            Formu Görüntüle
+            Formu Görüntüleyin
           </Button>
           <Button size="sm" className="flex-1" onClick={onSign}>
-            Teslim Et
+            Teslim Edin
           </Button>
         </div>
       </CardContent>

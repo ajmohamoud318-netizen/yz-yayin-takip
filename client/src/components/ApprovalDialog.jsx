@@ -32,13 +32,13 @@ const trDate = () =>
 // 047) — matbaa is notified and acts from there immediately, no separate
 // "take into production" step anymore.
 const APPROVE_DEST = {
-  demo_onay: { label: 'Onayla', stage: 'ozalit_teslim' },
-  ozalit_onay: { label: 'Onayla', stage: 'baski_onay' },
-  baski_onay: { label: 'Üretime Al', stage: 'baskida' },
+  demo_onay: { label: 'Onaylayın', stage: 'ozalit_teslim' },
+  ozalit_onay: { label: 'Onaylayın', stage: 'baski_onay' },
+  baski_onay: { label: 'Üretime Alın', stage: 'baskida' },
   // Approving the ÇİN demo no longer means production-ready — it now needs
   // its own print-approval gate first, mirroring TR's ozalit_onay → baski_onay.
-  cin_demo_onay: { label: 'Onayla', stage: 'cin_baski_onay' },
-  cin_baski_onay: { label: 'Üretime Al', stage: 'baskida' },
+  cin_demo_onay: { label: 'Onaylayın', stage: 'cin_baski_onay' },
+  cin_baski_onay: { label: 'Üretime Alın', stage: 'baskida' },
 }
 
 /**
@@ -47,7 +47,7 @@ const APPROVE_DEST = {
  *
  *   mode = 'approve' | 'reject' | 'advance'
  */
-export default function ApprovalDialog({ open, onOpenChange, project, mode = 'approve', advanceLabel = 'İlerlet', onDone }) {
+export default function ApprovalDialog({ open, onOpenChange, project, mode = 'approve', advanceLabel = 'İlerletin', onDone }) {
   const { updateOne } = useProjectsStore()
   const { user } = useAuth()
   const isLeader = user?.role === 'team_leader'
@@ -115,7 +115,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
   // Destination of this approval (e.g. Demo Onay → Ozalit). Null on non-approve.
   const approveDest = project ? APPROVE_DEST[project.stage] : null
 
-  const approveLabel = approveDest?.label ?? 'Onayla'
+  const approveLabel = approveDest?.label ?? 'Onaylayın'
 
   // Demo onayı at <100%: the leader's approve is recorded as a "hold" —
   // the project stays at demo_onay waiting for the designer to finish
@@ -145,8 +145,8 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
       ? 'Demo onayı (tasarım tamamlanmadı)'
       : isOzalitLeaderStep
         ? 'Ozalit onayı'
-        : approveDest?.label ?? 'Aşamayı onayla',
-    reject: 'Reddet ve geri gönder',
+        : approveDest?.label ?? 'Aşamayı onaylayın',
+    reject: 'Reddedin ve geri gönderin',
     advance: advanceLabel,
   }
   const isOzalitReject = project?.stage === 'ozalit_onay'
@@ -420,7 +420,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
               }
               variant={mode === 'reject' ? 'destructive' : mode === 'approve' ? 'success' : 'default'}
             >
-              {busy ? 'İşleniyor…' : mode === 'approve' ? approveLabel : mode === 'reject' ? 'Reddet' : advanceLabel}
+              {busy ? 'İşleniyor…' : mode === 'approve' ? approveLabel : mode === 'reject' ? 'Reddedin' : advanceLabel}
             </Button>
           </DialogFooter>
         </form>

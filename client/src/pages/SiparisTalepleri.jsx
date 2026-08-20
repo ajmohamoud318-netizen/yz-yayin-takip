@@ -185,10 +185,10 @@ function RequestCard({ request, onSign, onView, onOzalit, onBaskiOnay }) {
   // matbaa_onay is multi-party now — a single click here is one vote, not
   // necessarily the final one (see TalepSignDialog's isMatbaaOnayStep note).
   const actionLabel = request.status === 'pending'
-    ? 'Tasarımcıya Aktar'
+    ? 'Tasarımcıya Aktarın'
     : isBaskiOnayStep
       ? 'Baskı Onay Formu'
-      : 'Onayla'
+      : 'Onaylayın'
 
   return (
     <Card

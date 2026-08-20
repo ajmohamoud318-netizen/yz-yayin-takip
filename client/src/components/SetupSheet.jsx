@@ -157,7 +157,7 @@ export default function SetupSheet() {
             <button
               type="button"
               onClick={close}
-              aria-label="Kapat"
+              aria-label="Kapatın"
               className="-mr-1 -mt-1 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <X className="h-3.5 w-3.5" />
@@ -176,13 +176,13 @@ export default function SetupSheet() {
                   ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
                   : <Download className="h-4 w-4 shrink-0" />}
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-medium">Ana ekrana ekle</span>
+                  <span className="block text-[13px] font-medium">Ana ekrana ekleyin</span>
                   <span className="block text-[11px] text-muted-foreground">
                     Tarayıcı sekmesi olmadan, uygulama gibi açılır.
                   </span>
                 </span>
                 <span className="shrink-0 rounded-md bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground">
-                  Ekle
+                  Ekleyin
                 </span>
               </button>
             )}

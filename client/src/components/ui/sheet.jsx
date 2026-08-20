@@ -55,7 +55,7 @@ const SheetContent = React.forwardRef(({ side = 'right', className, children, sh
           )}
         >
           <X className="h-4 w-4" />
-          <span className="sr-only">Kapat</span>
+          <span className="sr-only">Kapatın</span>
         </DialogPrimitive.Close>
       )}
     </DialogPrimitive.Content>

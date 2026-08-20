@@ -152,7 +152,7 @@ function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
   // until a team leader already has (see canApproveMatbaaOnayNow). Hide
   // "Onayla" rather than show a button that just bounces off the dialog's
   // own gate.
-  const signLabel = !isMatbaaOnay ? 'İncele ve Gönder' : !order.matbaa_received ? 'Teslim Al' : 'Onayla'
+  const signLabel = !isMatbaaOnay ? 'İnceleyin ve Gönderin' : !order.matbaa_received ? 'Teslim Alın' : 'Onaylayın'
   const canAct = !isMatbaaOnay || !order.matbaa_received || canApproveMatbaaOnayNow(user, order)
 
   return (

@@ -31,7 +31,7 @@ export default function ForgotPassword() {
   async function handleSubmit(e) {
     e.preventDefault()
     if (!email.trim()) {
-      toast.error('Lütfen e-posta adresini gir.')
+      toast.error('Lütfen e-posta adresinizi girin.')
       return
     }
     setSubmitting(true)
@@ -58,7 +58,7 @@ export default function ForgotPassword() {
           </span>
           <CardTitle className="text-xl">Şifremi Unuttum</CardTitle>
           <CardDescription>
-            Hesabınla ilişkili e-posta adresini gir. Sana şifre sıfırlama bağlantısı gönderelim.
+            Hesabınızla ilişkili e-posta adresinizi girin. Size şifre sıfırlama bağlantısı gönderelim.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -70,13 +70,13 @@ export default function ForgotPassword() {
               <p className="text-sm font-medium text-emerald-700">Sıfırlama bağlantısı gönderildi</p>
               <p className="text-xs text-muted-foreground">
                 Eğer <span className="font-medium">{email}</span> adresi sistemde kayıtlıysa, şifre sıfırlama bağlantısı gönderildi.
-                Lütfen gelen kutunu kontrol et. Bağlantı 1 saat geçerlidir.
+                Lütfen gelen kutunuzu kontrol edin. Bağlantı 1 saat geçerlidir.
               </p>
               <div className="flex flex-col gap-2 pt-2">
                 <Button asChild variant="outline" size="sm">
                   <Link to="/login">
                     <ArrowLeft className="mr-2 h-4 w-4" />
-                    Giriş sayfasına dön
+                    Giriş sayfasına dönün
                   </Link>
                 </Button>
               </div>
@@ -103,13 +103,13 @@ export default function ForgotPassword() {
 
               <Button type="submit" className="w-full" disabled={submitting}>
                 <KeyRound className="mr-2 h-4 w-4" />
-                {submitting ? 'Gönderiliyor…' : 'Sıfırlama bağlantısı gönder'}
+                {submitting ? 'Gönderiliyor…' : 'Sıfırlama bağlantısı gönderin'}
               </Button>
 
               <div className="text-center text-sm text-muted-foreground">
                 <Link to="/login" className="hover:text-primary">
                   <ArrowLeft className="mr-1 inline h-3 w-3" />
-                  Giriş sayfasına dön
+                  Giriş sayfasına dönün
                 </Link>
               </div>
             </form>

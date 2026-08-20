@@ -111,7 +111,7 @@ export default function Settings() {
     e.preventDefault()
     setPwError('')
     if (!currentPassword) {
-      setPwError('Mevcut şifreni gir.')
+      setPwError('Mevcut şifrenizi girin.')
       return
     }
     if (newPassword.length < 8) {
@@ -199,8 +199,8 @@ export default function Settings() {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingAvatar || removingAvatar}
-                aria-label="Profil fotoğrafını düzenle"
-                title="Profil fotoğrafını düzenle"
+                aria-label="Profil fotoğrafını düzenleyin"
+                title="Profil fotoğrafını düzenleyin"
                 className={cn(
                   'absolute -bottom-1 -right-1 grid h-9 w-9 place-items-center rounded-full',
                   'border-2 border-card bg-primary text-primary-foreground shadow-sm',
@@ -243,7 +243,7 @@ export default function Settings() {
                 disabled={uploadingAvatar || removingAvatar}
               >
                 <Camera className="h-4 w-4" />
-                Fotoğrafı değiştir
+                Fotoğrafı değiştirin
               </Button>
               <Button
                 type="button"
@@ -254,7 +254,7 @@ export default function Settings() {
                 disabled={removingAvatar || uploadingAvatar}
               >
                 {removingAvatar ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
-                Kaldır
+                Kaldırın
               </Button>
             </div>
           )}
@@ -276,9 +276,9 @@ export default function Settings() {
                 <Check className="h-4 w-4" />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-emerald-700">Şifren güncellendi.</p>
+                <p className="text-sm font-medium text-emerald-700">Şifreniz güncellendi.</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Bir sonraki girişinde yeni şifreni kullan.
+                  Bir sonraki girişinizde yeni şifrenizi kullanın.
                 </p>
                 <Button
                   type="button"
@@ -287,7 +287,7 @@ export default function Settings() {
                   className="mt-3"
                   onClick={() => setPwDone(false)}
                 >
-                  Tekrar değiştir
+                  Tekrar değiştirin
                 </Button>
               </div>
             </div>
@@ -319,7 +319,7 @@ export default function Settings() {
                     type="button"
                     onClick={() => setShowPw((v) => !v)}
                     className="absolute right-1 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-md text-muted-foreground hover:bg-muted"
-                    aria-label={showPw ? 'Şifreyi gizle' : 'Şifreyi göster'}
+                    aria-label={showPw ? 'Şifreyi gizleyin' : 'Şifreyi gösterin'}
                   >
                     {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -346,7 +346,7 @@ export default function Settings() {
                   id="confirm-password"
                   type={showPw ? 'text' : 'password'}
                   autoComplete="new-password"
-                  placeholder="Aynı şifreyi tekrar gir"
+                  placeholder="Aynı şifreyi tekrar girin"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   minLength={8}
@@ -357,7 +357,7 @@ export default function Settings() {
               <div className="flex justify-end">
                 <Button type="submit" disabled={changing}>
                   <KeyRound className="mr-2 h-4 w-4" />
-                  {changing ? 'Güncelleniyor…' : 'Şifreyi güncelle'}
+                  {changing ? 'Güncelleniyor…' : 'Şifreyi güncelleyin'}
                 </Button>
               </div>
             </form>

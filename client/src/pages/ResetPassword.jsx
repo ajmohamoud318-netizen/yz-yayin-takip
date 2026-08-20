@@ -37,7 +37,7 @@ export default function ResetPassword() {
 
   // Guard: if there's no token in the URL, don't render the form at all.
   useEffect(() => {
-    if (!token) setError('Bu bağlantıda sıfırlama token\'ı yok. Lütfen e-postandaki bağlantıya tıkla.')
+    if (!token) setError('Bu bağlantıda sıfırlama token\'ı yok. Lütfen e-postanızdaki bağlantıya tıklayın.')
   }, [token])
 
   async function handleSubmit(e) {
@@ -56,14 +56,14 @@ export default function ResetPassword() {
     try {
       await api.resetPassword(token, password)
       setDone(true)
-      toast.success('Şifren sıfırlandı. Giriş yapıldı.')
+      toast.success('Şifreniz sıfırlandı. Giriş yapıldı.')
       setTimeout(() => navigate('/', { replace: true }), 1200)
     } catch (err) {
       // 410 → token expired or used; 404 → unknown token. Both cases
       // get a friendly "ask for a new link" message.
       const status = err?.status
       if (status === 410 || status === 404) {
-        setError('Bu sıfırlama bağlantısının süresi dolmuş ya da kullanılmış. Yenisini iste.')
+        setError('Bu sıfırlama bağlantısının süresi dolmuş ya da kullanılmış. Yenisini isteyin.')
       } else {
         setError(err?.message || 'Şifre sıfırlanamadı. Lütfen tekrar deneyin.')
       }
@@ -81,7 +81,7 @@ export default function ResetPassword() {
           </span>
           <CardTitle className="text-xl">Yeni Şifre Belirle</CardTitle>
           <CardDescription>
-            Yeni şifreni gir. Şifre sıfırlandıktan sonra otomatik olarak giriş yapacaksın.
+            Yeni şifrenizi girin. Şifre sıfırlandıktan sonra otomatik olarak giriş yapacaksınız.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -90,8 +90,8 @@ export default function ResetPassword() {
               <span className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-emerald-100 text-emerald-700">
                 <Check className="h-5 w-5" />
               </span>
-              <p className="text-sm font-medium text-emerald-700">Şifren sıfırlandı!</p>
-              <p className="text-xs text-muted-foreground">Uygulamaya yönlendiriliyorsun…</p>
+              <p className="text-sm font-medium text-emerald-700">Şifreniz sıfırlandı!</p>
+              <p className="text-xs text-muted-foreground">Uygulamaya yönlendiriliyorsunuz…</p>
             </div>
           ) : !token ? (
             <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-center">
@@ -102,10 +102,10 @@ export default function ResetPassword() {
                 Bu bağlantıda sıfırlama token&apos;ı yok.
               </p>
               <p className="text-xs text-muted-foreground">
-                E-postandaki sıfırlama bağlantısına tıklamalısın.
+                E-postanızdaki sıfırlama bağlantısına tıklamalısınız.
               </p>
               <Button asChild variant="outline" size="sm" className="w-full">
-                <Link to="/forgot-password">Yeni sıfırlama bağlantısı iste</Link>
+                <Link to="/forgot-password">Yeni sıfırlama bağlantısı isteyin</Link>
               </Button>
             </div>
           ) : (
@@ -136,7 +136,7 @@ export default function ResetPassword() {
                     type="button"
                     onClick={() => setShowPw((v) => !v)}
                     className="absolute right-1 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-md text-muted-foreground hover:bg-muted"
-                    aria-label={showPw ? 'Şifreyi gizle' : 'Şifreyi göster'}
+                    aria-label={showPw ? 'Şifreyi gizleyin' : 'Şifreyi gösterin'}
                   >
                     {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -149,7 +149,7 @@ export default function ResetPassword() {
                   id="reset-confirm"
                   type={showPw ? 'text' : 'password'}
                   autoComplete="new-password"
-                  placeholder="Aynı şifreyi tekrar gir"
+                  placeholder="Aynı şifreyi tekrar girin"
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                   required
@@ -159,13 +159,13 @@ export default function ResetPassword() {
               </div>
 
               <Button type="submit" className="w-full" disabled={submitting}>
-                {submitting ? 'Sıfırlanıyor…' : 'Yeni şifreyi kaydet'}
+                {submitting ? 'Sıfırlanıyor…' : 'Yeni şifreyi kaydedin'}
               </Button>
 
               <div className="text-center text-sm text-muted-foreground">
                 <Link to="/login" className="hover:text-primary">
                   <ArrowLeft className="mr-1 inline h-3 w-3" />
-                  Giriş sayfasına dön
+                  Giriş sayfasına dönün
                 </Link>
               </div>
             </form>

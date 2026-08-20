@@ -310,7 +310,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isEdit ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-            {isEdit ? 'Projeyi Düzenle' : 'Yeni Proje Oluştur'}
+            {isEdit ? 'Projeyi Düzenleyin' : 'Yeni Proje Oluşturun'}
           </DialogTitle>
           {isEdit ? (
             <DialogDescription>
@@ -585,7 +585,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
 
               {/* Inline add-row. Sits at the bottom of the same card so the
                   visual rhythm stays constant. Type a name, press Enter or
-                  click "Ekle" to push the new subtask onto the list above —
+                  click "Ekleyin" to push the new subtask onto the list above —
                   already checked. No popover, no portal — clicks can't be
                   lost. */}
               <div className="mt-2 flex items-center gap-2 border-t pt-2">
@@ -608,7 +608,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                   onClick={addCustomSubtask}
                   disabled={!customDraft.trim()}
                 >
-                  <Plus className="mr-1 h-3.5 w-3.5" /> Ekle
+                  <Plus className="mr-1 h-3.5 w-3.5" /> Ekleyin
                 </Button>
               </div>
             </div>
@@ -619,7 +619,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
               İptal
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? 'Kaydediliyor…' : isEdit ? 'Kaydet' : 'Proje Oluştur'}
+              {saving ? 'Kaydediliyor…' : isEdit ? 'Kaydedin' : 'Proje Oluşturun'}
             </Button>
           </DialogFooter>
         </form>

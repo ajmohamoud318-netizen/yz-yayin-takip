@@ -112,7 +112,7 @@ export default function AcceptInvite() {
                 Yeni bir davet için takım liderinizle iletişime geçin.
               </p>
               <Button asChild variant="outline" size="sm" className="w-full">
-                <Link to="/login">Giriş sayfasına dön</Link>
+                <Link to="/login">Giriş sayfasına dönün</Link>
               </Button>
             </div>
           ) : done ? (
@@ -161,7 +161,7 @@ export default function AcceptInvite() {
               </div>
               <Button type="submit" className="w-full" size="lg" disabled={submitting}>
                 <KeyRound className="h-4 w-4" />
-                {submitting ? 'Belirleniyor…' : 'Şifreyi Belirle'}
+                {submitting ? 'Belirleniyor…' : 'Şifreyi Belirleyin'}
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </form>

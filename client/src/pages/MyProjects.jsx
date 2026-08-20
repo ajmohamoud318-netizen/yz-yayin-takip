@@ -153,7 +153,7 @@ export default function MyProjects() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Proje ara…"
+                placeholder="Proje arayın…"
                 className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
             </div>
@@ -335,7 +335,7 @@ function SiparisOrderRow({ order, onSign, onView }) {
   // canApproveMatbaaOnayNow). Label the button for whichever action is
   // actually next, and hide "Onayla" entirely rather than show a dead-end
   // button a designer's click will just bounce off.
-  const signLabel = !isMatbaaOnay ? 'İncele ve Gönder' : !order.matbaa_received ? 'Teslim Al' : 'Onayla'
+  const signLabel = !isMatbaaOnay ? 'İnceleyin ve Gönderin' : !order.matbaa_received ? 'Teslim Alın' : 'Onaylayın'
   const canAct = !isMatbaaOnay || !order.matbaa_received || canApproveMatbaaOnayNow(user, order)
   return (
     <Card

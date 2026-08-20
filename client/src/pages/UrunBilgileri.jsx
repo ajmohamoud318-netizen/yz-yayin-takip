@@ -67,7 +67,7 @@ function NewProductDialog({ open, onClose, projects, onCreate }) {
           <button
             type="button"
             onClick={onClose}
-            aria-label="Kapat"
+            aria-label="Kapatın"
             className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition active:scale-90 hover:bg-muted"
           >
             <X className="h-4 w-4" />
@@ -123,7 +123,7 @@ function NewProductDialog({ open, onClose, projects, onCreate }) {
             onClick={submit}
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition active:scale-95 hover:brightness-105"
           >
-            <Plus className="h-3.5 w-3.5" /> Oluştur
+            <Plus className="h-3.5 w-3.5" /> Oluşturun
           </button>
         </div>
       </div>
@@ -233,19 +233,19 @@ function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, d
                     <button
                       type="button"
                       onClick={onAddComponent}
-                      title="Parça ekle"
+                      title="Parça ekleyin"
                       className="inline-flex items-center gap-1 rounded-lg border border-dashed border-primary/40 bg-background px-2.5 py-1.5 text-xs font-semibold text-primary transition active:scale-95 hover:border-primary/60 hover:bg-primary/5"
                     >
-                      <Plus className="h-3.5 w-3.5" /> Parça Ekle
+                      <Plus className="h-3.5 w-3.5" /> Parça Ekleyin
                     </button>
                     <span className="mx-0.5 h-5 w-px bg-border" />
                     <button
                       type="button"
                       onClick={onDeleteProduct}
-                      title="Ürünü sil"
+                      title="Ürünü silin"
                       className="inline-flex items-center gap-1 rounded-lg border border-destructive/30 bg-background px-2.5 py-1.5 text-xs font-semibold text-destructive transition active:scale-95 hover:bg-destructive hover:text-destructive-foreground"
                     >
-                      <Trash2 className="h-3.5 w-3.5" /> Ürünü Sil
+                      <Trash2 className="h-3.5 w-3.5" /> Ürünü Silin
                     </button>
                     <button
                       type="button"
@@ -259,7 +259,7 @@ function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, d
                       onClick={onSave}
                       className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition active:scale-95 hover:brightness-105"
                     >
-                      <Check className="h-3.5 w-3.5" /> Kaydet
+                      <Check className="h-3.5 w-3.5" /> Kaydedin
                     </button>
                   </div>
                 ) : (
@@ -268,7 +268,7 @@ function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, d
                     onClick={onStartEdit}
                     className="inline-flex items-center gap-1 rounded-lg border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground transition active:scale-95 hover:border-primary/40 hover:text-primary"
                   >
-                    <Pencil className="h-3.5 w-3.5" /> Düzenle
+                    <Pencil className="h-3.5 w-3.5" /> Düzenleyin
                   </button>
                 )}
               </div>
@@ -288,10 +288,10 @@ function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, d
                         <button
                           type="button"
                           onClick={() => onDraftComp(i, { __delete: true })}
-                          title="Parçayı sil"
+                          title="Parçayı silin"
                           className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-destructive transition active:scale-95 hover:bg-destructive/10"
                         >
-                          <Trash2 className="h-3 w-3" /> Parçayı Sil
+                          <Trash2 className="h-3 w-3" /> Parçayı Silin
                         </button>
                       )}
                       <span className="h-px flex-1 bg-border" />
@@ -331,7 +331,7 @@ function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, d
                     onClick={onPromoteSeed}
                     className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition active:scale-95 hover:brightness-105"
                   >
-                    <Sparkles className="h-3.5 w-3.5" /> Ürünlere Ekle
+                    <Sparkles className="h-3.5 w-3.5" /> Ürünlere Ekleyin
                   </button>
                 </div>
               </div>
@@ -349,7 +349,7 @@ export default function UrunBilgileri() {
   // this page IS the product catalog and must show them. Using the filtered
   // list would drop a promoted product out of the "real project" branch below,
   // and the orphan branch would immediately re-add it as an un-promoted seed —
-  // so the "Ürünlere Ekle" button would come back for a product that already
+  // so the "Ürünlere Ekleyin" button would come back for a product that already
   // exists.
   const { allProjects: projects, loading, refetch } = useProjects()
   const { user } = useAuth()
@@ -429,7 +429,7 @@ export default function UrunBilgileri() {
   function saveEdit() {
     const cleaned = (draft ?? []).filter((c) => !c.__delete)
     if (cleaned.length === 0) {
-      toast.error('En az bir parça olmalı. Ürünü silmek için "Ürünü Sil" butonunu kullanın.')
+      toast.error('En az bir parça olmalı. Ürünü silmek için "Ürünü Silin" butonunu kullanın.')
       return
     }
     setOverrides((prev) => ({ ...prev, [editingId]: cleaned }))
@@ -600,7 +600,7 @@ export default function UrunBilgileri() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Ürün veya parça ara…"
+            placeholder="Ürün veya parça arayın…"
             className="w-full rounded-xl border bg-card py-2 pl-9 pr-3 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-ring/40"
           />
         </div>
@@ -611,7 +611,7 @@ export default function UrunBilgileri() {
             onClick={toggleAll}
             className="rounded-xl border bg-card px-3 py-2 text-sm font-medium text-muted-foreground transition active:scale-95 hover:text-foreground"
           >
-            {allOpen ? 'Tümünü kapat' : 'Tümünü aç'}
+            {allOpen ? 'Tümünü kapatın' : 'Tümünü açın'}
           </button>
         )}
 
@@ -628,8 +628,8 @@ export default function UrunBilgileri() {
             className="rounded-xl border bg-card px-3 py-2 text-sm font-medium text-muted-foreground transition active:scale-95 hover:text-foreground"
           >
             {selectedSeeds.size === seedProducts.length
-              ? 'Kayıt seçimini kaldır'
-              : `Tüm kayıtları seç (${seedProducts.length})`}
+              ? 'Kayıt seçimini kaldırın'
+              : `Tüm kayıtları seçin (${seedProducts.length})`}
           </button>
         )}
 
@@ -659,14 +659,14 @@ export default function UrunBilgileri() {
               onClick={() => setSelectedSeeds(new Set())}
               className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition active:scale-95 hover:text-foreground"
             >
-              Temizle
+              Temizleyin
             </button>
             <button
               type="button"
               onClick={() => setPromoteOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition active:scale-95 hover:brightness-105"
             >
-              <Package className="h-3.5 w-3.5" /> Ürünlere Ekle
+              <Package className="h-3.5 w-3.5" /> Ürünlere Ekleyin
             </button>
           </div>
         </div>

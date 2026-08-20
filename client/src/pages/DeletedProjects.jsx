@@ -90,7 +90,7 @@ export default function DeletedProjects() {
                       onClick={() => setRestoreTarget(p)}
                     >
                       <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                      Geri Yükle
+                      Geri Yükleyin
                     </Button>
                   </CardContent>
                 </Card>
@@ -129,7 +129,7 @@ export default function DeletedProjects() {
                       <td className="px-4 py-3 text-right">
                         <Button size="sm" variant="outline" onClick={() => setRestoreTarget(p)}>
                           <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                          Geri Yükle
+                          Geri Yükleyin
                         </Button>
                       </td>
                     </tr>
@@ -144,10 +144,10 @@ export default function DeletedProjects() {
       <ConfirmDialog
         open={!!restoreTarget}
         onOpenChange={(v) => !v && setRestoreTarget(null)}
-        title="Projeyi geri yükle"
+        title="Projeyi geri yükleyin"
         description={restoreTarget ? `"${restoreTarget.title}" geri yüklenecek ve tekrar aktif projeler arasında görünecek.` : ''}
-        confirmLabel="Geri Yükle"
-        cancelLabel="Vazgeç"
+        confirmLabel="Geri Yükleyin"
+        cancelLabel="Vazgeçin"
         busy={restoring}
         busyLabel="Geri yükleniyor…"
         onConfirm={confirmRestore}

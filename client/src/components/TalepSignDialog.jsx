@@ -253,13 +253,13 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   // Non-designer steps each have their own plain-language action, matching the
   // trigger button that opened this dialog — no "İmzala" wording, no pen icon.
   const actionLabel = isAssignStep
-    ? 'Tasarımcıya Aktar'
+    ? 'Tasarımcıya Aktarın'
     : order.status === 'tasarimci_onay'
-      ? 'Teslim Et'
+      ? 'Teslim Edin'
       : order.status === 'ekran_onay'
-        ? 'Onayla'
+        ? 'Onaylayın'
       : isMatbaaOnayStep
-        ? 'Onayla'
+        ? 'Onaylayın'
         : 'Son Onay'
 
   const items = normalizeItems(order.items, order.quantity)
@@ -464,7 +464,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
                   </Button>
                   {canReject && (
                     <Button type="button" variant="ghost" size="sm" onClick={() => setShowReject(true)}>
-                      Reddet
+                      Reddedin
                     </Button>
                   )}
                 </div>
@@ -491,7 +491,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
       <DialogContent className={cn('max-w-md', DIALOG_MOBILE_SHEET, isDesignerStep && 'max-w-lg')}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {isDesignerStep ? 'İncele ve Gönder' : actionLabel}
+            {isDesignerStep ? 'İnceleyin ve Gönderin' : actionLabel}
           </DialogTitle>
           <DialogDescription>
             {isDesignerStep
@@ -631,7 +631,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
                       : 'hover:bg-muted/50',
                   )}
                 >
-                  <span className="block text-sm font-semibold">Tekrar Ozalit İste</span>
+                  <span className="block text-sm font-semibold">Tekrar Ozalit İsteyin</span>
                   <span className="block text-xs text-muted-foreground">Matbaa fiziksel ozalit basar</span>
                 </button>
                 <button
@@ -644,7 +644,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
                       : 'hover:bg-muted/50',
                   )}
                 >
-                  <span className="block text-sm font-semibold">Ekran Onayı İste</span>
+                  <span className="block text-sm font-semibold">Ekran Onayı İsteyin</span>
                   <span className="block text-xs text-muted-foreground">Ekip lideri ekrandan onaylar</span>
                 </button>
               </div>
@@ -880,7 +880,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
                   disabled={saving}
                 >
                   <X className="h-4 w-4" />
-                  Reddet
+                  Reddedin
                 </Button>
               )}
             </div>
@@ -891,14 +891,14 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
               {showReject ? (
                 <Button type="button" variant="destructive" onClick={handleReject} disabled={saving}>
                   <X className="h-4 w-4" />
-                  {saving ? 'Reddediliyor…' : 'Reddi Onayla'}
+                  {saving ? 'Reddediliyor…' : 'Reddi Onaylayın'}
                 </Button>
               ) : (
                 <Button
                   type="submit"
                   disabled={saving || (isMatbaaOnayStep && (!canApproveMatbaaOnayNow(user, order) || matbaaAlreadyApproved))}
                 >
-                  {saving ? 'Kaydediliyor…' : isDesignerStep ? 'İncele ve Gönder' : actionLabel}
+                  {saving ? 'Kaydediliyor…' : isDesignerStep ? 'İnceleyin ve Gönderin' : actionLabel}
                 </Button>
               )}
             </div>
@@ -994,7 +994,7 @@ export function TalepHistoryViewer({ order, open, onOpenChange, initialStep = nu
         )}
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Kapat</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Kapatın</Button>
           <Button variant="outline" onClick={() => openOrderPrintWindow(order, viewStep?.step)}>
             <Printer className="h-4 w-4" />
             Yazdır

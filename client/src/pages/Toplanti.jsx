@@ -127,7 +127,7 @@ export default function Toplanti() {
         {canAdd && (
           <Button size="sm" className="shrink-0 gap-1.5" onClick={openAddDialog}>
             <Plus className="h-3.5 w-3.5" />
-            Ekle
+            Ekleyin
           </Button>
         )}
       </header>
@@ -264,8 +264,8 @@ function MeetingCard({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onEdit() }}
-                aria-label="Toplantıyı düzenle"
-                title="Toplantıyı düzenle"
+                aria-label="Toplantıyı düzenleyin"
+                title="Toplantıyı düzenleyin"
                 className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
               >
                 <Pencil className="h-3.5 w-3.5" />
@@ -274,8 +274,8 @@ function MeetingCard({
                 type="button"
                 onClick={handleRemove}
                 disabled={removing}
-                aria-label="Toplantıyı sil"
-                title="Toplantıyı sil"
+                aria-label="Toplantıyı silin"
+                title="Toplantıyı silin"
                 className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -312,7 +312,7 @@ function MeetingCard({
               className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
             >
               <ImagePlus className="h-3 w-3" />
-              {imgSrc ? 'Görseli değiştir' : 'Görsel ekle'}
+              {imgSrc ? 'Görseli değiştirin' : 'Görsel ekleyin'}
             </button>
             {imgSrc && (
               <button
@@ -321,7 +321,7 @@ function MeetingCard({
                 disabled={imageBusy}
                 className="text-xs text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
               >
-                Görseli kaldır
+                Görseli kaldırın
               </button>
             )}
             <input
@@ -426,7 +426,7 @@ function MeetingDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarDays className="h-4 w-4" />
-            Toplantı Ekle
+            Toplantı Ekleyin
           </DialogTitle>
           <DialogDescription>
             Toplantı başlığı, tarihi ve varsa bağlı olduğu proje.
@@ -484,7 +484,7 @@ function MeetingDialog({
                 <button
                   type="button"
                   onClick={clearImage}
-                  aria-label="Görseli kaldır"
+                  aria-label="Görseli kaldırın"
                   className="absolute -right-2 -top-2 grid h-6 w-6 place-items-center rounded-full bg-background text-muted-foreground ring-1 ring-border transition-colors hover:text-destructive"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -515,7 +515,7 @@ function MeetingDialog({
               İptal
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? 'Kaydediliyor…' : 'Ekle'}
+              {busy ? 'Kaydediliyor…' : 'Ekleyin'}
             </Button>
           </DialogFooter>
         </form>
@@ -657,14 +657,14 @@ function MeetingDetailDialog({
           <DialogTitle className="flex items-center justify-between gap-2">
             <span className="inline-flex min-w-0 items-center gap-2">
               <CalendarDays className="h-4 w-4 shrink-0" />
-              <span className="truncate">{editing ? 'Toplantıyı Düzenle' : meeting.title}</span>
+              <span className="truncate">{editing ? 'Toplantıyı Düzenleyin' : meeting.title}</span>
             </span>
             {canModifyMeeting && !editing && (
               <button
                 type="button"
                 onClick={() => setEditing(true)}
-                aria-label="Düzenle"
-                title="Düzenle"
+                aria-label="Düzenleyin"
+                title="Düzenleyin"
                 className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
               >
                 <Pencil className="h-3.5 w-3.5" />
@@ -732,7 +732,7 @@ function MeetingDetailDialog({
                   İptal
                 </Button>
                 <Button type="submit" size="sm" disabled={savingMeeting}>
-                  {savingMeeting ? 'Kaydediliyor…' : 'Kaydet'}
+                  {savingMeeting ? 'Kaydediliyor…' : 'Kaydedin'}
                 </Button>
               </div>
             </form>
@@ -786,7 +786,7 @@ function MeetingDetailDialog({
                   className="inline-flex items-center gap-1 text-xs text-primary transition-colors hover:underline disabled:opacity-50"
                 >
                   <ImagePlus className="h-3.5 w-3.5" />
-                  Ekle
+                  Ekleyin
                 </button>
               )}
               <input
@@ -814,7 +814,7 @@ function MeetingDetailDialog({
                         <button
                           type="button"
                           onClick={() => handleRemoveGalleryImage(img.id)}
-                          aria-label="Görseli kaldır"
+                          aria-label="Görseli kaldırın"
                           className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-background/90 text-muted-foreground opacity-0 ring-1 ring-border transition-opacity group-hover/gal:opacity-100 hover:text-destructive"
                         >
                           <X className="h-3 w-3" />
@@ -862,7 +862,7 @@ function MeetingDetailDialog({
                             disabled={busy || !editingNoteText.trim()}
                             className="text-[11px] font-medium text-primary transition-colors hover:underline disabled:opacity-50"
                           >
-                            Kaydet
+                            Kaydedin
                           </button>
                         </div>
                       </form>
@@ -880,14 +880,14 @@ function MeetingDetailDialog({
                                 onClick={() => handleStartEditNote(note)}
                                 className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
                               >
-                                Düzenle
+                                Düzenleyin
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleRemoveNote(note.id)}
                                 className="text-[11px] text-muted-foreground transition-colors hover:text-destructive"
                               >
-                                Sil
+                                Silin
                               </button>
                             </div>
                           )}
@@ -905,7 +905,7 @@ function MeetingDetailDialog({
                 <Textarea
                   value={noteText}
                   onChange={(e) => setNoteText(e.target.value.slice(0, 2000))}
-                  placeholder="Not ekle…"
+                  placeholder="Not ekleyin…"
                   rows={2}
                   className="flex-1"
                 />

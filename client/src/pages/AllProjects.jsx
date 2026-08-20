@@ -91,7 +91,7 @@ export default function AllProjects() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Proje veya tasarımcı ara…"
+                placeholder="Proje veya tasarımcı arayın…"
                 className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
             </div>

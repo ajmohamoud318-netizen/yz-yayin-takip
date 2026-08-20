@@ -177,7 +177,7 @@ export default function BaskiReceteleri() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Reçete veya proje ara…"
+            placeholder="Reçete veya proje arayın…"
             className="w-full rounded-xl border bg-card py-2 pl-9 pr-3 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-ring/40"
           />
         </div>
@@ -187,7 +187,7 @@ export default function BaskiReceteleri() {
             onClick={toggleAllOpen}
             className="rounded-xl border bg-card px-3 py-2 text-sm font-medium text-muted-foreground transition active:scale-95 hover:text-foreground"
           >
-            {allOpen ? 'Tümünü kapat' : 'Tümünü aç'}
+            {allOpen ? 'Tümünü kapatın' : 'Tümünü açın'}
           </button>
         )}
       </div>
@@ -263,7 +263,7 @@ export default function BaskiReceteleri() {
                                         onClick={() => saveEdit(row)}
                                         className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition active:scale-95 hover:brightness-105"
                                       >
-                                        <Check className="h-3.5 w-3.5" /> Kaydet
+                                        <Check className="h-3.5 w-3.5" /> Kaydedin
                                       </button>
                                     </div>
                                   ) : (
@@ -272,7 +272,7 @@ export default function BaskiReceteleri() {
                                       onClick={() => startEdit(row)}
                                       className="inline-flex items-center gap-1 rounded-lg border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground transition active:scale-95 hover:border-primary/40 hover:text-primary"
                                     >
-                                      <Pencil className="h-3.5 w-3.5" /> Düzenle
+                                      <Pencil className="h-3.5 w-3.5" /> Düzenleyin
                                     </button>
                                   )
                                 )}

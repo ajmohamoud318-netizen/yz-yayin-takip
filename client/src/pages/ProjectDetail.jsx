@@ -85,15 +85,15 @@ const DISPLAY_ORDER_STEP_LABELS = {
 // (each only ever renders one of these for its own role's queue) — collected
 // here since this page shows a project's orders to whichever role opens it.
 const ORDER_ACTION_LABELS = {
-  pending: 'Tasarımcıya Aktar',
-  goruldu: 'İncele ve Gönder',
-  tasarimci_onay: 'Teslim Et',
-  ekran_onay: 'Onayla',
+  pending: 'Tasarımcıya Aktarın',
+  goruldu: 'İnceleyin ve Gönderin',
+  tasarimci_onay: 'Teslim Edin',
+  ekran_onay: 'Onaylayın',
   siparis_baski_onay: 'Baskı Onay Formu',
 }
 function orderActionLabel(order) {
-  if (order.status === 'matbaa_onay') return order.matbaa_received ? 'Onayla' : 'Teslim Al'
-  return ORDER_ACTION_LABELS[order.status] ?? 'Onayla'
+  if (order.status === 'matbaa_onay') return order.matbaa_received ? 'Onaylayın' : 'Teslim Alın'
+  return ORDER_ACTION_LABELS[order.status] ?? 'Onaylayın'
 }
 
 /**
@@ -674,7 +674,7 @@ export default function ProjectDetail() {
       title: 'Demoya başladınız mı?',
       description:
         'Bundan sonra ekip lideri veya tasarımcının iptal ya da düzenleme yapması, sizin onayınızı gerektiren bir değişiklik talebine dönüşür.',
-      confirmLabel: 'Başladım',
+      confirmLabel: 'İşlemi Başlatın',
       variant: 'success',
       onConfirm: handleDemoStart,
     },
@@ -682,7 +682,7 @@ export default function ProjectDetail() {
       title: 'Ozalite başladınız mı?',
       description:
         'Bundan sonra ekip lideri veya tasarımcının iptal ya da düzenleme yapması, sizin onayınızı gerektiren bir değişiklik talebine dönüşür.',
-      confirmLabel: 'Başladım',
+      confirmLabel: 'İşlemi Başlatın',
       variant: 'success',
       onConfirm: handleOzalitStart,
     },
@@ -690,7 +690,7 @@ export default function ProjectDetail() {
       title: 'Demo talebini iptal edin mi?',
       description:
         'Proje doğrudan tasarıma geri döner. Demo sayacı artmaz — hiçbir şey teslim edilmediği için sayılmaz. Bu işlem geri alınamaz.',
-      confirmLabel: 'İptal Et',
+      confirmLabel: 'İptal Edin',
       variant: 'destructive',
       onConfirm: handleDemoCancel,
     },
@@ -698,35 +698,35 @@ export default function ProjectDetail() {
       title: 'Ozalit talebini iptal edin mi?',
       description:
         'Proje doğrudan tasarıma geri döner. Ozalit sayacı artmaz — hiçbir şey teslim edilmediği için sayılmaz. Bu işlem geri alınamaz.',
-      confirmLabel: 'İptal Et',
+      confirmLabel: 'İptal Edin',
       variant: 'destructive',
       onConfirm: handleOzalitCancel,
     },
     'demo-change-accept': {
       title: 'Değişiklik talebini kabul edin mi?',
       description: 'Ekip lideri veya tasarımcı artık demoyu iptal edebilir ya da düzenleyebilir.',
-      confirmLabel: 'Kabul Et',
+      confirmLabel: 'Kabul Edin',
       variant: 'success',
       onConfirm: handleDemoChangeAccept,
     },
     'demo-change-decline': {
       title: 'Değişiklik talebini reddedin mi?',
       description: 'Süreç normal teslim akışıyla devam eder, talep eden kişi bilgilendirilir.',
-      confirmLabel: 'Reddet',
+      confirmLabel: 'Reddedin',
       variant: 'destructive',
       onConfirm: handleDemoChangeDecline,
     },
     'ozalit-change-accept': {
       title: 'Değişiklik talebini kabul edin mi?',
       description: 'Ekip lideri veya tasarımcı artık ozaliti iptal edebilir ya da düzenleyebilir.',
-      confirmLabel: 'Kabul Et',
+      confirmLabel: 'Kabul Edin',
       variant: 'success',
       onConfirm: handleOzalitChangeAccept,
     },
     'ozalit-change-decline': {
       title: 'Değişiklik talebini reddedin mi?',
       description: 'Süreç normal teslim akışıyla devam eder, talep eden kişi bilgilendirilir.',
-      confirmLabel: 'Reddet',
+      confirmLabel: 'Reddedin',
       variant: 'destructive',
       onConfirm: handleOzalitChangeDecline,
     },
@@ -735,8 +735,8 @@ export default function ProjectDetail() {
 
   // Available actions depend on the role + stage
   const actions = availableActions({ project, user })
-  const advanceLabel = project ? advanceActionLabel(project, user?.role) : 'İlerlet'
-  const approveLabel = project ? approveActionLabel(project) : 'Onayla'
+  const advanceLabel = project ? advanceActionLabel(project, user?.role) : 'İlerletin'
+  const approveLabel = project ? approveActionLabel(project) : 'Onaylayın'
   // Suppress the "Gönderildi" pill for anyone who instead has an action button
   // at this stage (the printer, and now the leader/designer at Ozalit Teslim).
   const sentStatus =
@@ -749,6 +749,9 @@ export default function ProjectDetail() {
   const historyWithAttempts = useMemo(() => {
     // Expand each order into one timeline entry per signed stage (like the
     // demo / ozalit attempts), sourced from the order's full signed history.
+    // Each of these carries a real order_id + step, so its "Baskı Formu"
+    // button in ProjectHistory can jump straight to the actual signed form
+    // for that stage instead of a generic stage picker.
     const orderEntries = []
     for (const ord of projectOrders) {
       for (const h of (ord.order_history ?? [])) {
@@ -757,14 +760,19 @@ export default function ProjectDetail() {
           action: 'order',
           order_id: ord.id,
           order_step: h.step,
-          order_step_label: h.step_label,
+          order_step_label: h.step.startsWith('reject') ? 'Reddedildi' : (ORDER_STEP_LABELS[h.step] ?? h.step),
           done_by_name: h.signed_by_name,
           created_at: h.signed_at,
         })
       }
     }
-    // Drop any live-added 'order' entries; the per-stage entries above replace them.
-    const base = (project?.history ?? []).filter((h) => h.action !== 'order')
+    // Drop the raw order_* events (order_request/transfer/advance/final/reject):
+    // they're written with no order_id or step (see server/src/routes/orders.js),
+    // so their "Baskı Formu" button couldn't route to a specific signed form —
+    // the per-stage entries above replace them one-for-one with a working link.
+    const base = (project?.history ?? []).filter(
+      (h) => h.action !== 'order' && !String(h.event ?? '').startsWith('order_'),
+    )
     const merged = [...base, ...orderEntries].sort(
       (a, b) => new Date(a.created_at) - new Date(b.created_at),
     )
@@ -1016,7 +1024,7 @@ export default function ProjectDetail() {
             </div>
             {isLeader && (
               <Button size="sm" variant="outline" onClick={handleRestore} disabled={restoring} loading={restoring}>
-                {restoring ? 'Geri yükleniyor…' : 'Geri Yükle'}
+                {restoring ? 'Geri yükleniyor…' : 'Geri Yükleyin'}
               </Button>
             )}
           </div>
@@ -1072,7 +1080,7 @@ export default function ProjectDetail() {
                 {isLeader && (
                   <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
                     <Pencil className="h-4 w-4" />
-                    Düzenle
+                    Düzenleyin
                   </Button>
                 )}
                 {/* Demo formu görüntüle — demo gönderildikten sonra. Also open to
@@ -1172,7 +1180,7 @@ export default function ProjectDetail() {
                     disabled={startingWork}
                   >
                     <CheckCircle2 className="h-4 w-4" />
-                    {startingWork ? 'İşleniyor…' : 'Başladım'}
+                    {startingWork ? 'İşleniyor…' : 'İşlemi Başlatın'}
                   </Button>
                 )}
                 {canMarkOzalitStarted(user, project) && (
@@ -1182,7 +1190,7 @@ export default function ProjectDetail() {
                     disabled={startingWork}
                   >
                     <CheckCircle2 className="h-4 w-4" />
-                    {startingWork ? 'İşleniyor…' : 'Başladım'}
+                    {startingWork ? 'İşleniyor…' : 'İşlemi Başlatın'}
                   </Button>
                 )}
                 {/* Undo a mistaken request outright — only while the matbaa
@@ -1194,7 +1202,7 @@ export default function ProjectDetail() {
                     disabled={cancellingRequest}
                   >
                     <Trash2 className="h-4 w-4" />
-                    {cancellingRequest ? 'İşleniyor…' : 'Demo İsteğini İptal Et'}
+                    {cancellingRequest ? 'İşleniyor…' : 'Demo İsteğini İptal Edin'}
                   </Button>
                 )}
                 {canCancelOzalitRequest(user, project) && (
@@ -1204,7 +1212,7 @@ export default function ProjectDetail() {
                     disabled={cancellingRequest}
                   >
                     <Trash2 className="h-4 w-4" />
-                    {cancellingRequest ? 'İşleniyor…' : 'Ozalit İsteğini İptal Et'}
+                    {cancellingRequest ? 'İşleniyor…' : 'Ozalit İsteğini İptal Edin'}
                   </Button>
                 )}
                 {/* Once started, a cancel/edit is a request the matbaa must
@@ -1590,7 +1598,7 @@ export default function ProjectDetail() {
                   {canEditSubtasks && hasSubtaskChanges && (
                     <Button size="sm" onClick={saveSubtaskChanges} disabled={saving}>
                       <Save className="h-4 w-4" />
-                      {saving ? 'Kaydediliyor…' : 'Değişiklikleri Kaydet'}
+                      {saving ? 'Kaydediliyor…' : 'Değişiklikleri Kaydedin'}
                     </Button>
                   )}
                 </div>
@@ -1668,7 +1676,7 @@ export default function ProjectDetail() {
                                 disabled={toggling === s.id}
                                 className="inline-flex items-center gap-1 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
                               >
-                                {toggling === s.id ? 'Kaydediliyor…' : 'Revize Et'}
+                                {toggling === s.id ? 'Kaydediliyor…' : 'Revize Edin'}
                               </button>
                             )}
                             {flagged && !canEdit && (
@@ -1859,7 +1867,7 @@ export default function ProjectDetail() {
               disabled={requestingChange}
               loading={requestingChange}
             >
-              {requestingChange ? 'Gönderiliyor…' : 'Talebi Gönder'}
+              {requestingChange ? 'Gönderiliyor…' : 'Talebi Gönderin'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1921,7 +1929,7 @@ function CountSubtaskRow({ sub, canEdit, busy, onAdd, onRevize, revizing = false
               disabled={revizing}
               className="inline-flex items-center gap-1 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
             >
-              {revizing ? 'Kaydediliyor…' : 'Revize Et'}
+              {revizing ? 'Kaydediliyor…' : 'Revize Edin'}
             </button>
           )}
           {flagged && !canEdit && (
@@ -2067,7 +2075,9 @@ function availableActions({ project, user }) {
     const ozalitRequested = !!project.ozalit_requested
     const matbaaLock = project.reject_target === 'matbaa'
     if (role === 'printer') {
-      if (ozalitRequested || matbaaLock) set.add('advance')
+      // Teslim Et stays hidden until the matbaa has pressed İşlemi Başlat —
+      // they must mark the work started before they can hand it off.
+      if ((ozalitRequested || matbaaLock) && project.ozalit_started) set.add('advance')
     } else if (!ozalitRequested && !matbaaLock && (role === 'team_leader' || isAssignedDesigner)) {
       set.add('advance')
     }
@@ -2077,8 +2087,9 @@ function availableActions({ project, user }) {
   // onay queue. There's no separate "take into production" action anymore —
   // once baski_onay/cin_baski_onay is approved the project lands directly on
   // baskida, which the printer acts on via the handover flow instead
-  // (Teslim Talepleri), not an in-detail-page advance button.
-  if (role === 'printer' && project.type === 'TR' && stage === 'demo_teslim') {
+  // (Teslim Talepleri), not an in-detail-page advance button. Teslim Et stays
+  // hidden until İşlemi Başlat has been pressed (same rule as ozalit above).
+  if (role === 'printer' && project.type === 'TR' && stage === 'demo_teslim' && project.demo_started) {
     set.add('advance')
   }
 
@@ -2088,33 +2099,33 @@ function availableActions({ project, user }) {
 /** Contextual label for the "advance" action button. */
 function advanceActionLabel(project, userRole) {
   if (userRole === 'printer') {
-    if (project.stage === 'demo_teslim') return "Demo'yu Teslim Et"
-    if (project.stage === 'ozalit_teslim') return 'Ozaliti Teslim Et'
+    if (project.stage === 'demo_teslim') return "Demo'yu Teslim Edin"
+    if (project.stage === 'ozalit_teslim') return 'Ozaliti Teslim Edin'
   }
   switch (project.stage) {
     case 'tasarim':
       // A design that's back in Tasarım after an ozalit rejection resubmits to
       // the ozalit flow, not the demo.
-      return project.last_reject_type === 'ozalit' ? "Ozalit'e Gönder" : "Demo'ya Gönder"
+      return project.last_reject_type === 'ozalit' ? "Ozalit'e Gönderin" : "Demo'ya Gönderin"
     case 'demo_onay':
     case 'cin_demo_onay':
       // Matbaa delivered; leader can approve/reject. The leader or
       // designer can also re-trigger a new demo round.
-      return 'Demo İste'
+      return 'Demo İsteyin'
     case 'ozalit_teslim':
       // Leader / assigned designer requesting the ozalit proof.
-      return 'Ozalit İste'
+      return 'Ozalit İsteyin'
     case 'demo_teslim':
     case 'cin_demo_teslim':
       // At demo_teslim the matbaa delivers (printer). The team leader
       // or assigned designer re-triggers a new demo round.
-      return userRole === 'printer' ? "Demo'yu Teslim Et" : 'Demo İste'
+      return userRole === 'printer' ? "Demo'yu Teslim Edin" : 'Demo İsteyin'
     case 'baskida':
       // Only ÇİN reaches here as a leader-advanceable stage (→ Gümrük). TR
       // Baskıda is closed out via the Sales handover, not this button.
-      return 'Gümrüğe Gönder'
+      return 'Gümrüğe Gönderin'
     default:
-      return 'İlerlet'
+      return 'İlerletin'
   }
 }
 
@@ -2123,22 +2134,22 @@ function approveActionLabel(project) {
   switch (project.stage) {
     case 'ozalit_onay':
       // Two-step sign-off: both the leader's and the designer's approval simply
-      // read "Onayla" (the designer's is the final one that sends to production).
-      return 'Onayla'
+      // read "Onaylayın" (the designer's is the final one that sends to production).
+      return 'Onaylayın'
     case 'cin_demo_onay':
       // Approving the demo now sends it to ÇİN's own print-approval gate
       // (cin_baski_onay), not straight to production.
-      return 'Onayla'
+      return 'Onaylayın'
     case 'baski_onay':
     case 'cin_baski_onay':
       // Dual-approval (migration 045, and ÇİN's mirror gate from migration
       // 047): the outer button just opens the dialog, but its label should
       // say which half is still owed.
-      return project.baski_onay_prepared ? 'Onayla' : 'Formu Hazırla'
+      return project.baski_onay_prepared ? 'Onaylayın' : 'Formu Hazırlayın'
     default:
       // Demo Onay and every other approval: the leader is approving the item
-      // in front of them, so the button simply reads "Onayla".
-      return 'Onayla'
+      // in front of them, so the button simply reads "Onaylayın".
+      return 'Onaylayın'
   }
 }
 

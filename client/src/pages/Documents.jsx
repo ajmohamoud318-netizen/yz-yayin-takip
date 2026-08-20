@@ -188,11 +188,11 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Kapat
+            Kapatın
           </Button>
           <Button variant="outline" onClick={() => printDoc({ project, form, attemptNo, kind, printerName })}>
             <Printer className="h-4 w-4" />
-            {list.length > 1 ? `Yazdır (${list.length})` : 'Yazdır'}
+            {list.length > 1 ? `Yazdırın (${list.length})` : 'Yazdırın'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -273,7 +273,7 @@ function DocumentCard({ project, form, attemptNo, docType, approved, printerName
             onClick={onView}
           >
             <Eye className="h-4 w-4" />
-            Görüntüle
+            Görüntüleyin
           </Button>
           <Button size="sm" variant="outline" onClick={handlePrint}>
             <Printer className="h-4 w-4" />

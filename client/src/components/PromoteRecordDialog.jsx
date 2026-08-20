@@ -133,13 +133,13 @@ export default function PromoteRecordDialog({ open, onClose, seeds, items, onDon
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary">
               <Package className="h-4 w-4" />
             </span>
-            <h2 className="text-base font-semibold">Kayıtlardan Ürün Ekle</h2>
+            <h2 className="text-base font-semibold">Kayıtlardan Ürün Ekleyin</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
-            aria-label="Kapat"
+            aria-label="Kapatın"
             className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition active:scale-90 hover:bg-muted disabled:opacity-50"
           >
             <X className="h-4 w-4" />
@@ -166,7 +166,7 @@ export default function PromoteRecordDialog({ open, onClose, seeds, items, onDon
                       type="text"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Ürün ara…"
+                      placeholder="Ürün arayın…"
                       className="h-9 w-full rounded-lg border bg-background pl-8 pr-3 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-ring/40"
                     />
                   </div>
@@ -175,7 +175,7 @@ export default function PromoteRecordDialog({ open, onClose, seeds, items, onDon
                     onClick={toggleAllFiltered}
                     className="shrink-0 rounded-lg border bg-background px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition active:scale-95 hover:text-foreground"
                   >
-                    {allFilteredSelected ? 'Kaldır' : `Tümünü seç (${filtered.length})`}
+                    {allFilteredSelected ? 'Kaldırın' : `Tümünü seçin (${filtered.length})`}
                   </button>
                 </div>
 
@@ -274,7 +274,7 @@ export default function PromoteRecordDialog({ open, onClose, seeds, items, onDon
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition active:scale-95 hover:brightness-105 disabled:opacity-60"
           >
             <Package className="h-3.5 w-3.5" />
-            {busy ? 'Ekleniyor…' : chosen.length > 0 ? `${chosen.length} ürünü ekle` : 'Ürün seçin'}
+            {busy ? 'Ekleniyor…' : chosen.length > 0 ? `${chosen.length} ürünü ekleyin` : 'Ürün seçin'}
           </button>
         </div>
       </div>

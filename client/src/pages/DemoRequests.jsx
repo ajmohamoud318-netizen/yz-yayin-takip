@@ -96,12 +96,12 @@ export default function DemoRequests() {
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={refetch}>
               <RefreshCw className="h-4 w-4" />
-              Yenile
+              Yenileyin
             </Button>
             {canDemo && (
               <Button size="sm" onClick={() => setDemoOpen(true)}>
                 <Plus className="h-4 w-4" />
-                Demo Oluştur
+                Demo Oluşturun
               </Button>
             )}
           </div>
@@ -154,7 +154,7 @@ export default function DemoRequests() {
                           )}
                         >
                           <FileText className="h-4 w-4" />
-                          Formu Görüntüle
+                          Formu Görüntüleyin
                         </Button>
                       </div>
                     </div>
@@ -276,7 +276,7 @@ export default function DemoRequests() {
                                   onClick={() => setApprovalDialog({ project: p, mode: 'reject' })}
                                 >
                                   <ThumbsDown className="h-4 w-4" />
-                                  Reddet
+                                  Reddedin
                                 </Button>
                                 <Button
                                   size="sm"
@@ -285,7 +285,7 @@ export default function DemoRequests() {
                                   onClick={() => setApprovalDialog({ project: p, mode: 'approve' })}
                                 >
                                   <ThumbsUp className="h-4 w-4" />
-                                  Onayla
+                                  Onaylayın
                                 </Button>
                               </>
                             )}
@@ -312,7 +312,7 @@ export default function DemoRequests() {
         onOpenChange={(v) => setApprovalDialog(v ? approvalDialog : null)}
         project={approvalDialog?.project}
         mode={approvalDialog?.mode ?? 'approve'}
-        advanceLabel="Teslim Et"
+        advanceLabel="Teslim Edin"
         onDone={() => refetch()}
       />
 
@@ -388,7 +388,7 @@ function CreateDemoDialog({ open, onOpenChange, onCreated }) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-4 w-4 text-primary" />
-            Demo Oluştur
+            Demo Oluşturun
           </DialogTitle>
           <DialogDescription>
             Projelerde olmayan dosyalardan bağımsız bir demo oluşturun.
@@ -422,7 +422,7 @@ function CreateDemoDialog({ open, onOpenChange, onCreated }) {
               />
               <Button type="button" variant="outline" onClick={() => addItem()}>
                 <Plus className="h-4 w-4" />
-                Ekle
+                Ekleyin
               </Button>
             </div>
 
@@ -488,7 +488,7 @@ function CreateDemoDialog({ open, onOpenChange, onCreated }) {
               İptal
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? 'Oluşturuluyor…' : 'Oluştur'}
+              {saving ? 'Oluşturuluyor…' : 'Oluşturun'}
             </Button>
           </DialogFooter>
         </form>

@@ -187,7 +187,7 @@ export default function Dashboard() {
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6" />
               </svg>
-              Yenile
+              Yenileyin
             </button>
           </div>
         </div>
@@ -222,7 +222,7 @@ export default function Dashboard() {
                   onClick={refetch}
                   className="rounded-md border border-amber-300 bg-white px-2 py-1 font-medium hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/40 dark:hover:bg-amber-900/60"
                 >
-                  Yenile
+                  Yenileyin
                 </button>
               </div>
             )}

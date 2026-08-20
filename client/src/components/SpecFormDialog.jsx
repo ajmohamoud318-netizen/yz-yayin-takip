@@ -70,7 +70,7 @@ export const VARIANTS = {
       user?.role === 'designer' && !!project?.stage && POST_DEMO_STAGES.has(project.stage),
     advanceToast: (project) =>
       project.type === 'CIN' ? 'Demo gönderildi.' : 'Demo matbaaya gönderildi.',
-    advanceLabel: (user) => (user?.role === 'printer' ? "Demo'yu Teslim Et" : 'Demo İste'),
+    advanceLabel: (user) => (user?.role === 'printer' ? "Demo'yu Teslim Edin" : 'Demo İsteyin'),
     saveToast: 'Demo formu kaydedildi.',
   },
   ozalit: {
@@ -99,7 +99,7 @@ export const VARIANTS = {
       mode === 'history' || user?.role === 'printer' || user?.role === 'designer',
     canPrint: () => true,
     advanceToast: () => 'Ozalit onaya gönderildi.',
-    advanceLabel: (user) => (user?.role === 'printer' ? 'Ozaliti Teslim Et' : 'Matbaaya Gönder'),
+    advanceLabel: (user) => (user?.role === 'printer' ? 'Ozaliti Teslim Edin' : 'Matbaaya Gönderin'),
     saveToast: 'Ozalit formu kaydedildi.',
   },
   // Baskı Onay Formu — the final print approval at the `baski_onay` gate
@@ -140,7 +140,7 @@ export const VARIANTS = {
     isReadOnly: ({ mode, user }) => mode === 'history' || user?.role !== 'team_leader',
     canPrint: () => true,
     advanceToast: () => 'Baskı onaya gönderildi.',
-    advanceLabel: () => 'Gönder',
+    advanceLabel: () => 'Gönderin',
     saveToast: 'Baskı onay formu kaydedildi.',
   },
 }
@@ -1151,7 +1151,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                             <button
                               type="button"
                               onClick={() => removeComponentRow(c.id, r.id)}
-                              aria-label="Satırı sil"
+                              aria-label="Satırı silin"
                               className="shrink-0 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive"
                             >
                               <X className="h-3.5 w-3.5" />
@@ -1165,7 +1165,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                           onClick={() => addComponentRow(c.id)}
                           className="mt-1 inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
                         >
-                          <Plus className="h-3 w-3" /> Satır Ekle
+                          <Plus className="h-3 w-3" /> Satır Ekleyin
                         </button>
                       )}
                     </div>
@@ -1196,7 +1196,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                 ))}
               </div>
 
-              {/* + Satır Ekle — hidden in read-only mode */}
+              {/* + Satır Ekleyin — hidden in read-only mode */}
               {!readOnly && (
                 <div className="border-b px-4 py-2.5">
                   <button
@@ -1205,7 +1205,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                     className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
                   >
                     <Plus className="h-4 w-4" />
-                    Satır Ekle
+                    Satır Ekleyin
                   </button>
                 </div>
               )}
@@ -1343,16 +1343,16 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
 
         <DialogFooter className="flex-wrap gap-2">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-            {readOnly ? 'Kapat' : 'İptal'}
+            {readOnly ? 'Kapatın' : 'İptal'}
           </Button>
           {printable && (
             <Button type="button" variant="outline" onClick={handlePrint}>
               <Printer className="h-4 w-4" />
-              Yazdır
+              Yazdırın
             </Button>
           )}
           {mode === 'view' && (!variant.saveRequiresEditable || !readOnly) && (
-            <Button onClick={handleSave}>Kaydet</Button>
+            <Button onClick={handleSave}>Kaydedin</Button>
           )}
           {mode === 'advance' && (
             <Button disabled={busy} onClick={handleAdvance}>
@@ -1363,13 +1363,13 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           {isBaskiOnayApproval && !baskiOnayPrepared && (
             <Button disabled={busy} onClick={handlePrepareBaskiOnay}>
               <Send className="h-4 w-4" />
-              {busy ? 'Kaydediliyor…' : 'Hazırla ve Onaya Gönder'}
+              {busy ? 'Kaydediliyor…' : 'Hazırlayın ve Onaya Gönderin'}
             </Button>
           )}
           {mode === 'approve' && (!isBaskiOnayApproval || baskiOnayPrepared) && (
             <Button variant="success" disabled={busy || needsOzalitReceive || ozalitAwaitingLeader} onClick={handleApprove}>
               <Check className="h-4 w-4" />
-              {busy ? 'İşleniyor…' : 'Onayla'}
+              {busy ? 'İşleniyor…' : 'Onaylayın'}
             </Button>
           )}
         </DialogFooter>

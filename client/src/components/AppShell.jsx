@@ -278,7 +278,7 @@ export default function AppShell() {
               size="icon"
               className="lg:hidden"
               onClick={() => setOpen(true)}
-              aria-label="Menüyü aç"
+              aria-label="Menüyü açın"
             >
               <Menu className="h-5 w-5" />
             </Button>
@@ -430,7 +430,7 @@ function SidebarBrand({ collapsed, onToggleCollapsed }) {
       )}
       <button
         type="button"
-        aria-label={collapsed ? 'Kenar çubuğunu aç' : 'Kenar çubuğunu kapat'}
+        aria-label={collapsed ? 'Kenar çubuğunu açın' : 'Kenar çubuğunu kapatın'}
         aria-pressed={!collapsed}
         onClick={onToggleCollapsed}
         className={cn(
@@ -463,7 +463,7 @@ function SearchButton({ collapsed }) {
       <button
         type="button"
         onClick={() => toast.message('Arama yakında eklenecek.')}
-        aria-label="Hızlı ara"
+        aria-label="Hızlı arayın"
         className="flex h-9 w-full items-center justify-center rounded-lg border bg-muted/40 text-muted-foreground transition-colors hover:border-input hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Search className="h-5 w-5" />
@@ -626,7 +626,7 @@ function SidebarFooter({ user, onLogout, collapsed }) {
           variant="ghost"
           size="icon"
           onClick={onLogout}
-          aria-label="Çıkış yap"
+          aria-label="Çıkış yapın"
           className="h-8 w-8 text-muted-foreground"
         >
           <LogOut className="h-4 w-4" />
@@ -646,7 +646,7 @@ function SidebarFooter({ user, onLogout, collapsed }) {
           variant="ghost"
           size="icon"
           onClick={onLogout}
-          aria-label="Çıkış yap"
+          aria-label="Çıkış yapın"
           className="shrink-0 text-muted-foreground hover:text-destructive"
         >
           <LogOut className="h-4 w-4" />
@@ -885,7 +885,7 @@ function UserMenu({ user, onLogout }) {
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onLogout} className="text-destructive focus:text-destructive">
           <LogOut className="h-4 w-4" />
-          Çıkış Yap
+          Çıkış Yapın
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -132,7 +132,7 @@ export default function Login() {
                     type="button"
                     onClick={() => setShowPw(v => !v)}
                     className="absolute right-1 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-md text-gray-400 transition-colors hover:text-gray-600"
-                    aria-label={showPw ? 'Şifreyi gizle' : 'Şifreyi göster'}
+                    aria-label={showPw ? 'Şifreyi gizleyin' : 'Şifreyi gösterin'}
                   >
                     {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -149,7 +149,7 @@ export default function Login() {
                     onChange={(e) => toggleRemember(e.target.checked)}
                     className="h-4 w-4 rounded border-gray-300 accent-red-500"
                   />
-                  30 gün hatırla
+                  30 gün hatırlayın
                 </label>
                 <Link
                   to="/forgot-password"
@@ -165,7 +165,7 @@ export default function Login() {
                 whileTap={{ scale: 0.97 }}
                 className="mt-1 flex w-full items-center justify-center gap-2 rounded-lg bg-red-500 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-60 transition-colors"
               >
-                {loading ? <Spinner /> : 'Giriş Yap'}
+                {loading ? <Spinner /> : 'Giriş Yapın'}
               </motion.button>
             </form>
 

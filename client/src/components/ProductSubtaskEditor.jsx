@@ -100,7 +100,7 @@ export default function ProductSubtaskEditor({ projectId, designers = [] }) {
               onClick={() => setDraft([...draft, { title: '', kind: 'check', is_done: false, assigned_to: null }])}
               className="inline-flex items-center gap-1 rounded-lg border border-dashed border-primary/40 bg-background px-2.5 py-1.5 text-xs font-semibold text-primary transition active:scale-95 hover:bg-primary/5"
             >
-              <Plus className="h-3.5 w-3.5" /> Görev Ekle
+              <Plus className="h-3.5 w-3.5" /> Görev Ekleyin
             </button>
             <button
               type="button"
@@ -115,7 +115,7 @@ export default function ProductSubtaskEditor({ projectId, designers = [] }) {
               disabled={saving}
               className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition active:scale-95 hover:brightness-105 disabled:opacity-60"
             >
-              <Check className="h-3.5 w-3.5" /> {saving ? 'Kaydediliyor…' : 'Kaydet'}
+              <Check className="h-3.5 w-3.5" /> {saving ? 'Kaydediliyor…' : 'Kaydedin'}
             </button>
           </div>
         ) : (
@@ -124,7 +124,7 @@ export default function ProductSubtaskEditor({ projectId, designers = [] }) {
             onClick={() => setDraft(deepCopy(rows))}
             className="inline-flex items-center gap-1 rounded-lg border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground transition active:scale-95 hover:border-primary/40 hover:text-primary"
           >
-            <Pencil className="h-3.5 w-3.5" /> Düzenle
+            <Pencil className="h-3.5 w-3.5" /> Düzenleyin
           </button>
         )}
       </div>
@@ -175,7 +175,7 @@ export default function ProductSubtaskEditor({ projectId, designers = [] }) {
                   <button
                     type="button"
                     onClick={() => setDraft(draft.filter((_, idx) => idx !== i))}
-                    title="Görevi sil"
+                    title="Görevi silin"
                     className="rounded-md p-1 text-destructive transition active:scale-95 hover:bg-destructive/10"
                   >
                     <Trash2 className="h-3.5 w-3.5" />

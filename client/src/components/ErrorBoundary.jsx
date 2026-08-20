@@ -70,7 +70,7 @@ export default class ErrorBoundary extends Component {
             <CardTitle>Bir şeyler ters gitti</CardTitle>
             <CardDescription>
               Bu ekran yüklenirken beklenmeyen bir hata oluştu. Aşağıdaki butonlarla
-              deneyebilirsin.
+              deneyebilirsiniz.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -79,9 +79,9 @@ export default class ErrorBoundary extends Component {
             </pre>
             <div className="flex gap-2">
               <Button onClick={this.handleReset} variant="outline">
-                Tekrar dene
+                Tekrar deneyin
               </Button>
-              <Button onClick={this.handleReload}>Sayfayı yenile</Button>
+              <Button onClick={this.handleReload}>Sayfayı yenileyin</Button>
             </div>
           </CardContent>
         </Card>

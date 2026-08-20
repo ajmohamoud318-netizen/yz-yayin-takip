@@ -438,15 +438,15 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <ShoppingCart className="h-4 w-4" />
-                Baskı Oluştur
+                Baskı Oluşturun
               </DialogTitle>
             </DialogHeader>
 
             {/* Mode switch */}
             <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted/60 p-1">
               {[
-                { id: 'pick', label: 'Ürün seç', Icon: ListChecks },
-                { id: 'upload', label: 'Excel yükle', Icon: FileSpreadsheet },
+                { id: 'pick', label: 'Ürün seçin', Icon: ListChecks },
+                { id: 'upload', label: 'Excel yükleyin', Icon: FileSpreadsheet },
               ].map(({ id, label, Icon }) => (
                 <button
                   key={id}
@@ -474,7 +474,7 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
                   <Input
                     value={pickSearch}
                     onChange={(e) => setPickSearch(e.target.value)}
-                    placeholder="Ürün ara…"
+                    placeholder="Ürün arayın…"
                     className="h-9 pl-8"
                   />
                 </div>
@@ -704,7 +704,7 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
             <DialogFooter className="gap-2 sm:gap-2">
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>İptal</Button>
               <Button type="submit" loading={saving} disabled={saving || !selectedProductId || !allFilled}>
-                {saving ? 'Gönderiliyor…' : 'Talep oluştur'}
+                {saving ? 'Gönderiliyor…' : 'Talep oluşturun'}
               </Button>
             </DialogFooter>
           </form>
@@ -778,7 +778,7 @@ export default function OrderRequestDialog({ products, user, open, initialProduc
                 type="submit"
                 disabled={batchSaving || batchRows.some((r) => !(r.qty > 0))}
               >
-                {batchSaving ? 'Gönderiliyor…' : `Talep Oluştur (${batchRows.length})`}
+                {batchSaving ? 'Gönderiliyor…' : `Talep Oluşturun (${batchRows.length})`}
               </Button>
             </DialogFooter>
           </form>

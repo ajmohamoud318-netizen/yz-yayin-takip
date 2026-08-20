@@ -114,7 +114,7 @@ export default function TeslimTalepleri() {
                       disabled={savingId === p.id}
                     >
                       <Send className="h-3.5 w-3.5" />
-                      {savingId === p.id ? 'Gönderiliyor…' : 'Teslim Talebi Oluştur'}
+                      {savingId === p.id ? 'Gönderiliyor…' : 'Teslim Talebi Oluşturun'}
                     </Button>
                   </CardContent>
                 </Card>
@@ -151,7 +151,7 @@ export default function TeslimTalepleri() {
             ? `"${cleanTitle(confirmProject.title)}" için satış ekibine teslim talebi gönderilecek. Devam edilsin mi?`
             : undefined
         }
-        confirmLabel="Teslim Talebi Oluştur"
+        confirmLabel="Teslim Talebi Oluşturun"
         busyLabel="Gönderiliyor…"
         busy={!!confirmProject && savingId === confirmProject.id}
         onConfirm={() => confirmProject && requestHandover(confirmProject)}

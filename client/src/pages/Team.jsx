@@ -114,7 +114,7 @@ export default function Team() {
           {isLeader && (
             <Button size="sm" onClick={() => setInviteOpen(true)}>
               <UserPlus className="h-4 w-4" />
-              Üye Davet Et
+              Üye Davet Edin
             </Button>
           )}
         </header>
@@ -126,7 +126,7 @@ export default function Team() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="İsim veya e-posta ara…"
+                placeholder="İsim veya e-posta arayın…"
                 className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
             </div>
@@ -182,14 +182,14 @@ export default function Team() {
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(v) => !v && setPendingDelete(null)}
-        title="Kullanıcıyı sil"
+        title="Kullanıcıyı silin"
         description={
           pendingDelete
             ? `${pendingDelete.name} (${pendingDelete.email}) kalıcı olarak silinecek. Bu işlem geri alınamaz.`
             : ''
         }
-        confirmLabel="Kalıcı olarak sil"
-        cancelLabel="Vazgeç"
+        confirmLabel="Kalıcı olarak silin"
+        cancelLabel="Vazgeçin"
         variant="destructive"
         busy={deleting}
         busyLabel="Siliniyor…"
@@ -248,7 +248,7 @@ function UserCard({ user, canManage, isLastActiveLeader, onToggle, onRequestDele
             <DropdownMenuContent align="end">
               {canToggle && (
                 <DropdownMenuItem onClick={() => onToggle(user)}>
-                  {user.is_active ? 'Devre dışı bırak' : 'Aktifleştir'}
+                  {user.is_active ? 'Devre dışı bırakın' : 'Aktifleştirin'}
                 </DropdownMenuItem>
               )}
               {canDelete && (
@@ -256,7 +256,7 @@ function UserCard({ user, canManage, isLastActiveLeader, onToggle, onRequestDele
                   className="text-rose-600 focus:text-rose-600"
                   onClick={() => onRequestDelete(user)}
                 >
-                  Hesabı sil
+                  Hesabı silin
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -335,7 +335,7 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <UserPlus className="h-4 w-4" /> Takıma Üye Davet Et
+            <UserPlus className="h-4 w-4" /> Takıma Üye Davet Edin
           </DialogTitle>
           <DialogDescription>
             Davet linki e-posta ile gönderilecek.
@@ -375,7 +375,7 @@ function InviteDialog({ open, onOpenChange, onInvited }) {
               İptal
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? 'Gönderiliyor…' : 'Davet Gönder'}
+              {saving ? 'Gönderiliyor…' : 'Davet Gönderin'}
             </Button>
           </DialogFooter>
         </form>

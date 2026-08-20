@@ -239,7 +239,7 @@ export default function SiparisBaskiOnayFormDialog({
                     onClick={() => addRow(ci)}
                     className="mt-1 inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
                   >
-                    <Plus className="h-3 w-3" /> Satır Ekle
+                    <Plus className="h-3 w-3" /> Satır Ekleyin
                   </button>
                 )}
               </div>
@@ -254,15 +254,15 @@ export default function SiparisBaskiOnayFormDialog({
     <div className={cn('flex flex-wrap gap-2', inline ? 'justify-end' : 'sm:justify-between')}>
       <Button type="button" variant="outline" onClick={handlePrint} disabled={busy}>
         <Printer className="h-4 w-4" />
-        Yazdır
+        Yazdırın
       </Button>
       {!isReadOnly && (
         <div className="flex gap-2">
           <Button type="button" variant="ghost" onClick={handleSave} disabled={busy}>
-            {saving ? 'Kaydediliyor…' : 'Kaydet'}
+            {saving ? 'Kaydediliyor…' : 'Kaydedin'}
           </Button>
           <Button type="button" onClick={handleApprove} disabled={busy}>
-            {approving ? 'Onaylanıyor…' : 'Onayla'}
+            {approving ? 'Onaylanıyor…' : 'Onaylayın'}
           </Button>
         </div>
       )}
