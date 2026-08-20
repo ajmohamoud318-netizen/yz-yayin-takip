@@ -655,6 +655,17 @@ const projectsReject = {
   },
 }
 
+// POST /demo-change-request, /ozalit-change-request — leader/assigned designer
+// asking Matbaa to accept a cancel or edit once they've started work.
+const projectsChangeRequest = {
+  ...projectsIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: { note: { type: 'string', maxLength: 500 } },
+  },
+}
+
 // ─── subtasks ──────────────────────────────────────────────────────────
 
 const subtasksPatch = {
@@ -1012,6 +1023,7 @@ export const schemas = {
   projectsAdvance,
   projectsApprove,
   projectsReject,
+  projectsChangeRequest,
   subtasksPatch,
   subtasksUpdates,
   subtasksRevize,

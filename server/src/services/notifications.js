@@ -450,6 +450,130 @@ export async function notifyBaskiOnayPrepared(client, { project, actor, teamLead
 }
 
 /**
+ * The matbaa marked they've begun physical work on a demo/ozalit
+ * ("Başladım", migration 048) — flag-only, no stage change. Tells the
+ * leader + assigned designers, since it's the signal that free cancel/edit
+ * is over and any further change now needs the matbaa's OK.
+ */
+export async function notifyDemoStarted(client, { project, actor, assignees }) {
+  const designers = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  return emit(client, {
+    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: [...leaders, ...designers], type: 'demo_started', tone: 'blue',
+    body: 'Matbaa demoya başladı, iptal veya düzenleme artık değişiklik isteği gerektirir',
+  })
+}
+
+export async function notifyOzalitStarted(client, { project, actor, assignees }) {
+  const designers = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  return emit(client, {
+    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: [...leaders, ...designers], type: 'ozalit_started', tone: 'blue',
+    body: 'Matbaa ozalite başladı, iptal veya düzenleme artık değişiklik isteği gerektirir',
+  })
+}
+
+/**
+ * The leader/assigned designer asked the matbaa to accept a cancel/edit
+ * (migration 048) — tells the printers, who are the ones who can act.
+ */
+export async function notifyDemoChangeRequested(client, { project, actor, note }) {
+  const printers = await activeUserIdsByRole(client, 'printer')
+  const who = actor?.name ?? 'Ekipten biri'
+  return emit(client, {
+    actorId: actor?.id, title: who, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: printers, type: 'demo_change_requested', tone: 'amber',
+    body: note
+      ? `${project.title} için demoda değişiklik istedi, not: ${note}, kabul veya red bekleniyor`
+      : `${project.title} için demoda değişiklik istedi, kabul veya red bekleniyor`,
+  })
+}
+
+export async function notifyOzalitChangeRequested(client, { project, actor, note }) {
+  const printers = await activeUserIdsByRole(client, 'printer')
+  const who = actor?.name ?? 'Ekipten biri'
+  return emit(client, {
+    actorId: actor?.id, title: who, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: printers, type: 'ozalit_change_requested', tone: 'amber',
+    body: note
+      ? `${project.title} için ozalitte değişiklik istedi, not: ${note}, kabul veya red bekleniyor`
+      : `${project.title} için ozalitte değişiklik istedi, kabul veya red bekleniyor`,
+  })
+}
+
+/**
+ * The matbaa accepted a pending change-request — tells the requester (and
+ * the rest of the leader/designer set) that free cancel/edit is open again.
+ */
+export async function notifyDemoChangeAccepted(client, { project, actor, assignees }) {
+  const designers = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  return emit(client, {
+    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: [...leaders, ...designers], type: 'demo_change_accepted', tone: 'green',
+    body: 'Matbaa değişiklik talebinizi kabul etti, iptal veya düzenleme artık yapılabilir',
+  })
+}
+
+export async function notifyOzalitChangeAccepted(client, { project, actor, assignees }) {
+  const designers = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  return emit(client, {
+    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: [...leaders, ...designers], type: 'ozalit_change_accepted', tone: 'green',
+    body: 'Matbaa değişiklik talebinizi kabul etti, iptal veya düzenleme artık yapılabilir',
+  })
+}
+
+/**
+ * The matbaa declined a pending change-request — the requester has to wait
+ * for normal delivery and use the existing Reddet flow.
+ */
+export async function notifyDemoChangeDeclined(client, { project, actor, assignees }) {
+  const designers = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  return emit(client, {
+    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: [...leaders, ...designers], type: 'demo_change_declined', tone: 'rose',
+    body: 'Matbaa değişiklik talebinizi reddetti, normal teslim süreci devam ediyor',
+  })
+}
+
+export async function notifyOzalitChangeDeclined(client, { project, actor, assignees }) {
+  const designers = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  return emit(client, {
+    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: [...leaders, ...designers], type: 'ozalit_change_declined', tone: 'rose',
+    body: 'Matbaa değişiklik talebinizi reddetti, normal teslim süreci devam ediyor',
+  })
+}
+
+/**
+ * A demo/ozalit request was cancelled outright (migration 048) — tells the
+ * printers, whose pending delivery just disappeared from their queue.
+ */
+export async function notifyDemoCancelled(client, { project, actor }) {
+  const printers = await activeUserIdsByRole(client, 'printer')
+  return emit(client, {
+    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: printers, type: 'demo_cancelled', tone: 'rose',
+    body: 'Demo talebi iptal edildi, tasarıma geri döndü, bekleyen işiniz kalmadı',
+  })
+}
+
+export async function notifyOzalitCancelled(client, { project, actor }) {
+  const printers = await activeUserIdsByRole(client, 'printer')
+  return emit(client, {
+    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: printers, type: 'ozalit_cancelled', tone: 'rose',
+    body: 'Ozalit talebi iptal edildi, tasarıma geri döndü, bekleyen işiniz kalmadı',
+  })
+}
+
+/**
  * A project pipeline transition (advance / approve / reject) just committed.
  * `toStage` / `fromStage` / `action` come straight from the history row the
  * route already built. We map the resulting state to the people who now need

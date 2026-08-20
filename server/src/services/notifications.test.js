@@ -4,6 +4,10 @@ import {
   ASSIGNMENT_GREETINGS, pickAssignmentGreeting,
   notifyProjectTransition, notifyDemoReceived, notifyOzalitReceived,
   notifyBaskiOnayPrepared,
+  notifyDemoStarted, notifyOzalitStarted, notifyDemoCancelled, notifyOzalitCancelled,
+  notifyDemoChangeRequested, notifyOzalitChangeRequested,
+  notifyDemoChangeAccepted, notifyDemoChangeDeclined,
+  notifyOzalitChangeAccepted, notifyOzalitChangeDeclined,
 } from './notifications.js'
 
 /**
@@ -317,4 +321,81 @@ test('a ÇİN project reaching baskida notifies the designers who drew it AND ma
   const recipients = client.rows.map((r) => r.userId)
   assert.ok(recipients.includes('u-aylin') && recipients.includes('u-feyza'))
   assert.ok(recipients.includes('u-oktay'), 'matbaa gets notified it is baskıda directly')
+})
+
+/* ==========================================================================
+ *  Matbaa "Başladım" gate + cancel + change-request (migration 048)
+ * ======================================================================== */
+
+test('cancelling a demo/ozalit request tells the matbaa their pending work is gone', async () => {
+  const client = fakeClient()
+  await notifyDemoCancelled(client, { project, actor: { id: 'u-ayse', name: 'Ayşenur' } })
+  assert.deepEqual(client.rows.map((r) => r.userId), ['u-oktay'])
+  assert.equal(client.rows[0].type, 'demo_cancelled')
+  assert.match(client.rows[0].body, /iptal edildi/)
+  assert.ok(!client.rows[0].body.includes('—'), 'Turkish copy joins with a comma, not an em-dash')
+
+  const client2 = fakeClient()
+  await notifyOzalitCancelled(client2, { project, actor: { id: 'u-ayse', name: 'Ayşenur' } })
+  assert.deepEqual(client2.rows.map((r) => r.userId), ['u-oktay'])
+  assert.equal(client2.rows[0].type, 'ozalit_cancelled')
+})
+
+test('"Başladım" tells the leader + assigned designers, not the printer who clicked', async () => {
+  const client = fakeClient()
+  await notifyDemoStarted(client, { project, actor: { id: 'u-oktay', name: 'Oktay' }, assignees })
+  assert.deepEqual(
+    client.rows.map((r) => r.userId).sort(),
+    ['u-aylin', 'u-ayse', 'u-feyza'],
+  )
+  for (const r of client.rows) assert.equal(r.type, 'demo_started')
+})
+
+test('a change-request asks the printers, not the leader/designer set', async () => {
+  const client = fakeClient()
+  await notifyDemoChangeRequested(client, {
+    project, actor: { id: 'u-ayse', name: 'Ayşenur' }, note: 'renk yanlış',
+  })
+  assert.deepEqual(client.rows.map((r) => r.userId), ['u-oktay'])
+  assert.equal(client.rows[0].type, 'demo_change_requested')
+  assert.equal(client.rows[0].title, 'Ayşenur')
+  assert.match(client.rows[0].body, /renk yanlış/)
+  assert.ok(!client.rows[0].body.includes('—'), 'Turkish copy joins with a comma, not an em-dash')
+})
+
+test('change-request accept/decline tell the leader + designers the outcome', async () => {
+  const acceptClient = fakeClient()
+  await notifyDemoChangeAccepted(acceptClient, { project, actor: { id: 'u-oktay', name: 'Oktay' }, assignees })
+  assert.deepEqual(acceptClient.rows.map((r) => r.userId).sort(), ['u-aylin', 'u-ayse', 'u-feyza'])
+  assert.equal(acceptClient.rows[0].type, 'demo_change_accepted')
+
+  const declineClient = fakeClient()
+  await notifyDemoChangeDeclined(declineClient, { project, actor: { id: 'u-oktay', name: 'Oktay' }, assignees })
+  assert.deepEqual(declineClient.rows.map((r) => r.userId).sort(), ['u-aylin', 'u-ayse', 'u-feyza'])
+  assert.equal(declineClient.rows[0].type, 'demo_change_declined')
+})
+
+test('ozalit change-request mirrors the demo leg', async () => {
+  const client = fakeClient()
+  await notifyOzalitChangeRequested(client, { project, actor: { id: 'u-ayse', name: 'Ayşenur' } })
+  assert.deepEqual(client.rows.map((r) => r.userId), ['u-oktay'])
+  assert.equal(client.rows[0].type, 'ozalit_change_requested')
+
+  const acceptClient = fakeClient()
+  await notifyOzalitChangeAccepted(acceptClient, { project, actor: { id: 'u-oktay', name: 'Oktay' }, assignees })
+  assert.equal(acceptClient.rows[0].type, 'ozalit_change_accepted')
+
+  const declineClient = fakeClient()
+  await notifyOzalitChangeDeclined(declineClient, { project, actor: { id: 'u-oktay', name: 'Oktay' }, assignees })
+  assert.equal(declineClient.rows[0].type, 'ozalit_change_declined')
+})
+
+test('"Ozalit Başladım" tells the leader + assigned designers', async () => {
+  const client = fakeClient()
+  await notifyOzalitStarted(client, { project, actor: { id: 'u-oktay', name: 'Oktay' }, assignees })
+  assert.deepEqual(
+    client.rows.map((r) => r.userId).sort(),
+    ['u-aylin', 'u-ayse', 'u-feyza'],
+  )
+  for (const r of client.rows) assert.equal(r.type, 'ozalit_started')
 })

@@ -13,7 +13,12 @@
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { applyAdvance, applyApproval, applyRejection } from './project-transitions.js'
+import {
+  applyAdvance, applyApproval, applyRejection,
+  applyDemoStart, applyOzalitStart, applyDemoCancel, applyOzalitCancel,
+  applyDemoChangeRequest, applyOzalitChangeRequest,
+  applyDemoChangeAccept, applyDemoChangeDecline, applyOzalitChangeAccept, applyOzalitChangeDecline,
+} from './project-transitions.js'
 
 const designer = { id: 'u-d', role: 'designer', name: 'Aylin' }
 const printer = { id: 'u-p', role: 'printer', name: 'Oktay' }
@@ -67,6 +72,57 @@ describe('applyRejection (server adapter)', () => {
     )
     assert.equal(project.stage, 'tasarim')
     assert.equal(project.demo_attempt, 3)
+  })
+})
+
+describe('demo/ozalit "Başladım" + cancel + change-request adapters', () => {
+  it('applyDemoStart/applyOzalitStart bind the printer through', () => {
+    const { project: demoNext } = applyDemoStart(makeProject({ stage: 'demo_teslim' }), { user: printer })
+    assert.equal(demoNext.demo_started, true)
+    const { project: ozalitNext } = applyOzalitStart(
+      makeProject({ stage: 'ozalit_teslim', ozalit_requested: true }), { user: printer },
+    )
+    assert.equal(ozalitNext.ozalit_started, true)
+  })
+
+  it('applyDemoCancel/applyOzalitCancel bind designerIds through', () => {
+    const { project: demoNext } = applyDemoCancel(
+      makeProject({ stage: 'demo_teslim' }), { user: designer, designerIds: [designer.id] },
+    )
+    assert.equal(demoNext.stage, 'tasarim')
+    const { project: ozalitNext } = applyOzalitCancel(
+      makeProject({ stage: 'ozalit_teslim', ozalit_requested: true }),
+      { user: designer, designerIds: [designer.id] },
+    )
+    assert.equal(ozalitNext.stage, 'tasarim')
+  })
+
+  it('applyDemoChangeRequest/applyOzalitChangeRequest bind the note through', () => {
+    const { project: demoNext } = applyDemoChangeRequest(
+      makeProject({ stage: 'demo_teslim', demo_started: true }),
+      { user: leader, designerIds: [], note: 'renk yanlış' },
+    )
+    assert.equal(demoNext.demo_change_requested_note, 'renk yanlış')
+    const { project: ozalitNext } = applyOzalitChangeRequest(
+      makeProject({ stage: 'ozalit_teslim', ozalit_requested: true, ozalit_started: true }),
+      { user: leader, designerIds: [], note: 'ölçü yanlış' },
+    )
+    assert.equal(ozalitNext.ozalit_change_requested_note, 'ölçü yanlış')
+  })
+
+  it('applyDemoChangeAccept/Decline and applyOzalitChangeAccept/Decline bind the printer through', () => {
+    const started = makeProject({
+      stage: 'demo_teslim', demo_started: true, demo_change_requested_at: '2026-01-01T00:00:00Z',
+    })
+    assert.equal(applyDemoChangeAccept(started, { user: printer }).project.demo_started, false)
+    assert.equal(applyDemoChangeDecline(started, { user: printer }).project.demo_started, true)
+
+    const ozalitStarted = makeProject({
+      stage: 'ozalit_teslim', ozalit_requested: true,
+      ozalit_started: true, ozalit_change_requested_at: '2026-01-01T00:00:00Z',
+    })
+    assert.equal(applyOzalitChangeAccept(ozalitStarted, { user: printer }).project.ozalit_started, false)
+    assert.equal(applyOzalitChangeDecline(ozalitStarted, { user: printer }).project.ozalit_started, true)
   })
 })
 

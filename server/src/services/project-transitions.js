@@ -24,6 +24,16 @@ import {
   computeOzalitNotReceived,
   computeBaskiOnayPrepare,
   computeRejection,
+  computeDemoStart,
+  computeOzalitStart,
+  computeDemoCancel,
+  computeOzalitCancel,
+  computeDemoChangeRequest,
+  computeOzalitChangeRequest,
+  computeDemoChangeAccept,
+  computeDemoChangeDecline,
+  computeOzalitChangeAccept,
+  computeOzalitChangeDecline,
 } from '../domain/transitions.js'
 
 /**
@@ -89,6 +99,55 @@ export function applyOzalitNotReceived(project, { user, designerIds = [] }) {
  */
 export function applyBaskiOnayPrepare(project, { user }) {
   return computeBaskiOnayPrepare(project, user)
+}
+
+/** `POST /projects/:id/demo-start`, `/ozalit-start`. Printer marks work begun. */
+export function applyDemoStart(project, { user }) {
+  return computeDemoStart(project, user)
+}
+export function applyOzalitStart(project, { user }) {
+  return computeOzalitStart(project, user)
+}
+
+/**
+ * `POST /projects/:id/demo-cancel`, `/ozalit-cancel`. Sends a mistaken
+ * request back to tasarim without bumping demo_attempt/ozalit_attempt — only
+ * valid before the matbaa has started (see computeDemoCancel).
+ */
+export function applyDemoCancel(project, { user, designerIds = [] }) {
+  return computeDemoCancel(project, user, { designerIds })
+}
+export function applyOzalitCancel(project, { user, designerIds = [] }) {
+  return computeOzalitCancel(project, user, { designerIds })
+}
+
+/**
+ * `POST /projects/:id/demo-change-request`, `/ozalit-change-request`. Asks
+ * the matbaa to accept a cancel/edit once they've started work.
+ */
+export function applyDemoChangeRequest(project, { user, designerIds = [], note }) {
+  return computeDemoChangeRequest(project, user, { note }, { designerIds })
+}
+export function applyOzalitChangeRequest(project, { user, designerIds = [], note }) {
+  return computeOzalitChangeRequest(project, user, { note }, { designerIds })
+}
+
+/**
+ * `POST /projects/:id/demo-change-accept`, `/demo-change-decline`,
+ * `/ozalit-change-accept`, `/ozalit-change-decline`. The matbaa's answer to
+ * a pending change-request.
+ */
+export function applyDemoChangeAccept(project, { user }) {
+  return computeDemoChangeAccept(project, user)
+}
+export function applyDemoChangeDecline(project, { user }) {
+  return computeDemoChangeDecline(project, user)
+}
+export function applyOzalitChangeAccept(project, { user }) {
+  return computeOzalitChangeAccept(project, user)
+}
+export function applyOzalitChangeDecline(project, { user }) {
+  return computeOzalitChangeDecline(project, user)
 }
 
 /** `POST /projects/:id/reject`. */

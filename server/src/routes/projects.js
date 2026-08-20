@@ -13,11 +13,18 @@ import { subtaskProgress } from '../domain/progress.js'
 import {
   applyAdvance, applyApproval, applyDemoReceive, applyDemoNotReceived,
   applyOzalitReceive, applyOzalitNotReceived, applyBaskiOnayPrepare, applyRejection,
+  applyDemoStart, applyOzalitStart, applyDemoCancel, applyOzalitCancel,
+  applyDemoChangeRequest, applyOzalitChangeRequest,
+  applyDemoChangeAccept, applyDemoChangeDecline, applyOzalitChangeAccept, applyOzalitChangeDecline,
 } from '../services/project-transitions.js'
 import {
   notifyProjectCreated, notifyProjectTransition, notifyProjectDeleted,
   notifyProductCatalogChanged, notifyDemoReceived, notifyOzalitReceived,
   notifyBaskiOnayPrepared,
+  notifyDemoStarted, notifyOzalitStarted, notifyDemoCancelled, notifyOzalitCancelled,
+  notifyDemoChangeRequested, notifyOzalitChangeRequested,
+  notifyDemoChangeAccepted, notifyDemoChangeDeclined,
+  notifyOzalitChangeAccepted, notifyOzalitChangeDeclined,
 } from '../services/notifications.js'
 import { ORDERABLE_STAGES } from '../domain/stages.js'
 // Blocks main-pipeline transitions on imported backlist products — see the
@@ -766,6 +773,286 @@ export async function projectRoutes(fastify) {
         await notifyBaskiOnayPrepared(client, {
           project: updated, actor: request.user, teamLeaderIds: leaderRows.map((r) => r.id),
         })
+      }
+      return updated
+    })
+    return result
+  })
+
+  // Matbaa marks they've begun physical work on the demo — flag-only, no
+  // stage change. Once set, a cancel/edit from the leader/designer needs
+  // the matbaa's OK via the change-request routes below.
+  fastify.post('/projects/:id/demo-start', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const { project: next, history } = applyDemoStart(project, { user: request.user })
+      const updated = await patchProject(client, project.id, {
+        demo_started: next.demo_started,
+        demo_started_at: next.demo_started_at,
+        demo_started_by: next.demo_started_by,
+        demo_started_by_name: next.demo_started_by_name,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyDemoStarted(client, { project: updated, actor: request.user, assignees: project.assignees })
+      }
+      return updated
+    })
+    return result
+  })
+
+  fastify.post('/projects/:id/ozalit-start', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const { project: next, history } = applyOzalitStart(project, { user: request.user })
+      const updated = await patchProject(client, project.id, {
+        ozalit_started: next.ozalit_started,
+        ozalit_started_at: next.ozalit_started_at,
+        ozalit_started_by: next.ozalit_started_by,
+        ozalit_started_by_name: next.ozalit_started_by_name,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyOzalitStarted(client, { project: updated, actor: request.user, assignees: project.assignees })
+      }
+      return updated
+    })
+    return result
+  })
+
+  // Cancel a mistaken demo/ozalit request outright — back to tasarim,
+  // deliberately NOT bumping demo_attempt/ozalit_attempt (nothing was
+  // delivered). Only valid before the matbaa has started; see
+  // computeDemoCancel/computeOzalitCancel for the guard.
+  fastify.post('/projects/:id/demo-cancel', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const designerIds = project.assignees.map((a) => a.id)
+      const { project: next, history } = applyDemoCancel(project, { user: request.user, designerIds })
+      const updated = await patchProject(client, project.id, {
+        stage: next.stage,
+        demo_held: next.demo_held,
+        demo_held_at: next.demo_held_at,
+        demo_held_by_name: next.demo_held_by_name,
+        demo_delivered_at: next.demo_delivered_at,
+        demo_delivered_by: next.demo_delivered_by,
+        demo_delivered_by_name: next.demo_delivered_by_name,
+        demo_received: next.demo_received,
+        demo_received_by: next.demo_received_by,
+        demo_received_at: next.demo_received_at,
+        demo_started: next.demo_started,
+        demo_started_at: next.demo_started_at,
+        demo_started_by: next.demo_started_by,
+        demo_started_by_name: next.demo_started_by_name,
+        demo_change_requested_at: next.demo_change_requested_at,
+        demo_change_requested_by: next.demo_change_requested_by,
+        demo_change_requested_by_name: next.demo_change_requested_by_name,
+        demo_change_requested_note: next.demo_change_requested_note,
+        reject_target: next.reject_target,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyDemoCancelled(client, { project: updated, actor: request.user })
+      }
+      return updated
+    })
+    return result
+  })
+
+  fastify.post('/projects/:id/ozalit-cancel', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const designerIds = project.assignees.map((a) => a.id)
+      const { project: next, history } = applyOzalitCancel(project, { user: request.user, designerIds })
+      const updated = await patchProject(client, project.id, {
+        stage: next.stage,
+        ozalit_requested: next.ozalit_requested,
+        ozalit_received: next.ozalit_received,
+        ozalit_received_by: next.ozalit_received_by,
+        ozalit_received_at: next.ozalit_received_at,
+        ozalit_started: next.ozalit_started,
+        ozalit_started_at: next.ozalit_started_at,
+        ozalit_started_by: next.ozalit_started_by,
+        ozalit_started_by_name: next.ozalit_started_by_name,
+        ozalit_change_requested_at: next.ozalit_change_requested_at,
+        ozalit_change_requested_by: next.ozalit_change_requested_by,
+        ozalit_change_requested_by_name: next.ozalit_change_requested_by_name,
+        ozalit_change_requested_note: next.ozalit_change_requested_note,
+        reject_target: next.reject_target,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyOzalitCancelled(client, { project: updated, actor: request.user })
+      }
+      return updated
+    })
+    return result
+  })
+
+  // Leader/assigned designer asks the matbaa to accept a cancel/edit — only
+  // valid once the matbaa has started (computeDemoChangeRequest guards this).
+  fastify.post('/projects/:id/demo-change-request', { schema: schemas.projectsChangeRequest }, async (request) => {
+    await attachUser(request)
+    const { note } = request.body ?? {}
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const designerIds = project.assignees.map((a) => a.id)
+      const { project: next, history } = applyDemoChangeRequest(project, { user: request.user, designerIds, note })
+      const updated = await patchProject(client, project.id, {
+        demo_change_requested_at: next.demo_change_requested_at,
+        demo_change_requested_by: next.demo_change_requested_by,
+        demo_change_requested_by_name: next.demo_change_requested_by_name,
+        demo_change_requested_note: next.demo_change_requested_note,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyDemoChangeRequested(client, { project: updated, actor: request.user, note: next.demo_change_requested_note })
+      }
+      return updated
+    })
+    return result
+  })
+
+  fastify.post('/projects/:id/ozalit-change-request', { schema: schemas.projectsChangeRequest }, async (request) => {
+    await attachUser(request)
+    const { note } = request.body ?? {}
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const designerIds = project.assignees.map((a) => a.id)
+      const { project: next, history } = applyOzalitChangeRequest(project, { user: request.user, designerIds, note })
+      const updated = await patchProject(client, project.id, {
+        ozalit_change_requested_at: next.ozalit_change_requested_at,
+        ozalit_change_requested_by: next.ozalit_change_requested_by,
+        ozalit_change_requested_by_name: next.ozalit_change_requested_by_name,
+        ozalit_change_requested_note: next.ozalit_change_requested_note,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyOzalitChangeRequested(client, { project: updated, actor: request.user, note: next.ozalit_change_requested_note })
+      }
+      return updated
+    })
+    return result
+  })
+
+  // Matbaa's answer to a pending change-request. Accept "un-starts" the
+  // round, reopening free cancel/edit; decline leaves it started.
+  fastify.post('/projects/:id/demo-change-accept', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const { project: next, history } = applyDemoChangeAccept(project, { user: request.user })
+      const updated = await patchProject(client, project.id, {
+        demo_started: next.demo_started,
+        demo_started_at: next.demo_started_at,
+        demo_started_by: next.demo_started_by,
+        demo_started_by_name: next.demo_started_by_name,
+        demo_change_requested_at: next.demo_change_requested_at,
+        demo_change_requested_by: next.demo_change_requested_by,
+        demo_change_requested_by_name: next.demo_change_requested_by_name,
+        demo_change_requested_note: next.demo_change_requested_note,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyDemoChangeAccepted(client, { project: updated, actor: request.user, assignees: project.assignees })
+      }
+      return updated
+    })
+    return result
+  })
+
+  fastify.post('/projects/:id/demo-change-decline', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const { project: next, history } = applyDemoChangeDecline(project, { user: request.user })
+      const updated = await patchProject(client, project.id, {
+        demo_change_requested_at: next.demo_change_requested_at,
+        demo_change_requested_by: next.demo_change_requested_by,
+        demo_change_requested_by_name: next.demo_change_requested_by_name,
+        demo_change_requested_note: next.demo_change_requested_note,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyDemoChangeDeclined(client, { project: updated, actor: request.user, assignees: project.assignees })
+      }
+      return updated
+    })
+    return result
+  })
+
+  fastify.post('/projects/:id/ozalit-change-accept', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const { project: next, history } = applyOzalitChangeAccept(project, { user: request.user })
+      const updated = await patchProject(client, project.id, {
+        ozalit_started: next.ozalit_started,
+        ozalit_started_at: next.ozalit_started_at,
+        ozalit_started_by: next.ozalit_started_by,
+        ozalit_started_by_name: next.ozalit_started_by_name,
+        ozalit_change_requested_at: next.ozalit_change_requested_at,
+        ozalit_change_requested_by: next.ozalit_change_requested_by,
+        ozalit_change_requested_by_name: next.ozalit_change_requested_by_name,
+        ozalit_change_requested_note: next.ozalit_change_requested_note,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyOzalitChangeAccepted(client, { project: updated, actor: request.user, assignees: project.assignees })
+      }
+      return updated
+    })
+    return result
+  })
+
+  fastify.post('/projects/:id/ozalit-change-decline', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const { project: next, history } = applyOzalitChangeDecline(project, { user: request.user })
+      const updated = await patchProject(client, project.id, {
+        ozalit_change_requested_at: next.ozalit_change_requested_at,
+        ozalit_change_requested_by: next.ozalit_change_requested_by,
+        ozalit_change_requested_by_name: next.ozalit_change_requested_by_name,
+        ozalit_change_requested_note: next.ozalit_change_requested_note,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyOzalitChangeDeclined(client, { project: updated, actor: request.user, assignees: project.assignees })
       }
       return updated
     })

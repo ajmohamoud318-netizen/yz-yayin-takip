@@ -22,6 +22,10 @@ const PROJECT_COLUMNS = `
   demo_delivered_at, demo_delivered_by,
   ozalit_requested, reject_target, last_reject_type, last_reject_target,
   ozalit_approvals,
+  demo_started, demo_started_at, demo_started_by, demo_started_by_name,
+  demo_change_requested_at, demo_change_requested_by, demo_change_requested_by_name, demo_change_requested_note,
+  ozalit_started, ozalit_started_at, ozalit_started_by, ozalit_started_by_name,
+  ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name, ozalit_change_requested_note,
   origin,
   catalog_hidden, catalog_hidden_at, catalog_hidden_by,
   created_at, updated_at,
@@ -368,6 +372,29 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
   'last_reject_target',
   // Multi-party ozalit approval: array of { id, role, name, at } approvers.
   'ozalit_approvals',
+  // Matbaa "Başladım" gate (migration 048): flag-only marker the printer sets
+  // once physical work begins. While false, the leader/assigned designer can
+  // cancel or edit the request freely; reset on every fresh printer round.
+  'demo_started',
+  'demo_started_at',
+  'demo_started_by',
+  'demo_started_by_name',
+  'ozalit_started',
+  'ozalit_started_at',
+  'ozalit_started_by',
+  'ozalit_started_by_name',
+  // Pending change-request ledger (migration 048): presence of
+  // `*_change_requested_at` IS the pending flag, no separate boolean. Set by
+  // computeDemoChangeRequest/computeOzalitChangeRequest, cleared by the
+  // matching accept/decline transition.
+  'demo_change_requested_at',
+  'demo_change_requested_by',
+  'demo_change_requested_by_name',
+  'demo_change_requested_note',
+  'ozalit_change_requested_at',
+  'ozalit_change_requested_by',
+  'ozalit_change_requested_by_name',
+  'ozalit_change_requested_note',
 ])
 
 export async function patchProject(client, id, fields) {
@@ -691,6 +718,31 @@ function rowToProject(r) {
     last_reject_type: r.last_reject_type ?? null,
     last_reject_target: r.last_reject_target ?? null,
     ozalit_approvals: r.ozalit_approvals ?? [],
+    // Matbaa "Başladım" gate + pending change-request ledger (migration 048).
+    demo_started: r.demo_started ?? false,
+    demo_started_at: r.demo_started_at instanceof Date
+      ? r.demo_started_at.toISOString()
+      : r.demo_started_at,
+    demo_started_by: r.demo_started_by ?? null,
+    demo_started_by_name: r.demo_started_by_name ?? null,
+    demo_change_requested_at: r.demo_change_requested_at instanceof Date
+      ? r.demo_change_requested_at.toISOString()
+      : r.demo_change_requested_at,
+    demo_change_requested_by: r.demo_change_requested_by ?? null,
+    demo_change_requested_by_name: r.demo_change_requested_by_name ?? null,
+    demo_change_requested_note: r.demo_change_requested_note ?? null,
+    ozalit_started: r.ozalit_started ?? false,
+    ozalit_started_at: r.ozalit_started_at instanceof Date
+      ? r.ozalit_started_at.toISOString()
+      : r.ozalit_started_at,
+    ozalit_started_by: r.ozalit_started_by ?? null,
+    ozalit_started_by_name: r.ozalit_started_by_name ?? null,
+    ozalit_change_requested_at: r.ozalit_change_requested_at instanceof Date
+      ? r.ozalit_change_requested_at.toISOString()
+      : r.ozalit_change_requested_at,
+    ozalit_change_requested_by: r.ozalit_change_requested_by ?? null,
+    ozalit_change_requested_by_name: r.ozalit_change_requested_by_name ?? null,
+    ozalit_change_requested_note: r.ozalit_change_requested_note ?? null,
     has_product_info: r.has_product_info ?? false,
     // 'pipeline' | 'legacy'. The client's projects store filters `legacy` out of
     // every pipeline view (Kanban, Tüm Projeler, counts) — see migration 031.

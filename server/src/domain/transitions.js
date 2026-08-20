@@ -185,6 +185,15 @@ export function computeAdvance(project, actor) {
         demo_delivered_at: null,
         demo_delivered_by: null,
         demo_delivered_by_name: null,
+        // New round starts fresh — see the matching comment in computeDemoTeslimAdvance.
+        demo_started: false,
+        demo_started_at: null,
+        demo_started_by: null,
+        demo_started_by_name: null,
+        demo_change_requested_at: null,
+        demo_change_requested_by: null,
+        demo_change_requested_by_name: null,
+        demo_change_requested_note: null,
         reject_target: null,
         last_reject_reason: null,
         last_reject_type: null,
@@ -240,6 +249,12 @@ function computeDemoTeslimAdvance(project, actor, now, approvalStage) {
   if (actor?.role !== 'printer') {
     badRequest('Demo teslimini yalnızca matbaa yapabilir.')
   }
+  // A pending change-request must be accepted or declined before the matbaa
+  // can deliver past it — otherwise the leader/designer's ask silently
+  // vanishes the moment delivery happens.
+  if (project.demo_change_requested_at != null) {
+    badRequest('Bekleyen bir değişiklik talebi var, önce kabul veya reddedin.')
+  }
   assertCanEnterProductionLocal(approvalStage, project.progress)
   return {
     project: {
@@ -253,6 +268,16 @@ function computeDemoTeslimAdvance(project, actor, now, approvalStage) {
       demo_received: false,
       demo_received_by: null,
       demo_received_at: null,
+      // A new round starts fresh — the "Başladım" gate and any leftover
+      // change-request ledger from the round that just ended don't carry over.
+      demo_started: false,
+      demo_started_at: null,
+      demo_started_by: null,
+      demo_started_by_name: null,
+      demo_change_requested_at: null,
+      demo_change_requested_by: null,
+      demo_change_requested_by_name: null,
+      demo_change_requested_note: null,
       reject_target: null,
       last_reject_reason: null,
       last_reject_type: null,
@@ -294,6 +319,10 @@ function computeOzalitTeslimAdvance(project, actor, now) {
   if (!project.ozalit_requested && !matbaaLock) {
     badRequest('Önce ekip lideri veya tasarımcı ozalit istemelidir.')
   }
+  // Same pending-change-request guard as the demo leg — see computeDemoTeslimAdvance.
+  if (project.ozalit_change_requested_at != null) {
+    badRequest('Bekleyen bir değişiklik talebi var, önce kabul veya reddedin.')
+  }
   assertCanEnterProductionLocal('ozalit_onay', project.progress)
   return {
     project: {
@@ -305,6 +334,15 @@ function computeOzalitTeslimAdvance(project, actor, now) {
       ozalit_received: false,
       ozalit_received_by: null,
       ozalit_received_at: null,
+      // New round starts fresh — see the matching comment in computeDemoTeslimAdvance.
+      ozalit_started: false,
+      ozalit_started_at: null,
+      ozalit_started_by: null,
+      ozalit_started_by_name: null,
+      ozalit_change_requested_at: null,
+      ozalit_change_requested_by: null,
+      ozalit_change_requested_by_name: null,
+      ozalit_change_requested_note: null,
       reject_target: null,
       updated_at: now,
     },
@@ -531,6 +569,15 @@ export function computeDemoNotReceived(project, actor, ctx = {}) {
       demo_received: false,
       demo_received_by: null,
       demo_received_at: null,
+      // New round starts fresh — see the matching comment in computeDemoTeslimAdvance.
+      demo_started: false,
+      demo_started_at: null,
+      demo_started_by: null,
+      demo_started_by_name: null,
+      demo_change_requested_at: null,
+      demo_change_requested_by: null,
+      demo_change_requested_by_name: null,
+      demo_change_requested_note: null,
       updated_at: now,
     },
     history: makeEntry(project, {
@@ -629,6 +676,15 @@ export function computeOzalitNotReceived(project, actor, ctx = {}) {
       ozalit_leader_approved_at: null,
       ozalit_designer_approvals: [],
       ozalit_approvals: [],
+      // New round starts fresh — see the matching comment in computeDemoTeslimAdvance.
+      ozalit_started: false,
+      ozalit_started_at: null,
+      ozalit_started_by: null,
+      ozalit_started_by_name: null,
+      ozalit_change_requested_at: null,
+      ozalit_change_requested_by: null,
+      ozalit_change_requested_by_name: null,
+      ozalit_change_requested_note: null,
       updated_at: now,
     },
     history: makeEntry(project, {
@@ -638,6 +694,415 @@ export function computeOzalitNotReceived(project, actor, ctx = {}) {
       to_stage: 'ozalit_teslim',
       done_by_name: actorName,
       note: 'Ozalit teslim alınamadı, matbaaya geri gönderildi',
+    }),
+  }
+}
+
+/* ============================================================================
+ *  demoStart(project, actor) / ozalitStart(project, actor) → next project state
+ *
+ *  Flag-only marker (no stage change, mirrors computeBaskiOnayPrepare's
+ *  shape) the printer sets once physical work on the demo/ozalit has begun.
+ *  While false, the leader/assigned designer can cancel or edit the request
+ *  freely (computeDemoCancel/computeOzalitCancel, or the existing spec-form
+ *  save path). Once true, a cancel/edit must go through the change-request
+ *  flow below — the printer already has work in progress.
+ * ========================================================================== */
+export function computeDemoStart(project, actor) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (actor?.role !== 'printer') {
+    badRequest('Bu işlemi yalnızca matbaa yapabilir.')
+  }
+  if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') {
+    badRequest('Bu işlem yalnızca demo matbaa aşamasında yapılabilir.')
+  }
+  if (project.demo_started) {
+    return { project, history: null } // already marked — idempotent
+  }
+  return {
+    project: {
+      ...project,
+      demo_started: true,
+      demo_started_by: actor?.id ?? null,
+      demo_started_by_name: actorName,
+      demo_started_at: now,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'system',
+      event: 'demo_started',
+      from_stage: project.stage,
+      to_stage: project.stage,
+      done_by_name: actorName,
+      note: 'Matbaa demoya başladı',
+    }),
+  }
+}
+
+export function computeOzalitStart(project, actor) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (actor?.role !== 'printer') {
+    badRequest('Bu işlemi yalnızca matbaa yapabilir.')
+  }
+  if (project.stage !== 'ozalit_teslim') {
+    badRequest('Bu işlem yalnızca ozalit matbaa aşamasında yapılabilir.')
+  }
+  if (project.ozalit_started) {
+    return { project, history: null } // already marked — idempotent
+  }
+  return {
+    project: {
+      ...project,
+      ozalit_started: true,
+      ozalit_started_by: actor?.id ?? null,
+      ozalit_started_by_name: actorName,
+      ozalit_started_at: now,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'system',
+      event: 'ozalit_started',
+      from_stage: project.stage,
+      to_stage: project.stage,
+      done_by_name: actorName,
+      note: 'Matbaa ozalite başladı',
+    }),
+  }
+}
+
+/* ============================================================================
+ *  demoCancel(project, actor, ctx) / ozalitCancel(project, actor, ctx)
+ *    → next project state
+ *
+ *  A mistaken demo/ozalit request, undone. Unlike Reddet (computeRejection)
+ *  or "Teslim Alınamadı" (computeDemoNotReceived/computeOzalitNotReceived),
+ *  this deliberately does NOT bump demo_attempt/ozalit_attempt — nothing was
+ *  ever delivered, so there's no round to count. Only valid before the
+ *  matbaa has started (demo_started/ozalit_started false); once started, use
+ *  the change-request flow instead. Subtasks/progress are untouched.
+ * ========================================================================== */
+export function computeDemoCancel(project, actor, ctx = {}) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') {
+    badRequest('İptal yalnızca demo matbaa sürecindeyken yapılabilir.')
+  }
+  const designerIds = ctx.designerIds ?? []
+  const isLeader = actor?.role === 'team_leader'
+  const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
+  if (!isLeader && !isAssignedDesigner) {
+    badRequest('Bu işlemi yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
+  }
+  if (project.demo_started) {
+    badRequest('Matbaa demoya başladı, doğrudan iptal edilemez, değişiklik isteyin.')
+  }
+  return {
+    project: {
+      ...project,
+      stage: 'tasarim',
+      // Deliberately NOT touching demo_attempt — nothing was delivered.
+      demo_held: false,
+      demo_held_at: null,
+      demo_held_by_name: null,
+      demo_delivered_at: null,
+      demo_delivered_by: null,
+      demo_delivered_by_name: null,
+      demo_received: false,
+      demo_received_by: null,
+      demo_received_at: null,
+      demo_started: false,
+      demo_started_at: null,
+      demo_started_by: null,
+      demo_started_by_name: null,
+      demo_change_requested_at: null,
+      demo_change_requested_by: null,
+      demo_change_requested_by_name: null,
+      demo_change_requested_note: null,
+      reject_target: null,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'system',
+      event: 'demo_cancelled',
+      from_stage: project.stage,
+      to_stage: 'tasarim',
+      done_by_name: actorName,
+      note: 'Demo talebi iptal edildi, tasarıma geri döndü',
+    }),
+  }
+}
+
+export function computeOzalitCancel(project, actor, ctx = {}) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (project.stage !== 'ozalit_teslim') {
+    badRequest('İptal yalnızca ozalit matbaa sürecindeyken yapılabilir.')
+  }
+  // Scoped to an actual pending request — a reject-to-matbaa re-delivery
+  // lock (reject_target === 'matbaa') already went through a real
+  // rejection, so cancel semantics ("nothing was delivered") don't apply.
+  if (!project.ozalit_requested) {
+    badRequest('Bekleyen bir ozalit talebi yok.')
+  }
+  const designerIds = ctx.designerIds ?? []
+  const isLeader = actor?.role === 'team_leader'
+  const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
+  if (!isLeader && !isAssignedDesigner) {
+    badRequest('Bu işlemi yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
+  }
+  if (project.ozalit_started) {
+    badRequest('Matbaa ozalite başladı, doğrudan iptal edilemez, değişiklik isteyin.')
+  }
+  return {
+    project: {
+      ...project,
+      stage: 'tasarim',
+      // Deliberately NOT touching ozalit_attempt — nothing was delivered.
+      ozalit_requested: false,
+      ozalit_received: false,
+      ozalit_received_by: null,
+      ozalit_received_at: null,
+      ozalit_started: false,
+      ozalit_started_at: null,
+      ozalit_started_by: null,
+      ozalit_started_by_name: null,
+      ozalit_change_requested_at: null,
+      ozalit_change_requested_by: null,
+      ozalit_change_requested_by_name: null,
+      ozalit_change_requested_note: null,
+      reject_target: null,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'system',
+      event: 'ozalit_cancelled',
+      from_stage: project.stage,
+      to_stage: 'tasarim',
+      done_by_name: actorName,
+      note: 'Ozalit talebi iptal edildi, tasarıma geri döndü',
+    }),
+  }
+}
+
+/* ============================================================================
+ *  demoChangeRequest / ozalitChangeRequest(project, actor, { note }, ctx)
+ *    → next project state
+ *
+ *  Once the matbaa has started, a cancel/edit is no longer free — the
+ *  leader/assigned designer instead asks, and the printer accepts or
+ *  declines below. No stacking: only one pending request at a time.
+ * ========================================================================== */
+export function computeDemoChangeRequest(project, actor, { note } = {}, ctx = {}) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') {
+    badRequest('Bu işlem yalnızca demo matbaa aşamasında yapılabilir.')
+  }
+  const designerIds = ctx.designerIds ?? []
+  const isLeader = actor?.role === 'team_leader'
+  const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
+  if (!isLeader && !isAssignedDesigner) {
+    badRequest('Bu işlemi yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
+  }
+  if (!project.demo_started) {
+    badRequest('Matbaa henüz başlamadı, doğrudan iptal veya düzenleme yapabilirsiniz.')
+  }
+  if (project.demo_change_requested_at != null) {
+    badRequest('Zaten bekleyen bir değişiklik talebi var.')
+  }
+  return {
+    project: {
+      ...project,
+      demo_change_requested_at: now,
+      demo_change_requested_by: actor?.id ?? null,
+      demo_change_requested_by_name: actorName,
+      demo_change_requested_note: note?.trim() || null,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'system',
+      event: 'demo_change_requested',
+      from_stage: project.stage,
+      to_stage: project.stage,
+      done_by_name: actorName,
+      note: note?.trim() || 'Değişiklik istendi',
+    }),
+  }
+}
+
+export function computeOzalitChangeRequest(project, actor, { note } = {}, ctx = {}) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (project.stage !== 'ozalit_teslim') {
+    badRequest('Bu işlem yalnızca ozalit matbaa aşamasında yapılabilir.')
+  }
+  if (!project.ozalit_requested) {
+    badRequest('Bekleyen bir ozalit talebi yok.')
+  }
+  const designerIds = ctx.designerIds ?? []
+  const isLeader = actor?.role === 'team_leader'
+  const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
+  if (!isLeader && !isAssignedDesigner) {
+    badRequest('Bu işlemi yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
+  }
+  if (!project.ozalit_started) {
+    badRequest('Matbaa henüz başlamadı, doğrudan iptal veya düzenleme yapabilirsiniz.')
+  }
+  if (project.ozalit_change_requested_at != null) {
+    badRequest('Zaten bekleyen bir değişiklik talebi var.')
+  }
+  return {
+    project: {
+      ...project,
+      ozalit_change_requested_at: now,
+      ozalit_change_requested_by: actor?.id ?? null,
+      ozalit_change_requested_by_name: actorName,
+      ozalit_change_requested_note: note?.trim() || null,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'system',
+      event: 'ozalit_change_requested',
+      from_stage: project.stage,
+      to_stage: project.stage,
+      done_by_name: actorName,
+      note: note?.trim() || 'Değişiklik istendi',
+    }),
+  }
+}
+
+/* ============================================================================
+ *  demoChangeAccept / demoChangeDecline / ozalitChangeAccept /
+ *  ozalitChangeDecline(project, actor) → next project state
+ *
+ *  The matbaa's answer to a pending change-request. Accept "un-starts" the
+ *  round (demo_started/ozalit_started back to false), reopening the free
+ *  cancel/edit path above for the leader/designer to actually act on.
+ *  Decline just clears the request — started stays true, and the
+ *  leader/designer has to wait for normal delivery + Reddet.
+ * ========================================================================== */
+export function computeDemoChangeAccept(project, actor) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (actor?.role !== 'printer') {
+    badRequest('Bu işlemi yalnızca matbaa yapabilir.')
+  }
+  if (project.demo_change_requested_at == null) {
+    badRequest('Bekleyen bir değişiklik talebi yok.')
+  }
+  return {
+    project: {
+      ...project,
+      demo_started: false,
+      demo_started_at: null,
+      demo_started_by: null,
+      demo_started_by_name: null,
+      demo_change_requested_at: null,
+      demo_change_requested_by: null,
+      demo_change_requested_by_name: null,
+      demo_change_requested_note: null,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'system',
+      event: 'demo_change_accepted',
+      from_stage: project.stage,
+      to_stage: project.stage,
+      done_by_name: actorName,
+      note: 'Matbaa değişiklik talebini kabul etti',
+    }),
+  }
+}
+
+export function computeDemoChangeDecline(project, actor) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (actor?.role !== 'printer') {
+    badRequest('Bu işlemi yalnızca matbaa yapabilir.')
+  }
+  if (project.demo_change_requested_at == null) {
+    badRequest('Bekleyen bir değişiklik talebi yok.')
+  }
+  return {
+    project: {
+      ...project,
+      demo_change_requested_at: null,
+      demo_change_requested_by: null,
+      demo_change_requested_by_name: null,
+      demo_change_requested_note: null,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'system',
+      event: 'demo_change_declined',
+      from_stage: project.stage,
+      to_stage: project.stage,
+      done_by_name: actorName,
+      note: 'Matbaa değişiklik talebini reddetti',
+    }),
+  }
+}
+
+export function computeOzalitChangeAccept(project, actor) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (actor?.role !== 'printer') {
+    badRequest('Bu işlemi yalnızca matbaa yapabilir.')
+  }
+  if (project.ozalit_change_requested_at == null) {
+    badRequest('Bekleyen bir değişiklik talebi yok.')
+  }
+  return {
+    project: {
+      ...project,
+      ozalit_started: false,
+      ozalit_started_at: null,
+      ozalit_started_by: null,
+      ozalit_started_by_name: null,
+      ozalit_change_requested_at: null,
+      ozalit_change_requested_by: null,
+      ozalit_change_requested_by_name: null,
+      ozalit_change_requested_note: null,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'system',
+      event: 'ozalit_change_accepted',
+      from_stage: project.stage,
+      to_stage: project.stage,
+      done_by_name: actorName,
+      note: 'Matbaa değişiklik talebini kabul etti',
+    }),
+  }
+}
+
+export function computeOzalitChangeDecline(project, actor) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (actor?.role !== 'printer') {
+    badRequest('Bu işlemi yalnızca matbaa yapabilir.')
+  }
+  if (project.ozalit_change_requested_at == null) {
+    badRequest('Bekleyen bir değişiklik talebi yok.')
+  }
+  return {
+    project: {
+      ...project,
+      ozalit_change_requested_at: null,
+      ozalit_change_requested_by: null,
+      ozalit_change_requested_by_name: null,
+      ozalit_change_requested_note: null,
+      updated_at: now,
+    },
+    history: makeEntry(project, {
+      action: 'system',
+      event: 'ozalit_change_declined',
+      from_stage: project.stage,
+      to_stage: project.stage,
+      done_by_name: actorName,
+      note: 'Matbaa değişiklik talebini reddetti',
     }),
   }
 }
