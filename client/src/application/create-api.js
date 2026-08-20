@@ -83,6 +83,8 @@ export function createApi() {
     deleteTargetProjectIdeaGalleryImage: (id, imageId) =>
       targetProjectIdeaRepo.deleteTargetProjectIdeaGalleryImage(id, imageId),
     addTargetProjectIdeaNote: (id, body) => targetProjectIdeaRepo.addTargetProjectIdeaNote(id, body),
+    updateTargetProjectIdeaNote: (id, noteId, body) =>
+      targetProjectIdeaRepo.updateTargetProjectIdeaNote(id, noteId, body),
     deleteTargetProjectIdeaNote: (id, noteId) => targetProjectIdeaRepo.deleteTargetProjectIdeaNote(id, noteId),
 
     // Toplantılar — meeting log.
@@ -96,6 +98,7 @@ export function createApi() {
     addMeetingGalleryImage: (id, file) => meetingRepo.addMeetingGalleryImage(id, file),
     deleteMeetingGalleryImage: (id, imageId) => meetingRepo.deleteMeetingGalleryImage(id, imageId),
     addMeetingNote: (id, body) => meetingRepo.addMeetingNote(id, body),
+    updateMeetingNote: (id, noteId, body) => meetingRepo.updateMeetingNote(id, noteId, body),
     deleteMeetingNote: (id, noteId) => meetingRepo.deleteMeetingNote(id, noteId),
 
     // Projects
@@ -152,6 +155,8 @@ export function createApi() {
     matbaaReceiveOrder: (id) => orderRepo.matbaaReceiveOrder(id),
     matbaaNotReceivedOrder: (id) => orderRepo.matbaaNotReceivedOrder(id),
     updateOrderSubtask: (orderId, subtaskId, patch) => orderRepo.updateOrderSubtask(orderId, subtaskId, patch),
+    saveOrderBaskiOnayForm: (id, body) => orderRepo.saveOrderBaskiOnayForm(id, body),
+    approveOrderBaskiOnayForm: (id, body) => orderRepo.approveOrderBaskiOnayForm(id, body),
 
     // Handovers (Matbaa → Sales "teslim")
     listHandovers: () => handoverRepo.listHandovers(),

@@ -20,13 +20,16 @@ export function statusKeyForProject(p) {
     case 'satista':
       return 'yellow'
     case 'uretime_hazir':
+      // Retired (migration 047) — kept only as a defensive mapping for any
+      // stray historical row a stale client might still render.
       return 'teal'
-    case 'uretimde':
+    case 'baskida':
     case 'gumruk':
       return 'pink'
     case 'ozalit_teslim':
     case 'ozalit_onay':
     case 'baski_onay':
+    case 'cin_baski_onay':
       return 'blue'
     case 'demo_teslim':
     case 'cin_demo_teslim':

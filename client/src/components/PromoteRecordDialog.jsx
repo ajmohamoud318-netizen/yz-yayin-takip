@@ -238,8 +238,7 @@ export default function PromoteRecordDialog({ open, onClose, seeds, items, onDon
                 className="h-10 w-full rounded-lg border bg-background px-3 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-ring/40"
               >
                 <option value="satista">Satışta</option>
-                <option value="uretime_hazir">Üretime Hazır</option>
-                <option value="uretimde">Üretimde</option>
+                <option value="baskida">Baskıda</option>
                 <option value="gumruk">Gümrük</option>
               </select>
             </div>

@@ -4,18 +4,26 @@ import {
   ORDER_STEP_OWNER,
   ORDER_REJECT_TARGETS,
   ORDER_REJECT_TO,
+  ORDER_STEP_PATH_DEFAULT,
+  ORDER_STEP_PATH_EKRAN_ONAY,
+  orderStepPath,
   isOrderAssignedToDesigner,
   matbaaOnayLeaderApproved,
   canApproveMatbaaOnayNow,
 } from './orders.js'
 
 describe('order workflow step graph', () => {
-  it('steps form a valid linear chain', () => {
-    for (let i = 0; i < ORDER_STEPS.length - 1; i++) {
-      const cur = ORDER_STEPS[i]
-      const expectedNext = ORDER_STEPS[i + 1]
-      expect(ORDER_STEP_NEXT[cur]).toBe(expectedNext)
+  it('the default path forms a valid linear chain', () => {
+    for (let i = 0; i < ORDER_STEP_PATH_DEFAULT.length - 1; i++) {
+      expect(ORDER_STEP_NEXT[ORDER_STEP_PATH_DEFAULT[i]]).toBe(ORDER_STEP_PATH_DEFAULT[i + 1])
     }
+  })
+  it('the ekran_onay branch is valid from ekran_onay onward', () => {
+    // goruldu's default ORDER_STEP_NEXT is tasarimci_onay; the ekran_onay
+    // branch is an explicit server-side override on resubmit, not reflected
+    // in the map — this only checks the segment FROM ekran_onay onward.
+    expect(ORDER_STEP_NEXT.ekran_onay).toBe('siparis_baski_onay')
+    expect(ORDER_STEP_NEXT.siparis_baski_onay).toBe('onaylandi')
   })
   it('the final step (onaylandi) has no next', () => {
     expect(ORDER_STEP_NEXT.onaylandi).toBeUndefined()
@@ -30,14 +38,36 @@ describe('order workflow step graph', () => {
     expect(ORDER_STEP_OWNER.pending).toBe('team_leader')
     expect(ORDER_STEP_OWNER.goruldu).toBe('designer')
     expect(ORDER_STEP_OWNER.tasarimci_onay).toBe('printer')
+    expect(ORDER_STEP_OWNER.ekran_onay).toBe('team_leader')
     expect(ORDER_STEP_OWNER.matbaa_onay).toBe('team_leader')
   })
   it('matbaa_onay rejection routes mirror main-pipeline ozalit choices', () => {
     expect(ORDER_REJECT_TARGETS.matbaa_onay.matbaa).toBe('tasarimci_onay')
     expect(ORDER_REJECT_TARGETS.matbaa_onay.designer).toBe('goruldu')
   })
-  it('default reject target is matbaa re-delivery', () => {
+  it('ekran_onay only offers a designer reject route, never matbaa', () => {
+    expect(ORDER_REJECT_TARGETS.ekran_onay.designer).toBe('goruldu')
+    expect(ORDER_REJECT_TARGETS.ekran_onay.matbaa).toBeUndefined()
+  })
+  it('default reject target is matbaa re-delivery, or designer for ekran_onay', () => {
     expect(ORDER_REJECT_TO.matbaa_onay).toBe('tasarimci_onay')
+    expect(ORDER_REJECT_TO.ekran_onay).toBe('goruldu')
+  })
+})
+
+describe('orderStepPath', () => {
+  it('defaults to the tasarimci_onay/matbaa_onay path', () => {
+    expect(orderStepPath({ status: 'matbaa_onay', order_history: [] })).toEqual(ORDER_STEP_PATH_DEFAULT)
+  })
+  it('detects the ekran_onay branch from current status', () => {
+    expect(orderStepPath({ status: 'ekran_onay', order_history: [] })).toEqual(ORDER_STEP_PATH_EKRAN_ONAY)
+  })
+  it('detects the ekran_onay branch from history after completion', () => {
+    const order = { status: 'onaylandi', order_history: [{ step: 'ekran_onay' }] }
+    expect(orderStepPath(order)).toEqual(ORDER_STEP_PATH_EKRAN_ONAY)
+  })
+  it('is safe with a missing order', () => {
+    expect(orderStepPath(undefined)).toEqual(ORDER_STEP_PATH_DEFAULT)
   })
 })
 

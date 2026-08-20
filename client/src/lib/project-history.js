@@ -123,11 +123,15 @@ const EVENTS = {
   demo_not_received: { icon: PackageX, tone: 'negative', weight: 'major', group: 'approval', label: 'Demo Teslim Alınamadı' },
   ozalit_received: { icon: PackageCheck, tone: 'positive', weight: 'major', group: 'approval', label: 'Ozalit Teslim Alındı' },
   ozalit_not_received: { icon: PackageX, tone: 'negative', weight: 'major', group: 'approval', label: 'Ozalit Teslim Alınamadı' },
-  // Written by the server when a project enters Üretime Hazır and its approved
-  // ozalit/demo sheet is copied into Ürün Bilgileri (services/product-info-capture.js).
-  // 'minor' because nobody performed it — it's bookkeeping that explains where
-  // a spec the leader never typed came from.
+  // Written by the server when a project lands on Baskıda and its approved
+  // baski_onay/ozalit/demo sheet is copied into Ürün Bilgileri
+  // (services/product-info-capture.js). 'minor' because nobody performed it —
+  // it's bookkeeping that explains where a spec the leader never typed came from.
   product_info_auto: { icon: Package, tone: 'neutral', weight: 'minor', group: 'order', label: 'Ürün Bilgileri Otomatik Kaydedildi' },
+  // One-time bookkeeping row from migration 047: a project sitting at
+  // uretime_hazir/uretimde got collapsed into baskida. 'minor' since nobody
+  // performed it — it's the migration explaining the stage jump.
+  stage_rename: { icon: Package, tone: 'neutral', weight: 'minor', group: 'stage', label: 'Aşama Yeniden Adlandırıldı' },
 
   handover_request: { icon: Truck, tone: 'pending', weight: 'major', group: 'order', label: 'Teslim Talebi Oluşturuldu' },
   handover_confirm: { icon: Package, tone: 'positive', weight: 'major', group: 'order', label: 'Teslim Onaylandı' },
@@ -171,8 +175,12 @@ const ADVANCE_LABELS = {
   cin_demo_onay: 'Demo Teslim Edildi',
   ozalit_teslim: "Ozalit'e Gönderildi",
   ozalit_onay: 'Ozalit',
+  // uretime_hazir/uretimde are retired (migration 047, collapsed into
+  // baskida) but kept so historical rows predating the rename still label
+  // correctly.
   uretime_hazir: 'Üretime Hazır',
   uretimde: 'Üretime Alındı (Baskı)',
+  baskida: 'Baskıya Alındı',
   gumruk: 'Gümrüğe Gönderildi',
   satista: 'Satışa Çıkarıldı',
 }
@@ -181,6 +189,8 @@ const APPROVE_LABELS = {
   demo_onay: 'Demo Onaylandı',
   cin_demo_onay: 'Demo Onaylandı',
   ozalit_onay: 'Ozalit Onaylandı',
+  baski_onay: 'Baskı Onaylandı',
+  cin_baski_onay: 'Baskı Onaylandı',
 }
 
 const REJECT_LABELS = {

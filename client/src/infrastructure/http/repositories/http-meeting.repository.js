@@ -72,6 +72,10 @@ export function createHttpMeetingRepository() {
       const { data } = await httpClient.post(`/meetings/${id}/notes`, { body })
       return data
     },
+    async updateMeetingNote(id, noteId, body) {
+      const { data } = await httpClient.patch(`/meetings/${id}/notes/${noteId}`, { body })
+      return data
+    },
     async deleteMeetingNote(id, noteId) {
       await httpClient.delete(`/meetings/${id}/notes/${noteId}`)
     },

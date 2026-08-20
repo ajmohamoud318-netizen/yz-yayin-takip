@@ -78,9 +78,9 @@ export default function Toplanti() {
   } = useMeetings()
   const { projects } = useProjectsStore()
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingMeeting, setEditingMeeting] = useState(null)
-  const [detailMeeting, setDetailMeeting] = useState(null)
+  const [detailMeetingId, setDetailMeetingId] = useState(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [detailStartEditing, setDetailStartEditing] = useState(false)
 
   const projectsById = useMemo(() => {
     const map = new Map()
@@ -89,19 +89,18 @@ export default function Toplanti() {
   }, [projects])
 
   function openAddDialog() {
-    setEditingMeeting(null)
     setDialogOpen(true)
   }
 
-  function openEditDialog(meeting) {
-    setEditingMeeting(meeting)
-    setDialogOpen(true)
-  }
-
-  function openDetail(meeting) {
-    setDetailMeeting(meeting)
+  function openDetail(meeting, startEditing = false) {
+    setDetailMeetingId(meeting.id)
+    setDetailStartEditing(startEditing)
     setDetailOpen(true)
   }
+
+  // Kept live by id rather than snapshotted at click time, so an edit saved
+  // inside the detail dialog is reflected in its own title/links immediately.
+  const detailMeeting = detailMeetingId ? (meetings.find((m) => m.id === detailMeetingId) ?? null) : null
 
   async function handleRemove(meeting) {
     try {
@@ -153,7 +152,7 @@ export default function Toplanti() {
               project={meeting.project_id ? projectsById.get(meeting.project_id) : null}
               canModify={canModify(meeting)}
               onOpenDetail={() => openDetail(meeting)}
-              onEdit={() => openEditDialog(meeting)}
+              onEdit={() => openDetail(meeting, true)}
               onRemove={() => handleRemove(meeting)}
               onUploadImage={(file) => uploadImage(meeting.id, file)}
               onRemoveImage={() => removeImage(meeting.id)}
@@ -165,10 +164,8 @@ export default function Toplanti() {
       <MeetingDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        editingMeeting={editingMeeting}
         projects={projects}
         onAdd={add}
-        onUpdate={update}
         onUploadImage={uploadImage}
         busy={busy}
       />
@@ -177,9 +174,12 @@ export default function Toplanti() {
         open={detailOpen}
         onOpenChange={setDetailOpen}
         meeting={detailMeeting}
+        startEditing={detailStartEditing}
         project={detailMeeting?.project_id ? projectsById.get(detailMeeting.project_id) : null}
+        projects={projects}
         canModifyMeeting={detailMeeting ? canModify(detailMeeting) : false}
         canAddNote={canAdd}
+        onUpdate={update}
       />
     </div>
   )
@@ -344,7 +344,7 @@ function MeetingCard({
 }
 
 function MeetingDialog({
-  open, onOpenChange, editingMeeting, projects, onAdd, onUpdate, onUploadImage, busy,
+  open, onOpenChange, projects, onAdd, onUploadImage, busy,
 }) {
   const [title, setTitle] = useState('')
   const [meetingAt, setMeetingAt] = useState('')
@@ -354,22 +354,20 @@ function MeetingDialog({
   const [imagePreview, setImagePreview] = useState(null)
   const fileInputRef = useRef(null)
 
-  const isEditing = !!editingMeeting
-
-  // Reset/prefill each time the dialog opens rather than on close, so the
-  // fields don't visibly blank out while the closing animation is playing.
+  // Reset each time the dialog opens rather than on close, so the fields
+  // don't visibly blank out while the closing animation is playing.
   useEffect(() => {
     if (!open) return
-    setTitle(editingMeeting?.title ?? '')
-    setMeetingAt(toDateInputValue(editingMeeting?.meeting_at))
-    setLinks(editingMeeting?.links?.length ? editingMeeting.links : [])
-    setProjectId(editingMeeting?.project_id ?? NO_PROJECT)
+    setTitle('')
+    setMeetingAt('')
+    setLinks([])
+    setProjectId(NO_PROJECT)
     setImageFile(null)
     setImagePreview((prev) => {
       if (prev) URL.revokeObjectURL(prev)
       return null
     })
-  }, [open, editingMeeting])
+  }, [open])
 
   function handlePickImage(e) {
     const file = e.target.files?.[0]
@@ -405,27 +403,20 @@ function MeetingDialog({
     const cleanLinks = links.map((l) => l.trim()).filter(Boolean)
     const resolvedProjectId = projectId === NO_PROJECT ? null : projectId
     try {
-      if (isEditing) {
-        await onUpdate(editingMeeting.id, {
-          title: trimmed, meetingAt: meetingAtIso, links: cleanLinks, projectId: resolvedProjectId,
-        })
-        toast.success('Toplantı güncellendi.')
-      } else {
-        const saved = await onAdd({
-          title: trimmed, meetingAt: meetingAtIso, links: cleanLinks, projectId: resolvedProjectId,
-        })
-        if (imageFile && saved?.id) {
-          try {
-            await onUploadImage(saved.id, imageFile)
-          } catch (err) {
-            toast.error(err?.message || 'Toplantı eklendi ama görsel yüklenemedi.')
-          }
+      const saved = await onAdd({
+        title: trimmed, meetingAt: meetingAtIso, links: cleanLinks, projectId: resolvedProjectId,
+      })
+      if (imageFile && saved?.id) {
+        try {
+          await onUploadImage(saved.id, imageFile)
+        } catch (err) {
+          toast.error(err?.message || 'Toplantı eklendi ama görsel yüklenemedi.')
         }
-        toast.success('Toplantı eklendi.')
       }
+      toast.success('Toplantı eklendi.')
       onOpenChange(false)
     } catch (err) {
-      toast.error(err?.message || (isEditing ? 'Güncellenemedi.' : 'Eklenemedi.'))
+      toast.error(err?.message || 'Eklenemedi.')
     }
   }
 
@@ -435,7 +426,7 @@ function MeetingDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarDays className="h-4 w-4" />
-            {isEditing ? 'Toplantıyı Düzenle' : 'Toplantı Ekle'}
+            Toplantı Ekle
           </DialogTitle>
           <DialogDescription>
             Toplantı başlığı, tarihi ve varsa bağlı olduğu proje.
@@ -481,7 +472,6 @@ function MeetingDialog({
             <Label>Bağlantılar</Label>
             <LinksListInput links={links} onChange={setLinks} />
           </div>
-          {!isEditing && (
           <div className="space-y-1.5">
             <Label>Görsel</Label>
             {imagePreview ? (
@@ -520,13 +510,12 @@ function MeetingDialog({
               onChange={handlePickImage}
             />
           </div>
-          )}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               İptal
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? 'Kaydediliyor…' : isEditing ? 'Kaydet' : 'Ekle'}
+              {busy ? 'Kaydediliyor…' : 'Ekle'}
             </Button>
           </DialogFooter>
         </form>
@@ -537,23 +526,86 @@ function MeetingDialog({
 
 /**
  * Opened by clicking a card: the cover (view-only here — editing it stays
- * on the card), the full links list, a photo gallery beyond the cover, and
- * a timestamped notes log. Gallery/notes are fetched fresh each time this
- * opens via useMeetingDetail, since the card grid never carries them.
+ * on the card), the title/date/project/links (editable in place here — this
+ * replaced the old separate "edit" dialog), a photo gallery beyond the
+ * cover, and a timestamped notes log whose own entries can each be edited
+ * or removed. Gallery/notes are fetched fresh each time this opens via
+ * useMeetingDetail, since the card grid never carries them.
  */
 function MeetingDetailDialog({
-  open, onOpenChange, meeting, project, canModifyMeeting, canAddNote,
+  open, onOpenChange, meeting, startEditing, project, projects, canModifyMeeting, canAddNote, onUpdate,
 }) {
   const meetingId = open ? meeting?.id : null
   const {
-    detail, loading, busy, addGalleryImage, removeGalleryImage, addNote, removeNote, canModifyNote,
+    detail, loading, busy, addGalleryImage, removeGalleryImage, addNote, updateNote, removeNote, canModifyNote,
   } = useMeetingDetail(meetingId)
   const [noteText, setNoteText] = useState('')
+  const [editingNoteId, setEditingNoteId] = useState(null)
+  const [editingNoteText, setEditingNoteText] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState('')
+  const [editMeetingAt, setEditMeetingAt] = useState('')
+  const [editLinks, setEditLinks] = useState([])
+  const [editProjectId, setEditProjectId] = useState(NO_PROJECT)
+  const [savingMeeting, setSavingMeeting] = useState(false)
   const fileInputRef = useRef(null)
 
   useEffect(() => {
-    if (open) setNoteText('')
+    if (!open) return
+    setNoteText('')
+    setEditingNoteId(null)
+    setEditing(!!startEditing)
+    setEditTitle(meeting?.title ?? '')
+    setEditMeetingAt(toDateInputValue(meeting?.meeting_at))
+    setEditLinks(meeting?.links?.length ? meeting.links : [])
+    setEditProjectId(meeting?.project_id ?? NO_PROJECT)
   }, [open, meeting?.id])
+
+  async function handleSaveMeeting(e) {
+    e.preventDefault()
+    const trimmed = editTitle.trim()
+    if (!trimmed) {
+      toast.error('Başlık zorunludur.')
+      return
+    }
+    const meetingAtIso = fromDateInputValue(editMeetingAt)
+    if (!meetingAtIso) {
+      toast.error('Tarih zorunludur.')
+      return
+    }
+    setSavingMeeting(true)
+    try {
+      await onUpdate(meeting.id, {
+        title: trimmed,
+        meetingAt: meetingAtIso,
+        links: editLinks.map((l) => l.trim()).filter(Boolean),
+        projectId: editProjectId === NO_PROJECT ? null : editProjectId,
+      })
+      toast.success('Toplantı güncellendi.')
+      setEditing(false)
+    } catch (err) {
+      toast.error(err?.message || 'Güncellenemedi.')
+    } finally {
+      setSavingMeeting(false)
+    }
+  }
+
+  function handleStartEditNote(note) {
+    setEditingNoteId(note.id)
+    setEditingNoteText(note.body)
+  }
+
+  async function handleSaveNote(e) {
+    e.preventDefault()
+    const trimmed = editingNoteText.trim()
+    if (!trimmed) return
+    try {
+      await updateNote(editingNoteId, trimmed)
+      setEditingNoteId(null)
+    } catch (err) {
+      toast.error(err?.message || 'Not güncellenemedi.')
+    }
+  }
 
   async function handlePickGalleryImage(e) {
     const file = e.target.files?.[0]
@@ -602,11 +654,24 @@ function MeetingDetailDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4" />
-            {meeting.title}
+          <DialogTitle className="flex items-center justify-between gap-2">
+            <span className="inline-flex min-w-0 items-center gap-2">
+              <CalendarDays className="h-4 w-4 shrink-0" />
+              <span className="truncate">{editing ? 'Toplantıyı Düzenle' : meeting.title}</span>
+            </span>
+            {canModifyMeeting && !editing && (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                aria-label="Düzenle"
+                title="Düzenle"
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
           </DialogTitle>
-          <DialogDescription>{formatMeetingAt(meeting.meeting_at)}</DialogDescription>
+          {!editing && <DialogDescription>{formatMeetingAt(meeting.meeting_at)}</DialogDescription>}
         </DialogHeader>
 
         <div className="space-y-5">
@@ -621,36 +686,90 @@ function MeetingDetailDialog({
             </a>
           )}
 
-          {project && (
-            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-              <FolderKanban className="h-3 w-3" />
-              {project.title}
-            </span>
-          )}
+          {editing ? (
+            <form onSubmit={handleSaveMeeting} className="space-y-3 rounded-lg border bg-muted/30 p-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="mtg-detail-title">Başlık</Label>
+                <Input
+                  id="mtg-detail-title"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  maxLength={200}
+                  autoFocus
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="mtg-detail-at">Tarih</Label>
+                <Input
+                  id="mtg-detail-at"
+                  type="date"
+                  value={editMeetingAt}
+                  onChange={(e) => setEditMeetingAt(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="mtg-detail-project">Proje (opsiyonel)</Label>
+                <Select value={editProjectId} onValueChange={setEditProjectId}>
+                  <SelectTrigger id="mtg-detail-project">
+                    <SelectValue placeholder="Proje seçin…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_PROJECT}>Yok</SelectItem>
+                    {projects.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Bağlantılar</Label>
+                <LinksListInput links={editLinks} onChange={setEditLinks} />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>
+                  İptal
+                </Button>
+                <Button type="submit" size="sm" disabled={savingMeeting}>
+                  {savingMeeting ? 'Kaydediliyor…' : 'Kaydet'}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <>
+              {project && (
+                <span className="inline-flex w-fit items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                  <FolderKanban className="h-3 w-3" />
+                  {project.title}
+                </span>
+              )}
 
-          {links.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <LinkIcon className="h-3.5 w-3.5" />
-                Bağlantılar
-              </p>
-              <ul className="space-y-1">
-                {links.map((link, i) => (
-                  // eslint-disable-next-line react/no-array-index-key -- links are a flat, unordered-by-id string list
-                  <li key={i}>
-                    <a
-                      href={normalizeHref(link)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 break-all text-sm text-primary hover:underline"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                      {link}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
+              {links.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <LinkIcon className="h-3.5 w-3.5" />
+                    Bağlantılar
+                  </p>
+                  <ul className="space-y-1">
+                    {links.map((link, i) => (
+                      // eslint-disable-next-line react/no-array-index-key -- links are a flat, unordered-by-id string list
+                      <li key={i}>
+                        <a
+                          href={normalizeHref(link)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 break-all text-sm text-primary hover:underline"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                          {link}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
           )}
 
           <div className="space-y-2">
@@ -721,21 +840,60 @@ function MeetingDetailDialog({
               ) : detail?.notes?.length ? (
                 detail.notes.map((note) => (
                   <div key={note.id} className="rounded-md bg-card p-2 shadow-sm">
-                    <p className="whitespace-pre-wrap text-sm">{note.body}</p>
-                    <div className="mt-1 flex items-center justify-between gap-2">
-                      <p className="text-[11px] text-muted-foreground">
-                        {note.created_by_name ?? 'Ekipten biri'} · {formatDateTr(note.created_at)}
-                      </p>
-                      {canModifyNote(note) && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveNote(note.id)}
-                          className="shrink-0 text-[11px] text-muted-foreground transition-colors hover:text-destructive"
-                        >
-                          Sil
-                        </button>
-                      )}
-                    </div>
+                    {editingNoteId === note.id ? (
+                      <form onSubmit={handleSaveNote} className="space-y-1.5">
+                        <Textarea
+                          value={editingNoteText}
+                          onChange={(e) => setEditingNoteText(e.target.value.slice(0, 2000))}
+                          rows={2}
+                          autoFocus
+                          className="text-sm"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingNoteId(null)}
+                            className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                          >
+                            İptal
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={busy || !editingNoteText.trim()}
+                            className="text-[11px] font-medium text-primary transition-colors hover:underline disabled:opacity-50"
+                          >
+                            Kaydet
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <>
+                        <p className="whitespace-pre-wrap text-sm">{note.body}</p>
+                        <div className="mt-1 flex items-center justify-between gap-2">
+                          <p className="text-[11px] text-muted-foreground">
+                            {note.created_by_name ?? 'Ekipten biri'} · {formatDateTr(note.created_at)}
+                          </p>
+                          {canModifyNote(note) && (
+                            <div className="flex shrink-0 items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditNote(note)}
+                                className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                              >
+                                Düzenle
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveNote(note.id)}
+                                className="text-[11px] text-muted-foreground transition-colors hover:text-destructive"
+                              >
+                                Sil
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))
               ) : (

@@ -24,7 +24,6 @@ const COLUMN_PASTELS = ['#E7DBF5', '#D7F0E4', '#FDE3D1', '#D6ECF8', '#F8DCE8', '
 export default function Kanban() {
   const { projects, loading } = useProjects()
   const navigate = useNavigate()
-  const [view, setView] = useState('projects') // 'projects' | 'orders'
   const [typeFilter, setTypeFilter] = useState('all')
 
   // Build columns: pick TR or CIN pipeline
@@ -43,7 +42,6 @@ export default function Kanban() {
   const [ordersLoading, setOrdersLoading] = useState(true)
 
   useEffect(() => {
-    if (view !== 'orders') return
     let cancelled = false
     setOrdersLoading(true)
     api.listOrderRequests()
@@ -52,7 +50,7 @@ export default function Kanban() {
     return () => {
       cancelled = true
     }
-  }, [view])
+  }, [])
 
   const groupedOrders = useMemo(() => {
     const map = Object.fromEntries(ORDER_STEPS.map((s) => [s, []]))
@@ -68,35 +66,24 @@ export default function Kanban() {
         <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
           <div>
             <p className="label-eyebrow">İş Akışı</p>
-            <h1 className="mt-1 text-3xl">{view === 'orders' ? 'Sipariş Panosu' : 'Pano'}</h1>
+            <h1 className="mt-1 text-3xl">Pano</h1>
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex flex-col items-stretch gap-1.5">
-              <FilterChip active={view === 'projects'} onClick={() => setView('projects')}>
-                Projeler
-              </FilterChip>
-              <FilterChip active={view === 'orders'} onClick={() => setView('orders')}>
-                Siparişler
-              </FilterChip>
-            </div>
-            {view === 'projects' && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <FilterChip active={typeFilter === 'all'} onClick={() => setTypeFilter('all')}>
-                  Tümü
-                </FilterChip>
-                <FilterChip active={typeFilter === 'TR'} onClick={() => setTypeFilter('TR')}>
-                  {TYPE_LABELS.TR}
-                </FilterChip>
-                <FilterChip active={typeFilter === 'CIN'} onClick={() => setTypeFilter('CIN')}>
-                  {TYPE_LABELS.CIN}
-                </FilterChip>
-              </div>
-            )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <FilterChip active={typeFilter === 'all'} onClick={() => setTypeFilter('all')}>
+              Tümü
+            </FilterChip>
+            <FilterChip active={typeFilter === 'TR'} onClick={() => setTypeFilter('TR')}>
+              {TYPE_LABELS.TR}
+            </FilterChip>
+            <FilterChip active={typeFilter === 'CIN'} onClick={() => setTypeFilter('CIN')}>
+              {TYPE_LABELS.CIN}
+            </FilterChip>
           </div>
         </header>
 
-        {view === 'projects' ? (
-          loading ? (
+        <section>
+          <h2 className="mb-2 text-sm font-semibold text-muted-foreground">Projeler</h2>
+          {loading ? (
             /* Skeletons match the column-scroll container below so the loading
                state doesn't flash as a stacked grid on mobile. */
             <div className="scrollbar-thin -mx-3 flex gap-3 overflow-x-auto px-3 pb-2 sm:-mx-4 sm:px-4">
@@ -117,28 +104,33 @@ export default function Kanban() {
                 />
               ))}
             </div>
-          )
-        ) : ordersLoading ? (
-          <div className="scrollbar-thin -mx-3 flex gap-3 overflow-x-auto px-3 pb-2 sm:-mx-4 sm:px-4">
-            {ORDER_STEPS.map((s) => (
-              <Skeleton key={s} className="h-64 w-72 shrink-0 rounded-xl sm:w-64" />
-            ))}
-          </div>
-        ) : (
-          <div className="scrollbar-thin -mx-3 flex gap-3 overflow-x-auto px-3 pb-2 sm:-mx-4 sm:px-4">
-            {ORDER_STEPS.map((step, i) => (
-              <KanbanColumn
-                key={step}
-                stage={ORDER_STEP_LABELS[step]}
-                color={COLUMN_PASTELS[i % COLUMN_PASTELS.length]}
-                items={groupedOrders[step] ?? []}
-                onOpen={(o) => navigate(`/projects/${o.project_id}`)}
-                emptyIcon={ShoppingCart}
-                renderItem={(o) => <OrderCard order={o} />}
-              />
-            ))}
-          </div>
-        )}
+          )}
+        </section>
+
+        <section>
+          <h2 className="mb-2 text-sm font-semibold text-muted-foreground">Siparişler</h2>
+          {ordersLoading ? (
+            <div className="scrollbar-thin -mx-3 flex gap-3 overflow-x-auto px-3 pb-2 sm:-mx-4 sm:px-4">
+              {ORDER_STEPS.map((s) => (
+                <Skeleton key={s} className="h-64 w-72 shrink-0 rounded-xl sm:w-64" />
+              ))}
+            </div>
+          ) : (
+            <div className="scrollbar-thin -mx-3 flex gap-3 overflow-x-auto px-3 pb-2 sm:-mx-4 sm:px-4">
+              {ORDER_STEPS.map((step, i) => (
+                <KanbanColumn
+                  key={step}
+                  stage={ORDER_STEP_LABELS[step]}
+                  color={COLUMN_PASTELS[i % COLUMN_PASTELS.length]}
+                  items={groupedOrders[step] ?? []}
+                  onOpen={(o) => navigate(`/projects/${o.project_id}`)}
+                  emptyIcon={ShoppingCart}
+                  renderItem={(o) => <OrderCard order={o} />}
+                />
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </>
   )

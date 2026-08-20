@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 import { STAGE_LABELS, STAGE_PIPELINE } from '../api.js'
 
 // Single source of truth for stage order — keep StageBar in sync with the
-// canonical pipeline so post-Ozalit stages (e.g. 'uretime_hazir') resolve
+// canonical pipeline so post-Ozalit stages (e.g. 'baskida') resolve
 // correctly instead of falling back to step 1.
 export function stagesForType(type) {
   return type === 'CIN' ? STAGE_PIPELINE.CIN : STAGE_PIPELINE.TR

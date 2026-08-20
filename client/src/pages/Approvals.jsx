@@ -80,9 +80,11 @@ export default function Approvals({ tab = 'demo' }) {
         return (p.assignees ?? []).some((a) => a.id === user?.id)
       }
       // Baskı Onayı: dual-approval (prepare, then a different leader
-      // approves — migration 045), team_leader only either way.
+      // approves — migration 045), team_leader only either way. Includes
+      // ÇİN's mirror gate (cin_baski_onay, migration 047) — same dialog,
+      // same rule, distinguished only by the row's own type badge.
       if (sub === 'baski-onay') {
-        return isLeader && p.stage === 'baski_onay'
+        return isLeader && (p.stage === 'baski_onay' || p.stage === 'cin_baski_onay')
       }
       return false
     })

@@ -2,27 +2,30 @@ import { useEffect, useState } from 'react'
 import { ShoppingCart, Package, Eye, CheckCircle2, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 
-import api, { ORDER_STEP_LABELS, ORDER_STEP_NEXT } from '@/api'
+import api, { ORDER_STEP_LABELS, ORDER_LEADER_ACTION_STEPS } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
+import SiparisBaskiOnayFormDialog from '@/components/SiparisBaskiOnayFormDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import { cn, formatNumber } from '@/lib/utils'
 
-// Statuses that the team leader acts on:
-//   pending      → görüldü   (first acknowledgement)
-//   matbaa_onay  → onaylandi (final approval, flips project to üretimde)
-const LEADER_ACTION_STEPS = new Set(['pending', 'matbaa_onay'])
+// Statuses that the team leader acts on — centralized in domain/constants/
+// orders.js (ORDER_LEADER_ACTION_STEPS) so this page and AppShell's nav
+// badge don't maintain two independent hardcoded copies.
+const LEADER_ACTION_STEPS = ORDER_LEADER_ACTION_STEPS
 
 const STATUS_BADGE = {
-  pending:        'bg-amber-50 text-amber-700 border-amber-200',
-  goruldu:        'bg-blue-50 text-blue-700 border-blue-200',
-  tasarimci_onay: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  matbaa_onay:    'bg-violet-50 text-violet-700 border-violet-200',
-  onaylandi:      'bg-emerald-50 text-emerald-700 border-emerald-200',
+  pending:             'bg-amber-50 text-amber-700 border-amber-200',
+  goruldu:             'bg-blue-50 text-blue-700 border-blue-200',
+  tasarimci_onay:      'bg-indigo-50 text-indigo-700 border-indigo-200',
+  ekran_onay:          'bg-cyan-50 text-cyan-700 border-cyan-200',
+  matbaa_onay:         'bg-violet-50 text-violet-700 border-violet-200',
+  siparis_baski_onay:  'bg-purple-50 text-purple-700 border-purple-200',
+  onaylandi:           'bg-emerald-50 text-emerald-700 border-emerald-200',
 }
 
 export default function SiparisTalepleri() {
@@ -32,6 +35,7 @@ export default function SiparisTalepleri() {
   const [signOrder, setSignOrder] = useState(null)
   const [viewOrder, setViewOrder] = useState(null)
   const [ozalitProject, setOzalitProject] = useState(null)
+  const [baskiOnayOrder, setBaskiOnayOrder] = useState(null)
 
   async function openOzalit(order) {
     try {
@@ -50,6 +54,14 @@ export default function SiparisTalepleri() {
   function handleSigned(updated) {
     setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
     setSignOrder(null)
+  }
+
+  // siparis_baski_onay approve closes the form dialog itself and reports
+  // back here (mirrors handleSigned) — a bare PATCH /advance can't move
+  // this step, it requires the dedicated form-fill-then-approve routes.
+  function handleBaskiOnayApproved(updated) {
+    setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
+    if (updated.status !== 'siparis_baski_onay') setBaskiOnayOrder(null)
   }
 
   // "Teslim Alındı" closes its own (compact) dialog — this just keeps the
@@ -113,6 +125,7 @@ export default function SiparisTalepleri() {
                 onSign={() => setSignOrder(r)}
                 onView={() => setViewOrder(r)}
                 onOzalit={() => openOzalit(r)}
+                onBaskiOnay={() => setBaskiOnayOrder(r)}
               />
             ))}
           </div>
@@ -137,6 +150,12 @@ export default function SiparisTalepleri() {
         project={ozalitProject}
         mode="view"
       />
+      <SiparisBaskiOnayFormDialog
+        order={baskiOnayOrder}
+        open={!!baskiOnayOrder}
+        onOpenChange={(v) => !v && setBaskiOnayOrder(null)}
+        onApproved={handleBaskiOnayApproved}
+      />
     </>
   )
 }
@@ -147,11 +166,15 @@ function normalizeItems(items, quantity) {
   return items
 }
 
-function RequestCard({ request, onSign, onView, onOzalit }) {
+function RequestCard({ request, onSign, onView, onOzalit, onBaskiOnay }) {
   const statusBadge = STATUS_BADGE[request.status] ?? ''
   const statusLabel = ORDER_STEP_LABELS[request.status] ?? request.status
   const items = normalizeItems(request.items, request.quantity)
   const needsLeaderAction = LEADER_ACTION_STEPS.has(request.status)
+  // siparis_baski_onay has no bare "click to advance" action — it needs the
+  // print-spec form filled in first, so it opens a different dialog
+  // (SiparisBaskiOnayFormDialog) than every other leader-action step.
+  const isBaskiOnayStep = request.status === 'siparis_baski_onay'
 
   const date = request.created_at
     ? new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(request.created_at))
@@ -159,7 +182,11 @@ function RequestCard({ request, onSign, onView, onOzalit }) {
 
   // matbaa_onay is multi-party now — a single click here is one vote, not
   // necessarily the final one (see TalepSignDialog's isMatbaaOnayStep note).
-  const actionLabel = request.status === 'pending' ? 'Tasarımcıya Aktar' : 'Onayla'
+  const actionLabel = request.status === 'pending'
+    ? 'Tasarımcıya Aktar'
+    : isBaskiOnayStep
+      ? 'Baskı Onay Formu'
+      : 'Onayla'
 
   return (
     <Card className={cn(needsLeaderAction && 'border-amber-200')}>
@@ -214,7 +241,7 @@ function RequestCard({ request, onSign, onView, onOzalit }) {
                   size="sm"
                   variant="default"
                   className={cn(request.status === 'pending' && 'bg-amber-500 text-white shadow-sm hover:bg-amber-600')}
-                  onClick={onSign}
+                  onClick={isBaskiOnayStep ? onBaskiOnay : onSign}
                 >
                   {actionLabel}
                 </Button>

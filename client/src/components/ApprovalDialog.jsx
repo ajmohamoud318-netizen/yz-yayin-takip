@@ -28,14 +28,17 @@ const trDate = () =>
   new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
 
 // Where an approval sends the project, with a destination-aware button label.
-// NOTE: özalit and çin-demo approval land the project on `uretime_hazir`
-// (production-ready) — NOT `uretimde`. Actual production only begins later via
-// the order/handover flow, so announcing "Üretimde" here misled the user.
+// baski_onay/cin_baski_onay land the project directly on `baskida` (migration
+// 047) — matbaa is notified and acts from there immediately, no separate
+// "take into production" step anymore.
 const APPROVE_DEST = {
   demo_onay: { label: 'Onayla', stage: 'ozalit_teslim' },
   ozalit_onay: { label: 'Onayla', stage: 'baski_onay' },
-  baski_onay: { label: 'Üretime Al', stage: 'uretime_hazir' },
-  cin_demo_onay: { label: 'Üretime Al', stage: 'uretime_hazir' },
+  baski_onay: { label: 'Üretime Al', stage: 'baskida' },
+  // Approving the ÇİN demo no longer means production-ready — it now needs
+  // its own print-approval gate first, mirroring TR's ozalit_onay → baski_onay.
+  cin_demo_onay: { label: 'Onayla', stage: 'cin_baski_onay' },
+  cin_baski_onay: { label: 'Üretime Al', stage: 'baskida' },
 }
 
 /**

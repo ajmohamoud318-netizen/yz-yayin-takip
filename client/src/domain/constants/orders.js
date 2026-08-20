@@ -1,32 +1,56 @@
 /** Sipariş talep mini-workflow — separate from the main project pipeline. */
 
-export const ORDER_STEPS = ['pending', 'goruldu', 'tasarimci_onay', 'matbaa_onay', 'onaylandi']
+export const ORDER_STEPS = [
+  'pending', 'goruldu', 'tasarimci_onay', 'ekran_onay', 'matbaa_onay',
+  'siparis_baski_onay', 'onaylandi',
+]
 
 export const ORDER_STEP_LABELS = {
   pending: 'Talep',
   goruldu: 'Tasarımcıya Aktarıldı',
   tasarimci_onay: 'Ozalit İstendi',
+  ekran_onay: 'Ekran Onayı',
   matbaa_onay: 'Onay Bekleniyor',
-  onaylandi: 'Üretimde',
+  siparis_baski_onay: 'Baskı Onayı',
+  onaylandi: 'Baskıda',
 }
 
-// `matbaa_onay` is multi-party, leader-first (every active team leader AND
+// matbaa_onay is multi-party, leader-first (every active team leader AND
 // every order assignee must approve — see computeMatbaaOnayApproval on the
 // server, `canApproveMatbaaOnayNow` below), NOT a flat single-owner step.
 // The 'team_leader' value below is only documentary here — the /advance
 // route special-cases matbaa_onay before ever consulting this map.
+//
+// ekran_onay IS a flat single-owner step (team_leader, one click, no
+// receipt gate, no ledger — unlike matbaa_onay).
+//
+// siparis_baski_onay's 'team_leader' entry is documentary only: it's never
+// reached via the generic /advance route — it requires the dedicated
+// form-fill-then-approve routes instead (see SiparisBaskiOnayFormDialog).
 export const ORDER_STEP_OWNER = {
   pending: 'team_leader',
   goruldu: 'designer',
   tasarimci_onay: 'printer',
+  ekran_onay: 'team_leader',
   matbaa_onay: 'team_leader',
+  siparis_baski_onay: 'team_leader',
 }
 
+// goruldu's entry below is the DEFAULT/first-submission destination only.
+// On a resubmit (order.last_reject_type === 'designer') the server overrides
+// `next` with the designer's chosen `route` ('tasarimci_onay' | 'ekran_onay')
+// instead of consulting this map — see orderStepPath below and
+// TalepSignDialog's resubmit choice UI.
+//
+// matbaa_onay now points at siparis_baski_onay, not onaylandi directly — the
+// print-spec gate sits between the proof round and production.
 export const ORDER_STEP_NEXT = {
   pending: 'goruldu',
   goruldu: 'tasarimci_onay',
   tasarimci_onay: 'matbaa_onay',
-  matbaa_onay: 'onaylandi',
+  ekran_onay: 'siparis_baski_onay',
+  matbaa_onay: 'siparis_baski_onay',
+  siparis_baski_onay: 'onaylandi',
 }
 
 /**
@@ -42,6 +66,11 @@ export const ORDER_STEP_NEXT = {
  *                   through the same assign-step UI as a fresh order.
  * The ozalit attempt counter increments each time, mirroring a first-edition
  * ozalit rejection (which offers the same Tasarımcı / Matbaa choice).
+ *
+ * ekran_onay only offers a 'designer' target — it never touches the
+ * printer (no physical proof was ever delivered), so there's no 'matbaa'
+ * route, and no 'reassign' either — a leader can still reassign from a
+ * later reject once the resubmit reaches matbaa_onay again.
  */
 export const ORDER_REJECT_TARGETS = {
   matbaa_onay: {
@@ -49,13 +78,44 @@ export const ORDER_REJECT_TARGETS = {
     designer: 'goruldu',
     reassign: 'pending',
   },
+  ekran_onay: {
+    designer: 'goruldu',
+  },
 }
 
-// Default destination (matbaa re-delivery). Kept so `canReject` checks and any
-// caller that doesn't pass a target keep working.
+// Default destination per step. Kept so `canReject` checks and any caller
+// that doesn't pass a target keep working.
 export const ORDER_REJECT_TO = {
   matbaa_onay: 'tasarimci_onay',
+  ekran_onay: 'goruldu',
 }
+
+// The pipeline is no longer strictly linear — from `goruldu` a resubmit can
+// go to either `tasarimci_onay` or `ekran_onay`. These two constants are the
+// two possible full linear paths an order can take, for anything that needs
+// to render a step sequence (pipeline visualizers, "future steps" lists).
+export const ORDER_STEP_PATH_DEFAULT = [
+  'pending', 'goruldu', 'tasarimci_onay', 'matbaa_onay', 'siparis_baski_onay', 'onaylandi',
+]
+export const ORDER_STEP_PATH_EKRAN_ONAY = [
+  'pending', 'goruldu', 'ekran_onay', 'siparis_baski_onay', 'onaylandi',
+]
+
+/**
+ * Which of the two linear paths this order actually took. Checked against
+ * order_history (not just current status) so a COMPLETED order still
+ * renders the branch it took, not the default one.
+ */
+export function orderStepPath(order) {
+  const tookEkranOnay = order?.status === 'ekran_onay'
+    || (order?.order_history ?? []).some((h) => h.step === 'ekran_onay')
+  return tookEkranOnay ? ORDER_STEP_PATH_EKRAN_ONAY : ORDER_STEP_PATH_DEFAULT
+}
+
+// Steps where the team leader owes an action — drives nav badge counts and
+// the "action" tab in SiparisTalepleri. Centralized here so AppShell and
+// SiparisTalepleri don't maintain two independent hardcoded copies.
+export const ORDER_LEADER_ACTION_STEPS = new Set(['pending', 'ekran_onay', 'matbaa_onay', 'siparis_baski_onay'])
 
 /**
  * Is this order sitting on `designerId`'s desk?

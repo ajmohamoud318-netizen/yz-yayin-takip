@@ -15,18 +15,18 @@ const cleanTitle = (t) => String(t ?? '').replace(/ \/ /g, ' ')
  * Baskı Listesi — the print queue.
  *
  * Scope is deliberately identical to the sidebar's `counts.production` badge
- * (AppShell: `p.stage === 'uretimde' || p.stage === 'gumruk'`). Both read the
+ * (AppShell: `p.stage === 'baskida' || p.stage === 'gumruk'`). Both read the
  * same ProjectsProvider array, so the number on the nav and the number of rows
  * here cannot drift apart. If you widen one, widen the other.
  *
- * Gümrük is CIN-only — the TR pipeline runs uretimde → satista with no customs
+ * Gümrük is CIN-only — the TR pipeline runs baskida → satista with no customs
  * leg — so that section simply stays empty on a TR-only board.
  */
-const QUEUE_STAGES = ['uretimde', 'gumruk']
+const QUEUE_STAGES = ['baskida', 'gumruk']
 
 const SECTIONS = [
   {
-    stage: 'uretimde',
+    stage: 'baskida',
     icon: Factory,
     blurb: 'Matbaada basılıyor.',
   },

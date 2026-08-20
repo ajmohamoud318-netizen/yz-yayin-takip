@@ -35,5 +35,18 @@ export function createHttpOrderRepository() {
       const { data } = await httpClient.patch(`/order-requests/${orderId}/subtasks/${subtaskId}`, patch)
       return data
     },
+    // Save a draft of the siparis_baski_onay print-spec form without
+    // advancing — the form snapshot lives on order_requests.baski_onay_form
+    // (migration 046), not the shared demos table.
+    async saveOrderBaskiOnayForm(id, body) {
+      const { data } = await httpClient.patch(`/order-requests/${id}/baski-onay-form`, body)
+      return data
+    },
+    // Approve the siparis_baski_onay form — saves the final snapshot AND
+    // advances the order to onaylandi in one action.
+    async approveOrderBaskiOnayForm(id, body) {
+      const { data } = await httpClient.post(`/order-requests/${id}/baski-onay-approve`, body)
+      return data
+    },
   }
 }

@@ -68,6 +68,10 @@ export function createHttpTargetProjectIdeaRepository() {
       const { data } = await httpClient.post(`/target-project-ideas/${id}/notes`, { body })
       return data
     },
+    async updateTargetProjectIdeaNote(id, noteId, body) {
+      const { data } = await httpClient.patch(`/target-project-ideas/${id}/notes/${noteId}`, { body })
+      return data
+    },
     async deleteTargetProjectIdeaNote(id, noteId) {
       await httpClient.delete(`/target-project-ideas/${id}/notes/${noteId}`)
     },

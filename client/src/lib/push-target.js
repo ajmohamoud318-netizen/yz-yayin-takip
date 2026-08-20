@@ -2,7 +2,7 @@
  * Reader half of the push-tap handoff written by `client/public/sw.js`.
  *
  * Why this exists: tapping a push is supposed to open the screen the push is
- * about. `clients.openWindow('/uretime-hazir')` does that on Android and on
+ * about. `clients.openWindow('/baski-listesi')` does that on Android and on
  * desktop Chrome — but an installed PWA on iOS ignores the URL entirely and
  * relaunches at the manifest `start_url` (`/`). So the user got the dashboard
  * instead of the book they'd just been told about, which is indistinguishable

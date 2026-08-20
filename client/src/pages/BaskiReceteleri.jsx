@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileText, Search, Pencil, Check, X, BookOpen } from 'lucide-react'
+import { FileText, Search, Pencil, Check, X, BookOpen, Box } from 'lucide-react'
 import { toast } from 'sonner'
 import { useProjects } from '@/hooks/useProjects'
 import { useAuth } from '@/hooks/useAuth'
 import { canEditProductInfo } from '@/domain'
 import api from '@/api'
+import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SpecSheet, EditableSpecSheet } from '@/components/SpecSheet'
 import PRODUCT_INFO from '@/data/productInfo'
@@ -13,14 +14,13 @@ import { saveComponentsForProject, primeProductInfoCache } from '@/data/productC
 const deepCopy = (x) => JSON.parse(JSON.stringify(x))
 
 /**
- * Baskı Reçeteleri — a flat, browsable index of every reçete (parça spec
- * sheet) across every product, each tagged with the project it belongs to.
- * Ürün Bilgileri groups reçeteler under a collapsed product card; this page
- * flattens that same data (server: product_info, one row per project
- * holding a components array — see migration 020__product_info.sql) into
- * one row per reçete so the whole set is scannable and searchable without
- * expanding cards one at a time. Same edit rights as Ürün Bilgileri:
- * team_leader only.
+ * Baskı Reçeteleri — a browsable, searchable index of every reçete (parça
+ * spec sheet) across every product, each tagged with the project it belongs
+ * to. Reads the same product_info data as Ürün Bilgileri (server: one row
+ * per project holding a components array — see migration 020__product_info.sql)
+ * and, like that page, groups a project's parçalar (e.g. TR / ÇİN) under a
+ * single card side by side instead of listing them as unrelated rows. Same
+ * edit rights as Ürün Bilgileri: team_leader only.
  */
 export default function BaskiReceteleri() {
   const { allProjects: projects, loading: projectsLoading } = useProjects()
@@ -101,6 +101,20 @@ export default function BaskiReceteleri() {
     )
   }, [receteler, search])
 
+  // Group filtered rows back under their project — a 2-parça (TR/ÇİN) project
+  // renders as one card with both reçeteler side by side, same as Ürün
+  // Bilgileri, instead of two unrelated cards. `filtered` is already sorted
+  // by projectTitle with same-project rows kept in index order (stable
+  // sort), so grouping by first-seen projectId preserves that order.
+  const grouped = useMemo(() => {
+    const map = new Map()
+    for (const row of filtered) {
+      if (!map.has(row.projectId)) map.set(row.projectId, { projectId: row.projectId, projectTitle: row.projectTitle, seed: row.seed, rows: [] })
+      map.get(row.projectId).rows.push(row)
+    }
+    return [...map.values()]
+  }, [filtered])
+
   function startEdit(row) {
     setEditingKey(row.key)
     setDraft(deepCopy(row.comp))
@@ -164,50 +178,76 @@ export default function BaskiReceteleri() {
         </div>
       ) : (
         <ul className="space-y-4">
-          {filtered.map((row) => {
-            const editing = editingKey === row.key
+          {grouped.map((group) => {
+            const multi = group.rows.length > 1
             return (
-              <li key={row.key} className="rounded-2xl border bg-card p-4 shadow-sm">
+              <li key={group.projectId} className="rounded-2xl border bg-card p-4 shadow-sm">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
                     <BookOpen className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{row.projectTitle}</span>
-                    {row.seed && <span className="shrink-0 opacity-70">· Kayıt</span>}
+                    <span className="truncate">{group.projectTitle}</span>
+                    {group.seed && <span className="shrink-0 opacity-70">· Kayıt</span>}
                   </span>
-                  {canEdit && (
-                    editing ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={cancelEdit}
-                          className="inline-flex items-center gap-1 rounded-lg border bg-background px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition active:scale-95 hover:text-foreground"
-                        >
-                          <X className="h-3.5 w-3.5" /> İptal
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => saveEdit(row)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition active:scale-95 hover:brightness-105"
-                        >
-                          <Check className="h-3.5 w-3.5" /> Kaydet
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => startEdit(row)}
-                        className="inline-flex items-center gap-1 rounded-lg border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground transition active:scale-95 hover:border-primary/40 hover:text-primary"
-                      >
-                        <Pencil className="h-3.5 w-3.5" /> Düzenle
-                      </button>
-                    )
+                  {multi && (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-600/20">
+                      <Box className="h-3 w-3" />
+                      {group.rows.length} parça
+                    </span>
                   )}
                 </div>
-                {editing ? (
-                  <EditableSpecSheet comp={draft} onChange={setDraft} />
-                ) : (
-                  <SpecSheet comp={row.comp} />
-                )}
+
+                {/* one spec sheet per reçete — side by side when a project has multiple parça */}
+                <div className={cn(multi ? 'grid grid-cols-1 items-start gap-4 sm:grid-cols-2' : 'space-y-5')}>
+                  {group.rows.map((row) => {
+                    const editing = editingKey === row.key
+                    return (
+                      <div key={row.key} className="space-y-2.5">
+                        <div className={cn('flex items-center gap-2.5', !multi && 'justify-end')}>
+                          {multi && (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-foreground ring-1 ring-border">
+                              <Box className="h-3 w-3 text-primary" />
+                              {row.comp.component}
+                            </span>
+                          )}
+                          {canEdit && (
+                            editing ? (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={cancelEdit}
+                                  className="inline-flex items-center gap-1 rounded-lg border bg-background px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition active:scale-95 hover:text-foreground"
+                                >
+                                  <X className="h-3.5 w-3.5" /> İptal
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => saveEdit(row)}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition active:scale-95 hover:brightness-105"
+                                >
+                                  <Check className="h-3.5 w-3.5" /> Kaydet
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => startEdit(row)}
+                                className="inline-flex items-center gap-1 rounded-lg border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground transition active:scale-95 hover:border-primary/40 hover:text-primary"
+                              >
+                                <Pencil className="h-3.5 w-3.5" /> Düzenle
+                              </button>
+                            )
+                          )}
+                          {multi && <span className="h-px flex-1 bg-border" />}
+                        </div>
+                        {editing ? (
+                          <EditableSpecSheet comp={draft} onChange={setDraft} />
+                        ) : (
+                          <SpecSheet comp={row.comp} />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </li>
             )
           })}

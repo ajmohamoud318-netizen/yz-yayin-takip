@@ -62,7 +62,7 @@ import { WORK_LOG_ENABLED } from '@/lib/work-log.js'
 import PushToggle from '@/components/PushToggle.jsx'
 import SetupSheet from '@/components/SetupSheet.jsx'
 import { useNotifications } from '@/hooks/useNotifications'
-import { isOrderAssignedToDesigner } from '@/domain/constants/orders'
+import { isOrderAssignedToDesigner, ORDER_LEADER_ACTION_STEPS } from '@/domain/constants/orders'
 
 const COLLAPSE_KEY = 'yz-sidebar-collapsed'
 const YZ_LOGO_WHITE = '/yz_whitelogo.svg'
@@ -78,7 +78,7 @@ export default function AppShell() {
   const { projects } = useProjects()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false) // mobile drawer
-  const [pendingOrders, setPendingOrders] = useState(0)    // team_leader: pending + matbaa_onay
+  const [pendingOrders, setPendingOrders] = useState(0)    // team_leader: ORDER_LEADER_ACTION_STEPS
   const [printerOrders, setPrinterOrders] = useState(0)   // printer: tasarimci_onay
   const [designerOrders, setDesignerOrders] = useState(0) // designer: goruldu (for their projects)
   const [pendingHandovers, setPendingHandovers] = useState(0) // satis: teslim onay bekleyen
@@ -114,7 +114,6 @@ export default function AppShell() {
     let myProjects = 0
     let urgent = 0
     let handoverEligible = 0
-    let productionReady = 0
     let designerOzalitApprovals = 0
     let baskiOnayApprovals = 0
     for (const p of projects) {
@@ -128,10 +127,9 @@ export default function AppShell() {
         // A held demo has no pending approval action — exclude it from the count.
         if ((p.stage === 'demo_onay' || p.stage === 'cin_demo_onay') && p.demo_held !== true) demoApprovals++
         if (p.stage === 'ozalit_onay') ozalitApprovals++
-        if (p.stage === 'baski_onay') baskiOnayApprovals++
+        if (p.stage === 'baski_onay' || p.stage === 'cin_baski_onay') baskiOnayApprovals++
       }
-      if (p.stage === 'uretimde' || p.stage === 'gumruk') production++
-      if (role === 'printer' && p.stage === 'uretime_hazir') productionReady++
+      if (p.stage === 'baskida' || p.stage === 'gumruk') production++
       if (role === 'printer' && canRequestHandover(p)) handoverEligible++
       if (role === 'designer' && (p.assignees ?? []).some((a) => a.id === user?.id)) myProjects++
       // Designer's pending ozalit approvals: assigned, at ozalit_onay, a team
@@ -145,7 +143,7 @@ export default function AppShell() {
       }
       if ((p.demo_attempt ?? 0) >= 2 || (p.ozalit_attempt ?? 0) >= 2) urgent++
     }
-    return { active, demoApprovals, ozalitApprovals, baskiOnayApprovals, production, satista, total: projects.length, myProjects, urgent, handoverEligible, productionReady, designerOzalitApprovals }
+    return { active, demoApprovals, ozalitApprovals, baskiOnayApprovals, production, satista, total: projects.length, myProjects, urgent, handoverEligible, designerOzalitApprovals }
   }, [projects, user?.role, user?.id])
 
   const pinned = useMemo(
@@ -166,7 +164,7 @@ export default function AppShell() {
       // Sidebar badge counts. (The notification bell no longer derives from
       // this list — it reads the server-backed feed via useNotifications.)
       if (role === 'team_leader') {
-        setPendingOrders(orders.filter((o) => o.status === 'pending' || o.status === 'matbaa_onay').length)
+        setPendingOrders(orders.filter((o) => ORDER_LEADER_ACTION_STEPS.has(o.status)).length)
       } else if (role === 'printer') {
         setPrinterOrders(orders.filter((o) => o.status === 'tasarimci_onay').length)
       } else if (role === 'designer') {
@@ -913,7 +911,7 @@ const PAGE_TITLES = [
   { match: (p) => p.startsWith('/siparis-talebi'), label: 'Taleplerim' },
   { match: (p) => p.startsWith('/siparis-talepleri'), label: 'Baskı Talepleri' },
   { match: (p) => p.startsWith('/siparis-onay'), label: 'Baskı Onayları' },
-  { match: (p) => p.startsWith('/uretime-hazir'), label: 'Üretime Hazır' },
+  { match: (p) => p.startsWith('/baski-listesi'), label: 'Baskı Listesi' },
   { match: (p) => p.startsWith('/hedef-projeler'), label: 'Hedef Projeler' },
   { match: (p) => p.startsWith('/toplanti'), label: 'Toplantılar' },
   { match: (p) => p.startsWith('/teslim-talepleri'), label: 'Teslim Talepleri' },
@@ -1009,12 +1007,12 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
       roles: ['team_leader'],
     },
     {
-      to: '/uretime-hazir',
-      label: 'Üretime Hazır',
+      to: '/baski-listesi',
+      label: 'Baskı Listesi',
       icon: Factory,
-      badge: counts.productionReady || undefined,
+      badge: counts.production || undefined,
       badgeTone: 'amber',
-      highlight: counts.productionReady > 0,
+      highlight: counts.production > 0,
       roles: ['printer'],
     },
     {

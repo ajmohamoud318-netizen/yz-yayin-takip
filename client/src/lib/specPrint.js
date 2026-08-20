@@ -21,11 +21,14 @@ function esc(s) {
  */
 export function buildSpecRows({ component, form, kind }) {
   const rows = [['İŞİN ADI', component?.component ?? form?.isinAdi ?? '']]
+  if (kind === 'baski_onay' && form?.baskiOnayAdet) rows.push(['ADET', form.baskiOnayAdet])
   for (const r of component?.rows ?? []) rows.push([r.label, r.value])
   if (kind === 'ozalit') {
     rows.push(['OZALİT İSTEM TARİHİ', form?.ozalitIstemTarihi ?? ''], ['OZALİT İSTEYEN KİŞİ', form?.ozalitIsteyenKisi ?? ''])
   } else if (kind === 'baski_onay') {
-    rows.push(['BASKI ONAY TARİHİ', form?.baskiOnayTarihi ?? ''], ['HAZIRLAYAN', form?.baskiOnayHazirlayan ?? ''])
+    rows.push(['BASKI ONAY TARİHİ', form?.baskiOnayTarihi ?? ''])
+    if (form?.basimYeri) rows.push(['BASIM YERİ', form.basimYeri])
+    rows.push(['HAZIRLAYAN', form?.baskiOnayHazirlayan ?? ''])
   } else {
     rows.push(['DEMO İSTEM TARİHİ', form?.demoIstemTarihi ?? ''], ['DEMO İSTEYEN KİŞİ', form?.demoIsteyenKisi ?? ''])
   }

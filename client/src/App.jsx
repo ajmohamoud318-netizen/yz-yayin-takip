@@ -32,7 +32,6 @@ const SiparisTalepleri    = lazy(() => import('./pages/SiparisTalepleri.jsx'))
 const SiparisOnay         = lazy(() => import('./pages/SiparisOnay.jsx'))
 const TeslimTalepleri     = lazy(() => import('./pages/TeslimTalepleri.jsx'))
 const TeslimOnaylari      = lazy(() => import('./pages/TeslimOnaylari.jsx'))
-const UretimeHazir        = lazy(() => import('./pages/UretimeHazir.jsx'))
 const Settings            = lazy(() => import('./pages/Settings.jsx'))
 import NotificationSync from './components/NotificationSync.jsx'
 import PushBridge from './components/PushBridge.jsx'
@@ -266,14 +265,6 @@ export default function App() {
               element={
                 <RoleGuard allow={['designer']}>
                   <SiparisOnay />
-                </RoleGuard>
-              }
-            />
-            <Route
-              path="/uretime-hazir"
-              element={
-                <RoleGuard allow={['printer']}>
-                  <UretimeHazir />
                 </RoleGuard>
               }
             />

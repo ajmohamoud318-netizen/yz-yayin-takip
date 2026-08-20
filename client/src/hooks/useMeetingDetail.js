@@ -80,6 +80,22 @@ export function useMeetingDetail(meetingId) {
     [meetingId],
   )
 
+  const updateNote = useCallback(
+    async (noteId, body) => {
+      const trimmed = body.trim()
+      if (!trimmed) return null
+      setBusy(true)
+      try {
+        const note = await api.updateMeetingNote(meetingId, noteId, trimmed)
+        setDetail((cur) => (cur ? { ...cur, notes: cur.notes.map((n) => (n.id === noteId ? note : n)) } : cur))
+        return note
+      } finally {
+        setBusy(false)
+      }
+    },
+    [meetingId],
+  )
+
   const removeNote = useCallback(
     async (noteId) => {
       setBusy(true)
@@ -99,6 +115,6 @@ export function useMeetingDetail(meetingId) {
   )
 
   return {
-    detail, loading, busy, refetch, addGalleryImage, removeGalleryImage, addNote, removeNote, canModifyNote,
+    detail, loading, busy, refetch, addGalleryImage, removeGalleryImage, addNote, updateNote, removeNote, canModifyNote,
   }
 }

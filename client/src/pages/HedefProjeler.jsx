@@ -39,24 +39,23 @@ export default function HedefProjeler() {
     ideas, loading, busy, add, update, remove, canAdd, canRemove, uploadImage, removeImage,
   } = useTargetProjectIdeas()
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingIdea, setEditingIdea] = useState(null)
-  const [detailIdea, setDetailIdea] = useState(null)
+  const [detailIdeaId, setDetailIdeaId] = useState(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [detailStartEditing, setDetailStartEditing] = useState(false)
 
   function openAddDialog() {
-    setEditingIdea(null)
     setDialogOpen(true)
   }
 
-  function openEditDialog(idea) {
-    setEditingIdea(idea)
-    setDialogOpen(true)
-  }
-
-  function openDetail(idea) {
-    setDetailIdea(idea)
+  function openDetail(idea, startEditing = false) {
+    setDetailIdeaId(idea.id)
+    setDetailStartEditing(startEditing)
     setDetailOpen(true)
   }
+
+  // Kept live by id rather than snapshotted at click time, so an edit saved
+  // inside the detail dialog is reflected in its own title/links immediately.
+  const detailIdea = detailIdeaId ? (ideas.find((i) => i.id === detailIdeaId) ?? null) : null
 
   async function handleRemove(idea) {
     try {
@@ -107,7 +106,7 @@ export default function HedefProjeler() {
               idea={idea}
               canRemove={canRemove(idea)}
               onOpenDetail={() => openDetail(idea)}
-              onEdit={() => openEditDialog(idea)}
+              onEdit={() => openDetail(idea, true)}
               onRemove={() => handleRemove(idea)}
               onUploadImage={(file) => uploadImage(idea.id, file)}
               onRemoveImage={() => removeImage(idea.id)}
@@ -119,9 +118,7 @@ export default function HedefProjeler() {
       <AddTargetIdeaDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        editingIdea={editingIdea}
         onAdd={add}
-        onUpdate={update}
         onUploadImage={uploadImage}
         busy={busy}
       />
@@ -130,8 +127,10 @@ export default function HedefProjeler() {
         open={detailOpen}
         onOpenChange={setDetailOpen}
         idea={detailIdea}
+        startEditing={detailStartEditing}
         canModifyIdea={detailIdea ? canRemove(detailIdea) : false}
         canAddNote={canAdd}
+        onUpdate={update}
       />
     </div>
   )
@@ -299,7 +298,7 @@ function TargetIdeaCard({
 }
 
 function AddTargetIdeaDialog({
-  open, onOpenChange, editingIdea, onAdd, onUpdate, onUploadImage, busy,
+  open, onOpenChange, onAdd, onUploadImage, busy,
 }) {
   const [name, setName] = useState('')
   const [links, setLinks] = useState([])
@@ -307,20 +306,18 @@ function AddTargetIdeaDialog({
   const [imagePreview, setImagePreview] = useState(null)
   const fileInputRef = useRef(null)
 
-  const isEditing = !!editingIdea
-
-  // Reset/prefill each time the dialog opens rather than on close, so the
-  // fields don't visibly blank out while the closing animation is playing.
+  // Reset each time the dialog opens rather than on close, so the fields
+  // don't visibly blank out while the closing animation is playing.
   useEffect(() => {
     if (!open) return
-    setName(editingIdea?.name ?? '')
-    setLinks(editingIdea?.links?.length ? editingIdea.links : [])
+    setName('')
+    setLinks([])
     setImageFile(null)
     setImagePreview((prev) => {
       if (prev) URL.revokeObjectURL(prev)
       return null
     })
-  }, [open, editingIdea])
+  }, [open])
 
   function handlePickImage(e) {
     const file = e.target.files?.[0]
@@ -350,23 +347,18 @@ function AddTargetIdeaDialog({
     }
     const cleanLinks = links.map((l) => l.trim()).filter(Boolean)
     try {
-      if (isEditing) {
-        await onUpdate(editingIdea.id, { name: trimmed, links: cleanLinks })
-        toast.success('Hedef proje güncellendi.')
-      } else {
-        const saved = await onAdd({ name: trimmed, links: cleanLinks })
-        if (imageFile && saved?.id) {
-          try {
-            await onUploadImage(saved.id, imageFile)
-          } catch (err) {
-            toast.error(err?.message || 'Fikir eklendi ama görsel yüklenemedi.')
-          }
+      const saved = await onAdd({ name: trimmed, links: cleanLinks })
+      if (imageFile && saved?.id) {
+        try {
+          await onUploadImage(saved.id, imageFile)
+        } catch (err) {
+          toast.error(err?.message || 'Fikir eklendi ama görsel yüklenemedi.')
         }
-        toast.success('Hedef proje eklendi.')
       }
+      toast.success('Hedef proje eklendi.')
       onOpenChange(false)
     } catch (err) {
-      toast.error(err?.message || (isEditing ? 'Güncellenemedi.' : 'Eklenemedi.'))
+      toast.error(err?.message || 'Eklenemedi.')
     }
   }
 
@@ -376,7 +368,7 @@ function AddTargetIdeaDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Target className="h-4 w-4" />
-            {isEditing ? 'Hedef Projeyi Düzenle' : 'Hedef Proje Ekle'}
+            Hedef Proje Ekle
           </DialogTitle>
           <DialogDescription>
             İleride proje olabilecek bir fikir.
@@ -398,7 +390,6 @@ function AddTargetIdeaDialog({
             <Label>Bağlantılar</Label>
             <LinksListInput links={links} onChange={setLinks} />
           </div>
-          {!isEditing && (
           <div className="space-y-1.5">
             <Label>Görsel</Label>
             {imagePreview ? (
@@ -437,13 +428,12 @@ function AddTargetIdeaDialog({
               onChange={handlePickImage}
             />
           </div>
-          )}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               İptal
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? 'Kaydediliyor…' : isEditing ? 'Kaydet' : 'Ekle'}
+              {busy ? 'Kaydediliyor…' : 'Ekle'}
             </Button>
           </DialogFooter>
         </form>
@@ -454,24 +444,72 @@ function AddTargetIdeaDialog({
 
 /**
  * Opened by clicking a card: the cover (view-only here — editing it stays
- * on the card), the full links list, a photo gallery beyond the cover, and
- * a timestamped notes log. Gallery/notes are fetched fresh each time this
- * opens via useTargetProjectIdeaDetail, since the card grid never carries
- * them.
+ * on the card), the name/links (editable in place here — this replaced the
+ * old separate "edit" dialog), a photo gallery beyond the cover, and a
+ * timestamped notes log whose own entries can each be edited or removed.
+ * Gallery/notes are fetched fresh each time this opens via
+ * useTargetProjectIdeaDetail, since the card grid never carries them.
  */
 function IdeaDetailDialog({
-  open, onOpenChange, idea, canModifyIdea, canAddNote,
+  open, onOpenChange, idea, startEditing, canModifyIdea, canAddNote, onUpdate,
 }) {
   const ideaId = open ? idea?.id : null
   const {
-    detail, loading, busy, addGalleryImage, removeGalleryImage, addNote, removeNote, canModifyNote,
+    detail, loading, busy, addGalleryImage, removeGalleryImage, addNote, updateNote, removeNote, canModifyNote,
   } = useTargetProjectIdeaDetail(ideaId)
   const [noteText, setNoteText] = useState('')
+  const [editingNoteId, setEditingNoteId] = useState(null)
+  const [editingNoteText, setEditingNoteText] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editLinks, setEditLinks] = useState([])
+  const [savingIdea, setSavingIdea] = useState(false)
   const fileInputRef = useRef(null)
 
   useEffect(() => {
-    if (open) setNoteText('')
+    if (!open) return
+    setNoteText('')
+    setEditingNoteId(null)
+    setEditing(!!startEditing)
+    setEditName(idea?.name ?? '')
+    setEditLinks(idea?.links?.length ? idea.links : [])
   }, [open, idea?.id])
+
+  async function handleSaveIdea(e) {
+    e.preventDefault()
+    const trimmed = editName.trim()
+    if (!trimmed) {
+      toast.error('İsim zorunludur.')
+      return
+    }
+    setSavingIdea(true)
+    try {
+      await onUpdate(idea.id, { name: trimmed, links: editLinks.map((l) => l.trim()).filter(Boolean) })
+      toast.success('Hedef proje güncellendi.')
+      setEditing(false)
+    } catch (err) {
+      toast.error(err?.message || 'Güncellenemedi.')
+    } finally {
+      setSavingIdea(false)
+    }
+  }
+
+  function handleStartEditNote(note) {
+    setEditingNoteId(note.id)
+    setEditingNoteText(note.body)
+  }
+
+  async function handleSaveNote(e) {
+    e.preventDefault()
+    const trimmed = editingNoteText.trim()
+    if (!trimmed) return
+    try {
+      await updateNote(editingNoteId, trimmed)
+      setEditingNoteId(null)
+    } catch (err) {
+      toast.error(err?.message || 'Not güncellenemedi.')
+    }
+  }
 
   async function handlePickGalleryImage(e) {
     const file = e.target.files?.[0]
@@ -520,9 +558,22 @@ function IdeaDetailDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Target className="h-4 w-4" />
-            {idea.name}
+          <DialogTitle className="flex items-center justify-between gap-2">
+            <span className="inline-flex min-w-0 items-center gap-2">
+              <Target className="h-4 w-4 shrink-0" />
+              <span className="truncate">{editing ? 'Hedef Projeyi Düzenle' : idea.name}</span>
+            </span>
+            {canModifyIdea && !editing && (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                aria-label="Düzenle"
+                title="Düzenle"
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
           </DialogTitle>
         </DialogHeader>
 
@@ -538,7 +589,33 @@ function IdeaDetailDialog({
             </a>
           )}
 
-          {links.length > 0 && (
+          {editing ? (
+            <form onSubmit={handleSaveIdea} className="space-y-3 rounded-lg border bg-muted/30 p-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="tpi-detail-name">Proje adı</Label>
+                <Input
+                  id="tpi-detail-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  maxLength={200}
+                  autoFocus
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Bağlantılar</Label>
+                <LinksListInput links={editLinks} onChange={setEditLinks} />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>
+                  İptal
+                </Button>
+                <Button type="submit" size="sm" disabled={savingIdea}>
+                  {savingIdea ? 'Kaydediliyor…' : 'Kaydet'}
+                </Button>
+              </div>
+            </form>
+          ) : links.length > 0 && (
             <div className="space-y-1.5">
               <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <LinkIcon className="h-3.5 w-3.5" />
@@ -631,21 +708,60 @@ function IdeaDetailDialog({
               ) : detail?.notes?.length ? (
                 detail.notes.map((note) => (
                   <div key={note.id} className="rounded-md bg-card p-2 shadow-sm">
-                    <p className="whitespace-pre-wrap text-sm">{note.body}</p>
-                    <div className="mt-1 flex items-center justify-between gap-2">
-                      <p className="text-[11px] text-muted-foreground">
-                        {note.created_by_name ?? 'Ekipten biri'} · {formatDateTr(note.created_at)}
-                      </p>
-                      {canModifyNote(note) && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveNote(note.id)}
-                          className="shrink-0 text-[11px] text-muted-foreground transition-colors hover:text-destructive"
-                        >
-                          Sil
-                        </button>
-                      )}
-                    </div>
+                    {editingNoteId === note.id ? (
+                      <form onSubmit={handleSaveNote} className="space-y-1.5">
+                        <Textarea
+                          value={editingNoteText}
+                          onChange={(e) => setEditingNoteText(e.target.value.slice(0, 2000))}
+                          rows={2}
+                          autoFocus
+                          className="text-sm"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingNoteId(null)}
+                            className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                          >
+                            İptal
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={busy || !editingNoteText.trim()}
+                            className="text-[11px] font-medium text-primary transition-colors hover:underline disabled:opacity-50"
+                          >
+                            Kaydet
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <>
+                        <p className="whitespace-pre-wrap text-sm">{note.body}</p>
+                        <div className="mt-1 flex items-center justify-between gap-2">
+                          <p className="text-[11px] text-muted-foreground">
+                            {note.created_by_name ?? 'Ekipten biri'} · {formatDateTr(note.created_at)}
+                          </p>
+                          {canModifyNote(note) && (
+                            <div className="flex shrink-0 items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditNote(note)}
+                                className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                              >
+                                Düzenle
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveNote(note.id)}
+                                className="text-[11px] text-muted-foreground transition-colors hover:text-destructive"
+                              >
+                                Sil
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))
               ) : (

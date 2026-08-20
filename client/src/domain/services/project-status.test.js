@@ -5,12 +5,14 @@ describe('statusKeyForProject', () => {
     expect(statusKeyForProject({ stage: 'satista', progress: 100 })).toBe('yellow')
   })
   it('maps production stages to pink', () => {
-    expect(statusKeyForProject({ stage: 'uretimde' })).toBe('pink')
+    expect(statusKeyForProject({ stage: 'baskida' })).toBe('pink')
     expect(statusKeyForProject({ stage: 'gumruk' })).toBe('pink')
   })
-  it('maps ozalit stages to blue', () => {
+  it('maps ozalit/baskı onayı stages to blue', () => {
     expect(statusKeyForProject({ stage: 'ozalit_teslim' })).toBe('blue')
     expect(statusKeyForProject({ stage: 'ozalit_onay' })).toBe('blue')
+    expect(statusKeyForProject({ stage: 'baski_onay' })).toBe('blue')
+    expect(statusKeyForProject({ stage: 'cin_baski_onay' })).toBe('blue')
   })
   // "Demo aşamasında" (green) means: the second demo cycle is in
   // flight — the leader has already approved the first demo, the

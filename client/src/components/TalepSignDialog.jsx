@@ -4,10 +4,12 @@ import { toast } from 'sonner'
 
 import api, {
   ORDER_STEP_LABELS, ORDER_STEP_NEXT, ORDER_REJECT_TO, ORDER_REJECT_TARGETS,
+  ORDER_STEP_PATH_DEFAULT, orderStepPath,
   canApproveMatbaaOnayNow, matbaaOnayLeaderApproved,
 } from '@/api'
 import { getComponentsForProject, saveComponentsForProject, primeProductInfoCache } from '@/data/productCatalog'
 import { buildAdetRows } from '@/data/orderAdet'
+import SiparisBaskiOnayFormDialog from '@/components/SiparisBaskiOnayFormDialog'
 import { useAuth } from '@/hooks/useAuth'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { isSubtaskDone } from '@/domain/services/progress'
@@ -105,6 +107,13 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   const [confirmMatbaaNotReceived, setConfirmMatbaaNotReceived] = useState(false)
   // Designer step (status 'goruldu') can revise the product spec before signing.
   const isDesignerStep = user?.role === 'designer' && order?.status === 'goruldu'
+  // Resubmit-after-reject: only once this order has actually bounced back to
+  // goruldu via a reject (order.last_reject_type === 'designer') does the
+  // designer get to choose between another physical ozalit and a digital
+  // Ekran Onayı — a first submission always goes straight to tasarimci_onay,
+  // no choice offered.
+  const isResubmit = isDesignerStep && order?.last_reject_type === 'designer'
+  const [chosenRoute, setChosenRoute] = useState(null)
   const [comps, setComps] = useState([])
   const [editorOpen, setEditorOpen] = useState(false)
   // Team-leader reject of the sales-side ozalit (matbaa teslim).
@@ -135,6 +144,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
 
   useEffect(() => {
     if (open && order && isDesignerStep) {
+      setChosenRoute(null)
       const loaded = deepClone(loadProductComps(order.project_id))
       setComps(loaded)
       originalRef.current = JSON.stringify(loaded)
@@ -177,6 +187,12 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     if (!(open && order && canReject)) return
     setRevizeIds([])
     setRejectSubtasks(order.subtasks ?? [])
+    // Default to the first target this step actually offers — 'matbaa'
+    // isn't a valid route at ekran_onay (no physical proof was ever
+    // delivered there), so a stale 'matbaa' default would silently pick an
+    // invalid route.
+    const targets = ORDER_REJECT_TARGETS[order.status] ?? {}
+    setRejectRoute(targets.matbaa ? 'matbaa' : Object.keys(targets)[0])
   }, [open, order?.id, canReject])
 
   // Load designers + default selection (the project's current designers) when
@@ -240,6 +256,8 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     ? 'Tasarımcıya Aktar'
     : order.status === 'tasarimci_onay'
       ? 'Teslim Et'
+      : order.status === 'ekran_onay'
+        ? 'Onayla'
       : isMatbaaOnayStep
         ? 'Onayla'
         : 'Son Onay'
@@ -255,6 +273,10 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     if (!user) return
     if (isAssignStep && assignIds.length === 0) {
       toast.error('En az bir tasarımcı seçin.')
+      return
+    }
+    if (isResubmit && !chosenRoute) {
+      toast.error('Revize sonrası Ozalit mi yoksa Ekran Onayı mı isteneceğini seçin.')
       return
     }
     // Re-validate the assignee selection against the current user list before
@@ -297,6 +319,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
         notes: signNotes,
         expectedVersion: order.version ?? null,
         ...(isAssignStep ? { assignees: assignIds } : {}),
+        ...(isResubmit ? { route: chosenRoute } : {}),
       })
       // A matbaa_onay click doesn't always complete the round — the client
       // can't tell in advance whether its own vote is the last one needed
@@ -590,6 +613,44 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
             </div>
           )}
 
+          {/* Resubmit-after-reject: choose another physical ozalit or a
+              digital Ekran Onayı. Only shown once this order has actually
+              bounced back to goruldu via a reject — a first submission has
+              no choice, it always goes to tasarimci_onay. */}
+          {isResubmit && (
+            <div className="space-y-1.5">
+              <Label>Nasıl onaylatmak istersiniz? *</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setChosenRoute('tasarimci_onay')}
+                  className={cn(
+                    'rounded-lg border px-3 py-2 text-left transition',
+                    chosenRoute === 'tasarimci_onay'
+                      ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
+                      : 'hover:bg-muted/50',
+                  )}
+                >
+                  <span className="block text-sm font-semibold">Tekrar Ozalit İste</span>
+                  <span className="block text-xs text-muted-foreground">Matbaa fiziksel ozalit basar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChosenRoute('ekran_onay')}
+                  className={cn(
+                    'rounded-lg border px-3 py-2 text-left transition',
+                    chosenRoute === 'ekran_onay'
+                      ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
+                      : 'hover:bg-muted/50',
+                  )}
+                >
+                  <span className="block text-sm font-semibold">Ekran Onayı İste</span>
+                  <span className="block text-xs text-muted-foreground">Ekip lideri ekrandan onaylar</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Assign step: pick the designer(s) who will check this run */}
           {isAssignStep && (
             <div className="space-y-1.5">
@@ -656,50 +717,62 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
           {/* Team-leader reject of the sales-side ozalit */}
           {canReject && showReject && (
             <div className="space-y-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-              {/* Route choice: who re-does the rejected ozalit? */}
+              {/* Route choice: who re-does the rejected ozalit? Only the
+                  targets this step actually offers are shown — ekran_onay
+                  never touched a physical proof, so it has no 'matbaa'
+                  option, and no 'reassign' either. */}
               {ORDER_REJECT_TARGETS[order.status] && (
                 <div className="space-y-1.5">
                   <Label className="text-destructive">Kime geri gönderilsin?</Label>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setRejectRoute('designer')}
-                      className={cn(
-                        'rounded-lg border px-3 py-2 text-left transition',
-                        rejectRoute === 'designer'
-                          ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
-                          : 'hover:bg-muted/50',
-                      )}
-                    >
-                      <span className="block text-sm font-semibold">Tasarımcı</span>
-                      <span className="block text-xs text-muted-foreground">Tasarımı yeniden düzenler</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRejectRoute('matbaa')}
-                      className={cn(
-                        'rounded-lg border px-3 py-2 text-left transition',
-                        rejectRoute === 'matbaa'
-                          ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
-                          : 'hover:bg-muted/50',
-                      )}
-                    >
-                      <span className="block text-sm font-semibold">Matbaa</span>
-                      <span className="block text-xs text-muted-foreground">Yeniden teslim eder</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRejectRoute('reassign')}
-                      className={cn(
-                        'rounded-lg border px-3 py-2 text-left transition',
-                        rejectRoute === 'reassign'
-                          ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
-                          : 'hover:bg-muted/50',
-                      )}
-                    >
-                      <span className="block text-sm font-semibold">Kadro değişsin</span>
-                      <span className="block text-xs text-muted-foreground">Tasarımcıyı yeniden seçer</span>
-                    </button>
+                  <div
+                    className="grid gap-2"
+                    style={{ gridTemplateColumns: `repeat(${Object.keys(ORDER_REJECT_TARGETS[order.status]).length}, 1fr)` }}
+                  >
+                    {ORDER_REJECT_TARGETS[order.status].designer && (
+                      <button
+                        type="button"
+                        onClick={() => setRejectRoute('designer')}
+                        className={cn(
+                          'rounded-lg border px-3 py-2 text-left transition',
+                          rejectRoute === 'designer'
+                            ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
+                            : 'hover:bg-muted/50',
+                        )}
+                      >
+                        <span className="block text-sm font-semibold">Tasarımcı</span>
+                        <span className="block text-xs text-muted-foreground">Tasarımı yeniden düzenler</span>
+                      </button>
+                    )}
+                    {ORDER_REJECT_TARGETS[order.status].matbaa && (
+                      <button
+                        type="button"
+                        onClick={() => setRejectRoute('matbaa')}
+                        className={cn(
+                          'rounded-lg border px-3 py-2 text-left transition',
+                          rejectRoute === 'matbaa'
+                            ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
+                            : 'hover:bg-muted/50',
+                        )}
+                      >
+                        <span className="block text-sm font-semibold">Matbaa</span>
+                        <span className="block text-xs text-muted-foreground">Yeniden teslim eder</span>
+                      </button>
+                    )}
+                    {ORDER_REJECT_TARGETS[order.status].reassign && (
+                      <button
+                        type="button"
+                        onClick={() => setRejectRoute('reassign')}
+                        className={cn(
+                          'rounded-lg border px-3 py-2 text-left transition',
+                          rejectRoute === 'reassign'
+                            ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
+                            : 'hover:bg-muted/50',
+                        )}
+                      >
+                        <span className="block text-sm font-semibold">Kadro değişsin</span>
+                        <span className="block text-xs text-muted-foreground">Tasarımcıyı yeniden seçer</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -899,7 +972,9 @@ export function TalepHistoryViewer({ order, open, onOpenChange, initialStep = nu
               <ChevronLeft className="h-3.5 w-3.5" />
               Aşamalara dön
             </button>
-            {(viewStep.step === 'tasarimci_onay' || viewStep.step === 'matbaa_onay') ? (
+            {viewStep.step === 'siparis_baski_onay' ? (
+              <SiparisBaskiOnayFormDialog order={order} mode="view" inline />
+            ) : (viewStep.step === 'tasarimci_onay' || viewStep.step === 'matbaa_onay' || viewStep.step === 'ekran_onay') ? (
               <OzalitStepSheet order={order} step={viewStep.step} footer={<StepSignatureFooter step={viewStep.step} order={order} />} />
             ) : (
               <OrderSheet
@@ -1021,7 +1096,11 @@ function OzalitStepSheet({ order, step, footer }) {
     ? new Intl.DateTimeFormat('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(created)
     : '—'
 
-  const stepLabel = step === 'tasarimci_onay' ? 'Tasarımcı → Matbaa' : 'Matbaa Teslimi'
+  const stepLabel = step === 'tasarimci_onay'
+    ? 'Tasarımcı → Matbaa'
+    : step === 'ekran_onay'
+      ? 'Ekran Onayı'
+      : 'Matbaa Teslimi'
 
   return (
     <div className="overflow-hidden rounded-lg border bg-white">
@@ -1046,6 +1125,8 @@ function OzalitStepSheet({ order, step, footer }) {
         <div className="text-right text-xs leading-relaxed">
           <p><span className="text-muted-foreground">Baskı Tarihi : </span><span className="font-medium">{dateStr}</span></p>
           <p><span className="text-muted-foreground">Talep Eden : </span><span className="font-medium">{order.requested_by_name}</span></p>
+          {/* No source for this in the sipariş flow yet — always blank, unlike ADET below. */}
+          <p><span className="text-muted-foreground">Basım Yeri : </span><span className="font-medium">—</span></p>
         </div>
       </div>
 
@@ -1124,21 +1205,27 @@ function StepSignatureFooter({ step, order }) {
   const matbaaSigner = signer('matbaa_onay')
   // matbaa_onay is multi-party: leader-first guarantees a team leader signed
   // SOMEWHERE in the round, but not that they were the one whose click
-  // completed it (that could be the last designer to sign). So "onaylandi"'s
-  // signer isn't reliably the leader — find the actual team_leader-authored
-  // entry across the round (matbaa_approve = a partial approval, onaylandi =
-  // the completing one) instead of assuming the completing signer is it.
+  // completed it (that could be the last designer to sign). So the
+  // completing entry's signer isn't reliably the leader — find the actual
+  // team_leader-authored entry across the round (matbaa_approve = a partial
+  // approval, siparis_baski_onay = the completing one — that's the step
+  // name computeMatbaaOnayApproval writes on full approval, NOT 'onaylandi'
+  // any more, since the order lands on the print-approval gate first)
+  // instead of assuming the completing signer is it.
   const leaderApproval = history.find(
-    (h) => (h.step === 'matbaa_approve' || h.step === 'onaylandi') && h.signed_by_role === 'team_leader',
+    (h) => (h.step === 'matbaa_approve' || h.step === 'siparis_baski_onay') && h.signed_by_role === 'team_leader',
   )
-  const leaderSigner = leaderApproval?.signed_by_name || signer('onaylandi') || gorulduSigner
+  const ekranOnaySigner = signer('ekran_onay')
+  const leaderSigner = leaderApproval?.signed_by_name || ekranOnaySigner || signer('onaylandi') || gorulduSigner
 
   const configs = {
-    pending:        [{ role: 'Talep Eden', name: esra }],
-    goruldu:        [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Talep Eden', name: esra }],
-    tasarimci_onay: [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Tasarımcı', name: tasarimciSigner }],
-    matbaa_onay:    [{ role: 'Matbaa Yetkilisi', name: matbaaSigner }],
-    onaylandi:      [{ role: 'Ekip Lideri', name: leaderSigner }, { role: 'Tasarımcı', name: tasarimciSigner }, { role: 'Matbaa Yetkilisi', name: matbaaSigner }],
+    pending:             [{ role: 'Talep Eden', name: esra }],
+    goruldu:             [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Talep Eden', name: esra }],
+    tasarimci_onay:      [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Tasarımcı', name: tasarimciSigner }],
+    ekran_onay:          [{ role: 'Ekip Lideri', name: ekranOnaySigner }],
+    matbaa_onay:         [{ role: 'Matbaa Yetkilisi', name: matbaaSigner }],
+    siparis_baski_onay:  [{ role: 'Ekip Lideri', name: leaderSigner }],
+    onaylandi:           [{ role: 'Ekip Lideri', name: leaderSigner }, { role: 'Tasarımcı', name: tasarimciSigner }, { role: 'Matbaa Yetkilisi', name: matbaaSigner }],
   }
 
   const cells = configs[step] ?? []
@@ -1207,24 +1294,27 @@ function SignedStepRow({ step, onForm }) {
   )
 }
 
-const STAGE_DEFS = [
-  { step: 'pending',         label: 'Talep',               color: '#e11d48' },
-  { step: 'goruldu',         label: 'Tasarımcıya Aktarıldı', color: '#f97316' },
-  { step: 'tasarimci_onay',  label: 'Ozalit İstendi',      color: '#10b981' },
-  { step: 'matbaa_onay',     label: 'Onay Bekleniyor',     color: '#3b82f6' },
-  { step: 'onaylandi',       label: 'Üretimde',            color: '#8b5cf6' },
-]
+// Step visuals, keyed by step name (not an ordered array any more — the
+// pipeline branches at goruldu, so the RENDERED sequence for a given order
+// comes from orderStepPath(order), not a fixed list — see HorizontalStages).
+const STAGE_DEF_BY_STEP = {
+  pending:             { label: 'Talep',                  color: '#e11d48' },
+  goruldu:             { label: 'Tasarımcıya Aktarıldı',   color: '#f97316' },
+  tasarimci_onay:      { label: 'Ozalit İstendi',          color: '#10b981' },
+  ekran_onay:          { label: 'Ekran Onayı',             color: '#06b6d4' },
+  matbaa_onay:         { label: 'Onay Bekleniyor',         color: '#3b82f6' },
+  siparis_baski_onay:  { label: 'Baskı Onayı',             color: '#a855f7' },
+  onaylandi:           { label: 'Üretimde',                color: '#8b5cf6' },
+}
 
 // ── Order-step progress helpers ──────────────────────────────────────────────
 // An order's TRUE position is its current `status`, NOT whatever lingers in
 // order_history. A rejection loops the order backward (e.g. matbaa_onay →
-// tasarimci_onay) yet leaves the old forward entries in history; deriving state
+// goruldu) yet leaves the old forward entries in history; deriving state
 // from `status` makes rolled-back steps correctly render as "not yet reached"
 // instead of falsely showing as signed.
-const ORDER_STEP_SEQUENCE = ['pending', 'goruldu', 'tasarimci_onay', 'matbaa_onay', 'onaylandi']
-
 function reachedStepIndex(order) {
-  return ORDER_STEP_SEQUENCE.indexOf(order?.status)
+  return orderStepPath(order).indexOf(order?.status)
 }
 
 // Latest NON-reject signature entry per step. A rejection reuses the target
@@ -1243,18 +1333,21 @@ function signedEntriesByStep(order) {
 function HorizontalStages({ order, onSelect }) {
   const byStep = signedEntriesByStep(order)
   const reached = reachedStepIndex(order)
-  const last = STAGE_DEFS.length - 1
+  // Which of the two possible paths this order actually took — see
+  // orderStepPath. Each entry gets its label/color from STAGE_DEF_BY_STEP.
+  const stages = orderStepPath(order).map((step) => ({ step, ...STAGE_DEF_BY_STEP[step] }))
+  const last = stages.length - 1
   // The active step is the one right after the furthest step actually reached.
   const activeIndex = reached + 1
 
   return (
     <div className="overflow-x-auto px-1 pb-1 pt-3">
       <div className="flex min-w-[480px]">
-        {STAGE_DEFS.map((d, i) => {
+        {stages.map((d, i) => {
           const entry = byStep[d.step]
           const done = i <= reached
           const isActive = i === activeIndex
-          const prev = STAGE_DEFS[i - 1]
+          const prev = stages[i - 1]
           const prevDone = i > 0 && i - 1 <= reached
           const date = done && entry?.signed_at
             ? new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'short' }).format(new Date(entry.signed_at))
@@ -1340,11 +1433,10 @@ function HorizontalStages({ order, onSelect }) {
 }
 
 function PendingStepRow({ step }) {
-  const labels = { goruldu: 'Tasarımcıya Aktarıldı', tasarimci_onay: 'Ozalit İstendi', matbaa_onay: 'Onay Bekleniyor', onaylandi: 'Üretimde' }
   return (
     <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-3 opacity-60">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-        {labels[step] ?? step}
+        {ORDER_STEP_LABELS[step] ?? step}
       </p>
       <div className="mt-2 flex min-h-[2.5rem] items-end border-b border-dashed border-foreground/15 pb-0.5" />
       <p className="mt-1 text-[10px] text-muted-foreground">Bekliyor…</p>
@@ -1353,7 +1445,7 @@ function PendingStepRow({ step }) {
 }
 
 function MiniPipeline({ order, nextStep }) {
-  const allSteps = ORDER_STEP_SEQUENCE
+  const allSteps = orderStepPath(order)
   const reached = reachedStepIndex(order)
   return (
     <div className="flex items-center gap-1 overflow-x-auto py-1">
@@ -1528,20 +1620,26 @@ function openOrderPrintWindow(order, stepFilter) {
   const tasarimciSigner = signerOf('tasarimci_onay')
   const matbaaSigner = signerOf('matbaa_onay')
   // See the identical note in StepSignatureFooter above: matbaa_onay is
-  // multi-party, so the "onaylandi" entry's signer isn't reliably the team
-  // leader — it's whoever's click happened to complete the round.
+  // multi-party, so the completing entry's signer isn't reliably the team
+  // leader — it's whoever's click happened to complete the round. The
+  // completing step name is 'siparis_baski_onay' now, not 'onaylandi' (see
+  // computeMatbaaOnayApproval) — the order lands on the print-approval gate
+  // before production, it doesn't jump straight to onaylandi any more.
   const leaderApproval = history.find(
-    (h) => (h.step === 'matbaa_approve' || h.step === 'onaylandi') && h.signed_by_role === 'team_leader',
+    (h) => (h.step === 'matbaa_approve' || h.step === 'siparis_baski_onay') && h.signed_by_role === 'team_leader',
   )
-  const leaderSigner = leaderApproval?.signed_by_name || signerOf('onaylandi') || gorulduSigner
+  const ekranOnaySigner = signerOf('ekran_onay')
+  const leaderSigner = leaderApproval?.signed_by_name || ekranOnaySigner || signerOf('onaylandi') || gorulduSigner
 
   const activeStep = stepFilter ?? 'onaylandi'
   const sigCells = {
-    pending:        [{ role: 'Talep Eden', name: esra }],
-    goruldu:        [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Talep Eden', name: esra }],
-    tasarimci_onay: [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Tasarımcı', name: tasarimciSigner }],
-    matbaa_onay:    [{ role: 'Matbaa Yetkilisi', name: matbaaSigner }],
-    onaylandi:      [{ role: 'Ekip Lideri', name: leaderSigner }, { role: 'Tasarımcı', name: tasarimciSigner }, { role: 'Matbaa Yetkilisi', name: matbaaSigner }],
+    pending:             [{ role: 'Talep Eden', name: esra }],
+    goruldu:             [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Talep Eden', name: esra }],
+    tasarimci_onay:      [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Tasarımcı', name: tasarimciSigner }],
+    ekran_onay:          [{ role: 'Ekip Lideri', name: ekranOnaySigner }],
+    matbaa_onay:         [{ role: 'Matbaa Yetkilisi', name: matbaaSigner }],
+    siparis_baski_onay:  [{ role: 'Ekip Lideri', name: leaderSigner }],
+    onaylandi:           [{ role: 'Ekip Lideri', name: leaderSigner }, { role: 'Tasarımcı', name: tasarimciSigner }, { role: 'Matbaa Yetkilisi', name: matbaaSigner }],
   }[activeStep] ?? []
 
   const sigHtml = sigCells.map((c) =>
@@ -1583,7 +1681,7 @@ function openOrderPrintWindow(order, stepFilter) {
   let isMultiSheet = false
   const bookTitle = order.project_title?.replace(/ \/ /g, ' ') ?? ''
 
-  if (activeStep === 'tasarimci_onay' || activeStep === 'matbaa_onay') {
+  if (activeStep === 'tasarimci_onay' || activeStep === 'matbaa_onay' || activeStep === 'ekran_onay') {
     // Ozalit-style print: product specs + Esra's ordered ADET — one physical
     // sheet PER parça (mirrors the Demo/Ozalit dialog's own multi-sheet print,
     // specPrint.js#printSpecSheets), each with its own letterhead and
@@ -1593,7 +1691,11 @@ function openOrderPrintWindow(order, stepFilter) {
     // below it), and a single signature stood in for parças that may print
     // and ship on different schedules.
     const comps = loadProductComps(order.project_id)
-    const stepSubtitle = activeStep === 'tasarimci_onay' ? 'Tasarımcı → Matbaa' : 'Matbaa Teslimi'
+    const stepSubtitle = activeStep === 'tasarimci_onay'
+      ? 'Tasarımcı → Matbaa'
+      : activeStep === 'ekran_onay'
+        ? 'Ekran Onayı'
+        : 'Matbaa Teslimi'
 
     // Map component name → Esra's ordered quantity for print
     const printOrderItems = normalizeItems(order.items, order.quantity)
@@ -1618,6 +1720,7 @@ function openOrderPrintWindow(order, stepFilter) {
       <div class="right">
         <div><span class="label">Baskı Tarihi :</span> ${escapeHtml(dateStr)}</div>
         <div><span class="label">Talep Eden :</span> ${escapeHtml(esra)}</div>
+        <div><span class="label">Basım Yeri :</span> —</div>
       </div>
     </div>
     <table><tbody>${specRows}</tbody></table>
@@ -1694,7 +1797,7 @@ function openOrderPrintWindow(order, stepFilter) {
 }
 
 function pendingFutureSteps(order) {
-  const allSteps = ['goruldu', 'tasarimci_onay', 'matbaa_onay', 'onaylandi']
+  const allSteps = orderStepPath(order).filter((s) => s !== 'pending')
   const done = new Set((order.order_history ?? []).map((h) => h.step))
   return allSteps.filter((s) => !done.has(s) && s !== order.status)
 }
@@ -1704,7 +1807,9 @@ function stepShortLabel(step) {
     pending: 'Talep',
     goruldu: 'Aktarıldı',
     tasarimci_onay: 'Ozalit',
+    ekran_onay: 'Ekran Onayı',
     matbaa_onay: 'Onay',
+    siparis_baski_onay: 'Baskı Onayı',
     onaylandi: 'Üretimde',
   }
   return map[step] ?? step

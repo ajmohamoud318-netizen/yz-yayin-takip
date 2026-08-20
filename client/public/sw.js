@@ -25,7 +25,7 @@ self.addEventListener('activate', (event) => {
 /**
  * Where a tap wants to go, parked so a COLD launch can pick it up.
  *
- * `clients.openWindow('/uretime-hazir')` is supposed to launch the app on that
+ * `clients.openWindow('/baski-listesi')` is supposed to launch the app on that
  * route. In an installed PWA on iOS it does not: WebKit ignores the URL and
  * relaunches the app at the manifest `start_url`, which is `/`. Android behaves,
  * but the same thing happens anywhere `matchAll` comes back empty while the app

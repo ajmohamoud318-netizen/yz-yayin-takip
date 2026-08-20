@@ -20,7 +20,8 @@ import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { getComponentsForProject, getComponentRows, primeProductInfoCache, saveEditedComponents } from '@/data/productCatalog'
 import { printSpecSheets, buildSpecRows } from '@/lib/specPrint'
 import { hasSpecContent, specWithDemoFallback } from '@/lib/spec-seed'
-import { buildAdetRows } from '@/data/orderAdet'
+import { buildAdetRows, loadOrderAdet } from '@/data/orderAdet'
+import { formatNumber } from '@/lib/utils'
 import { ozalitLeaderApproved } from '@/domain'
 
 /* ------------------------------------------------------------------ */
@@ -35,7 +36,8 @@ const POST_DEMO_STAGES = new Set([
   'demo_teslim', 'cin_demo_teslim',
   'demo_onay',   'cin_demo_onay',
   'ozalit_teslim','ozalit_onay',
-  'uretime_hazir','uretimde','gumruk','satista',
+  'baski_onay', 'cin_baski_onay',
+  'baskida','gumruk','satista',
 ])
 
 export const VARIANTS = {
@@ -101,10 +103,13 @@ export const VARIANTS = {
     saveToast: 'Ozalit formu kaydedildi.',
   },
   // Baskı Onay Formu — the final print approval at the `baski_onay` gate
-  // between ozalit_onay and uretime_hazir. Comes to screen pre-filled with
-  // the last ozalit sheet's information (see the ozalit-fallback block in the
-  // load effect below) and may only be edited by a team_leader ("Serpil
-  // Hanım", Ayşenur, …) — every other role sees it read-only. Approval is
+  // between ozalit_onay and baskida (TR), reused as-is for ÇİN's mirror gate
+  // `cin_baski_onay` between cin_demo_onay and baskida (migration 047) — see
+  // STAGE_VARIANT below, which maps both stage names to this one variant.
+  // Comes to screen pre-filled with the last ozalit sheet's information for
+  // TR, or the last demo sheet's for ÇİN (see the fallback block in the load
+  // effect below) and may only be edited by a team_leader ("Serpil Hanım",
+  // Ayşenur, …) — every other role sees it read-only. Approval is
   // dual-signature (migration 045): one team leader prepares it (handled
   // below via handlePrepareBaskiOnay), a DIFFERENT team leader approves it
   // (handleApprove) — see the isBaskiOnayApproval block further down. There
@@ -117,6 +122,13 @@ export const VARIANTS = {
     personField: 'baskiOnayHazirlayan',
     dateLabel:   'BASKI ONAY TARİHİ',
     personLabel: 'HAZIRLAYAN',
+    // Dedicated fields (unlike demo/ozalit's buried ADET custom row, which
+    // never rendered or printed once a project had a catalog — see the load
+    // effect below for the fallback chain that fills adetField).
+    adetField:     'baskiOnayAdet',
+    adetLabel:     'ADET',
+    locationField: 'basimYeri',
+    locationLabel: 'BASIM YERİ',
     attemptField: 'baski_onay_attempt',
     title: 'Baskı Onay Formu',
     attemptWord: 'Baskı Onay',
@@ -156,7 +168,10 @@ const OLD_FIELD_LABELS = {
 }
 
 function knownFields(variant) {
-  return new Set(['isinAdi', variant.dateField, variant.personField, 'teslimEdenKisi', 'teslimTarihi', 'onaylayanKisi', 'matbaaYetkilisi'])
+  const fields = ['isinAdi', variant.dateField, variant.personField, 'teslimEdenKisi', 'teslimTarihi', 'onaylayanKisi', 'matbaaYetkilisi']
+  if (variant.adetField) fields.push(variant.adetField)
+  if (variant.locationField) fields.push(variant.locationField)
+  return new Set(fields)
 }
 
 function parseSaved(variant, raw) {
@@ -225,6 +240,7 @@ const STAGE_VARIANT = {
   ozalit_teslim: 'ozalit',
   ozalit_onay: 'ozalit',
   baski_onay: 'baski_onay',
+  cin_baski_onay: 'baski_onay',
 }
 
 export function specVariantForStage(stage) {
@@ -470,6 +486,7 @@ function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
       </div>
       <div className="border-b px-4 py-1">
         <ClassicRow label="İŞİN ADI" value={component.component} />
+        {variant.adetField && <ClassicRow label={variant.adetLabel} value={form[variant.adetField]} />}
         {rows.map((r) => (
           <ClassicRow key={r.id} label={r.label} value={r.value} />
         ))}
@@ -479,6 +496,7 @@ function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
             the matbaa, who otherwise had no way to see how long the job had
             been waiting (the teslim rows used to replace these). */}
         <ClassicRow label={variant.dateLabel} value={form[variant.dateField]} />
+        {variant.locationField && <ClassicRow label={variant.locationLabel} value={form[variant.locationField]} />}
         <ClassicRow label={variant.personLabel} value={form[variant.personField]} />
         {/* Delivery rows. Left BLANK until the matbaa actually advances
             (handleAdvance stamps them) — same rule as onaylayanKisi below.
@@ -634,17 +652,46 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       // Baskı Onay Formu always opens pre-filled with the LAST ozalit sheet's
       // information (per the feature ask) until a team leader edits and saves
       // their own — same borrow-once-then-keep-your-own-edits shape as the
-      // ozalit-from-demo fallback above.
+      // ozalit-from-demo fallback above. ÇİN has no ozalit sheet (its mirror
+      // gate, cin_baski_onay, sits right after cin_demo_onay), so it borrows
+      // from the demo sheet instead — same fallback source TR's own ozalit
+      // form uses on its first round.
       if (variant.kind === 'baski_onay' && !hasSpecContent(data)) {
-        const fromOzalit =
-          loadSaved(VARIANTS.ozalit, project.id) ??
-          (await fetchServerSnapshot(api, VARIANTS.ozalit, project.id, null))
+        const fallbackVariant = project.type === 'CIN' ? VARIANTS.demo : VARIANTS.ozalit
+        const fromFallback =
+          loadSaved(fallbackVariant, project.id) ??
+          (await fetchServerSnapshot(api, fallbackVariant, project.id, null))
         if (cancelled) return
-        spec = specWithDemoFallback(data, fromOzalit)
+        spec = specWithDemoFallback(data, fromFallback)
       }
       const savedRows = spec?.customRows ?? []
-      const hasAdet = savedRows.some((r) => r.label?.toUpperCase().startsWith('ADET'))
-      setCustomRows(hasAdet ? savedRows : [...buildAdetRows(project.id), ...savedRows])
+      if (variant.kind === 'baski_onay') {
+        // ADET gets its own top-of-sheet field here instead of living as a
+        // buried custom row — that row never actually rendered or printed
+        // once a project had a catalog (buildSpecRows / the parça cards both
+        // skip customRows once parçalar are selected). Prefer a live sipariş
+        // order's quantity; on a project's first pass (no order placed yet)
+        // fall back to whatever ADET the borrowed ozalit sheet carried, then
+        // drop that row so it isn't shown twice.
+        let adetValue = data?.form?.[variant.adetField]
+        let rowsForCustom = savedRows
+        if (!adetValue) {
+          const order = loadOrderAdet(project.id)
+          adetValue = order?.quantity ? formatNumber(order.quantity) : ''
+          if (!adetValue) {
+            const idx = savedRows.findIndex((r) => r.label?.toUpperCase().startsWith('ADET'))
+            if (idx !== -1) {
+              adetValue = savedRows[idx].value
+              rowsForCustom = savedRows.filter((_, i) => i !== idx)
+            }
+          }
+        }
+        if (adetValue) setForm((f) => ({ ...f, [variant.adetField]: adetValue }))
+        setCustomRows(rowsForCustom)
+      } else {
+        const hasAdet = savedRows.some((r) => r.label?.toUpperCase().startsWith('ADET'))
+        setCustomRows(hasAdet ? savedRows : [...buildAdetRows(project.id), ...savedRows])
+      }
       // null means never explicitly set — default to all catalog components checked.
       // [] means the user intentionally cleared them — respect that.
       const savedComponents = spec?.selectedComponents ?? null
@@ -985,6 +1032,21 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             <span className="text-sm font-bold">{attemptNo}. {variant.attemptUpper}</span>
           </div>
 
+          {/* ADET — dedicated top field on the Baskı Onay Formu, auto-filled
+              from a live sipariş order or the borrowed ozalit sheet (see the
+              load effect); the leader can still correct it. */}
+          {variant.adetField && (
+            <div className="border-b px-4 py-1">
+              <Row
+                label={variant.adetLabel}
+                name={variant.adetField}
+                value={form[variant.adetField] ?? ''}
+                onChange={handleChange}
+                readOnly={readOnly}
+              />
+            </div>
+          )}
+
           {/* Per-component picker — only when the project has product info */}
           {hasCatalog && !readOnly && (
             <div className="border-b bg-muted/20 px-4 py-3">
@@ -1149,6 +1211,16 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                 who requested the demo/ozalit and when, not just its own
                 delivery stamp. */}
             <Row label={variant.dateLabel}   name={variant.dateField}   value={form[variant.dateField]}   onChange={handleChange} readOnly={systemRowReadOnly} />
+            {/* BASIM YERİ — right before HAZIRLAYAN, per the feature ask. */}
+            {variant.locationField && (
+              <Row
+                label={variant.locationLabel}
+                name={variant.locationField}
+                value={form[variant.locationField] ?? ''}
+                onChange={handleChange}
+                readOnly={readOnly}
+              />
+            )}
             <Row label={variant.personLabel} name={variant.personField} value={form[variant.personField]} onChange={handleChange} readOnly />
             {/* Blank until handleAdvance stamps them at the moment of teslimat. */}
             {(user?.role === 'printer' || form.teslimTarihi || form.teslimEdenKisi) && (

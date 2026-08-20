@@ -107,11 +107,10 @@ describe('assertDemoCanAdvance (approve-but-hold rule)', () => {
 })
 
 describe('canRequestOrder / assertOrderable', () => {
-  it('allows Üretime Hazır and every stage after it, given a product_info entry', () => {
+  it('allows Baskıda and every stage after it, given a product_info entry', () => {
     expect(canRequestOrder({ stage: 'satista', has_product_info: true })).toBe(true)
     expect(canRequestOrder({ stage: 'satista', has_product_info: false })).toBe(false)
-    expect(canRequestOrder({ stage: 'uretime_hazir', has_product_info: true })).toBe(true)
-    expect(canRequestOrder({ stage: 'uretimde', has_product_info: true })).toBe(true)
+    expect(canRequestOrder({ stage: 'baskida', has_product_info: true })).toBe(true)
     expect(canRequestOrder({ stage: 'gumruk', has_product_info: true })).toBe(true)
     expect(canRequestOrder({ stage: 'tasarim', has_product_info: true })).toBe(false)
     expect(canRequestOrder({ stage: 'ozalit_teslim', has_product_info: true })).toBe(false)
@@ -127,7 +126,7 @@ describe('canRequestOrder / assertOrderable', () => {
   })
   it('throws when in an orderable stage but no product_info entry exists yet', () => {
     expect(() => assertOrderable({ stage: 'satista', has_product_info: false })).toThrow(/Ürün Bilgileri/)
-    expect(() => assertOrderable({ stage: 'uretime_hazir', has_product_info: false })).toThrow(/Ürün Bilgileri/)
+    expect(() => assertOrderable({ stage: 'baskida', has_product_info: false })).toThrow(/Ürün Bilgileri/)
   })
   it('throws on missing project (defensive)', () => {
     expect(() => assertOrderable(undefined)).toThrow(/üretime hazır/)
@@ -143,9 +142,9 @@ describe('isCatalogListed (kaldırma, migration 033)', () => {
     expect(isCatalogListed(delisted)).toBe(false)
   })
   it('rows predating the column are still listed', () => {
-    expect(isCatalogListed({ stage: 'uretime_hazir' })).toBe(true)
+    expect(isCatalogListed({ stage: 'baskida' })).toBe(true)
   })
-  it('a stage before Üretime Hazır is never listed', () => {
+  it('a stage before Baskıda is never listed', () => {
     expect(isCatalogListed({ stage: 'tasarim' })).toBe(false)
     expect(isCatalogListed(undefined)).toBe(false)
   })
@@ -160,9 +159,9 @@ describe('isCatalogListed (kaldırma, migration 033)', () => {
 })
 
 describe('handoverStageFor / canRequestHandover / assertHandoverEligible', () => {
-  it('TR hands over from uretimde', () => {
-    expect(handoverStageFor('TR')).toBe('uretimde')
-    expect(canRequestHandover({ type: 'TR', stage: 'uretimde' })).toBe(true)
+  it('TR hands over from baskida', () => {
+    expect(handoverStageFor('TR')).toBe('baskida')
+    expect(canRequestHandover({ type: 'TR', stage: 'baskida' })).toBe(true)
   })
   it('ÇİN hands over from gumruk', () => {
     expect(handoverStageFor('CIN')).toBe('gumruk')
@@ -170,7 +169,7 @@ describe('handoverStageFor / canRequestHandover / assertHandoverEligible', () =>
   })
   it('rejects handovers raised at the wrong stage', () => {
     expect(canRequestHandover({ type: 'TR', stage: 'tasarim' })).toBe(false)
-    expect(canRequestHandover({ type: 'CIN', stage: 'uretimde' })).toBe(false)
+    expect(canRequestHandover({ type: 'CIN', stage: 'baskida' })).toBe(false)
     expect(canRequestHandover({ type: 'TR', stage: 'satista' })).toBe(false)
   })
   it('assertHandoverEligible throws 400 with status on wrong stage', () => {
@@ -183,7 +182,7 @@ describe('handoverStageFor / canRequestHandover / assertHandoverEligible', () =>
     }
   })
   it('falls back to TR handover stage for an unknown type', () => {
-    expect(handoverStageFor('XX')).toBe('uretimde')
+    expect(handoverStageFor('XX')).toBe('baskida')
   })
 })
 
@@ -253,15 +252,15 @@ describe('canRejectAtStage', () => {
   it('lets team_leader reject at any stage', () => {
     for (const stage of [
       'demo_onay', 'cin_demo_onay', 'ozalit_onay',
-      'demo_teslim', 'tasarim', 'ozalit_teslim', 'uretime_hazir',
-      'uretimde', 'gumruk',
+      'demo_teslim', 'tasarim', 'ozalit_teslim', 'baski_onay', 'cin_baski_onay',
+      'baskida', 'gumruk',
     ]) {
       expect(canRejectAtStage(LEADER, stage)).toBe(true)
     }
   })
 
   it('blocks designer / printer / satis at every stage', () => {
-    for (const stage of ['demo_onay', 'ozalit_onay', 'tasarim', 'uretime_hazir']) {
+    for (const stage of ['demo_onay', 'ozalit_onay', 'tasarim', 'baskida']) {
       expect(canRejectAtStage(DESIGNER, stage)).toBe(false)
       expect(canRejectAtStage(PRINTER, stage)).toBe(false)
       expect(canRejectAtStage({ role: 'satis' }, stage)).toBe(false)
@@ -300,7 +299,7 @@ describe('isLegacyProject / assertNotLegacy (kayıtlı ürünler)', () => {
     // Ordering a backlist book is the entire point of importing it.
     expect(canRequestOrder(legacy)).toBe(true)
     expect(() => assertOrderable(legacy)).not.toThrow()
-    expect(canRequestHandover({ type: 'TR', stage: 'uretimde', origin: 'legacy' })).toBe(true)
+    expect(canRequestHandover({ type: 'TR', stage: 'baskida', origin: 'legacy' })).toBe(true)
   })
 
   it('matches the server guard message', () => {

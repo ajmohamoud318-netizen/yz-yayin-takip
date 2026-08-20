@@ -25,7 +25,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useProject } from '@/hooks/useProjects'
 import api, {
   STAGE_LABELS, TYPE_LABELS, IN_FLIGHT_DEMO_OZALIT_STAGES, isLegacyProject,
-  ORDER_STEPS, ORDER_STEP_LABELS,
+  ORDER_STEP_LABELS, orderStepPath,
 } from '@/api'
 import StageBar from '@/components/StageBar'
 import { Button } from '@/components/ui/button'
@@ -63,7 +63,6 @@ const isActiveOrder = (o) => o.status !== 'onaylandi' && o.status !== 'rejected'
 // Appending it here as two derived steps is what lets the tracker keep
 // filling in for real after approval instead of freezing dead on Üretimde
 // forever.
-const DISPLAY_ORDER_STEPS = [...ORDER_STEPS, 'teslim_bekleniyor', 'satista']
 const DISPLAY_ORDER_STEP_LABELS = {
   ...ORDER_STEP_LABELS,
   teslim_bekleniyor: 'Teslim Bekleniyor',
@@ -81,11 +80,15 @@ const DISPLAY_ORDER_STEP_LABELS = {
  * two derived final steps as those real events actually happen.
  */
 function OrderProgressStepper({ order, sold, handoverPending, onOpen }) {
+  // The pipeline branches at goruldu (tasarimci_onay vs ekran_onay) — each
+  // order's own displayed sequence comes from the path it actually took,
+  // not a fixed list. See orderStepPath in domain/constants/orders.js.
+  const displaySteps = [...orderStepPath(order), 'teslim_bekleniyor', 'satista']
   const currentIndex = sold
-    ? DISPLAY_ORDER_STEPS.length - 1
+    ? displaySteps.length - 1
     : handoverPending
-      ? DISPLAY_ORDER_STEPS.length - 2
-      : Math.max(0, ORDER_STEPS.indexOf(order.status))
+      ? displaySteps.length - 2
+      : Math.max(0, displaySteps.indexOf(order.status))
   return (
     <button
       type="button"
@@ -97,7 +100,7 @@ function OrderProgressStepper({ order, sold, handoverPending, onOpen }) {
         Baskı Talebi
       </div>
       <ol className="flex items-center">
-        {DISPLAY_ORDER_STEPS.map((step, i) => {
+        {displaySteps.map((step, i) => {
           const done = i < currentIndex
           const current = i === currentIndex
           return (
@@ -124,7 +127,7 @@ function OrderProgressStepper({ order, sold, handoverPending, onOpen }) {
                   {DISPLAY_ORDER_STEP_LABELS[step]}
                 </span>
               </div>
-              {i < DISPLAY_ORDER_STEPS.length - 1 && (
+              {i < displaySteps.length - 1 && (
                 <span
                   aria-hidden="true"
                   className={cn('mx-1.5 mb-4 h-0.5 flex-1', i < currentIndex ? 'bg-brand-500' : 'bg-muted')}
@@ -786,7 +789,7 @@ export default function ProjectDetail() {
                   </Button>
                 )}
                 {/* Demo formu görüntüle — demo gönderildikten sonra */}
-                {isLeader && ['demo_teslim', 'cin_demo_teslim', 'demo_onay', 'cin_demo_onay', 'ozalit_teslim', 'ozalit_onay', 'uretimde', 'gumruk', 'satista'].includes(project.stage) && (
+                {isLeader && ['demo_teslim', 'cin_demo_teslim', 'demo_onay', 'cin_demo_onay', 'ozalit_teslim', 'ozalit_onay', 'baskida', 'gumruk', 'satista'].includes(project.stage) && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -796,8 +799,8 @@ export default function ProjectDetail() {
                     Demo Formu
                   </Button>
                 )}
-                {/* Ozalit formu görüntüle — üretimde veya sonraki aşamalarda */}
-                {isLeader && ['baski_onay', 'uretimde', 'gumruk', 'satista'].includes(project.stage) && project.type === 'TR' && (
+                {/* Ozalit formu görüntüle — baskıda veya sonraki aşamalarda. TR only — ÇİN has no ozalit leg. */}
+                {isLeader && ['baski_onay', 'baskida', 'gumruk', 'satista'].includes(project.stage) && project.type === 'TR' && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -807,8 +810,9 @@ export default function ProjectDetail() {
                     Ozalit Formu
                   </Button>
                 )}
-                {/* Baskı Onay Formu görüntüle — baski_onay aşaması geçildikten sonra da erişilebilir kalsın. */}
-                {isLeader && ['uretime_hazir', 'uretimde', 'gumruk', 'satista'].includes(project.stage) && project.type === 'TR' && (
+                {/* Baskı Onay Formu görüntüle — baski_onay/cin_baski_onay aşaması
+                    geçildikten sonra da erişilebilir kalsın, her iki pipeline için. */}
+                {isLeader && ['baskida', 'gumruk', 'satista'].includes(project.stage) && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -923,7 +927,7 @@ export default function ProjectDetail() {
                       if (project.stage === 'ozalit_onay') {
                         setOzalitFormMode('approve')
                         setOzalitFormOpen(true)
-                      } else if (project.stage === 'baski_onay') {
+                      } else if (project.stage === 'baski_onay' || project.stage === 'cin_baski_onay') {
                         setBaskiOnayFormMode('approve')
                         setBaskiOnayFormOpen(true)
                       } else {
@@ -1529,12 +1533,12 @@ function availableActions({ project, user }) {
   //
   // The leader no longer pushes a project into Satışta: reaching Satışta now
   // happens only when Sales confirms Matbaa's handover ("Alındı"). So the leader
-  // advances 'tasarim' and 'cin_demo_teslim', plus ÇİN 'uretimde' → 'gumruk'
-  // (customs). TR 'uretimde' and ÇİN 'gumruk' are handled by the handover flow.
+  // advances 'tasarim' and 'cin_demo_teslim', plus ÇİN 'baskida' → 'gumruk'
+  // (customs). TR 'baskida' and ÇİN 'gumruk' are handled by the handover flow.
   const leaderAdvanceable = new Set(['tasarim', 'cin_demo_teslim'])
   if (
     role === 'team_leader' &&
-    (leaderAdvanceable.has(stage) || (stage === 'uretimde' && project.type === 'CIN'))
+    (leaderAdvanceable.has(stage) || (stage === 'baskida' && project.type === 'CIN'))
   ) {
     set.add('advance')
   }
@@ -1595,7 +1599,7 @@ function availableActions({ project, user }) {
   // needs preparing or is awaiting a different leader's approval — see
   // BaskiOnayFormDialog / SpecFormDialog's isBaskiOnayApproval branch for
   // which action it actually performs.
-  if (stage === 'baski_onay' && role === 'team_leader') {
+  if ((stage === 'baski_onay' || stage === 'cin_baski_onay') && role === 'team_leader') {
     set.add('approve')
   }
   if (isAssignedDesigner && stage === 'tasarim') {
@@ -1615,11 +1619,11 @@ function availableActions({ project, user }) {
   }
 
   // Printer: confirms receipt of the TR demo and forwards it to the leader's
-  // onay queue, and takes an approved project into production ("Üretime Al").
+  // onay queue. There's no separate "take into production" action anymore —
+  // once baski_onay/cin_baski_onay is approved the project lands directly on
+  // baskida, which the printer acts on via the handover flow instead
+  // (Teslim Talepleri), not an in-detail-page advance button.
   if (role === 'printer' && project.type === 'TR' && stage === 'demo_teslim') {
-    set.add('advance')
-  }
-  if (role === 'printer' && stage === 'uretime_hazir') {
     set.add('advance')
   }
 
@@ -1631,7 +1635,6 @@ function advanceActionLabel(project, userRole) {
   if (userRole === 'printer') {
     if (project.stage === 'demo_teslim') return "Demo'yu Teslim Et"
     if (project.stage === 'ozalit_teslim') return 'Ozaliti Teslim Et'
-    if (project.stage === 'uretime_hazir') return 'Üretime Al'
   }
   switch (project.stage) {
     case 'tasarim':
@@ -1651,9 +1654,9 @@ function advanceActionLabel(project, userRole) {
       // At demo_teslim the matbaa delivers (printer). The team leader
       // or assigned designer re-triggers a new demo round.
       return userRole === 'printer' ? "Demo'yu Teslim Et" : 'Demo İste'
-    case 'uretimde':
+    case 'baskida':
       // Only ÇİN reaches here as a leader-advanceable stage (→ Gümrük). TR
-      // Üretimde is closed out via the Sales handover, not this button.
+      // Baskıda is closed out via the Sales handover, not this button.
       return 'Gümrüğe Gönder'
     default:
       return 'İlerlet'
@@ -1668,10 +1671,14 @@ function approveActionLabel(project) {
       // read "Onayla" (the designer's is the final one that sends to production).
       return 'Onayla'
     case 'cin_demo_onay':
-      return 'Üretime Al'
+      // Approving the demo now sends it to ÇİN's own print-approval gate
+      // (cin_baski_onay), not straight to production.
+      return 'Onayla'
     case 'baski_onay':
-      // Dual-approval (migration 045): the outer button just opens the
-      // dialog, but its label should say which half is still owed.
+    case 'cin_baski_onay':
+      // Dual-approval (migration 045, and ÇİN's mirror gate from migration
+      // 047): the outer button just opens the dialog, but its label should
+      // say which half is still owed.
       return project.baski_onay_prepared ? 'Onayla' : 'Formu Hazırla'
     default:
       // Demo Onay and every other approval: the leader is approving the item

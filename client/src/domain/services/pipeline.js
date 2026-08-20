@@ -136,8 +136,8 @@ export const STAGES_REQUIRING_FULL_PROGRESS = new Set([
   'ozalit_teslim',
   'ozalit_onay',
   'baski_onay',
-  'uretime_hazir',
-  'uretimde',
+  'cin_baski_onay',
+  'baskida',
   'gumruk',
   'satista',
 ])
@@ -180,13 +180,13 @@ export function assertDemoCanAdvance(progress) {
 /**
  * Capability helpers — these answer "is THIS user allowed to do X?"
  *
- *   isOzalitApprover  — advance `ozalit_onay → uretime_hazir`
+ *   isOzalitApprover  — advance `ozalit_onay → baski_onay`
  *                       owner: team_leader only
  *   ozalitLeaderApproved / canApproveOzalitNow
  *                     — sign off at `ozalit_onay` (multi-party, leader-first)
  *                       owner: team_leader, then the assigned designers
- *   isDemoApprover    — advance `demo_onay | cin_demo_onay → ozalit_teslim |
- *                              uretime_hazir`
+ *   isDemoApprover    — advance `demo_onay → ozalit_teslim` |
+ *                              `cin_demo_onay → cin_baski_onay`
  *                       owner: team_leader  OR  printer
  *   canRejectAtStage  — reject at any stage (reason + reject_target where
  *                       applicable)
@@ -241,13 +241,15 @@ export function canApproveOzalitNow(user, project) {
 
 /**
  * Baskı Onay Formu — the final print approval, gated at `baski_onay`
- * (between ozalit_onay and uretime_hazir). team_leader only, both halves:
- * this is the same set of people ("Serpil Hanım", Ayşenur, …) who may edit
- * the form itself — see the `baski_onay` variant in SpecFormDialog. Approval
- * is dual-signature (migration 045: one leader prepares, a DIFFERENT one
- * approves) — this helper only answers the role question; the "different
- * person" rule is enforced server-side (computeApproval's baski_onay branch)
- * and surfaced via SpecFormDialog's prepare/approve button switch.
+ * (between ozalit_onay and baskida) for TR, and its mirror `cin_baski_onay`
+ * (between cin_demo_onay and baskida, migration 047) for ÇİN. team_leader
+ * only, both halves: this is the same set of people ("Serpil Hanım",
+ * Ayşenur, …) who may edit the form itself — see the `baski_onay` variant in
+ * SpecFormDialog. Approval is dual-signature (migration 045: one leader
+ * prepares, a DIFFERENT one approves) — this helper only answers the role
+ * question; the "different person" rule is enforced server-side
+ * (computeApproval's baski_onay branch) and surfaced via SpecFormDialog's
+ * prepare/approve button switch.
  *
  * @param {{ role: string }} user
  */

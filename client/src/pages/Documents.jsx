@@ -54,18 +54,18 @@ function loadOzalitForm(projectId) {
 const DEMO_SENT_STAGES = new Set([
   'demo_teslim', 'demo_onay',
   'ozalit_teslim', 'ozalit_onay',
-  'uretimde', 'satista',
+  'baskida', 'satista',
   'cin_demo_teslim', 'cin_demo_onay',
   'gumruk',
 ])
 
 function isDemoApproved(p) {
-  if (p.type === 'TR') return ['ozalit_teslim', 'ozalit_onay', 'uretimde', 'satista'].includes(p.stage)
-  return ['uretimde', 'gumruk', 'satista'].includes(p.stage)
+  if (p.type === 'TR') return ['ozalit_teslim', 'ozalit_onay', 'baskida', 'satista'].includes(p.stage)
+  return ['baskida', 'gumruk', 'satista'].includes(p.stage)
 }
 
-const OZALIT_SENT_STAGES = new Set(['ozalit_teslim', 'ozalit_onay', 'uretimde', 'satista'])
-const OZALIT_APPROVED_STAGES = new Set(['uretimde', 'satista'])
+const OZALIT_SENT_STAGES = new Set(['ozalit_teslim', 'ozalit_onay', 'baskida', 'satista'])
+const OZALIT_APPROVED_STAGES = new Set(['baskida', 'satista'])
 
 /* ------------------------------------------------------------------ */
 /*  Parça + print helpers (shared with the Demo/Ozalit dialog)         */

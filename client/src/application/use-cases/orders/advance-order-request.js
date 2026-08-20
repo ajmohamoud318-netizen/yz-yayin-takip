@@ -9,12 +9,17 @@ import { httpClient } from '../../../infrastructure/http/client.js'
  * — this client wrapper is just the HTTP call.
  */
 export function makeAdvanceOrderRequest() {
-  return function advanceOrderRequest(id, { notes = '', assignees, expectedVersion } = {}) {
+  return function advanceOrderRequest(id, { notes = '', assignees, expectedVersion, route } = {}) {
     // Forward every field the endpoint accepts. `assignees` in particular is
     // REQUIRED on the pending → görüldü step ("Tasarımcıya Aktar"): the server
     // 400s with "Tasarımcı seçmeden talebi aktaramazsın." without it, which is
     // what an earlier `{ notes }`-only body caused on every transfer, even
     // though the team leader had picked designers in the dialog.
+    //
+    // `route` is REQUIRED on a goruldu resubmit (order.last_reject_type ===
+    // 'designer') — the designer's choice between 'tasarimci_onay' (another
+    // physical ozalit) and 'ekran_onay' (digital, team-leader-only). The
+    // server 400s if it's sent on a first submission or omitted on a resubmit.
     //
     // `actor` is deliberately NOT forwarded — the signer is read from the
     // session server-side, and the body schema is additionalProperties:false,
@@ -22,6 +27,7 @@ export function makeAdvanceOrderRequest() {
     const body = { notes }
     if (assignees !== undefined) body.assignees = assignees
     if (expectedVersion !== undefined) body.expectedVersion = expectedVersion
+    if (route !== undefined) body.route = route
     return httpClient
       .patch(`/order-requests/${id}/advance`, body)
       .then(({ data }) => data)
