@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FileText, Search, Pencil, Check, X, BookOpen, Box } from 'lucide-react'
+import { FileText, Search, Pencil, Check, X, BookOpen, Box, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useProjects } from '@/hooks/useProjects'
 import { useAuth } from '@/hooks/useAuth'
@@ -32,6 +32,16 @@ export default function BaskiReceteleri() {
   const [search, setSearch] = useState('')
   const [editingKey, setEditingKey] = useState(null)
   const [draft, setDraft] = useState(null)
+  const [openIds, setOpenIds] = useState(() => new Set())
+
+  function toggleOpen(projectId) {
+    if (editingKey?.startsWith(`${projectId}::`)) return
+    setOpenIds((prev) => {
+      const next = new Set(prev)
+      next.has(projectId) ? next.delete(projectId) : next.add(projectId)
+      return next
+    })
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -115,9 +125,15 @@ export default function BaskiReceteleri() {
     return [...map.values()]
   }, [filtered])
 
+  const allOpen = grouped.length > 0 && grouped.every((g) => openIds.has(g.projectId))
+  function toggleAllOpen() {
+    setOpenIds(allOpen ? new Set() : new Set(grouped.map((g) => g.projectId)))
+  }
+
   function startEdit(row) {
     setEditingKey(row.key)
     setDraft(deepCopy(row.comp))
+    setOpenIds((prev) => new Set(prev).add(row.projectId))
   }
   function cancelEdit() {
     setEditingKey(null)
@@ -154,15 +170,26 @@ export default function BaskiReceteleri() {
         )}
       </header>
 
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Reçete veya proje ara…"
-          className="w-full rounded-xl border bg-card py-2 pl-9 pr-3 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-ring/40"
-        />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[220px] flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Reçete veya proje ara…"
+            className="w-full rounded-xl border bg-card py-2 pl-9 pr-3 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-ring/40"
+          />
+        </div>
+        {grouped.length > 0 && (
+          <button
+            type="button"
+            onClick={toggleAllOpen}
+            className="rounded-xl border bg-card px-3 py-2 text-sm font-medium text-muted-foreground transition active:scale-95 hover:text-foreground"
+          >
+            {allOpen ? 'Tümünü kapat' : 'Tümünü aç'}
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -177,76 +204,91 @@ export default function BaskiReceteleri() {
           <p className="text-sm font-medium text-foreground">{search ? 'Aramaya uyan reçete yok.' : 'Henüz reçete yok.'}</p>
         </div>
       ) : (
-        <ul className="space-y-4">
+        <ul className="space-y-3">
           {grouped.map((group) => {
             const multi = group.rows.length > 1
+            const open = openIds.has(group.projectId)
             return (
-              <li key={group.projectId} className="rounded-2xl border bg-card p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
-                    <BookOpen className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{group.projectTitle}</span>
-                    {group.seed && <span className="shrink-0 opacity-70">· Kayıt</span>}
+              <li key={group.projectId} className="rounded-2xl border bg-card shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => toggleOpen(group.projectId)}
+                  aria-expanded={open}
+                  className="flex w-full items-center gap-3 rounded-2xl p-4 text-left outline-none transition active:scale-[0.997] focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                    <BookOpen className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+                    {group.projectTitle}
+                    {group.seed && <span className="ml-1.5 font-normal opacity-60">· Kayıt</span>}
                   </span>
                   {multi && (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-600/20">
+                    <span className="hidden shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-600/20 sm:inline-flex">
                       <Box className="h-3 w-3" />
                       {group.rows.length} parça
                     </span>
                   )}
-                </div>
+                  <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-300', open && 'rotate-180')} />
+                </button>
 
-                {/* one spec sheet per reçete — side by side when a project has multiple parça */}
-                <div className={cn(multi ? 'grid grid-cols-1 items-start gap-4 sm:grid-cols-2' : 'space-y-5')}>
-                  {group.rows.map((row) => {
-                    const editing = editingKey === row.key
-                    return (
-                      <div key={row.key} className="space-y-2.5">
-                        <div className={cn('flex items-center gap-2.5', !multi && 'justify-end')}>
-                          {multi && (
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-foreground ring-1 ring-border">
-                              <Box className="h-3 w-3 text-primary" />
-                              {row.comp.component}
-                            </span>
-                          )}
-                          {canEdit && (
-                            editing ? (
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={cancelEdit}
-                                  className="inline-flex items-center gap-1 rounded-lg border bg-background px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition active:scale-95 hover:text-foreground"
-                                >
-                                  <X className="h-3.5 w-3.5" /> İptal
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => saveEdit(row)}
-                                  className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition active:scale-95 hover:brightness-105"
-                                >
-                                  <Check className="h-3.5 w-3.5" /> Kaydet
-                                </button>
+                <div className={cn('grid transition-[grid-template-rows] duration-300 ease-out', open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+                  <div className="overflow-hidden">
+                    <div className="border-t border-dashed px-4 pb-4 pt-3.5">
+                      {/* one spec sheet per reçete — side by side when a project has multiple parça */}
+                      <div className={cn(multi ? 'grid grid-cols-1 items-start gap-4 sm:grid-cols-2' : 'space-y-5')}>
+                        {group.rows.map((row) => {
+                          const editing = editingKey === row.key
+                          return (
+                            <div key={row.key} className="space-y-2.5">
+                              <div className={cn('flex items-center gap-2.5', !multi && 'justify-end')}>
+                                {multi && (
+                                  <span className="inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-foreground ring-1 ring-border">
+                                    <Box className="h-3 w-3 text-primary" />
+                                    {row.comp.component}
+                                  </span>
+                                )}
+                                {canEdit && (
+                                  editing ? (
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={cancelEdit}
+                                        className="inline-flex items-center gap-1 rounded-lg border bg-background px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition active:scale-95 hover:text-foreground"
+                                      >
+                                        <X className="h-3.5 w-3.5" /> İptal
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => saveEdit(row)}
+                                        className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition active:scale-95 hover:brightness-105"
+                                      >
+                                        <Check className="h-3.5 w-3.5" /> Kaydet
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => startEdit(row)}
+                                      className="inline-flex items-center gap-1 rounded-lg border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground transition active:scale-95 hover:border-primary/40 hover:text-primary"
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" /> Düzenle
+                                    </button>
+                                  )
+                                )}
+                                {multi && <span className="h-px flex-1 bg-border" />}
                               </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => startEdit(row)}
-                                className="inline-flex items-center gap-1 rounded-lg border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground transition active:scale-95 hover:border-primary/40 hover:text-primary"
-                              >
-                                <Pencil className="h-3.5 w-3.5" /> Düzenle
-                              </button>
-                            )
-                          )}
-                          {multi && <span className="h-px flex-1 bg-border" />}
-                        </div>
-                        {editing ? (
-                          <EditableSpecSheet comp={draft} onChange={setDraft} />
-                        ) : (
-                          <SpecSheet comp={row.comp} />
-                        )}
+                              {editing ? (
+                                <EditableSpecSheet comp={draft} onChange={setDraft} />
+                              ) : (
+                                <SpecSheet comp={row.comp} />
+                              )}
+                            </div>
+                          )
+                        })}
                       </div>
-                    )
-                  })}
+                    </div>
+                  </div>
                 </div>
               </li>
             )
