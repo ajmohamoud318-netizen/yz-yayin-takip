@@ -3,14 +3,14 @@ import { attachUser } from '../middleware/auth.js'
 import { badRequest, forbidden, notFound } from '../domain/errors.js'
 import { withTx } from '../db/pool.js'
 import { getPool } from '../db/pool.js'
-import { ORDER_STEP_NEXT, ORDER_STEP_OWNER } from '../domain/orders.js'
+import { ORDER_STEP_NEXT, ORDER_STEP_OWNER, ORDER_REJECT_TARGETS } from '../domain/orders.js'
 import {
   computeMatbaaReceive, computeMatbaaNotReceived, computeMatbaaOnayApproval,
 } from '../domain/order-transitions.js'
 import {
   getProject, getProjectForUpdate, patchProject, logHistory,
 } from '../services/project-repository.js'
-import { assertCanEnterProduction, assertOrderable, isAtOrPastStage } from '../domain/pipeline.js'
+import { assertOrderable, isAtOrPastStage } from '../domain/pipeline.js'
 import { schemas } from '../schemas/index.js'
 import {
   notifyOrderTransition, notifyOrderRejected, notifyMatbaaReceived, notifyMatbaaApprovalPending,
@@ -44,6 +44,7 @@ export async function orderRoutes(fastify) {
     const { rows } = await getPool().query(
       `SELECT o.id, o.project_id, o.status, o.requested_by, o.payload, o.assignee_ids,
               o.matbaa_received, o.matbaa_received_by, o.matbaa_received_at, o.matbaa_approvals,
+              o.last_reject_type, o.baski_onay_form,
               o.version, o.created_at, o.updated_at, p.title AS project_title,
               u.name AS requested_by_name
        FROM order_requests o
@@ -172,7 +173,7 @@ export async function orderRoutes(fastify) {
   fastify.patch('/order-requests/:id/advance', { schema: schemas.ordersAdvance }, async (request) => {
     await attachUser(request)
     const orderId = request.params.id
-    const { notes = '', assignees = null, expectedVersion = null } = request.body
+    const { notes = '', assignees = null, expectedVersion = null, route: chosenRoute = null } = request.body
     const result = await withTx(async (client) => {
       const { rows: orderRows } = await client.query(
         'SELECT * FROM order_requests WHERE id = $1 FOR UPDATE', [orderId],
@@ -184,8 +185,36 @@ export async function orderRoutes(fastify) {
         err.status = 409
         throw err
       }
-      const next = ORDER_STEP_NEXT[order.status]
+      // siparis_baski_onay has its own dedicated form-fill-then-approve
+      // routes (POST .../baski-onay-form, POST .../baski-onay-approve) — a
+      // bare advance click can't move it forward.
+      if (order.status === 'siparis_baski_onay') {
+        badRequest('Bu adımda ilerlemek için baskı onay formunu doldurup onaylamalısınız.')
+      }
+      let next = ORDER_STEP_NEXT[order.status]
       if (!next) badRequest('Bu talep zaten tamamlandı.')
+
+      // goruldu's next step is a fixed 'tasarimci_onay' on a first
+      // submission. Only on a RESUBMIT (order.last_reject_type === 'designer'
+      // — set by a prior reject-to-designer, see PATCH .../reject) does the
+      // designer get to choose between another physical ozalit and a digital
+      // Ekran Onayı. clearResubmitFlag is set whenever the order leaves
+      // goruldu at all, resubmit or not — the flag only ever needs to
+      // survive for the one click it gates.
+      let clearResubmitFlag = false
+      if (order.status === 'goruldu') {
+        const isResubmit = order.last_reject_type === 'designer'
+        if (chosenRoute != null && !isResubmit) {
+          badRequest('İlk gönderimde onay seçimi yapılamaz.')
+        }
+        if (isResubmit) {
+          if (!chosenRoute) {
+            badRequest('Revize sonrası Ozalit mi yoksa Ekran Onayı mı isteneceğini seçmelisiniz.')
+          }
+          next = chosenRoute
+        }
+        clearResubmitFlag = true
+      }
 
       // matbaa_onay is multi-party (every active team leader + every order
       // assignee), leader-first — not a flat single-owner step, so it's
@@ -213,13 +242,6 @@ export async function orderRoutes(fastify) {
       const advancing = matbaaResult ? matbaaResult.advanced : true
       const statusToSet = advancing ? next : order.status
 
-      // Final approval gates the project again.
-      if (next === 'onaylandi' && advancing) {
-        const proj = await getProjectForUpdate(client, order.project_id)
-        if (proj && proj.stage === 'uretime_hazir') {
-          assertCanEnterProduction('uretimde', proj.progress)
-        }
-      }
       // Assign step: persist designers on the order + project
       if (order.status === 'pending') {
         if (!Array.isArray(assignees) || assignees.length === 0) {
@@ -259,21 +281,23 @@ export async function orderRoutes(fastify) {
            SET status = $2,
                assignee_ids = COALESCE($3::jsonb, assignee_ids),
                matbaa_approvals = COALESCE($4::jsonb, matbaa_approvals),
+               last_reject_type = CASE WHEN $5 THEN NULL ELSE last_reject_type END,
                version = version + 1,
                updated_at = NOW()
          WHERE id = $1
          RETURNING id, project_id, status, requested_by, payload, assignee_ids,
                    matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
-                   version, created_at, updated_at`,
+                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
         [
           orderId, statusToSet,
           order.status === 'pending' ? JSON.stringify(assignees) : null,
           matbaaResult ? JSON.stringify(matbaaResult.order.matbaa_approvals) : null,
+          clearResubmitFlag,
         ],
       )
       // matbaa_onay uses its own step/note (partial approval note, or the
-      // completing approval's "onaylandi" step); every other status uses the
-      // plain next-step name, as before.
+      // completing approval's "siparis_baski_onay" step); every other status
+      // uses the plain next-step name, as before.
       const historyStep = matbaaResult ? matbaaResult.history.step : next
       const historyNote = matbaaResult
         ? (notes ? `${notes} · ${matbaaResult.history.note}` : matbaaResult.history.note)
@@ -285,8 +309,9 @@ export async function orderRoutes(fastify) {
       )
       // A matbaa_onay click that doesn't complete the round still gets its
       // own project-timeline entry (mirrors the main pipeline's ozalit
-      // partial-approval logging in POST /projects/:id/approve) — the final,
-      // round-completing click is covered by the order_final block below.
+      // partial-approval logging in POST /projects/:id/approve) — the
+      // round-completing click (lands on siparis_baski_onay) is covered by
+      // the generic mid-flow logging block just below instead.
       if (matbaaResult && !advancing) {
         const proj = await getProjectForUpdate(client, order.project_id)
         if (proj) {
@@ -304,9 +329,11 @@ export async function orderRoutes(fastify) {
           )
         }
       }
-      // Mid-flow advance (designer → matbaa, or matbaa → leader) — log it
-      // so the timeline pairs every order step with the signer.
-      if (next !== 'onaylandi') {
+      // Mid-flow advance (designer → matbaa, matbaa → leader, etc.) — log it
+      // so the timeline pairs every order step with the signer. `next` can
+      // never be 'onaylandi' from this route any more — that transition
+      // only happens via POST .../baski-onay-approve (see below).
+      {
         const proj = await getProjectForUpdate(client, order.project_id)
         if (proj) {
           await logHistory(
@@ -321,49 +348,16 @@ export async function orderRoutes(fastify) {
                 ? 'Baskı tasarımcıya aktarıldı'
                 : next === 'tasarimci_onay'
                   ? 'Tasarımcı onayı verildi'
-                  : next === 'matbaa_onay'
-                    ? 'Matbaa teslimi yapıldı'
-                    : `Baskı adımı: ${next}`,
+                  : next === 'ekran_onay'
+                    ? 'Baskı ekran onayına gönderildi'
+                    : next === 'matbaa_onay'
+                      ? 'Matbaa teslimi yapıldı'
+                      : next === 'siparis_baski_onay'
+                        ? 'Baskı onay formuna gönderildi'
+                        : `Baskı adımı: ${next}`,
             },
             request.user,
           )
-        }
-      }
-      // Final approval flips the project into uretimde — but only forward.
-      // A second concurrent order on the same project can finish after the
-      // project has already moved past uretimde (via the first order, or
-      // the main pipeline), and must not regress it.
-      if (next === 'onaylandi' && advancing) {
-        const proj = await getProjectForUpdate(client, order.project_id)
-        if (proj) {
-          if (!isAtOrPastStage(proj, 'uretimde')) {
-            await patchProject(client, proj.id, { stage: 'uretimde' })
-            await logHistory(
-              client,
-              {
-                project_id: proj.id,
-                from_stage: proj.stage,
-                to_stage: 'uretimde',
-                action: 'system',
-                event: 'order_final',
-                note: 'Baskı onaylandı, üretime alındı',
-              },
-              request.user,
-            )
-          } else {
-            await logHistory(
-              client,
-              {
-                project_id: proj.id,
-                from_stage: proj.stage,
-                to_stage: proj.stage,
-                action: 'system',
-                event: 'order_final',
-                note: 'Baskı onaylandı (proje zaten üretimde veya sonrasında)',
-              },
-              request.user,
-            )
-          }
         }
       }
       // Notify whoever owns the new step (or the requester on final
@@ -417,7 +411,7 @@ export async function orderRoutes(fastify) {
          WHERE id = $1
          RETURNING id, project_id, status, requested_by, payload, assignee_ids,
                    matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
-                   version, created_at, updated_at`,
+                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
         [orderId, patch.matbaa_received, patch.matbaa_received_by, patch.matbaa_received_at],
       )
       await client.query(
@@ -472,7 +466,7 @@ export async function orderRoutes(fastify) {
          WHERE id = $1
          RETURNING id, project_id, status, requested_by, payload, assignee_ids,
                    matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
-                   version, created_at, updated_at`,
+                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
         [
           orderId, patch.status, patch.matbaa_received, patch.matbaa_received_by,
           patch.matbaa_received_at, JSON.stringify(patch.matbaa_approvals),
@@ -523,26 +517,28 @@ export async function orderRoutes(fastify) {
       )
       const order = orderRows[0]
       if (!order) notFound('Talep bulunamadı.')
-      const targetStatus = rejectTarget === 'matbaa' ? 'tasarimci_onay'
-                          : rejectTarget === 'designer' ? 'goruldu'
-                          : rejectTarget === 'reassign' ? 'pending'
-                          : null
+      const targets = ORDER_REJECT_TARGETS[order.status]
+      if (!targets) badRequest('Bu aşamada red işlemi yapılamaz.')
+      const targetStatus = targets[rejectTarget]
       if (!targetStatus) badRequest('Geçersiz red hedefi.')
-      // Every rejection here operates on an order sitting at matbaa_onay (the
-      // only key in ORDER_REJECT_TARGETS) — wipe the receipt gate and the
-      // partial approval ledger unconditionally, same as a leader rejection
-      // wiping ozalit_approvals: a re-delivered proof needs fresh sign-off.
+      // Operates on an order sitting at matbaa_onay OR ekran_onay — wipe the
+      // receipt gate and the partial approval ledger unconditionally, same
+      // as a leader rejection wiping ozalit_approvals: a re-delivered proof
+      // needs fresh sign-off. ekran_onay never set matbaa_received/
+      // matbaa_approvals in the first place, so this is a harmless no-op
+      // for that source step.
       const { rows: updated } = await client.query(
         `UPDATE order_requests
            SET status = $2,
                matbaa_received = FALSE, matbaa_received_by = NULL, matbaa_received_at = NULL,
                matbaa_approvals = '[]'::jsonb,
+               last_reject_type = CASE WHEN $3 = 'designer' THEN 'designer' ELSE last_reject_type END,
                version = version + 1, updated_at = NOW()
          WHERE id = $1
          RETURNING id, project_id, status, requested_by, payload, assignee_ids,
                    matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
-                   version, created_at, updated_at`,
-        [orderId, targetStatus],
+                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+        [orderId, targetStatus, rejectTarget],
       )
       await client.query(
         `INSERT INTO order_history (order_id, step, signed_by_id, notes)
@@ -602,6 +598,100 @@ export async function orderRoutes(fastify) {
         order: updated[0], project: proj, newStatus: targetStatus, actor: request.user,
         requesterId: order.requested_by,
         assigneeIds: Array.isArray(updated[0].assignee_ids) ? updated[0].assignee_ids : [],
+      })
+      return updated[0]
+    })
+    return result
+  })
+
+  // Save a draft of the siparis_baski_onay print-spec form without
+  // advancing. team_leader only, only while the order is at
+  // siparis_baski_onay. Twin of PATCH /projects/:id (baski_onay fields),
+  // but order-scoped: the form snapshot lives entirely on order_requests,
+  // not the shared demos table (see migration 046).
+  fastify.patch('/order-requests/:id/baski-onay-form', { schema: schemas.ordersBaskiOnayForm }, async (request) => {
+    await attachUser(request)
+    if (request.user.role !== 'team_leader') forbidden('Baskı onay formunu yalnızca ekip lideri düzenleyebilir.')
+    const orderId = request.params.id
+    const result = await withTx(async (client) => {
+      const { rows } = await client.query('SELECT * FROM order_requests WHERE id = $1 FOR UPDATE', [orderId])
+      const order = rows[0]
+      if (!order) notFound('Talep bulunamadı.')
+      if (order.status !== 'siparis_baski_onay') badRequest('Baskı onay formu yalnızca bu aşamada düzenlenebilir.')
+      const { components, adet, tarih, basimYeri, hazirlayan, notes } = request.body
+      const nextForm = {
+        ...order.baski_onay_form, components, adet, tarih, basimYeri, hazirlayan, notes,
+        saved_by: request.user.id, saved_by_name: request.user.name, saved_at: new Date().toISOString(),
+      }
+      const { rows: updated } = await client.query(
+        `UPDATE order_requests SET baski_onay_form = $2::jsonb, version = version + 1, updated_at = NOW()
+         WHERE id = $1 RETURNING id, project_id, status, requested_by, payload, assignee_ids,
+           matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
+           last_reject_type, baski_onay_form, version, created_at, updated_at`,
+        [orderId, JSON.stringify(nextForm)],
+      )
+      return updated[0]
+    })
+    return result
+  })
+
+  // Approve the siparis_baski_onay form — saves the final snapshot AND
+  // advances the order to onaylandi in one action. team_leader only. This
+  // is the ONLY route that can move an order to onaylandi / flip the linked
+  // project into baskida — PATCH .../advance explicitly refuses to touch
+  // siparis_baski_onay (see above).
+  fastify.post('/order-requests/:id/baski-onay-approve', { schema: schemas.ordersBaskiOnayForm }, async (request) => {
+    await attachUser(request)
+    if (request.user.role !== 'team_leader') forbidden('Baskı onayını yalnızca ekip lideri verebilir.')
+    const orderId = request.params.id
+    const result = await withTx(async (client) => {
+      const { rows } = await client.query('SELECT * FROM order_requests WHERE id = $1 FOR UPDATE', [orderId])
+      const order = rows[0]
+      if (!order) notFound('Talep bulunamadı.')
+      if (order.status !== 'siparis_baski_onay') badRequest('Bu işlem yalnızca baskı onay aşamasında yapılabilir.')
+      const { components, adet, tarih, basimYeri, hazirlayan, notes = '' } = request.body
+      if (!adet || !tarih || !hazirlayan) badRequest('Adet, tarih ve hazırlayan alanları zorunludur.')
+      const now = new Date().toISOString()
+      const finalForm = {
+        ...order.baski_onay_form, components, adet, tarih, basimYeri, hazirlayan,
+        approved_by: request.user.id, approved_by_name: request.user.name, approved_at: now,
+      }
+      const { rows: updated } = await client.query(
+        `UPDATE order_requests SET status = 'onaylandi', baski_onay_form = $2::jsonb,
+                version = version + 1, updated_at = NOW()
+         WHERE id = $1 RETURNING id, project_id, status, requested_by, payload, assignee_ids,
+           matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
+           last_reject_type, baski_onay_form, version, created_at, updated_at`,
+        [orderId, JSON.stringify(finalForm)],
+      )
+      await client.query(
+        `INSERT INTO order_history (order_id, step, signed_by_id, notes) VALUES ($1,'onaylandi',$2,$3)`,
+        [orderId, request.user.id, notes ? `${notes} · Baskı onaylandı` : 'Baskı onaylandı'],
+      )
+      // Final approval flips the project into baskida — but only forward.
+      // A second concurrent order on the same project can finish after the
+      // project has already moved past baskida (via the first order, or
+      // the main pipeline), and must not regress it. Mirrors the block that
+      // used to live in PATCH .../advance before siparis_baski_onay existed.
+      const proj = await getProjectForUpdate(client, order.project_id)
+      if (proj) {
+        if (!isAtOrPastStage(proj, 'baskida')) {
+          await patchProject(client, proj.id, { stage: 'baskida' })
+          await logHistory(client, {
+            project_id: proj.id, from_stage: proj.stage, to_stage: 'baskida',
+            action: 'system', event: 'order_final', note: 'Baskı onaylandı, baskıya alındı',
+          }, request.user)
+        } else {
+          await logHistory(client, {
+            project_id: proj.id, from_stage: proj.stage, to_stage: proj.stage,
+            action: 'system', event: 'order_final',
+            note: 'Baskı onaylandı (proje zaten baskıda veya sonrasında)',
+          }, request.user)
+        }
+      }
+      await notifyOrderTransition(client, {
+        order: updated[0], project: proj, newStatus: 'onaylandi', actor: request.user,
+        requesterId: order.requested_by,
       })
       return updated[0]
     })

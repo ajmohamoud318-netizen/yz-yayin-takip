@@ -21,7 +21,7 @@ export function assertCanEnterProduction(nextStage, progress) {
 
 // True once a project has reached `stage` or moved past it in its own
 // pipeline. Used to make a sipariş's final approval forward-only: two
-// concurrent orders on the same project both flip it to 'uretimde' on
+// concurrent orders on the same project both flip it to 'baskida' on
 // approval, and without this guard the second approval would regress a
 // project that another order (or the main pipeline) already advanced past
 // that point (e.g. all the way to 'satista').

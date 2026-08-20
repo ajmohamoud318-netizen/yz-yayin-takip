@@ -551,38 +551,43 @@ export async function notifyProjectTransition(client, {
         body: 'Matbaa ozaliti teslim etti, "Teslim Alındı" bekleniyor', link: `/projects/${project.id}`,
       })
 
-    // Everyone signed off on the ozalit — a team leader now needs to PREPARE
-    // the Baskı Onay Formu (migration 045's maker half); every active leader
-    // is told, since any one of them may do it.
+    // Everyone signed off on the ozalit (TR) / the demo (ÇİN, migration 047's
+    // cin_baski_onay mirror gate) — a team leader now needs to PREPARE the
+    // Baskı Onay Formu (migration 045's maker half); every active leader is
+    // told, since any one of them may do it.
     case 'baski_onay':
+    case 'cin_baski_onay':
       return emit(client, {
         ...base, recipientIds: leaders, type: 'baski_onay_pending', tone: 'amber',
-        body: 'Ozalit onaylandı, baskı onay formu hazırlanması bekleniyor', link: `/projects/${project.id}`,
+        body: toStage === 'cin_baski_onay'
+          ? 'Demo onaylandı, baskı onay formu hazırlanması bekleniyor'
+          : 'Ozalit onaylandı, baskı onay formu hazırlanması bekleniyor',
+        link: `/projects/${project.id}`,
       })
 
-    // Production ready → matbaa can take it in.
+    // Baskı onayı approved (both pipelines, migration 047) → matbaa is IN
+    // PRINT immediately, no separate "take into production" step anymore.
     //
     // Split by role because the destination is not the same for both, and a
-    // link the recipient can't open is worse than no link: /uretime-hazir is
+    // link the recipient can't open is worse than no link: /baski-listesi is
     // guarded to `printer`, so a team leader tapping that push was bounced
     // straight back to the dashboard. Printers get the queue they act on;
-    // leaders get the project itself, which they can always open.
+    // leaders + designers get the project itself, which they can always open.
     // Assigned designers are included because for a ÇİN project this stage IS
-    // the "your demo was approved" moment (cin_demo_onay → uretime_hazir, no
-    // ozalit leg in between). TR designers hear it at ozalit_teslim instead,
-    // but a second confirmation that their book cleared the gate is harmless.
-    case 'uretime_hazir': {
-      const ready = { ...base, type: 'production_ready', tone: 'green', body: 'Üretime hazır' }
-      const a = await emit(client, { ...ready, recipientIds: printers, link: '/uretime-hazir' })
-      const b = await emit(client, { ...ready, recipientIds: [...leaders, ...designers], link: `/projects/${project.id}` })
+    // the "your book cleared the print gate" moment; TR designers hear it at
+    // ozalit_teslim instead, but a second confirmation is harmless.
+    case 'baskida': {
+      const ready = { ...base, tone: 'green' }
+      const a = await emit(client, {
+        ...ready, recipientIds: printers, type: 'production_ready',
+        body: 'Proje baskıda alındı', link: '/baski-listesi',
+      })
+      const b = await emit(client, {
+        ...ready, recipientIds: [...leaders, ...designers], type: 'in_production',
+        body: 'Baskıya alındı', link: `/projects/${project.id}`,
+      })
       return a + b
     }
-
-    case 'uretimde':
-      return emit(client, {
-        ...base, recipientIds: [...leaders, ...designers], type: 'in_production', tone: 'green',
-        body: 'Üretime alındı', link: `/projects/${project.id}`,
-      })
 
     case 'gumruk':
       return emit(client, {
@@ -713,14 +718,19 @@ const ORDER_STEP_BODY = {
   pending: 'Yeni baskı talebi, onayınızı bekliyor',
   goruldu: 'Baskı kontrolünüzü bekliyor',
   tasarimci_onay: 'Baskı ozalit isteniyor',
+  ekran_onay: 'Ekran onayı bekleniyor',
+  siparis_baski_onay: 'Baskı onay formu bekleniyor',
 }
 const ORDER_STEP_LINK = {
   pending: '/siparis-talepleri',
   goruldu: '/siparis-onay',
   tasarimci_onay: '/approvals/siparis',
+  ekran_onay: '/siparis-talepleri',
+  siparis_baski_onay: '/siparis-talepleri',
 }
 const ORDER_STEP_TONE = {
   pending: 'amber', goruldu: 'green', tasarimci_onay: 'blue',
+  ekran_onay: 'blue', siparis_baski_onay: 'violet',
 }
 
 /**

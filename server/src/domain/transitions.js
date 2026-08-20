@@ -330,16 +330,19 @@ export function computeApproval(project, actor, ctx = {}) {
     return computeOzalitOnayApproval(project, actor, now, actorName, ctx)
   }
 
-  // Baskı Onayı: dual-approval (migration 045). One team leader PREPARES the
-  // form (computeBaskiOnayPrepare, below) — that alone doesn't advance the
-  // stage. Only once prepared can this approve fire, and it must come from a
-  // DIFFERENT team leader than the preparer, unless the preparer is the only
-  // active team leader there is (ctx.teamLeaderIds) — enforcing "different
-  // person" there would strand the project with nobody left who could ever
-  // approve it. canApproveAt already restricts this to team_leader for any
-  // stage other than demo_onay/cin_demo_onay, but the explicit check gives a
-  // clear Turkish error instead of falling through to the generic 400 below.
-  if (project.stage === 'baski_onay') {
+  // Baskı Onayı: dual-approval (migration 045), also used by ÇİN's mirror
+  // gate `cin_baski_onay` (migration 047) — same rule, same
+  // baski_onay_prepared* columns, since a project only ever visits one
+  // pipeline. One team leader PREPARES the form (computeBaskiOnayPrepare,
+  // below) — that alone doesn't advance the stage. Only once prepared can
+  // this approve fire, and it must come from a DIFFERENT team leader than
+  // the preparer, unless the preparer is the only active team leader there
+  // is (ctx.teamLeaderIds) — enforcing "different person" there would
+  // strand the project with nobody left who could ever approve it.
+  // canApproveAt already restricts this to team_leader for any stage other
+  // than demo_onay/cin_demo_onay, but the explicit check gives a clear
+  // Turkish error instead of falling through to the generic 400 below.
+  if (project.stage === 'baski_onay' || project.stage === 'cin_baski_onay') {
     if (!canApproveAt(project.stage, actor)) {
       badRequest('Baskı onayını yalnızca ekip lideri yapabilir.')
     }
@@ -370,7 +373,7 @@ export function computeApproval(project, actor, ctx = {}) {
         from_stage: project.stage,
         to_stage: next,
         done_by_name: actorName,
-        note: 'Baskı onaylandı, üretime alındı',
+        note: 'Baskı onaylandı, baskıya alındı',
       }),
     }
   }
@@ -653,7 +656,7 @@ export function computeOzalitNotReceived(project, actor, ctx = {}) {
 export function computeBaskiOnayPrepare(project, actor) {
   const now = new Date().toISOString()
   const actorName = actor?.name ?? 'Bilinmeyen'
-  if (project.stage !== 'baski_onay') {
+  if (project.stage !== 'baski_onay' && project.stage !== 'cin_baski_onay') {
     badRequest('Bu işlem yalnızca baskı onay aşamasında yapılabilir.')
   }
   if (actor?.role !== 'team_leader') {
@@ -671,8 +674,8 @@ export function computeBaskiOnayPrepare(project, actor) {
     history: makeEntry(project, {
       action: 'advance',
       event: 'baski_onay_prepared',
-      from_stage: 'baski_onay',
-      to_stage: 'baski_onay',
+      from_stage: project.stage,
+      to_stage: project.stage,
       done_by_name: actorName,
       note: 'Baskı onay formu hazırlandı, onay bekleniyor',
     }),

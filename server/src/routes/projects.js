@@ -577,12 +577,13 @@ export async function projectRoutes(fastify) {
         })
       }
       // Entering production is the point the spec stops changing, so the
-      // approved ozalit (ÇİN: demo) sheet is copied into Ürün Bilgileri here.
-      // Without it a project can reach Üretime Hazır with a fully signed sheet
-      // and still have no spec, which blocks Sales from ordering it at all.
-      // Guarded on an actual stage CHANGE so re-approving an already
-      // production-ready project doesn't re-run the capture.
-      if (updated.stage === 'uretime_hazir' && project.stage !== 'uretime_hazir') {
+      // approved baski_onay/cin_baski_onay (fallback: ozalit/demo) sheet is
+      // copied into Ürün Bilgileri here. Without it a project can reach
+      // Baskıda with a fully signed sheet and still have no spec, which
+      // blocks Sales from ordering it at all. Guarded on an actual stage
+      // CHANGE so re-approving an already production-ready project doesn't
+      // re-run the capture.
+      if (updated.stage === 'baskida' && project.stage !== 'baskida') {
         const captured = await captureProductInfoFromSpec(client, { project: updated, actor: request.user })
         if (captured) {
           await logHistory(
@@ -593,7 +594,7 @@ export async function projectRoutes(fastify) {
               to_stage: updated.stage,
               action: 'system',
               event: 'product_info_auto',
-              note: captureHistoryNote(captured.added),
+              note: captureHistoryNote([...captured.added, ...captured.updated]),
             },
             request.user,
           )

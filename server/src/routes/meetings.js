@@ -4,7 +4,7 @@ import { withTx, getPool } from '../db/pool.js'
 import { schemas } from '../schemas/index.js'
 import {
   list, create, update, remove, assertCanModify, setImage, clearImage,
-  getDetail, addImage, removeImage, addNote, removeNote,
+  getDetail, addImage, removeImage, addNote, updateNote, removeNote,
 } from '../services/meetings.js'
 import { notifyMeetingCreated } from '../services/notifications.js'
 import { extForMime, isAllowedMime, sniffImageMime } from '../services/avatars.js'
@@ -33,6 +33,7 @@ import { badRequest, notFound, HttpError } from '../domain/errors.js'
  *  DELETE /api/meetings/:id/images/:imageId → team_leader, or the meeting's own author
  *  GET    /api/meetings/:id/images/:imageId → public file stream (gallery)
  *  POST   /api/meetings/:id/notes           → anyone who can add a meeting
+ *  PATCH  /api/meetings/:id/notes/:noteId   → team_leader, or the note's own author
  *  DELETE /api/meetings/:id/notes/:noteId   → team_leader, or the note's own author
  */
 export async function meetingRoutes(fastify) {
@@ -248,6 +249,15 @@ export async function meetingRoutes(fastify) {
       const note = await addNote(getPool(), request.params.id, request.body.body, request.user)
       reply.code(201)
       return note
+    },
+  )
+
+  fastify.patch(
+    '/meetings/:id/notes/:noteId',
+    { schema: schemas.meetingNoteUpdate },
+    async (request) => {
+      await attachUser(request)
+      return updateNote(getPool(), request.params.id, request.params.noteId, request.body.body, request.user)
     },
   )
 

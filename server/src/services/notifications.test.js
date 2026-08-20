@@ -287,15 +287,34 @@ test('preparing the form as the only active leader pings nobody (no error)', asy
   assert.deepEqual(client.rows, [])
 })
 
-test('a ÇİN demo approval reaches the designers who drew it', async () => {
-  // cin_demo_onay → uretime_hazir is the ÇİN pipeline's "approved" moment;
-  // there is no ozalit leg to carry the news.
+test('a ÇİN demo approval pings leaders to prepare the print-approval form', async () => {
+  // Migration 047: cin_demo_onay → cin_baski_onay, mirroring TR's
+  // ozalit_onay → baski_onay — a team leader must prepare/approve the print
+  // spec before the project is actually in print, same as TR. Approved by
+  // the printer here (canApproveAt allows it at cin_demo_onay) so the sole
+  // team_leader fixture isn't the actor — otherwise emit()'s actor-drop
+  // would leave the leader recipient list empty and the test couldn't tell
+  // "no recipients" apart from "correctly not notifying designers yet".
   const client = fakeClient()
   await notifyProjectTransition(client, {
-    project: { ...project, type: 'CIN' }, fromStage: 'cin_demo_onay', toStage: 'uretime_hazir',
+    project: { ...project, type: 'CIN' }, fromStage: 'cin_demo_onay', toStage: 'cin_baski_onay',
+    action: 'approve', actor: { id: 'u-oktay', name: 'Oktay' }, assignees,
+  })
+  const recipients = client.rows.map((r) => r.userId)
+  assert.ok(!recipients.includes('u-aylin') && !recipients.includes('u-feyza'), 'not a designer action yet')
+  assert.ok(recipients.includes('u-ayse'), 'the team leader is told to prepare the form')
+  assert.match(client.rows[0].body, /Demo onaylandı/)
+})
+
+test('a ÇİN project reaching baskida notifies the designers who drew it AND matbaa', async () => {
+  // cin_baski_onay → baskida is the ÇİN pipeline's "your book cleared the
+  // print gate" moment; there is no ozalit leg to carry the news earlier.
+  const client = fakeClient()
+  await notifyProjectTransition(client, {
+    project: { ...project, type: 'CIN' }, fromStage: 'cin_baski_onay', toStage: 'baskida',
     action: 'approve', actor: { id: 'u-ayse', name: 'Ayşenur' }, assignees,
   })
   const recipients = client.rows.map((r) => r.userId)
   assert.ok(recipients.includes('u-aylin') && recipients.includes('u-feyza'))
-  assert.ok(recipients.includes('u-oktay'), 'matbaa still gets its queue')
+  assert.ok(recipients.includes('u-oktay'), 'matbaa gets notified it is baskıda directly')
 })

@@ -158,13 +158,13 @@ describe('baski_onay dual-approval — prepare then a DIFFERENT leader approves 
     assert.throws(() => computeApproval(prepared, L1, ctx), /kendi onayını veremez/)
   })
 
-  it('a DIFFERENT leader approving advances to uretime_hazir and clears the ledger', () => {
+  it('a DIFFERENT leader approving advances to baskida and clears the ledger', () => {
     const { project: prepared } = computeBaskiOnayPrepare(baskiOnayProject(), L1)
     const { project: next, history } = computeApproval(prepared, L2, ctx)
-    assert.equal(next.stage, 'uretime_hazir')
+    assert.equal(next.stage, 'baskida')
     assert.equal(next.baski_onay_prepared, false)
     assert.equal(next.baski_onay_prepared_by, null)
-    assert.equal(history.to_stage, 'uretime_hazir')
+    assert.equal(history.to_stage, 'baskida')
   })
 
   it('a designer cannot approve, prepared or not', () => {
@@ -181,7 +181,43 @@ describe('baski_onay dual-approval — prepare then a DIFFERENT leader approves 
     const soloCtx = { teamLeaderIds: ['L1'], designerIds: ['D1'] }
     const { project: prepared } = computeBaskiOnayPrepare(baskiOnayProject(), L1)
     const { project: next } = computeApproval(prepared, L1, soloCtx)
-    assert.equal(next.stage, 'uretime_hazir')
+    assert.equal(next.stage, 'baskida')
+  })
+})
+
+describe('cin_baski_onay — ÇİN mirror of the print-approval gate (migration 047)', () => {
+  function cinBaskiOnayProject(overrides = {}) {
+    return { id: 'p-cin-1', type: 'CIN', stage: 'cin_baski_onay', progress: 100, ...overrides }
+  }
+
+  it('approving before anyone has prepared it is refused', () => {
+    assert.throws(() => computeApproval(cinBaskiOnayProject(), L1, ctx), /Önce baskı onay formu hazırlanmalıdır/)
+  })
+
+  it('preparing does not by itself advance the stage', () => {
+    const { project: next, history } = computeBaskiOnayPrepare(cinBaskiOnayProject(), L1)
+    assert.equal(next.stage, 'cin_baski_onay')
+    assert.equal(next.baski_onay_prepared, true)
+    assert.equal(next.baski_onay_prepared_by, 'L1')
+    assert.equal(history.to_stage, 'cin_baski_onay')
+  })
+
+  it('the SAME leader who prepared it cannot approve when another leader is active', () => {
+    const { project: prepared } = computeBaskiOnayPrepare(cinBaskiOnayProject(), L1)
+    assert.throws(() => computeApproval(prepared, L1, ctx), /kendi onayını veremez/)
+  })
+
+  it('a DIFFERENT leader approving advances straight to baskida (no uretime_hazir stop)', () => {
+    const { project: prepared } = computeBaskiOnayPrepare(cinBaskiOnayProject(), L1)
+    const { project: next, history } = computeApproval(prepared, L2, ctx)
+    assert.equal(next.stage, 'baskida')
+    assert.equal(next.baski_onay_prepared, false)
+    assert.equal(history.to_stage, 'baskida')
+  })
+
+  it('a printer cannot approve', () => {
+    const { project: prepared } = computeBaskiOnayPrepare(cinBaskiOnayProject(), L1)
+    assert.throws(() => computeApproval(prepared, printer, ctx), /yalnızca ekip lideri/)
   })
 })
 

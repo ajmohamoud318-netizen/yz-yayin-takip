@@ -12,9 +12,9 @@
  * `has_product_info` false and blocks Sales from raising a sipariş at all
  * (see domain/pipeline.js#assertOrderable).
  *
- * So: the moment a project enters production (`uretime_hazir` — "Ozalit
- * onaylandı, üretime alındı", and the ÇİN equivalent out of cin_demo_onay)
- * the approved sheet is copied into `product_info`. That is the right moment
+ * So: the moment a project lands on `baskida` (migration 047) — via TR's
+ * `baski_onay` approval or ÇİN's mirrored `cin_baski_onay` approval — the
+ * approved sheet is copied into `product_info`. That is the right moment
  * because it is the point the spec stops changing, and it is what unblocks
  * the sipariş flow downstream.
  *
@@ -104,24 +104,46 @@ export function componentsFromSpecPayload(payload, fallbackName) {
 /**
  * Merge freshly captured parçalar into an existing spec.
  *
- * Existing entries win outright and keep their position — the leader's typed
- * spec is authoritative over whatever the sheet happened to say. Only names
- * absent from `existing` are appended.
+ * Default (`overwrite: false`): existing entries win outright and keep their
+ * position — a demo/ozalit sheet is never authoritative over hand-typed
+ * catalog data. Only names absent from `existing` are appended.
  *
- * @returns {{merged: object[], added: string[]}}
+ * `overwrite: true` is the Baskı Onay Formu case — the literal final,
+ * team-leader-only correction (see captureProductInfoFromSpec below). There
+ * a matching parça's fields ARE replaced, in place, since that form is meant
+ * to be what actually reaches the catalog even when the parça already
+ * existed there. Names new to `existing` are still appended either way.
+ *
+ * @returns {{merged: object[], added: string[], updated: string[]}}
  */
-export function mergeComponents(existing, captured) {
+export function mergeComponents(existing, captured, { overwrite = false } = {}) {
   const base = Array.isArray(existing) ? existing : []
-  const known = new Set(base.map((c) => up(c?.component)))
   const added = []
-  const merged = [...base]
-  for (const comp of captured) {
-    if (known.has(up(comp.component))) continue
-    known.add(up(comp.component))
-    merged.push(comp)
-    added.push(comp.component)
+  const updated = []
+
+  if (!overwrite) {
+    const known = new Set(base.map((c) => up(c?.component)))
+    const merged = [...base]
+    for (const comp of captured) {
+      if (known.has(up(comp.component))) continue
+      known.add(up(comp.component))
+      merged.push(comp)
+      added.push(comp.component)
+    }
+    return { merged, added, updated }
   }
-  return { merged, added }
+
+  const byName = new Map(base.map((c) => [up(c?.component), c]))
+  for (const comp of captured) {
+    const key = up(comp.component)
+    if (byName.has(key)) updated.push(comp.component)
+    else added.push(comp.component)
+    byName.set(key, comp)
+  }
+  const merged = base.map((c) => byName.get(up(c?.component)) ?? c)
+  const known = new Set(base.map((c) => up(c?.component)))
+  for (const comp of captured) if (!known.has(up(comp.component))) merged.push(comp)
+  return { merged, added, updated }
 }
 
 /**
@@ -139,14 +161,18 @@ export function mergeComponents(existing, captured) {
 export async function captureProductInfoFromSpec(client, { project, actor }) {
   if (!project?.id) return null
 
-  // Prefer the Baskı Onay Formu (migration 044): it's the literal final
-  // approval — team_leader-only, and the only sheet that may still have been
-  // hand-corrected after the ozalit proof was signed. Next, the ozalit sheet:
-  // it is the last PRINT proof every approver signed off on, so short of a
-  // baski_onay edit it reflects the product as it will actually be produced.
-  // ÇİN projects have neither baski_onay nor ozalit stages at all
-  // (STAGE_FLOW.CIN), so they fall through to their latest demo sheet.
-  // Ordering `kind` this way does all three in one query.
+  // Prefer the Baskı Onay Formu (migration 044, and ÇİN's mirrored
+  // cin_baski_onay gate from migration 047 — stored under the same
+  // demos.kind='baski_onay' value): it's the literal final approval —
+  // team_leader-only, and the only sheet that may still have been
+  // hand-corrected after the ozalit/demo proof was signed. Next, the ozalit
+  // sheet: it is the last PRINT proof every TR approver signed off on, so
+  // short of a baski_onay edit it reflects the product as it will actually
+  // be produced. ÇİN projects have no ozalit stage, but since migration 047
+  // they DO have a baski_onay-kind sheet of their own (from cin_baski_onay)
+  // that ranks first same as TR's; only a ÇİN project that somehow has
+  // neither falls through to its latest demo sheet. Ordering `kind` this
+  // way does all three in one query.
   //
   // "Prefer" means "prefer a sheet that HAS a spec", not "take the top-ranked
   // row and give up". On a project with no catalog yet — the exact case this
@@ -159,7 +185,7 @@ export async function captureProductInfoFromSpec(client, { project, actor }) {
   // module was written to prevent. So walk the sheets in preference order and
   // capture the first one that yields anything.
   const { rows: specRows } = await client.query(
-    `SELECT payload
+    `SELECT payload, kind
        FROM demos
       WHERE project_id = $1
       ORDER BY (kind = 'baski_onay') DESC, (kind = 'ozalit') DESC, attempt DESC, created_at DESC
@@ -167,9 +193,10 @@ export async function captureProductInfoFromSpec(client, { project, actor }) {
     [project.id],
   )
   let captured = []
+  let capturedKind = null
   for (const row of specRows) {
     captured = componentsFromSpecPayload(row.payload, project.title)
-    if (captured.length > 0) break
+    if (captured.length > 0) { capturedKind = row.kind; break }
   }
   if (captured.length === 0) return null
 
@@ -180,10 +207,17 @@ export async function captureProductInfoFromSpec(client, { project, actor }) {
     [project.id],
   )
   const existing = Array.isArray(existingRows[0]?.components) ? existingRows[0].components : []
-  const { merged, added } = mergeComponents(existing, captured)
-  // Every parça is already in the catalog — leave the row alone entirely so
+  // Only a baski_onay sheet is the literal final, team-leader-only correction
+  // (see the module docstring / AGENTS.md) — a parça it names should always
+  // reach the catalog, even one that's already there. A demo/ozalit-sourced
+  // capture (ÇİN projects, or a TR project whose baski_onay carried no spec)
+  // keeps the additive-only safety net, since neither sheet is anyone's final
+  // sign-off on the product spec.
+  const overwrite = capturedKind === 'baski_onay'
+  const { merged, added, updated } = mergeComponents(existing, captured, { overwrite })
+  // Nothing new and nothing to overwrite — leave the row alone entirely so
   // `updated_by` / `updated_at` keep pointing at the human who last edited it.
-  if (added.length === 0) return null
+  if (added.length === 0 && updated.length === 0) return null
 
   await client.query(
     `INSERT INTO product_info (project_id, components, updated_by, updated_at)
@@ -194,9 +228,9 @@ export async function captureProductInfoFromSpec(client, { project, actor }) {
                    updated_at = NOW()`,
     [project.id, JSON.stringify(merged), actor?.id ?? null],
   )
-  return { added }
+  return { added, updated }
 }
 
 /** Timeline note for a capture — lists the parçalar that were written. */
-export const captureHistoryNote = (added) =>
-  `Ürün bilgileri onaylanan formdan otomatik kaydedildi: ${added.join(', ')}`
+export const captureHistoryNote = (names) =>
+  `Ürün bilgileri onaylanan formdan otomatik kaydedildi: ${names.join(', ')}`

@@ -47,6 +47,8 @@ describe('multi-party matbaa_onay approval', () => {
     const r3 = computeMatbaaOnayApproval(matbaaOrder({ matbaa_approvals: r2.order.matbaa_approvals }), D1, ctx)
     assert.equal(r3.advanced, true) // 3/3 → advance
     assert.deepEqual(r3.order.matbaa_approvals, []) // ledger cleared
+    // Lands on the new print-approval gate, not straight to onaylandi.
+    assert.equal(r3.history.step, 'siparis_baski_onay')
   })
 
   it('approving twice is idempotent (no double count)', () => {

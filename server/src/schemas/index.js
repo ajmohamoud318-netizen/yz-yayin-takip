@@ -38,8 +38,8 @@ const stage = {
   enum: [
     'tasarim', 'demo_teslim', 'demo_onay',
     'ozalit_teslim', 'ozalit_onay', 'baski_onay',
-    'cin_demo_teslim', 'cin_demo_onay',
-    'uretime_hazir', 'uretimde', 'gumruk', 'satista',
+    'cin_demo_teslim', 'cin_demo_onay', 'cin_baski_onay',
+    'baskida', 'gumruk', 'satista',
   ],
 }
 
@@ -293,6 +293,16 @@ const targetProjectIdeaNoteIdParams = {
   },
 }
 
+const targetProjectIdeaNoteUpdate = {
+  ...targetProjectIdeaNoteIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['body'],
+    properties: { body: { type: 'string', minLength: 1, maxLength: 2000 } },
+  },
+}
+
 // ─── meetings (Toplantılar) ──────────────────────────────────────────────
 //
 // Meeting log activated in the sidebar alongside Hedef Projeler. See
@@ -369,6 +379,16 @@ const meetingNoteIdParams = {
       id: { type: 'string', minLength: 1, maxLength: 64 },
       noteId: { type: 'string', minLength: 1, maxLength: 64 },
     },
+  },
+}
+
+const meetingNoteUpdate = {
+  ...meetingNoteIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['body'],
+    properties: { body: { type: 'string', minLength: 1, maxLength: 2000 } },
   },
 }
 
@@ -509,7 +529,7 @@ const projectsImport = {
             type: { type: 'string', enum: ['TR', 'CIN'] },
             stage: {
               type: 'string',
-              enum: ['uretime_hazir', 'uretimde', 'gumruk', 'satista'],
+              enum: ['baskida', 'gumruk', 'satista'],
             },
             pass_kind: {
               type: 'string',
@@ -827,6 +847,10 @@ const ordersAdvance = {
         items: { type: 'string', minLength: 1, maxLength: 64 },
       },
       expectedVersion: { type: ['integer', 'null'], minimum: 0 },
+      // Only meaningful when the order is at 'goruldu' on a RESUBMIT
+      // (order.last_reject_type === 'designer'). The route 400s if this is
+      // sent on a first submission, or omitted on a resubmit.
+      route: { type: 'string', enum: ['tasarimci_onay', 'ekran_onay'] },
     },
   },
 }
@@ -858,6 +882,31 @@ const ordersReject = {
         maxItems: 64,
         items: { type: 'string', minLength: 1, maxLength: 64 },
       },
+    },
+  },
+}
+
+// Save-draft (PATCH) and approve (POST) for the siparis_baski_onay
+// print-spec form share this shape — approve additionally requires
+// adet/tarih/hazirlayan to be non-empty, enforced by the route (not
+// `required` here) so a draft save can be partial.
+const ordersBaskiOnayForm = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id'],
+    properties: { id: { type: 'string', minLength: 1, maxLength: 64 } },
+  },
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      components: { type: 'array', maxItems: 32, items: { type: 'object' } },
+      adet: { type: 'string', maxLength: 200 },
+      tarih: { type: 'string', maxLength: 100 },
+      basimYeri: { type: 'string', maxLength: 200 },
+      hazirlayan: { type: 'string', maxLength: 200 },
+      notes: { type: 'string', maxLength: 1000 },
     },
   },
 }
@@ -973,6 +1022,7 @@ export const schemas = {
   ordersAdvance,
   ordersReject,
   ordersIdParams,
+  ordersBaskiOnayForm,
   orderSubtasksPatch,
   handoversCreate,
   handoversConfirm,
@@ -982,10 +1032,12 @@ export const schemas = {
   targetProjectIdeaImageIdParams,
   targetProjectIdeaNoteCreate,
   targetProjectIdeaNoteIdParams,
+  targetProjectIdeaNoteUpdate,
   meetingCreate,
   meetingIdParams,
   meetingUpdate,
   meetingImageIdParams,
   meetingNoteCreate,
   meetingNoteIdParams,
+  meetingNoteUpdate,
 }

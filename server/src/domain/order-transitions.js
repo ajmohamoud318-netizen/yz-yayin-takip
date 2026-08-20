@@ -139,7 +139,9 @@ export function computeMatbaaOnayApproval(order, actor, ctx = {}) {
     // StepSignatureFooter (client) reads back with a last-match lookup to
     // print "Matbaa Yetkilisi" on the ozalit sheet. Reusing 'matbaa_onay'
     // here would let a later approval's signer overwrite the printer's name
-    // on that line.
+    // on that line. Same reasoning keeps 'matbaa_approve' distinct from
+    // 'siparis_baski_onay' below — the completing approval's step name must
+    // not collide with a partial one either.
     return {
       order: { matbaa_approvals: nextApprovals },
       advanced: false,
@@ -147,9 +149,12 @@ export function computeMatbaaOnayApproval(order, actor, ctx = {}) {
     }
   }
 
+  // Everyone approved → the print proof itself is settled, but production
+  // doesn't start yet: the order lands on siparis_baski_onay first, where a
+  // team leader gives the final print-spec form + approval before onaylandi.
   return {
     order: { matbaa_approvals: [] },
     advanced: true,
-    history: { step: 'onaylandi', note: 'Matbaa onayı tamamlandı, üretime alındı' },
+    history: { step: 'siparis_baski_onay', note: 'Matbaa onayı tamamlandı, baskı onayına gönderildi' },
   }
 }

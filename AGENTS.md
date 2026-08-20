@@ -43,12 +43,10 @@ Demo Onay
       designer counter-signs → Baskı Onayı (only when the set is complete)
     ✗ Ayşenur rejects (reason REQUIRED, target = matbaa|designer) → back to Tasarım (ozalit_attempt +1)
     ↓
-Baskı Onayı — final print approval (migration 044)
-    ✓ a team leader (Serpil Hanım, Ayşenur, …) gives the final "Baskı Onayı" → Üretime Hazır
+Baskı Onayı — final print approval (migration 044, retargeted at Baskıda by migration 047)
+    ✓ a team leader (Serpil Hanım, Ayşenur, …) gives the final "Baskı Onayı" → Baskıda
     ↓
-Üretime Hazır
-    ↓
-Üretimde
+Baskıda  (matbaa notified directly — no separate "take into production" step)
     ↓
 Satışta ✅  (matbaa raises teslim → sales confirms Alındı)
 ```
@@ -61,12 +59,13 @@ Tasarım (designer checks off subtasks)
 Çin Demo Teslim
     ↓
 Çin Demo Onay
-    ✓ Ayşenur OR Oktay approves → Üretime Hazır
+    ✓ Ayşenur OR Oktay approves → Çin Baskı Onayı
     ✗ Ayşenur rejects (reason REQUIRED) → back to Tasarım (demo_attempt +1)
     ↓
-Üretime Hazır
+Çin Baskı Onayı — final print approval, mirrors TR's gate (migration 047)
+    ✓ a team leader gives the final "Baskı Onayı" → Baskıda
     ↓
-Üretimde
+Baskıda
     ↓
 Gümrük
     ↓
@@ -74,10 +73,10 @@ Satışta ✅
 ```
 
 ### Production Gate
-A project **cannot** enter Ozalit or any later stage until `progress === 100%`. Enforced by `assertCanEnterProduction` in `domain/services/pipeline.js`. `STAGES_REQUIRING_FULL_PROGRESS` = `ozalit_teslim, ozalit_onay, baski_onay, uretime_hazir, uretimde, gumruk, satista`.
+A project **cannot** enter Ozalit or any later stage until `progress === 100%`. Enforced by `assertCanEnterProduction` in `domain/services/pipeline.js`. `STAGES_REQUIRING_FULL_PROGRESS` = `ozalit_teslim, ozalit_onay, baski_onay, cin_baski_onay, baskida, gumruk, satista`.
 
-### Ürün Bilgileri auto-capture (entering Üretime Hazır)
-The moment a project lands on **Üretime Hazır** its approved spec sheet is
+### Ürün Bilgileri auto-capture (entering Baskıda)
+The moment a project lands on **Baskıda** its approved spec sheet is
 copied into `product_info` by `services/product-info-capture.js`, in the same
 transaction as the stage change.
 
@@ -92,12 +91,16 @@ a project could clear ozalit onayı with a fully signed sheet, still have zero
 
 Rules that are not obvious:
 
-- **Üretime Hazır, not Üretimde.** `uretimde` is only ever reached by final
-  sipariş approval (`routes/orders.js`), and raising a sipariş already requires
-  `has_product_info` — hooking there would be strictly too late to help.
-- **Ozalit sheet wins, demo is the fallback.** One query orders
-  `(kind = 'ozalit') DESC, attempt DESC`. ÇİN has no ozalit stage at all, so
-  those projects capture their latest demo sheet.
+- **Baskıda, not any later stage.** Sipariş's final approval also flips the
+  project to `baskida` (forward-only, `isAtOrPastStage` guard), and raising a
+  sipariş already requires `has_product_info` — hooking any later than Baskıda
+  would be strictly too late to help.
+- **`baski_onay`-kind sheet wins, then ozalit, then demo.** One query orders
+  `(kind = 'baski_onay') DESC, (kind = 'ozalit') DESC, attempt DESC`. Since
+  migration 047 ÇİN has its own `baski_onay`-kind sheet too (from the
+  `cin_baski_onay` gate — reuses the same `demos.kind` value as TR's, since a
+  project only ever visits one pipeline), so it ranks first same as TR; only a
+  ÇİN project with neither falls through to its latest demo sheet.
 - **Merge is additive, per parça.** A parça already in the catalog is left
   exactly as the leader typed it, in place. Only missing names are appended, so
   re-running can never clobber hand-entered data. When nothing is new the row
@@ -109,10 +112,13 @@ Rules that are not obvious:
 - **An empty sheet captures nothing**, so `has_product_info` can't flip on for
   a product with a blank spec (the same case the `components <> '[]'` guard in
   `listProjects` exists for).
-- **Both doors into production do it**: `POST /api/projects/:id/approve` and
-  `reconcileOzalitApprovals` (which advances projects when the last pending
-  leader is deactivated). Each logs a `product_info_auto` history row naming
-  the parçalar it wrote.
+- **Only the baski_onay/cin_baski_onay approve branch of `POST /api/projects/:id/approve`
+  triggers it** — the one transition that actually lands a project on
+  Baskıda. `reconcileOzalitApprovals` (which advances a stalled ozalit round
+  when the last pending leader is deactivated) lands on `baski_onay`, not
+  `baskida`, so it deliberately does not run the capture — see the Baskı
+  Onay Formu section below. The route logs a `product_info_auto` history row
+  naming the parçalar it wrote.
 
 ### Demo Rule (demos are exempt from the 100% gate)
 Demos are a **review checkpoint**, not a production step. The 100% gate kicks in at ozalit — a half-finished design must not reach the print proof or the press.
@@ -141,21 +147,26 @@ Enforced by:
 - **"Teslim Alınamadı" (not received)**: the counterpart, for when the delivered ozalit never reached the leader/designer — only valid before it's been acknowledged. `computeOzalitNotReceived` sends the project back to `ozalit_teslim` with the matbaa re-delivery lock (`reject_target: 'matbaa'`, same mechanism as reject-to-matbaa), wipes the partial multi-party approval ledger, and bumps `ozalit_attempt`. Route: `POST /api/projects/:id/ozalit-not-received`.
 - Both teslim decisions are behind an "emin misiniz?" confirm in the UI (`ConfirmDialog` on the project detail, an inline yes/no inside the spec-sheet and approval dialogs) — they're one click, adjacent to each other, and neither can be undone from the app. Same for the demo pair.
 
-### Baskı Onay Formu — the final print approval (migrations 044–045, TR only)
-Once every leader + assigned designer has signed off on the ozalit (Özalit Onay complete), the project does **not** jump straight to Üretime Hazır — it lands on a new gate stage, `baski_onay`, first. This is the last human checkpoint before a book is treated as production-ready.
+### Baskı Onay Formu — the final print approval (migrations 044–045 TR, 047 adds ÇİN's mirror gate)
+Once every leader + assigned designer has signed off on the ozalit (Özalit Onay complete), the project does **not** jump straight to production — it lands on a gate stage, `baski_onay`, first. This is the last human checkpoint before a book is treated as production-ready. ÇİN gets the identical gate under its own stage name, `cin_baski_onay`, sitting right after `cin_demo_onay` (ÇİN has no ozalit leg to complete first) — same dual-approval rule, same `demos.kind = 'baski_onay'` row, same `SpecFormDialog` variant, just falling back to the latest demo sheet instead of ozalit when pre-filling (ÇİN has no ozalit sheet to borrow from).
 
-- **Edit rights are team_leader only** — in practice Serpil Hanım and Ayşenur, but enforced by role (`isBaskiOnayApprover` client-side, `canApproveAt`/the explicit `baski_onay` branch in `computeApproval` server-side), not by name. Every other role (designer, printer, satis) sees the form read-only.
-- **Comes to screen pre-filled with the last Özalit sheet's information.** The form is a `demos` row (`kind = 'baski_onay'`) that borrows the latest `kind = 'ozalit'` sheet's parça rows the first time it's opened empty — same "borrow once, then keep your own edits" shape the ozalit sheet uses to seed from the demo sheet (see `specWithDemoFallback`, reused for this fallback too). A team leader can then correct it before approving.
-- **Dual-approval, maker-checker (migration 045): one leader prepares, a DIFFERENT leader approves.** Any active team leader may open the form, correct it, and mark it "hazırlandı" (`POST /api/projects/:id/baski-onay-prepare`, `computeBaskiOnayPrepare`) — this alone does **not** advance the stage, it only records who prepared it (`baski_onay_prepared`, `_by`, `_by_name`, `_at`). The actual "Baskı Onayı" (`POST /api/projects/:id/approve`, the `baski_onay` branch of `computeApproval`) then requires a **different** team leader than the preparer — the same person's approve is refused ("kendi onayını veremez, başka bir ekip lideri onaylamalıdır") **unless they're the only active team leader there is**, in which case they may self-approve rather than strand the project. `SpecFormDialog`'s `baski_onay` variant switches its footer button between "Hazırla ve Onaya Gönder" and "Onayla" based on `project.baski_onay_prepared` — every team leader sees the same button once prepared; the server is the actual arbiter of "different person" (a same-person click surfaces the refusal as a toast).
-- Approving it runs the same-transaction Ürün Bilgileri capture (`captureProductInfoFromSpec`), same as before — it advances `baski_onay → uretime_hazir` and clears the prepared fields. The capture prefers a `baski_onay` sheet over the `ozalit` sheet it prefers over `demo`, so a team leader's correction on this final form is what actually reaches the product catalog.
-- **No reject flow.** Unlike every other approval gate, `baski_onay` has no Reddet button — a team leader who spots a problem edits the form directly (that's exactly what the edit right is for) rather than bouncing the project back through another round of ozalit.
-- **Notifications**: entering `baski_onay` pings every active team leader to prepare it (`baski_onay_pending`); preparing it pings every OTHER active team leader that an approval is owed (`baski_onay_prepared`, `notifyBaskiOnayPrepared` — the preparer is dropped via `emit()`'s actor suppression); reaching `uretime_hazir` pings the matbaa as usual (`production_ready`).
-- **Second door into production**: `reconcileOzalitApprovals` (`services/project-repository.js` — advances a stalled ozalit round when the last pending leader is deactivated) now also lands on `baski_onay`, not `uretime_hazir`; it no longer runs the Ürün Bilgileri capture itself, since the project doesn't enter production from that path anymore.
-- Surfaced in the **Onaylar** queue as its own "Baskı Onayı" tab (`/approvals/baski-onay`, team_leader only) alongside Demo/Ozalit, and on the project detail page via the same Onayla button pattern as Ozalit Onay.
+- **Edit rights are team_leader only** — in practice Serpil Hanım and Ayşenur, but enforced by role (`isBaskiOnayApprover` client-side, `canApproveAt`/the explicit `baski_onay`/`cin_baski_onay` branch in `computeApproval` server-side), not by name. Every other role (designer, printer, satis) sees the form read-only.
+- **Comes to screen pre-filled with the last Özalit sheet's information (TR) or the last demo sheet's (ÇİN).** The form is a `demos` row (`kind = 'baski_onay'`, reused for both pipelines — a project only ever visits one) that borrows the latest `kind = 'ozalit'` sheet's parça rows the first time it's opened empty, or the latest `kind = 'demo'` sheet's for ÇİN — same "borrow once, then keep your own edits" shape the ozalit sheet uses to seed from the demo sheet (see `specWithDemoFallback`, reused for this fallback too). A team leader can then correct it before approving.
+- **Dual-approval, maker-checker (migration 045, extended to ÇİN by 047): one leader prepares, a DIFFERENT leader approves.** Any active team leader may open the form, correct it, and mark it "hazırlandı" (`POST /api/projects/:id/baski-onay-prepare`, `computeBaskiOnayPrepare` — works at either `baski_onay` or `cin_baski_onay`) — this alone does **not** advance the stage, it only records who prepared it (`baski_onay_prepared`, `_by`, `_by_name`, `_at`). The actual "Baskı Onayı" (`POST /api/projects/:id/approve`, the widened `baski_onay`/`cin_baski_onay` branch of `computeApproval`) then requires a **different** team leader than the preparer — the same person's approve is refused ("kendi onayını veremez, başka bir ekip lideri onaylamalıdır") **unless they're the only active team leader there is**, in which case they may self-approve rather than strand the project. `SpecFormDialog`'s `baski_onay` variant switches its footer button between "Hazırla ve Onaya Gönder" and "Onayla" based on `project.baski_onay_prepared` — every team leader sees the same button once prepared; the server is the actual arbiter of "different person" (a same-person click surfaces the refusal as a toast).
+- Approving it runs the same-transaction Ürün Bilgileri capture (`captureProductInfoFromSpec`), same as before — it advances `baski_onay`/`cin_baski_onay` → `baskida` directly (migration 047 collapsed the old intermediate `uretime_hazir`/`uretimde` steps) and clears the prepared fields. The capture prefers a `baski_onay`-kind sheet over `ozalit` over `demo`, so a team leader's correction on this final form is what actually reaches the product catalog — for both pipelines now.
+- **No reject flow.** Unlike every other approval gate, `baski_onay`/`cin_baski_onay` has no Reddet button — a team leader who spots a problem edits the form directly (that's exactly what the edit right is for) rather than bouncing the project back through another round of ozalit/demo.
+- **Notifications**: entering `baski_onay`/`cin_baski_onay` pings every active team leader to prepare it (`baski_onay_pending` — TR body mentions ozalit, ÇİN's mentions demo); preparing it pings every OTHER active team leader that an approval is owed (`baski_onay_prepared`, `notifyBaskiOnayPrepared` — the preparer is dropped via `emit()`'s actor suppression); reaching `baskida` pings the matbaa directly (`production_ready`, links to `/baski-listesi`) AND leaders+designers (`in_production`) — there's no separate "production ready" step anymore, matbaa is notified the moment it's baskıda.
+- **Second door into production**: `reconcileOzalitApprovals` (`services/project-repository.js` — advances a stalled ozalit round when the last pending leader is deactivated, TR only) lands on `baski_onay`, not `baskida`; it does not run the Ürün Bilgileri capture itself, since the project doesn't enter Baskıda from that path.
+- Surfaced in the **Onaylar** queue as its own "Baskı Onayı" tab (`/approvals/baski-onay`, team_leader only) alongside Demo/Ozalit — the tab includes both TR (`baski_onay`) and ÇİN (`cin_baski_onay`) projects, distinguished by the row's own type badge — and on the project detail page via the same Onayla button pattern as Ozalit Onay.
 
 ---
 ## 🛒 Sipariş (Order) Mini-Workflow — sales re-prints
-Separate from the main pipeline. Satış Ekibi raises an order for a project that has reached `uretime_hazir` or any later stage (`uretimde`, `gumruk`, `satista`) — production doesn't need to be fully sold through, just finished; the project cycles through the team, designer, and matbaa again. Defined in `client/src/domain/constants/orders.js`.
+Separate from the main pipeline. Satış Ekibi raises an order for a project that has reached `baskida` or any later stage (`gumruk`, `satista`) — production doesn't need to be fully sold through, just finished; the project cycles through the team, designer, and matbaa again. Defined in `client/src/domain/constants/orders.js`.
+
+> The step diagram below predates migrations 046/047 (`ekran_onay` and
+> `siparis_baski_onay` steps between `matbaa_onay` and `onaylandi`) — check
+> `server/src/domain/orders.js` for the current step graph rather than
+> trusting this diagram verbatim.
 
 ```
 pending (team_leader)        Talep Gönderildi
@@ -171,8 +182,8 @@ onaylandi                    Üretime Alındı
 
 - `ORDER_STEP_OWNER` maps each step to the role that must act on it
 - `ORDER_REJECT_TARGETS.matbaa_onay` = `{ designer, matbaa }` — mirrors the main pipeline's ozalit rejection target choice
-- `canRequestOrder` (and the throwing `assertOrderable`) gate the create-order use case to projects whose `stage ∈ ORDERABLE_STAGES = { 'uretime_hazir', 'uretimde', 'gumruk', 'satista' }`, that have a non-empty `has_product_info` entry, and that the team leader hasn't delisted (`catalog_hidden` — see "Kaldırma")
-- The Ürünler catalog page (`pages/Urunler.jsx`) splits this pool into two groups for Sales: "Sipariş İçin Hazır" (production finished, not yet fully sold — `uretime_hazir`/`uretimde`/`gumruk`) and "Halihazırda Satışta" (`satista`)
+- `canRequestOrder` (and the throwing `assertOrderable`) gate the create-order use case to projects whose `stage ∈ ORDERABLE_STAGES = { 'baskida', 'gumruk', 'satista' }`, that have a non-empty `has_product_info` entry, and that the team leader hasn't delisted (`catalog_hidden` — see "Kaldırma")
+- The Ürünler catalog page (`pages/Urunler.jsx`) splits this pool into two groups for Sales: "Sipariş İçin Hazır" (production finished, not yet fully sold — `baskida`/`gumruk`) and "Halihazırda Satışta" (`satista`)
 - `components/OrderRequestDialog.jsx` has three entry paths, all ending in the same `POST /api/orders` calls:
   - **row click** — the per-product "Sipariş" button passes `initialProductId` and jumps straight to the quantity form
   - **Ürün seç** — the "Sipariş Oluştur" button opens a searchable, multi-select catalog picker (default mode)
@@ -283,9 +294,9 @@ middle ground, driven by the "Kaldır" button on each Ürünler row
 
 ---
 ## 📦 Teslim (Physical Handover) Workflow
-When Matbaa finishes printing (`uretimde` for TR, `gumruk` for ÇİN), they raise a **handover request** so Satış can confirm the physical delivery.
+When Matbaa finishes printing (`baskida` for TR, `gumruk` for ÇİN), they raise a **handover request** so Satış can confirm the physical delivery.
 
-- `HANDOVER_ELIGIBLE_STAGE = { TR: 'uretimde', CIN: 'gumruk' }`
+- `HANDOVER_ELIGIBLE_STAGE = { TR: 'baskida', CIN: 'gumruk' }`
 - `canRequestHandover(p)` / `assertHandoverEligible(p)` guard this in `domain/services/pipeline.js`
 - `printer` raises the request at `/teslim-talepleri`
 - `satis` confirms "Alındı" at `/teslim-onaylari` — the project moves to `satista`
@@ -304,8 +315,8 @@ When Matbaa finishes printing (`uretimde` for TR, `gumruk` for ÇİN), they rais
 - 🟠 Orange — Yeni Proje / just started
 - 🟣 Purple — Devam Eden / in progress (includes the first demo cycle — `demo_teslim` + `demo_onay` before the leader has approved once)
 - 🟢 Green — Second demo cycle in flight (leader already approved once, designer reached 100%, demo re-sent) — ready for the leader to send to Özalit
-- 🔵 Blue — Özalit aşamasında
-- 🩷 Pink — Üretimde
+- 🔵 Blue — Özalit / Baskı Onayı aşamasında
+- 🩷 Pink — Baskıda
 - 🟡 Yellow — Satışta
 
 **Period widget** (sidebar): shows `satista / total` ratio with the upcoming month-end deadline.
@@ -490,7 +501,6 @@ yz-yayin-takip/
             ├── SiparisListesi.jsx      # /siparis-talebi — satis: create + list orders
             ├── SiparisTalepleri.jsx    # /siparis-talepleri — team_leader
             ├── SiparisOnay.jsx         # /siparis-onay — designer
-            ├── UretimeHazir.jsx        # /uretime-hazir — printer
             ├── TeslimTalepleri.jsx     # /teslim-talepleri — printer raises handover
             ├── TeslimOnaylari.jsx      # /teslim-onaylari — satis confirms
             ├── Documents.jsx           # /documents
@@ -521,8 +531,8 @@ CREATE TABLE projects (
     CHECK (stage IN (
       'tasarim','demo_teslim','demo_onay',
       'ozalit_teslim','ozalit_onay','baski_onay',
-      'cin_demo_teslim','cin_demo_onay',
-      'uretime_hazir','uretimde','gumruk','satista'
+      'cin_demo_teslim','cin_demo_onay','cin_baski_onay',
+      'baskida','gumruk','satista'
     )),
   assigned_to   UUID REFERENCES users(id),
   created_by    UUID REFERENCES users(id),
@@ -755,7 +765,7 @@ POST   /api/demos                     { project_id, payload } [designer]
 ### Orders (Sipariş Talep workflow)
 ```
 GET    /api/order-requests            all orders, each with its order_history
-POST   /api/order-requests            { projectId, quantity?, notes?, items?, payload? } [satis] — project must be in an ORDERABLE_STAGES stage (uretime_hazir/uretimde/gumruk/satista)
+POST   /api/order-requests            { projectId, quantity?, notes?, items?, payload? } [satis] — project must be in an ORDERABLE_STAGES stage (baskida/gumruk/satista)
 PATCH  /api/order-requests/:id/advance  { notes?, assignees?, expectedVersion? } [role per ORDER_STEP_OWNER]
 PATCH  /api/order-requests/:id/reject   { reason, rejectTarget?, revizeIds? } [team_leader]
 ```
@@ -846,8 +856,8 @@ DELETE /api/work-log/:id          → 204 — owner-scoped
 |--------------|-------------------|----------------|
 | `team_leader`| Dashboard (`/`)   | Everything — Dashboard, All Projects, Kanban, Yıllık Plan, Demo Requests, Baskı Listesi, Onaylar (Demo/Ozalit), Sipariş Talepleri, Ekip, Ürün Bilgileri, Dökümanlar, Ayarlar |
 | `designer`   | My Projects       | My Projects, All Projects (filtered to mine), Kanban, Demo Requests, Sipariş Onayları (orders at `goruldu`), Baskı Listesi, Dökümanlar, Ayarlar |
-| `printer`    | Onaylar (Demo)    | Onaylar (Demo / Ozalit / Sipariş), Üretime Hazır, Teslim Talepleri, Kanban, Baskı Listesi, Dökümanlar, Ayarlar |
-| `satis`      | Sipariş Talebi    | Sipariş Talebi (raise new orders for projects at `uretime_hazir`/`uretimde`/`gumruk`/`satista`), Teslim Onayları (confirm Alındı → moves to `satista`), Tüm Ürünler (catalog, order entry point), Ayarlar |
+| `printer`    | Onaylar (Demo)    | Onaylar (Demo / Ozalit / Baskı Onayı / Sipariş), Baskı Listesi (print queue, sidebar-wired), Teslim Talepleri, Kanban, Dökümanlar, Ayarlar |
+| `satis`      | Sipariş Talebi    | Sipariş Talebi (raise new orders for projects at `baskida`/`gumruk`/`satista`), Teslim Onayları (confirm Alındı → moves to `satista`), Tüm Ürünler (catalog, order entry point), Ayarlar |
 
 Sidebar grouping is computed in `AppShell.navGroups()` and groups items into:
 1. **Ana menü** — Dashboard, Projelerim / Tüm Projeler, İş Akışı, Hedef Projeler (`team_leader`/`designer`), Toplantılar (`team_leader`/`designer`/`printer`, see migration `040__meetings.sql`), Satış-only: Sipariş Talebi, Tüm Ürünler
@@ -882,7 +892,7 @@ The ozalit leg follows the same shape since migration 035 gave it a receipt gate
 
 **Receipt notifications lead with the person, not the book.** Every other notification puts the project title on the bold `title` line and the event in the body. The three "Teslim Alındı" acknowledgements (`demo_approval_pending`, `demo_received`, `ozalit_approval_pending`) invert it — title is the actor's name, body is `«kitap» demoyu/ozaliti teslim aldı, …` — because *who acted* is the news there, and the title is the first (sometimes only) line a lock screen shows. Keeping the book in the body also spares long titles the bell's `truncate`. Locked by a test in `services/notifications.test.js`.
 
-ÇİN has no ozalit leg, so `cin_demo_onay → uretime_hazir` *is* the designer's "demo approved" moment — that's why assigned designers are on the `uretime_hazir` fan-out and not just leaders. Covered by tests in `services/notifications.test.js`.
+ÇİN has no ozalit leg, so `cin_demo_onay → cin_baski_onay` pings leaders to prepare the print-approval form (migration 047) — not a designer-facing moment, mirroring TR's `ozalit_onay → baski_onay`. The designer's actual "your book cleared the gate" moment is one step later, `cin_baski_onay → baskida`, which is why assigned designers are on the `baskida` fan-out (alongside printers, who get their own `production_ready` ping there too) and not the `cin_baski_onay` one. Covered by tests in `services/notifications.test.js`.
 
 Endpoints: `GET /api/notifications`, `PATCH /api/notifications/:id/read`, `POST /api/notifications/read-all` (all owner-scoped).
 
@@ -906,7 +916,7 @@ WhatsApp was the original ask and was rejected on cost: Meta's Cloud API bills p
 - **Client**: `hooks/usePushNotifications.js` collapses the whole support chain into one `status` (`unsupported` / `desktop` / `needs-install` / `disabled` / `denied` / `default` / `subscribed`); `components/PushToggle.jsx` renders it in the bell footer and **only ever prompts from a click** (unprompted permission requests get auto-denied by Chrome, and a denial is unrecoverable without system settings). `components/PushBridge.jsx` routes notification taps through React Router. `public/sw.js` is push-only — deliberately **no offline cache**, since a stale pipeline stage shown to a printer is worse than nothing.
 - **Tap → screen**: the destination is `link` on the notification row (`buildPayload` falls back to `/projects/<id>`, then `/`), and it rides the push as `url`. `sw.js#notificationclick` delivers it **twice, on purpose**: it `postMessage`s the focused client *and* parks `{url, notificationId}` in IndexedDB (`yz-push`/`handoff`/`pending`). Neither path alone is sufficient — an installed **iOS PWA ignores the URL passed to `openWindow()` and relaunches at `start_url` (`/`)**, and a `postMessage` sent before `PushBridge`'s listener attaches is dropped with no retry. `lib/push-target.js#takePendingPushTarget` reads-and-deletes the parked entry (expiring after 2 min) so whichever path lands first navigates, and the other is a no-op. The drain waits for `isAuthenticated` — consuming a deep link mid-bootstrap gets bounced to `/login` and the target is gone for good.
 - **The drain retries; one read is not enough.** On a cold start the worker parks the target long before React mounts, so a single read finds it. On a **warm resume the worker's `notificationclick` and the page waking up are concurrent**, and the page often wins — it reads an empty store, gives up, and the app sits on the screen the *previous* tap opened (the "second notification does nothing" bug). `PushBridge` therefore re-reads on a decaying schedule (`DRAIN_RETRY_MS`, ~1.6s total), cancellable via a token so a `postMessage` that wins — or a navigation the user makes themselves — can't be overridden a second later. It drains on `visibilitychange` **and** `pageshow` **and** window `focus`: bfcache restores skip the first, and a PWA resumed from the app switcher sometimes only fires the last. **`sw.js` ships as a separate static file with its own cache lifetime, so the payload shape and the IndexedDB keys are a wire format between two independently-deployed halves** (`push.test.js` locks the payload side).
-- **Links must match the recipient's role.** Most notification targets are `RoleGuard`ed, and a guarded route the recipient can't open silently `<Navigate to="/" replace />`s — the tap looks like it did nothing. `uretime_hazir` therefore emits twice (printers → `/uretime-hazir`, leaders → `/projects/<id>`), and `project_deleted` sets an explicit link for designers/printers (`/projects`) because the `projectId` fallback would otherwise point at a project that now 404s.
+- **Links must match the recipient's role.** Most notification targets are `RoleGuard`ed, and a guarded route the recipient can't open silently `<Navigate to="/" replace />`s — the tap looks like it did nothing. Reaching `baskida` therefore emits twice (printers → `/baski-listesi`, the actionable print queue; leaders + designers → `/projects/<id>`), and `project_deleted` sets an explicit link for designers/printers (`/projects`) because the `projectId` fallback would otherwise point at a project that now 404s.
 - **iOS specifics**: push requires Home Screen install, so `status: 'needs-install'` shows the 4-step install instructions instead of a dead toggle. `apple-touch-icon.png` must be flat RGB (iOS renders alpha as black); `apple-mobile-web-app-capable` and the manifest live in `client/index.html`.
 - **Config**: `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`. Absent → push self-disables with one warning and the bell feed carries on (the dev default; no keys needed locally). **Rotating the keypair invalidates every stored subscription** — all devices must re-subscribe.
 
@@ -924,8 +934,8 @@ Endpoints: `GET /api/push/public-key`, `POST /api/push/subscribe`, `DELETE /api/
 - Rejection always requires `reason` field — backend enforces this
 - Redis keys: `session:{id}` (TTL 7d), `cache:projects` (TTL 30s), `notify:{userId}` (pub-sub)
 - Production gate: `assertCanEnterProduction(nextStage, progress)` throws 400 if a project tries to enter Ozalit+ with progress < 100%
-- Order eligibility: `assertOrderable(project)` throws 400 if `project.stage ∉ ORDERABLE_STAGES` (`uretime_hazir`/`uretimde`/`gumruk`/`satista`), `has_product_info` isn't set yet, or the product was delisted (`catalog_hidden` — distinct message, see "Kaldırma")
-- Handover eligibility: `assertHandoverEligible(project)` throws 400 if the project is not at `uretimde` (TR) / `gumruk` (ÇİN)
+- Order eligibility: `assertOrderable(project)` throws 400 if `project.stage ∉ ORDERABLE_STAGES` (`baskida`/`gumruk`/`satista`), `has_product_info` isn't set yet, or the product was delisted (`catalog_hidden` — distinct message, see "Kaldırma")
+- Handover eligibility: `assertHandoverEligible(project)` throws 400 if the project is not at `baskida` (TR) / `gumruk` (ÇİN)
 - Mock/Infra seam: `infrastructure/config.js` exposes `USE_MOCK`; flipping it to `false` switches repositories from `mock/*` to `http/*` without changing the application or presentation layer.
 - **Turkish copy joins clauses with a comma, not an em dash** — "Ozalit istendi, matbaa teslimi bekleniyor". Applies to everything a user reads: notification bodies, `stage_history` notes, toasts, error messages, inline status lines. The em dash survives only where it isn't punctuation: the `'—'` empty-value placeholder in tables, and document/brand titles ("Sipariş Formu — {kitap}", the password-reset subject). Code comments and this file are prose for developers and keep their dashes. Old `stage_history` rows still carry ' — ', which is why `dedupeNote` (`lib/project-history.js`) matches both.
 

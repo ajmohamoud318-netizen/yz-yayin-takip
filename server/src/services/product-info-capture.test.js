@@ -147,6 +147,25 @@ describe('mergeComponents', () => {
     assert.deepEqual(added, ['KUTU'])
     assert.deepEqual(merged, [kutu])
   })
+
+  it('overwrite: true replaces an existing parça in place instead of skipping it', () => {
+    const { merged, added, updated } = mergeComponents([kitap], [
+      { component: 'KİTAP', date: '', fields: [{ k: 'EBAT', v: 'baski onay value' }] },
+      kutu,
+    ], { overwrite: true })
+    assert.deepEqual(updated, ['KİTAP'])
+    assert.deepEqual(added, ['KUTU'])
+    assert.equal(merged.length, 2)
+    assert.deepEqual(merged[0].fields, [{ k: 'EBAT', v: 'baski onay value' }])
+    assert.deepEqual(merged[1], kutu)
+  })
+
+  it('overwrite: true still matches existing parçalar case-insensitively', () => {
+    const { updated } = mergeComponents([{ component: 'kitap', fields: [] }], [
+      { component: 'KİTAP', date: '', fields: [{ k: 'EBAT', v: 'x' }] },
+    ], { overwrite: true })
+    assert.deepEqual(updated, ['KİTAP'])
+  })
 })
 
 /* ---------------------------------------------------------------- *
@@ -157,14 +176,15 @@ describe('mergeComponents', () => {
 // fragment; writes are recorded so the test can assert what was persisted.
 // `demoPayloads` is the full result set in preference order (ozalit sheets
 // first); `demoPayload` is the single-sheet shorthand.
-function makeFakeClient({ demoPayload, demoPayloads, existingComponents }) {
+function makeFakeClient({ demoPayload, demoPayloads, demoKinds, existingComponents }) {
   const sheets = demoPayloads ?? (demoPayload === undefined ? [] : [demoPayload])
+  const kinds = demoKinds ?? []
   const writes = []
   return {
     writes,
     async query(sql, params) {
       if (/FROM demos/.test(sql)) {
-        return { rows: sheets.map((payload) => ({ payload })) }
+        return { rows: sheets.map((payload, i) => ({ payload, kind: kinds[i] ?? null })) }
       }
       if (/SELECT components FROM product_info/.test(sql)) {
         return { rows: existingComponents === undefined ? [] : [{ components: existingComponents }] }
@@ -188,7 +208,7 @@ describe('captureProductInfoFromSpec', () => {
     })
     const result = await captureProductInfoFromSpec(client, { project, actor })
 
-    assert.deepEqual(result, { added: ['Fen Bilimleri 7'] })
+    assert.deepEqual(result, { added: ['Fen Bilimleri 7'], updated: [] })
     assert.equal(client.writes.length, 1)
     assert.equal(client.writes[0].projectId, 'p-1')
     assert.equal(client.writes[0].updatedBy, 'u-aysenur')
@@ -224,7 +244,7 @@ describe('captureProductInfoFromSpec', () => {
     })
     const result = await captureProductInfoFromSpec(client, { project, actor })
 
-    assert.deepEqual(result, { added: ['KUTU'] })
+    assert.deepEqual(result, { added: ['KUTU'], updated: [] })
     const written = client.writes[0].components
     assert.deepEqual(written.map((c) => c.component), ['KİTAP', 'KUTU'])
     assert.equal(written[0].fields[0].v, 'leader value', 'leader value survives')
@@ -263,6 +283,24 @@ describe('captureProductInfoFromSpec', () => {
     assert.equal(client.writes[0].components[0].fields[1].v, 'baski onay value')
   })
 
+  it('a baski_onay sheet DOES overwrite a parça already in the catalog — unlike ozalit/demo', async () => {
+    const client = makeFakeClient({
+      demoPayload: {
+        _selectedComponents: [{ component: 'KİTAP', rows: [row('EBAT', 'leader corrected this on baski onay')] }],
+      },
+      demoKinds: ['baski_onay'],
+      existingComponents: [{ component: 'KİTAP', date: '', fields: [{ k: 'EBAT', v: 'stale ozalit value' }] }],
+    })
+    const result = await captureProductInfoFromSpec(client, { project, actor })
+
+    assert.deepEqual(result, { added: [], updated: ['KİTAP'] })
+    assert.equal(client.writes.length, 1)
+    assert.deepEqual(client.writes[0].components[0].fields, [
+      { k: 'İŞİN ADI', v: 'KİTAP' },
+      { k: 'EBAT', v: 'leader corrected this on baski onay' },
+    ])
+  })
+
   it('falls back to the demo sheet when the ozalit sheet carries no spec', async () => {
     // The real-world shape on a project with no catalog: the leader's ozalit
     // form opens empty, so "Matbaaya Gönder" stores a sheet with the header
@@ -276,7 +314,7 @@ describe('captureProductInfoFromSpec', () => {
     })
     const result = await captureProductInfoFromSpec(client, { project, actor })
 
-    assert.deepEqual(result, { added: ['Fen Bilimleri 7'] })
+    assert.deepEqual(result, { added: ['Fen Bilimleri 7'], updated: [] })
     assert.deepEqual(client.writes[0].components[0].fields, [
       { k: 'İŞİN ADI', v: 'Fen Bilimleri 7' },
       { k: 'EBAT', v: '19,5 x 27,5' },

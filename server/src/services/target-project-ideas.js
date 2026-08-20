@@ -189,6 +189,25 @@ export async function addNote(pool, ideaId, body, actor) {
   return rows[0]
 }
 
+export async function updateNote(pool, ideaId, noteId, body, actor) {
+  const trimmed = (body ?? '').trim()
+  if (!trimmed) badRequest('Not boş olamaz.')
+  const { rows: noteRows } = await pool.query(
+    `SELECT created_by FROM target_project_idea_notes WHERE id = $1 AND idea_id = $2`,
+    [noteId, ideaId],
+  )
+  if (!noteRows[0]) notFound('Not bulunamadı.')
+  if (actor.role !== 'team_leader' && noteRows[0].created_by !== actor.id) {
+    forbidden('Bu notu yalnızca ekleyen kişi veya takım lideri düzenleyebilir.')
+  }
+  const { rows } = await pool.query(
+    `UPDATE target_project_idea_notes SET body = $2 WHERE id = $1
+     RETURNING id, idea_id, body, created_by, created_by_name, created_at`,
+    [noteId, trimmed],
+  )
+  return rows[0]
+}
+
 export async function removeNote(pool, ideaId, noteId, actor) {
   const { rows: noteRows } = await pool.query(
     `SELECT created_by FROM target_project_idea_notes WHERE id = $1 AND idea_id = $2`,

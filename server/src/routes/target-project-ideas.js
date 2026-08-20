@@ -4,7 +4,7 @@ import { withTx, getPool } from '../db/pool.js'
 import { schemas } from '../schemas/index.js'
 import {
   list, create, update, remove, assertCanModify, setImage, clearImage,
-  getDetail, addImage, removeImage, addNote, removeNote,
+  getDetail, addImage, removeImage, addNote, updateNote, removeNote,
 } from '../services/target-project-ideas.js'
 import { notifyTargetProjectIdeaCreated } from '../services/notifications.js'
 import { extForMime, isAllowedMime, sniffImageMime } from '../services/avatars.js'
@@ -33,6 +33,7 @@ import { badRequest, notFound, HttpError } from '../domain/errors.js'
  *  DELETE /api/target-project-ideas/:id/images/:imageId → team_leader, or the idea's own author
  *  GET    /api/target-project-ideas/:id/images/:imageId → public file stream (gallery)
  *  POST   /api/target-project-ideas/:id/notes          → anyone who can add an idea
+ *  PATCH  /api/target-project-ideas/:id/notes/:noteId  → team_leader, or the note's own author
  *  DELETE /api/target-project-ideas/:id/notes/:noteId  → team_leader, or the note's own author
  */
 export async function targetProjectIdeaRoutes(fastify) {
@@ -248,6 +249,15 @@ export async function targetProjectIdeaRoutes(fastify) {
       const note = await addNote(getPool(), request.params.id, request.body.body, request.user)
       reply.code(201)
       return note
+    },
+  )
+
+  fastify.patch(
+    '/target-project-ideas/:id/notes/:noteId',
+    { schema: schemas.targetProjectIdeaNoteUpdate },
+    async (request) => {
+      await attachUser(request)
+      return updateNote(getPool(), request.params.id, request.params.noteId, request.body.body, request.user)
     },
   )
 
