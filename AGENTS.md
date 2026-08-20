@@ -129,6 +129,7 @@ Demos are a **review checkpoint**, not a production step. The 100% gate kicks in
 - **Approved demo at <100% is a "hold"**: the leader's approve is recorded, the project stays at `demo_onay`, `demo_held = true`. The designer keeps working on the held project — the UI shows a yellow "Tasarım tamamlanmadı — onay sonraki aşamaya geçirmez" hint next to the approve button.
 - **The designer (or leader) sends a second demo** via "Demo İste" at any demo stage (allowed at any progress and any held-state — the team may iterate again once a demo has been reviewed). The server's `computeAdvance` re-send branch moves the project straight to the pipeline's teslim stage (`demo_onay → demo_teslim` for TR, `cin_demo_onay → cin_demo_teslim` for ÇİN) and bumps `demo_attempt`, so the matbaa immediately receives the new demo. The full demo loop re-runs (`demo_teslim → demo_onay`); leader approves again to advance to `ozalit_teslim`.
 - **"Teslim Alınamadı" (not received)**: the counterpart to "Teslim Alındı" — if the delivered demo never actually reached the leader/designer, either can report it instead of leaving the project stuck at `demo_onay`/`cin_demo_onay` with no way forward (Onayla/Reddet stay blocked until received; see the Demo Rule above). `computeDemoNotReceived` sends it back to the matbaa's teslim stage and bumps `demo_attempt`, same as any other back-to-teslim transition. Route: `POST /api/projects/:id/demo-not-received`.
+- **Matbaa "Başladım" gate + free cancel/edit + change-request (migration `048__demo_ozalit_started.sql`)**: before this pass, a mistaken demo request had no way back except waiting for delivery and using Reddet — which bumps `demo_attempt` even though nothing was produced. Now: while `demo_started` is false (the printer hasn't marked they've begun physical work — `POST /api/projects/:id/demo-start`, `computeDemoStart`, printer-only, flag-only, no stage change), the leader or assigned designer can **cancel outright** (`POST /api/projects/:id/demo-cancel`, `computeDemoCancel` — back to `tasarim`, deliberately does **not** bump `demo_attempt`, since nothing was delivered) or **edit the sheet directly** (the existing `SpecFormDialog` `mode='view'` save path, now also open to assigned designers via the "Demo Formu" button, not just the leader). Once `demo_started` is true, a cancel/edit is no longer free — the leader/designer instead asks (`POST /api/projects/:id/demo-change-request`, optional note, no stacking a second pending request) and the printer accepts (`POST /api/projects/:id/demo-change-accept` — "un-starts" the round, `demo_started` back to false, reopening the free path) or declines (`POST /api/projects/:id/demo-change-decline` — round stays started, leader/designer must wait for normal delivery + Reddet). `computeDemoTeslimAdvance` refuses to deliver past a pending change-request, and every fresh-round transition (delivery, "Teslim Alınamadı", held-resend) resets `demo_started`/the change-request ledger to their rest state. Client predicates: `canMarkDemoStarted`, `canCancelDemoRequest`, `canRequestDemoChange`, `canRespondDemoChange` in `client/src/domain/services/pipeline.js`.
 
 Enforced by:
 - `client/src/domain/services/pipeline.js#assertCanEnterProduction` (gate at ozalit onward, not at demo)
@@ -145,7 +146,8 @@ Enforced by:
 - **"Teslim Alındı" (received) — the ozalit receipt gate (migration `035__ozalit_received.sql`)**: the delivered ozalit must be acknowledged by the team leader or an assigned designer before *anyone* can sign off on it. `computeOzalitOnayApproval` refuses with "Önce ozalit «Teslim Alındı» olarak işaretlenmelidir." until `ozalit_received` is true, and `availableActions` hides Onayla/Reddet until then — you can't approve a physical proof nobody has taken delivery of. One acknowledgment covers the whole multi-party round (there is only one proof), and the matbaa's delivery clears it again so every ozalit round needs its own. Route: `POST /api/projects/:id/ozalit-receive`. This mirrors the demo gate from migration 021 — whose note that ozalit is "intentionally NOT gated" no longer holds.
 - **Leader-first approval order**: ozalit onay is multi-party (every active team leader + every assigned designer must approve), but the approvals are *ordered* — a designer may only counter-sign a proof a team leader has already approved. `computeOzalitOnayApproval` refuses a designer with "Önce ekip lideri onaylamalıdır, tasarımcı onayı ondan sonra verilebilir." while the ledger holds no `team_leader` entry. Any **one** leader opens the gate (a second leader's approval is not a second gate), and after that everyone remaining signs in any order; a rejection or a "Teslim Alınamadı" wipes the ledger, so the next round needs a fresh leader sign-off. The rule is skipped when there is no active team leader at all — none would be in the required set either, and enforcing it would strand the project at `ozalit_onay`. Client mirror: `ozalitLeaderApproved` / `canApproveOzalitNow` in `client/src/domain/services/pipeline.js`, used by the project detail action row, the Onaylar queue, the spec-sheet approve dialog, and the designer's sidebar badge, so a designer never sees an Onayla the server would refuse.
 - **"Teslim Alınamadı" (not received)**: the counterpart, for when the delivered ozalit never reached the leader/designer — only valid before it's been acknowledged. `computeOzalitNotReceived` sends the project back to `ozalit_teslim` with the matbaa re-delivery lock (`reject_target: 'matbaa'`, same mechanism as reject-to-matbaa), wipes the partial multi-party approval ledger, and bumps `ozalit_attempt`. Route: `POST /api/projects/:id/ozalit-not-received`.
-- Both teslim decisions are behind an "emin misiniz?" confirm in the UI (`ConfirmDialog` on the project detail, an inline yes/no inside the spec-sheet and approval dialogs) — they're one click, adjacent to each other, and neither can be undone from the app. Same for the demo pair.
+- **Matbaa "Başladım" gate + free cancel/edit + change-request (migration 048)** — the ozalit mirror of the demo leg above (§ Demo Rule): while `ozalit_started` is false (`POST /api/projects/:id/ozalit-start`, printer-only), the leader/assigned designer can cancel the ozalit request outright (`POST /api/projects/:id/ozalit-cancel`, `computeOzalitCancel` — back to `tasarim`, no `ozalit_attempt` bump; scoped to an actual pending `ozalit_requested`, so it does **not** apply to the `reject_target === 'matbaa'` re-delivery-lock case above, which already went through a real rejection) or edit the sheet (now reachable from `ozalit_teslim`/`ozalit_onay` via the "Ozalit Formu" button, not just from `baski_onay` onward — visibility only, saving is still team_leader-only per the ozalit `SpecFormDialog` variant). Once started, `POST /api/projects/:id/ozalit-change-request` / `-change-accept` / `-change-decline` mirror the demo trio exactly.
+- Both teslim decisions are behind an "emin misiniz?" confirm in the UI (`ConfirmDialog` on the project detail, an inline yes/no inside the spec-sheet and approval dialogs) — they're one click, adjacent to each other, and neither can be undone from the app. Same for the demo pair, and for the cancel/Başladım/change-request actions above.
 
 ### Baskı Onay Formu — the final print approval (migrations 044–045 TR, 047 adds ÇİN's mirror gate)
 Once every leader + assigned designer has signed off on the ozalit (Özalit Onay complete), the project does **not** jump straight to production — it lands on a gate stage, `baski_onay`, first. This is the last human checkpoint before a book is treated as production-ready. ÇİN gets the identical gate under its own stage name, `cin_baski_onay`, sitting right after `cin_demo_onay` (ÇİN has no ozalit leg to complete first) — same dual-approval rule, same `demos.kind = 'baski_onay'` row, same `SpecFormDialog` variant, just falling back to the latest demo sheet instead of ozalit when pre-filling (ÇİN has no ozalit sheet to borrow from).
@@ -716,6 +718,23 @@ POST   /api/projects/:id/ozalit-not-received   report a delivered ozalit never a
 POST   /api/projects/:id/baski-onay-prepare    mark Baskı Onay Formu "hazırlandı" — the maker half of the
                                                 dual-approval pair (migration 045); does not advance the
                                                 stage [team_leader only]
+POST   /api/projects/:id/demo-start            matbaa marks demo physical work begun — flag only, no stage
+                                                change (migration 048) [printer]
+POST   /api/projects/:id/ozalit-start          same, ozalit leg [printer]
+POST   /api/projects/:id/demo-cancel           cancel a mistaken demo request → tasarim, does NOT bump
+                                                demo_attempt; only before the matbaa has started
+                                                [team_leader or assigned designer]
+POST   /api/projects/:id/ozalit-cancel         same, ozalit leg — does NOT bump ozalit_attempt
+                                                [team_leader or assigned designer]
+POST   /api/projects/:id/demo-change-request   { note? } ask the matbaa to accept a cancel/edit once
+                                                they've started; no stacking a second pending request
+                                                [team_leader or assigned designer]
+POST   /api/projects/:id/ozalit-change-request { note? } same, ozalit leg [team_leader or assigned designer]
+POST   /api/projects/:id/demo-change-accept    accept a pending change-request — "un-starts" the round,
+                                                reopening free cancel/edit [printer]
+POST   /api/projects/:id/demo-change-decline   decline it — round stays started [printer]
+POST   /api/projects/:id/ozalit-change-accept  same pair, ozalit leg [printer]
+POST   /api/projects/:id/ozalit-change-decline [printer]
 ```
 ### Subtasks
 ```
@@ -762,6 +781,12 @@ omitting it would reset designer progress. Valid `kind` values are
 GET    /api/demos                     → all submitted demo forms
 POST   /api/demos                     { project_id, payload } [designer]
 ```
+`POST /api/demos` has no role/stage check of its own — it's only ever called
+from `SpecFormDialog`'s save paths, which are gated client-side (including the
+migration 048 `demo_started`/`ozalit_started` lock). Deliberately left
+ungated server-side rather than tightened alongside migration 048 — it would
+also affect the printer's own legitimate delivery-time saves and the
+`baski_onay` variant; worth a follow-up ticket, not folded into that change.
 ### Orders (Sipariş Talep workflow)
 ```
 GET    /api/order-requests            all orders, each with its order_history
@@ -893,6 +918,16 @@ The ozalit leg follows the same shape since migration 035 gave it a receipt gate
 **Receipt notifications lead with the person, not the book.** Every other notification puts the project title on the bold `title` line and the event in the body. The three "Teslim Alındı" acknowledgements (`demo_approval_pending`, `demo_received`, `ozalit_approval_pending`) invert it — title is the actor's name, body is `«kitap» demoyu/ozaliti teslim aldı, …` — because *who acted* is the news there, and the title is the first (sometimes only) line a lock screen shows. Keeping the book in the body also spares long titles the bell's `truncate`. Locked by a test in `services/notifications.test.js`.
 
 ÇİN has no ozalit leg, so `cin_demo_onay → cin_baski_onay` pings leaders to prepare the print-approval form (migration 047) — not a designer-facing moment, mirroring TR's `ozalit_onay → baski_onay`. The designer's actual "your book cleared the gate" moment is one step later, `cin_baski_onay → baskida`, which is why assigned designers are on the `baskida` fan-out (alongside printers, who get their own `production_ready` ping there too) and not the `cin_baski_onay` one. Covered by tests in `services/notifications.test.js`.
+
+**Matbaa "Başladım" + cancel + change-request (migration 048)** adds its own set of `type`s, all flag-only (no stage change) except the cancel, which does move the stage but rides a dedicated `notify*` rather than `notifyProjectTransition`'s `switch(toStage)` (it uses `action: 'system'`, not `'reject'`, so it wouldn't have matched that switch anyway):
+
+| Event | Type | Who hears it |
+|---|---|---|
+| Matbaa marks "Başladım" | `demo_started` / `ozalit_started` | leader + assigned designers |
+| Leader/designer asks for a change | `demo_change_requested` / `ozalit_change_requested` | active printers |
+| Matbaa accepts the change-request | `demo_change_accepted` / `ozalit_change_accepted` | leader + assigned designers |
+| Matbaa declines it | `demo_change_declined` / `ozalit_change_declined` | leader + assigned designers |
+| Request cancelled outright | `demo_cancelled` / `ozalit_cancelled` | active printers — their pending delivery just disappeared |
 
 Endpoints: `GET /api/notifications`, `PATCH /api/notifications/:id/read`, `POST /api/notifications/read-all` (all owner-scoped).
 

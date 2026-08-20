@@ -32,6 +32,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import UserAvatar from '@/components/UserAvatar.jsx'
 import { Badge } from '@/components/ui/badge'
@@ -1086,6 +1090,114 @@ export default function ProjectDetail() {
                     {advanceLabel}
                   </Button>
                 )}
+                {/* Matbaa "Başladım" — flag-only, marks physical work begun.
+                    Once set, a cancel/edit from the leader/designer needs
+                    the matbaa's OK (migration 048). */}
+                {canMarkDemoStarted(user, project) && (
+                  <Button
+                    size="sm" variant="outline"
+                    onClick={() => setTeslimConfirm('demo-start')}
+                    disabled={startingWork}
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    {startingWork ? 'İşleniyor…' : 'Başladım'}
+                  </Button>
+                )}
+                {canMarkOzalitStarted(user, project) && (
+                  <Button
+                    size="sm" variant="outline"
+                    onClick={() => setTeslimConfirm('ozalit-start')}
+                    disabled={startingWork}
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    {startingWork ? 'İşleniyor…' : 'Başladım'}
+                  </Button>
+                )}
+                {/* Undo a mistaken request outright — only while the matbaa
+                    hasn't started yet, so nothing was actually delivered. */}
+                {canCancelDemoRequest(user, project) && (
+                  <Button
+                    size="sm" variant="destructive"
+                    onClick={() => setTeslimConfirm('demo-cancel')}
+                    disabled={cancellingRequest}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {cancellingRequest ? 'İşleniyor…' : 'Demo İsteğini İptal Et'}
+                  </Button>
+                )}
+                {canCancelOzalitRequest(user, project) && (
+                  <Button
+                    size="sm" variant="destructive"
+                    onClick={() => setTeslimConfirm('ozalit-cancel')}
+                    disabled={cancellingRequest}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {cancellingRequest ? 'İşleniyor…' : 'Ozalit İsteğini İptal Et'}
+                  </Button>
+                )}
+                {/* Once started, a cancel/edit is a request the matbaa must
+                    accept or decline. */}
+                {canRequestDemoChange(user, project) && (
+                  <Button size="sm" variant="outline" onClick={() => setChangeRequestOpen('demo')}>
+                    <AlertTriangle className="h-4 w-4" />
+                    Değişiklik İste
+                  </Button>
+                )}
+                {canRequestOzalitChange(user, project) && (
+                  <Button size="sm" variant="outline" onClick={() => setChangeRequestOpen('ozalit')}>
+                    <AlertTriangle className="h-4 w-4" />
+                    Değişiklik İste
+                  </Button>
+                )}
+                {!canRequestDemoChange(user, project) && project?.demo_change_requested_at &&
+                  (isLeader || (user?.role === 'designer' && isAssigned)) &&
+                  ['demo_teslim', 'cin_demo_teslim'].includes(project.stage) && (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700">
+                    <Clock className="h-4 w-4" />
+                    Değişiklik talebi gönderildi, matbaa yanıtı bekleniyor
+                  </span>
+                )}
+                {!canRequestOzalitChange(user, project) && project?.ozalit_change_requested_at &&
+                  (isLeader || (user?.role === 'designer' && isAssigned)) &&
+                  project.stage === 'ozalit_teslim' && (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700">
+                    <Clock className="h-4 w-4" />
+                    Değişiklik talebi gönderildi, matbaa yanıtı bekleniyor
+                  </span>
+                )}
+                {/* The matbaa's answer to a pending change-request. */}
+                {canRespondDemoChange(user, project) && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      {project.demo_change_requested_by_name ?? 'Ekipten biri'}
+                      {project.demo_change_requested_note ? `: ${project.demo_change_requested_note}` : ' değişiklik istiyor'}
+                    </span>
+                    <Button size="sm" variant="success" onClick={() => setTeslimConfirm('demo-change-accept')} disabled={respondingChange}>
+                      <ThumbsUp className="h-4 w-4" />
+                      Kabul Et
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setTeslimConfirm('demo-change-decline')} disabled={respondingChange}>
+                      <ThumbsDown className="h-4 w-4" />
+                      Reddet
+                    </Button>
+                  </div>
+                )}
+                {canRespondOzalitChange(user, project) && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      {project.ozalit_change_requested_by_name ?? 'Ekipten biri'}
+                      {project.ozalit_change_requested_note ? `: ${project.ozalit_change_requested_note}` : ' değişiklik istiyor'}
+                    </span>
+                    <Button size="sm" variant="success" onClick={() => setTeslimConfirm('ozalit-change-accept')} disabled={respondingChange}>
+                      <ThumbsUp className="h-4 w-4" />
+                      Kabul Et
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setTeslimConfirm('ozalit-change-decline')} disabled={respondingChange}>
+                      <ThumbsDown className="h-4 w-4" />
+                      Reddet
+                    </Button>
+                  </div>
+                )}
                 {/* Demo "Teslim Alındı" gate — before the Onay. */}
                 {canReceiveDemo && (
                   <Button size="sm" onClick={() => setTeslimConfirm('demo-received')} disabled={receiving || reportingNotReceived}>
@@ -1626,9 +1738,43 @@ export default function ProjectDetail() {
         confirmLabel={pendingTeslim?.confirmLabel}
         cancelLabel="Vazgeç"
         variant={pendingTeslim?.variant}
-        busy={receiving || reportingNotReceived}
+        busy={receiving || reportingNotReceived || startingWork || cancellingRequest || respondingChange}
         onConfirm={() => pendingTeslim?.onConfirm?.()}
       />
+
+      {/* Matbaa "Başladım" gate (migration 048): once started, a cancel/edit
+          from the leader/designer needs an optional note explaining what
+          they want, sent to the matbaa for accept/decline. */}
+      <Dialog open={!!changeRequestOpen} onOpenChange={(v) => !v && !requestingChange && setChangeRequestOpen(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Değişiklik isteyin</DialogTitle>
+            <DialogDescription>
+              Matbaa {changeRequestOpen === 'demo' ? 'demoya' : 'ozalite'} zaten başladı. Ne değiştirmek
+              istediğinizi kısaca yazabilirsiniz — matbaa kabul ederse iptal veya düzenleme yapabilirsiniz.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={changeRequestNote}
+            onChange={(e) => setChangeRequestNote(e.target.value)}
+            placeholder="Örn: renk yanlış, iptal etmek istiyorum…"
+            maxLength={500}
+          />
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setChangeRequestOpen(null)} disabled={requestingChange}>
+              Vazgeç
+            </Button>
+            <Button
+              type="button"
+              onClick={() => handleRequestChange(changeRequestOpen)}
+              disabled={requestingChange}
+              loading={requestingChange}
+            >
+              {requestingChange ? 'Gönderiliyor…' : 'Talebi Gönder'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
