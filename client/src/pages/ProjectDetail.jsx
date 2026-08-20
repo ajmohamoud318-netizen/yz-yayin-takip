@@ -48,7 +48,13 @@ import { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import { cn, formatDateTr, initials } from '@/lib/utils'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { isSubtaskDone, countsTowardProgress } from '@/domain/services/progress'
-import { canApproveOzalitNow, ozalitLeaderApproved } from '@/domain'
+import {
+  canApproveOzalitNow, ozalitLeaderApproved,
+  canMarkDemoStarted, canMarkOzalitStarted,
+  canCancelDemoRequest, canCancelOzalitRequest,
+  canRequestDemoChange, canRequestOzalitChange,
+  canRespondDemoChange, canRespondOzalitChange,
+} from '@/domain'
 
 // "Open" mirrors useOpenOrdersByProject/findOpenByProject — not yet at a
 // terminal step. A project can have more than one of these in flight at
@@ -179,6 +185,14 @@ export default function ProjectDetail() {
   // action row, so none of them fires straight from the button.
   // 'demo-received' | 'demo-not-received' | 'ozalit-received' | 'ozalit-not-received'
   const [teslimConfirm, setTeslimConfirm] = useState(null)
+  // Matbaa "Başladım" gate + cancel + change-request (migration 048).
+  const [startingWork, setStartingWork] = useState(false)
+  const [cancellingRequest, setCancellingRequest] = useState(false)
+  const [respondingChange, setRespondingChange] = useState(false)
+  // 'demo' | 'ozalit' | null — which change-request note dialog is open.
+  const [changeRequestOpen, setChangeRequestOpen] = useState(null)
+  const [changeRequestNote, setChangeRequestNote] = useState('')
+  const [requestingChange, setRequestingChange] = useState(false)
   const [updatingSubId, setUpdatingSubId] = useState(null) // per-subtask "what changed" note
   const [updateNote, setUpdateNote] = useState('')
   const [projectOrders, setProjectOrders] = useState([])
@@ -406,6 +420,143 @@ export default function ProjectDetail() {
     }
   }
 
+  // Matbaa marks they've begun physical work — flag only, no stage change.
+  async function handleDemoStart() {
+    if (!project) return
+    setStartingWork(true)
+    try {
+      await api.markDemoStarted(project.id)
+      await refetch()
+      toast.success('Demoya başladığınız işaretlendi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setStartingWork(false)
+      setTeslimConfirm(null)
+    }
+  }
+  async function handleOzalitStart() {
+    if (!project) return
+    setStartingWork(true)
+    try {
+      await api.markOzalitStarted(project.id)
+      await refetch()
+      toast.success('Ozalite başladığınız işaretlendi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setStartingWork(false)
+      setTeslimConfirm(null)
+    }
+  }
+
+  // Cancel a mistaken demo/ozalit request outright — back to tasarim, no
+  // attempt bump. Only offered before the matbaa has started.
+  async function handleDemoCancel() {
+    if (!project) return
+    setCancellingRequest(true)
+    try {
+      await api.cancelDemoRequest(project.id)
+      await refetch()
+      toast.success('Demo talebi iptal edildi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setCancellingRequest(false)
+      setTeslimConfirm(null)
+    }
+  }
+  async function handleOzalitCancel() {
+    if (!project) return
+    setCancellingRequest(true)
+    try {
+      await api.cancelOzalitRequest(project.id)
+      await refetch()
+      toast.success('Ozalit talebi iptal edildi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setCancellingRequest(false)
+      setTeslimConfirm(null)
+    }
+  }
+
+  // Once the matbaa has started, a cancel/edit becomes a request they must
+  // accept or decline.
+  async function handleRequestChange(kind) {
+    if (!project) return
+    setRequestingChange(true)
+    try {
+      if (kind === 'demo') await api.requestDemoChange(project.id, changeRequestNote.trim() || undefined)
+      else await api.requestOzalitChange(project.id, changeRequestNote.trim() || undefined)
+      await refetch()
+      toast.success('Değişiklik talebiniz matbaaya iletildi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setRequestingChange(false)
+      setChangeRequestOpen(null)
+      setChangeRequestNote('')
+    }
+  }
+
+  async function handleDemoChangeAccept() {
+    if (!project) return
+    setRespondingChange(true)
+    try {
+      await api.acceptDemoChangeRequest(project.id)
+      await refetch()
+      toast.success('Değişiklik talebi kabul edildi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setRespondingChange(false)
+      setTeslimConfirm(null)
+    }
+  }
+  async function handleDemoChangeDecline() {
+    if (!project) return
+    setRespondingChange(true)
+    try {
+      await api.declineDemoChangeRequest(project.id)
+      await refetch()
+      toast.success('Değişiklik talebi reddedildi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setRespondingChange(false)
+      setTeslimConfirm(null)
+    }
+  }
+  async function handleOzalitChangeAccept() {
+    if (!project) return
+    setRespondingChange(true)
+    try {
+      await api.acceptOzalitChangeRequest(project.id)
+      await refetch()
+      toast.success('Değişiklik talebi kabul edildi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setRespondingChange(false)
+      setTeslimConfirm(null)
+    }
+  }
+  async function handleOzalitChangeDecline() {
+    if (!project) return
+    setRespondingChange(true)
+    try {
+      await api.declineOzalitChangeRequest(project.id)
+      await refetch()
+      toast.success('Değişiklik talebi reddedildi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setRespondingChange(false)
+      setTeslimConfirm(null)
+    }
+  }
+
   // Copy + handler for each teslim decision, keyed by the pending confirm.
   // Both "Teslim Alınamadı" variants send the project back to the matbaa and
   // bump the attempt counter, so the description says so plainly — that's the
@@ -442,6 +593,66 @@ export default function ProjectDetail() {
       confirmLabel: 'Teslim Alınamadı',
       variant: 'destructive',
       onConfirm: handleOzalitNotReceived,
+    },
+    'demo-start': {
+      title: 'Demoya başladınız mı?',
+      description:
+        'Bundan sonra ekip lideri veya tasarımcının iptal ya da düzenleme yapması, sizin onayınızı gerektiren bir değişiklik talebine dönüşür.',
+      confirmLabel: 'Başladım',
+      variant: 'success',
+      onConfirm: handleDemoStart,
+    },
+    'ozalit-start': {
+      title: 'Ozalite başladınız mı?',
+      description:
+        'Bundan sonra ekip lideri veya tasarımcının iptal ya da düzenleme yapması, sizin onayınızı gerektiren bir değişiklik talebine dönüşür.',
+      confirmLabel: 'Başladım',
+      variant: 'success',
+      onConfirm: handleOzalitStart,
+    },
+    'demo-cancel': {
+      title: 'Demo talebini iptal edin mi?',
+      description:
+        'Proje doğrudan tasarıma geri döner. Demo sayacı artmaz — hiçbir şey teslim edilmediği için sayılmaz. Bu işlem geri alınamaz.',
+      confirmLabel: 'İptal Et',
+      variant: 'destructive',
+      onConfirm: handleDemoCancel,
+    },
+    'ozalit-cancel': {
+      title: 'Ozalit talebini iptal edin mi?',
+      description:
+        'Proje doğrudan tasarıma geri döner. Ozalit sayacı artmaz — hiçbir şey teslim edilmediği için sayılmaz. Bu işlem geri alınamaz.',
+      confirmLabel: 'İptal Et',
+      variant: 'destructive',
+      onConfirm: handleOzalitCancel,
+    },
+    'demo-change-accept': {
+      title: 'Değişiklik talebini kabul edin mi?',
+      description: 'Ekip lideri veya tasarımcı artık demoyu iptal edebilir ya da düzenleyebilir.',
+      confirmLabel: 'Kabul Et',
+      variant: 'success',
+      onConfirm: handleDemoChangeAccept,
+    },
+    'demo-change-decline': {
+      title: 'Değişiklik talebini reddedin mi?',
+      description: 'Süreç normal teslim akışıyla devam eder, talep eden kişi bilgilendirilir.',
+      confirmLabel: 'Reddet',
+      variant: 'destructive',
+      onConfirm: handleDemoChangeDecline,
+    },
+    'ozalit-change-accept': {
+      title: 'Değişiklik talebini kabul edin mi?',
+      description: 'Ekip lideri veya tasarımcı artık ozaliti iptal edebilir ya da düzenleyebilir.',
+      confirmLabel: 'Kabul Et',
+      variant: 'success',
+      onConfirm: handleOzalitChangeAccept,
+    },
+    'ozalit-change-decline': {
+      title: 'Değişiklik talebini reddedin mi?',
+      description: 'Süreç normal teslim akışıyla devam eder, talep eden kişi bilgilendirilir.',
+      confirmLabel: 'Reddet',
+      variant: 'destructive',
+      onConfirm: handleOzalitChangeDecline,
     },
   }
   const pendingTeslim = teslimConfirm ? TESLIM_CONFIRMS[teslimConfirm] : null
@@ -788,8 +999,11 @@ export default function ProjectDetail() {
                     Düzenle
                   </Button>
                 )}
-                {/* Demo formu görüntüle — demo gönderildikten sonra */}
-                {isLeader && ['demo_teslim', 'cin_demo_teslim', 'demo_onay', 'cin_demo_onay', 'ozalit_teslim', 'ozalit_onay', 'baskida', 'gumruk', 'satista'].includes(project.stage) && (
+                {/* Demo formu görüntüle — demo gönderildikten sonra. Also open to
+                    the assigned designer, not just the leader: demo's own
+                    isReadOnly already permits designer edits in mode='view'
+                    (migration 048 closed this button-visibility gap). */}
+                {(isLeader || (user?.role === 'designer' && isAssigned)) && ['demo_teslim', 'cin_demo_teslim', 'demo_onay', 'cin_demo_onay', 'ozalit_teslim', 'ozalit_onay', 'baskida', 'gumruk', 'satista'].includes(project.stage) && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -799,8 +1013,14 @@ export default function ProjectDetail() {
                     Demo Formu
                   </Button>
                 )}
-                {/* Ozalit formu görüntüle — baskıda veya sonraki aşamalarda. TR only — ÇİN has no ozalit leg. */}
-                {isLeader && ['baski_onay', 'baskida', 'gumruk', 'satista'].includes(project.stage) && project.type === 'TR' && (
+                {/* Ozalit formu görüntüle — now also while it's in flight with the
+                    matbaa (ozalit_teslim/ozalit_onay), not just from baski_onay
+                    onward, so the leader can reach "Değişiklik İste" from the
+                    same place they'd normally edit (migration 048). Visibility
+                    only — ozalit's isReadOnly still restricts saving to
+                    team_leader, so the designer's button here is view-only.
+                    TR only — ÇİN has no ozalit leg. */}
+                {(isLeader || (user?.role === 'designer' && isAssigned)) && ['ozalit_teslim', 'ozalit_onay', 'baski_onay', 'baskida', 'gumruk', 'satista'].includes(project.stage) && project.type === 'TR' && (
                   <Button
                     size="sm"
                     variant="outline"

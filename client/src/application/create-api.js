@@ -121,6 +121,17 @@ export function createApi() {
     reportDemoNotReceived: (id) => projectRepo.reportDemoNotReceived(id),
     receiveOzalit: (id) => projectRepo.receiveOzalit(id),
     reportOzalitNotReceived: (id) => projectRepo.reportOzalitNotReceived(id),
+    // Matbaa "Başladım" gate + cancel + change-request (migration 048).
+    markDemoStarted: (id) => projectRepo.markDemoStarted(id),
+    markOzalitStarted: (id) => projectRepo.markOzalitStarted(id),
+    cancelDemoRequest: (id) => projectRepo.cancelDemoRequest(id),
+    cancelOzalitRequest: (id) => projectRepo.cancelOzalitRequest(id),
+    requestDemoChange: (id, note) => projectRepo.requestDemoChange(id, note),
+    requestOzalitChange: (id, note) => projectRepo.requestOzalitChange(id, note),
+    acceptDemoChangeRequest: (id) => projectRepo.acceptDemoChangeRequest(id),
+    declineDemoChangeRequest: (id) => projectRepo.declineDemoChangeRequest(id),
+    acceptOzalitChangeRequest: (id) => projectRepo.acceptOzalitChangeRequest(id),
+    declineOzalitChangeRequest: (id) => projectRepo.declineOzalitChangeRequest(id),
     prepareBaskiOnay: (id) => projectRepo.prepareBaskiOnay(id),
     rejectProject: (id, reason, revizeIds, target) => projectRepo.rejectProject(id, reason, revizeIds, target),
 

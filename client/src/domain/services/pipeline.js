@@ -240,6 +240,82 @@ export function canApproveOzalitNow(user, project) {
 }
 
 /**
+ * Matbaa "Başladım" gate + cancel + change-request (migration 048).
+ *
+ *   canMarkDemoStarted / canMarkOzalitStarted
+ *                     — printer marks physical work begun (flag only)
+ *   canCancelDemoRequest / canCancelOzalitRequest
+ *                     — leader/assigned designer undoes a mistaken request
+ *                       outright, back to tasarim, before the matbaa starts
+ *   canRequestDemoChange / canRequestOzalitChange
+ *                     — once started, ask the matbaa to accept a cancel/edit
+ *   canRespondDemoChange / canRespondOzalitChange
+ *                     — printer accepts/declines a pending change-request
+ */
+
+function isLeaderOrAssignedDesigner(user, project) {
+  if (!user) return false
+  if (user.role === 'team_leader') return true
+  return user.role === 'designer' && (project?.assignees ?? []).some((a) => a.id === user.id)
+}
+
+/** @param {{ role: string }} user @param {{ stage: string, demo_started?: boolean }} project */
+export function canMarkDemoStarted(user, project) {
+  if (user?.role !== 'printer' || !project) return false
+  if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') return false
+  return !project.demo_started
+}
+
+/** @param {{ role: string }} user @param {{ stage: string, ozalit_started?: boolean }} project */
+export function canMarkOzalitStarted(user, project) {
+  if (user?.role !== 'printer' || !project) return false
+  if (project.stage !== 'ozalit_teslim') return false
+  return !project.ozalit_started
+}
+
+/** @param {{ id: string, role: string }} user @param {object} project */
+export function canCancelDemoRequest(user, project) {
+  if (!project) return false
+  if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') return false
+  if (project.demo_started) return false
+  return isLeaderOrAssignedDesigner(user, project)
+}
+
+/** @param {{ id: string, role: string }} user @param {object} project */
+export function canCancelOzalitRequest(user, project) {
+  if (!project) return false
+  if (project.stage !== 'ozalit_teslim') return false
+  if (!project.ozalit_requested || project.ozalit_started) return false
+  return isLeaderOrAssignedDesigner(user, project)
+}
+
+/** @param {{ id: string, role: string }} user @param {object} project */
+export function canRequestDemoChange(user, project) {
+  if (!project) return false
+  if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') return false
+  if (!project.demo_started || project.demo_change_requested_at) return false
+  return isLeaderOrAssignedDesigner(user, project)
+}
+
+/** @param {{ id: string, role: string }} user @param {object} project */
+export function canRequestOzalitChange(user, project) {
+  if (!project) return false
+  if (project.stage !== 'ozalit_teslim') return false
+  if (!project.ozalit_requested || !project.ozalit_started || project.ozalit_change_requested_at) return false
+  return isLeaderOrAssignedDesigner(user, project)
+}
+
+/** @param {{ role: string }} user @param {{ demo_change_requested_at?: string|null }} project */
+export function canRespondDemoChange(user, project) {
+  return user?.role === 'printer' && !!project?.demo_change_requested_at
+}
+
+/** @param {{ role: string }} user @param {{ ozalit_change_requested_at?: string|null }} project */
+export function canRespondOzalitChange(user, project) {
+  return user?.role === 'printer' && !!project?.ozalit_change_requested_at
+}
+
+/**
  * Baskı Onay Formu — the final print approval, gated at `baski_onay`
  * (between ozalit_onay and baskida) for TR, and its mirror `cin_baski_onay`
  * (between cin_demo_onay and baskida, migration 047) for ÇİN. team_leader

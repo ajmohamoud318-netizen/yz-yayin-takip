@@ -554,7 +554,17 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const [receivedLocal, setReceivedLocal] = useState(false)
   const [confirmReceive, setConfirmReceive] = useState(false)
 
-  const readOnly = variant.isReadOnly({ mode, user })
+  // Matbaa "Başladım" gate (migration 048): once the printer has started
+  // physical work, the leader/assigned designer can no longer silently save
+  // an edit here — they have to go through "Değişiklik İste" in
+  // ProjectDetail.jsx and wait for the matbaa's accept. Scoped to
+  // mode==='view' only — the printer's own delivery-stamp edits
+  // (mode='advance'/'approve') and history snapshots are unaffected.
+  const lockedByStart = mode === 'view' && (
+    (variant.kind === 'demo' && !!project?.demo_started) ||
+    (variant.kind === 'ozalit' && !!project?.ozalit_started)
+  )
+  const readOnly = variant.isReadOnly({ mode, user }) || lockedByStart
   const printable = variant.canPrint({ user, project, readOnly })
 
   // Pull the authoritative spec from the server when the dialog opens. The
@@ -1314,6 +1324,21 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               <span>Önce formu gözden geçirip "Hazırla ve Onaya Gönder" ile onaya açın.</span>
             </div>
           )
+        )}
+
+        {/* Matbaa "Başladım" gate (migration 048) — tells the leader/designer
+            why this form suddenly stopped taking edits, and where to go
+            instead. Only shown to the audience who'd otherwise expect to
+            edit; the printer/team_leader-only variants already lock via
+            isReadOnly for role reasons and don't need this. */}
+        {lockedByStart && (user?.role === 'team_leader' || user?.role === 'designer') && (
+          <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+            <FileText className="h-4 w-4 shrink-0" />
+            <span>
+              Matbaa {variant.kind === 'demo' ? 'demo' : 'ozalit'} üzerinde çalışmaya başladı.
+              Değişiklik yapmak için "Değişiklik İste" düğmesini kullanın.
+            </span>
+          </div>
         )}
 
         <DialogFooter className="flex-wrap gap-2">

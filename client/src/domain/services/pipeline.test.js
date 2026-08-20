@@ -22,6 +22,14 @@ import {
   isOzalitApprover,
   ozalitLeaderApproved,
   canApproveOzalitNow,
+  canMarkDemoStarted,
+  canMarkOzalitStarted,
+  canCancelDemoRequest,
+  canCancelOzalitRequest,
+  canRequestDemoChange,
+  canRequestOzalitChange,
+  canRespondDemoChange,
+  canRespondOzalitChange,
   isDemoApprover,
   canRejectAtStage,
   canEditProductInfo,
@@ -245,6 +253,68 @@ describe('isDemoApprover (demo_onay / cin_demo_onay approval)', () => {
   it('denies designer / satis', () => {
     expect(isDemoApprover(DESIGNER)).toBe(false)
     expect(isDemoApprover({ role: 'satis' })).toBe(false)
+  })
+})
+
+describe('demo/ozalit "Başladım" gate + cancel + change-request (migration 048)', () => {
+  const AYSE = { id: 'u-ayse', role: 'team_leader' }
+  const AYLIN = { id: 'u-aylin', role: 'designer' }
+  const STRANGER = { id: 'u-nur', role: 'designer' }
+  const OKTAY = { id: 'u-oktay', role: 'printer' }
+  const assignees = [{ id: 'u-aylin' }]
+
+  it('canMarkDemoStarted/canMarkOzalitStarted: printer only, right stage, not already started', () => {
+    expect(canMarkDemoStarted(OKTAY, { stage: 'demo_teslim' })).toBe(true)
+    expect(canMarkDemoStarted(OKTAY, { stage: 'cin_demo_teslim' })).toBe(true)
+    expect(canMarkDemoStarted(OKTAY, { stage: 'demo_teslim', demo_started: true })).toBe(false)
+    expect(canMarkDemoStarted(AYSE, { stage: 'demo_teslim' })).toBe(false)
+    expect(canMarkDemoStarted(OKTAY, { stage: 'demo_onay' })).toBe(false)
+
+    expect(canMarkOzalitStarted(OKTAY, { stage: 'ozalit_teslim' })).toBe(true)
+    expect(canMarkOzalitStarted(OKTAY, { stage: 'ozalit_teslim', ozalit_started: true })).toBe(false)
+    expect(canMarkOzalitStarted(AYSE, { stage: 'ozalit_teslim' })).toBe(false)
+  })
+
+  it('canCancelDemoRequest: leader or assigned designer, before matbaa starts', () => {
+    const project = { stage: 'demo_teslim', demo_started: false, assignees }
+    expect(canCancelDemoRequest(AYSE, project)).toBe(true)
+    expect(canCancelDemoRequest(AYLIN, project)).toBe(true)
+    expect(canCancelDemoRequest(STRANGER, project)).toBe(false)
+    expect(canCancelDemoRequest(OKTAY, project)).toBe(false)
+    expect(canCancelDemoRequest(AYSE, { ...project, demo_started: true })).toBe(false)
+    expect(canCancelDemoRequest(AYSE, { ...project, stage: 'demo_onay' })).toBe(false)
+  })
+
+  it('canCancelOzalitRequest: additionally requires a pending ozalit_requested', () => {
+    const project = { stage: 'ozalit_teslim', ozalit_requested: true, ozalit_started: false, assignees }
+    expect(canCancelOzalitRequest(AYSE, project)).toBe(true)
+    expect(canCancelOzalitRequest(AYSE, { ...project, ozalit_requested: false })).toBe(false)
+    expect(canCancelOzalitRequest(AYSE, { ...project, ozalit_started: true })).toBe(false)
+  })
+
+  it('canRequestDemoChange: only once started, and not while a request is already pending', () => {
+    const project = { stage: 'demo_teslim', demo_started: true, assignees }
+    expect(canRequestDemoChange(AYSE, project)).toBe(true)
+    expect(canRequestDemoChange(AYLIN, project)).toBe(true)
+    expect(canRequestDemoChange(STRANGER, project)).toBe(false)
+    expect(canRequestDemoChange(AYSE, { ...project, demo_started: false })).toBe(false)
+    expect(canRequestDemoChange(AYSE, { ...project, demo_change_requested_at: '2026-01-01' })).toBe(false)
+  })
+
+  it('canRequestOzalitChange: mirrors the demo leg, plus ozalit_requested', () => {
+    const project = { stage: 'ozalit_teslim', ozalit_requested: true, ozalit_started: true, assignees }
+    expect(canRequestOzalitChange(AYSE, project)).toBe(true)
+    expect(canRequestOzalitChange(AYSE, { ...project, ozalit_started: false })).toBe(false)
+    expect(canRequestOzalitChange(AYSE, { ...project, ozalit_change_requested_at: '2026-01-01' })).toBe(false)
+  })
+
+  it('canRespondDemoChange/canRespondOzalitChange: printer only, only while a request is pending', () => {
+    expect(canRespondDemoChange(OKTAY, { demo_change_requested_at: '2026-01-01' })).toBe(true)
+    expect(canRespondDemoChange(OKTAY, { demo_change_requested_at: null })).toBe(false)
+    expect(canRespondDemoChange(AYSE, { demo_change_requested_at: '2026-01-01' })).toBe(false)
+
+    expect(canRespondOzalitChange(OKTAY, { ozalit_change_requested_at: '2026-01-01' })).toBe(true)
+    expect(canRespondOzalitChange(OKTAY, { ozalit_change_requested_at: null })).toBe(false)
   })
 })
 

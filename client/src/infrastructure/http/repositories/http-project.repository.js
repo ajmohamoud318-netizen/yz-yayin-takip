@@ -248,6 +248,64 @@ export function createHttpProjectRepository(userRepo) {
       cache.set(id, data)
       return data
     },
+    // Matbaa marks they've begun physical work on the demo/ozalit — flag
+    // only, no stage change. Once set, a cancel/edit needs the change-request
+    // accept/decline flow below (migration 048).
+    async markDemoStarted(id) {
+      const { data } = await httpClient.post(`/projects/${id}/demo-start`, {})
+      cache.set(id, data)
+      return data
+    },
+    async markOzalitStarted(id) {
+      const { data } = await httpClient.post(`/projects/${id}/ozalit-start`, {})
+      cache.set(id, data)
+      return data
+    },
+    // Cancel a mistaken demo/ozalit request outright — back to tasarim,
+    // without bumping demo_attempt/ozalit_attempt. Only valid before the
+    // matbaa has started.
+    async cancelDemoRequest(id) {
+      const { data } = await httpClient.post(`/projects/${id}/demo-cancel`, {})
+      cache.set(id, data)
+      return data
+    },
+    async cancelOzalitRequest(id) {
+      const { data } = await httpClient.post(`/projects/${id}/ozalit-cancel`, {})
+      cache.set(id, data)
+      return data
+    },
+    // Ask the matbaa to accept a cancel/edit once they've started work.
+    async requestDemoChange(id, note) {
+      const { data } = await httpClient.post(`/projects/${id}/demo-change-request`, { note })
+      cache.set(id, data)
+      return data
+    },
+    async requestOzalitChange(id, note) {
+      const { data } = await httpClient.post(`/projects/${id}/ozalit-change-request`, { note })
+      cache.set(id, data)
+      return data
+    },
+    // Matbaa's answer to a pending change-request.
+    async acceptDemoChangeRequest(id) {
+      const { data } = await httpClient.post(`/projects/${id}/demo-change-accept`, {})
+      cache.set(id, data)
+      return data
+    },
+    async declineDemoChangeRequest(id) {
+      const { data } = await httpClient.post(`/projects/${id}/demo-change-decline`, {})
+      cache.set(id, data)
+      return data
+    },
+    async acceptOzalitChangeRequest(id) {
+      const { data } = await httpClient.post(`/projects/${id}/ozalit-change-accept`, {})
+      cache.set(id, data)
+      return data
+    },
+    async declineOzalitChangeRequest(id) {
+      const { data } = await httpClient.post(`/projects/${id}/ozalit-change-decline`, {})
+      cache.set(id, data)
+      return data
+    },
     // Mark the Baskı Onay Formu "hazırlandı" — the dual-approval gate: any
     // team leader may prepare it, but only notifies OTHER team leaders that
     // approval is now needed (see computeApproval's baski_onay branch).
