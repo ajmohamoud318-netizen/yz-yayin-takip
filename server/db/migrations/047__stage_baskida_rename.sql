@@ -20,6 +20,12 @@
 -- (STAGE_LABELS keeps both old keys for exactly this reason) — no backfill
 -- needed there beyond the one audit note below.
 
+-- Drop the constraint before touching data: the old constraint doesn't allow
+-- 'baskida' and the new one (added below, after the rename) doesn't allow
+-- 'uretime_hazir'/'uretimde' — no single CHECK covers both the before- and
+-- after-rename values, so the table goes briefly unconstrained in between.
+ALTER TABLE projects DROP CONSTRAINT projects_stage_check;
+
 INSERT INTO stage_history (project_id, from_stage, to_stage, action, event, note)
 SELECT id, stage, 'baskida', 'system', 'stage_rename',
        'Aşama yeniden adlandırıldı: Üretime Hazır / Üretimde → Baskıda (migration 047)'
@@ -28,7 +34,6 @@ FROM projects WHERE stage IN ('uretime_hazir', 'uretimde');
 UPDATE projects SET stage = 'baskida', updated_at = NOW()
 WHERE stage IN ('uretime_hazir', 'uretimde');
 
-ALTER TABLE projects DROP CONSTRAINT projects_stage_check;
 ALTER TABLE projects ADD CONSTRAINT projects_stage_check CHECK (stage IN (
   'tasarim',
   'demo_teslim','demo_onay',
