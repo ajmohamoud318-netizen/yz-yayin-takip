@@ -96,8 +96,11 @@ async function saveSubtaskFlags(orderId, subtasks, originalJson) {
  *                  (mid-flow state change; the dialog still closes itself,
  *                  this just keeps the caller's list row in sync — see
  *                  handleMatbaaReceive)
+ *   initialReject – open straight into the reject panel (skipping the
+ *                  approve-first click) — used by the list's own "Reddet"
+ *                  button. Ignored when the step offers no reject route.
  */
-export default function TalepSignDialog({ order, open, onOpenChange, onSigned, onUpdated }) {
+export default function TalepSignDialog({ order, open, onOpenChange, onSigned, onUpdated, initialReject = false }) {
   const { user } = useAuth()
   const celebrate = useDesignerCelebration()
   const [notes, setNotes] = useState('')
@@ -193,7 +196,8 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     // invalid route.
     const targets = ORDER_REJECT_TARGETS[order.status] ?? {}
     setRejectRoute(targets.matbaa ? 'matbaa' : Object.keys(targets)[0])
-  }, [open, order?.id, canReject])
+    if (initialReject) setShowReject(true)
+  }, [open, order?.id, canReject, initialReject])
 
   // Load designers + default selection (the project's current designers) when
   // the team leader is on the assign step.
@@ -431,7 +435,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   // rejecting the ozalit only makes sense once it's actually been seen. So
   // skip the full approval form (cart summary, pipeline, signature, notes —
   // all irrelevant here) and ask the one question that matters.
-  if (canActOnMatbaaOnay && !matbaaReceived && !showReject) {
+  if (canActOnMatbaaOnay && !matbaaReceived && !showReject && !initialReject) {
     return (
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent className="max-w-sm">
@@ -954,11 +958,11 @@ export function TalepHistoryViewer({ order, open, onOpenChange, initialStep = nu
             <ShoppingCart className="h-4 w-4" />
             Baskı Formu — {bookTitle}
           </DialogTitle>
-          <DialogDescription>
-            {viewStep
-              ? 'Bu aşamada imzalanan form.'
-              : 'Aşamaları görüntüleyin; her aşamanın imzalı formunu açın.'}
-          </DialogDescription>
+          {!viewStep && (
+            <DialogDescription>
+              Aşamaları görüntüleyin; her aşamanın imzalı formunu açın.
+            </DialogDescription>
+          )}
         </DialogHeader>
 
         {viewStep ? (
@@ -975,14 +979,14 @@ export function TalepHistoryViewer({ order, open, onOpenChange, initialStep = nu
             {viewStep.step === 'siparis_baski_onay' ? (
               <SiparisBaskiOnayFormDialog order={order} mode="view" inline />
             ) : (viewStep.step === 'tasarimci_onay' || viewStep.step === 'matbaa_onay' || viewStep.step === 'ekran_onay') ? (
-              <OzalitStepSheet order={order} step={viewStep.step} footer={<StepSignatureFooter step={viewStep.step} order={order} />} />
+              <OzalitStepSheet order={order} footer={<StepSignatureFooter order={order} />} />
             ) : (
               <OrderSheet
                 order={order}
                 tableRows={tableRows}
                 dateStr={dateStr}
                 timeStr={timeStr}
-                footer={<StepSignatureFooter step={viewStep.step} order={order} />}
+                footer={<StepSignatureFooter order={order} />}
               />
             )}
           </div>
@@ -1074,7 +1078,7 @@ function OrderSheet({ order, tableRows, dateStr, timeStr, footer }) {
 /* Ozalit-style sheet for the tasarimci_onay and matbaa_onay steps.
    Shows the product specs from the catalog but replaces each component's ADET
    field value with the quantity Esra requested in the sipariş. */
-function OzalitStepSheet({ order, step, footer }) {
+function OzalitStepSheet({ order, footer }) {
   const comps = loadProductComps(order.project_id)
 
   // Map component name → Esra's ordered quantity for that component
@@ -1096,12 +1100,6 @@ function OzalitStepSheet({ order, step, footer }) {
     ? new Intl.DateTimeFormat('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(created)
     : '—'
 
-  const stepLabel = step === 'tasarimci_onay'
-    ? 'Tasarımcı → Matbaa'
-    : step === 'ekran_onay'
-      ? 'Ekran Onayı'
-      : 'Matbaa Teslimi'
-
   return (
     <div className="overflow-hidden rounded-lg border bg-white">
       {/* Letterhead */}
@@ -1113,7 +1111,6 @@ function OzalitStepSheet({ order, step, footer }) {
         <h2 className="mt-3 text-xl font-bold uppercase tracking-[0.18em] text-foreground">
           Ozalit Üretim Formu
         </h2>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">{stepLabel}</p>
       </div>
 
       {/* Meta */}
@@ -1186,13 +1183,12 @@ function OzalitStepSheet({ order, step, footer }) {
   )
 }
 
-/* Per-step signature block. Each step shows different signatories:
-   pending       → Esra (sipariş veren) only
-   goruldu       → Ekip Lideri + Esra
-   tasarimci_onay→ Ekip Lideri + Tasarımcı
-   matbaa_onay   → Matbaa Yetkilisi only
-   onaylandi     → Ekip Lideri + Tasarımcı + Matbaa Yetkilisi (all except Esra) */
-function StepSignatureFooter({ step, order }) {
+/* Signature block — mirrors the main pipeline's ozalit form (Tasarımcı /
+   Matbaa Yetkilisi / Ekip Lideri, see SpecFormDialog's SigBox), plus Satış
+   since a sipariş originates with a sales request the main pipeline never
+   has. Always shows all four roles rather than a different subset per step,
+   so it reads as one form whose lines fill in as each party signs. */
+function StepSignatureFooter({ order }) {
   const history = order?.order_history ?? []
   // Latest NON-reject signer for a step: a rejection reuses the target step's
   // name, so filtering reject entries keeps the rejecter off the approver's line,
@@ -1218,17 +1214,12 @@ function StepSignatureFooter({ step, order }) {
   const ekranOnaySigner = signer('ekran_onay')
   const leaderSigner = leaderApproval?.signed_by_name || ekranOnaySigner || signer('onaylandi') || gorulduSigner
 
-  const configs = {
-    pending:             [{ role: 'Talep Eden', name: esra }],
-    goruldu:             [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Talep Eden', name: esra }],
-    tasarimci_onay:      [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Tasarımcı', name: tasarimciSigner }],
-    ekran_onay:          [{ role: 'Ekip Lideri', name: ekranOnaySigner }],
-    matbaa_onay:         [{ role: 'Matbaa Yetkilisi', name: matbaaSigner }],
-    siparis_baski_onay:  [{ role: 'Ekip Lideri', name: leaderSigner }],
-    onaylandi:           [{ role: 'Ekip Lideri', name: leaderSigner }, { role: 'Tasarımcı', name: tasarimciSigner }, { role: 'Matbaa Yetkilisi', name: matbaaSigner }],
-  }
-
-  const cells = configs[step] ?? []
+  const cells = [
+    { role: 'Satış', name: esra },
+    { role: 'Ekip Lideri', name: leaderSigner },
+    { role: 'Tasarımcı', name: tasarimciSigner },
+    { role: 'Matbaa Yetkilisi', name: matbaaSigner },
+  ]
   return (
     <div
       className="divide-x border-t"
@@ -1632,15 +1623,14 @@ function openOrderPrintWindow(order, stepFilter) {
   const leaderSigner = leaderApproval?.signed_by_name || ekranOnaySigner || signerOf('onaylandi') || gorulduSigner
 
   const activeStep = stepFilter ?? 'onaylandi'
-  const sigCells = {
-    pending:             [{ role: 'Talep Eden', name: esra }],
-    goruldu:             [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Talep Eden', name: esra }],
-    tasarimci_onay:      [{ role: 'Ekip Lideri', name: gorulduSigner }, { role: 'Tasarımcı', name: tasarimciSigner }],
-    ekran_onay:          [{ role: 'Ekip Lideri', name: ekranOnaySigner }],
-    matbaa_onay:         [{ role: 'Matbaa Yetkilisi', name: matbaaSigner }],
-    siparis_baski_onay:  [{ role: 'Ekip Lideri', name: leaderSigner }],
-    onaylandi:           [{ role: 'Ekip Lideri', name: leaderSigner }, { role: 'Tasarımcı', name: tasarimciSigner }, { role: 'Matbaa Yetkilisi', name: matbaaSigner }],
-  }[activeStep] ?? []
+  // Mirrors StepSignatureFooter above: same four roles every time (Satış +
+  // the team), rather than a different subset per step.
+  const sigCells = [
+    { role: 'Satış', name: esra },
+    { role: 'Ekip Lideri', name: leaderSigner },
+    { role: 'Tasarımcı', name: tasarimciSigner },
+    { role: 'Matbaa Yetkilisi', name: matbaaSigner },
+  ]
 
   const sigHtml = sigCells.map((c) =>
     `<div class="cell"><div class="cap">${escapeHtml(c.role)}</div><div class="name">${escapeHtml(c.name)}</div></div>`
@@ -1652,8 +1642,7 @@ function openOrderPrintWindow(order, stepFilter) {
     .head{text-align:center;margin-bottom:14px}
     .head img{height:46px;width:auto;object-fit:contain}
     .head .co{font-size:8.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.18em;color:#555;margin-top:4px}
-    .doc-title{text-align:center;font-size:18pt;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin:10px 0 4px}
-    .doc-sub{text-align:center;font-size:9pt;color:#555;margin-bottom:12px}
+    .doc-title{text-align:center;font-size:18pt;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin:10px 0 12px}
     .meta{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;font-size:10pt}
     .meta .label{color:#555;font-size:8.5pt}
     .meta .right{text-align:right;line-height:1.6}
@@ -1691,11 +1680,6 @@ function openOrderPrintWindow(order, stepFilter) {
     // below it), and a single signature stood in for parças that may print
     // and ship on different schedules.
     const comps = loadProductComps(order.project_id)
-    const stepSubtitle = activeStep === 'tasarimci_onay'
-      ? 'Tasarımcı → Matbaa'
-      : activeStep === 'ekran_onay'
-        ? 'Ekran Onayı'
-        : 'Matbaa Teslimi'
 
     // Map component name → Esra's ordered quantity for print
     const printOrderItems = normalizeItems(order.items, order.quantity)
@@ -1714,7 +1698,6 @@ function openOrderPrintWindow(order, stepFilter) {
       <div class="co">Yükselen Zeka Yayıncılık</div>
     </div>
     <div class="doc-title">Ozalit Üretim Formu</div>
-    <div class="doc-sub">${escapeHtml(stepSubtitle)}</div>
     <div class="meta">
       <div><div class="label">İşin Adı</div><strong>${escapeHtml(title)}</strong></div>
       <div class="right">

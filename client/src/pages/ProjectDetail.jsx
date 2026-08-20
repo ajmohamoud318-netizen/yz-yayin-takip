@@ -1080,7 +1080,7 @@ export default function ProjectDetail() {
                 {isLeader && (
                   <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
                     <Pencil className="h-4 w-4" />
-                    Düzenleyin
+                    Projeyi Düzenleyin
                   </Button>
                 )}
                 {/* Demo formu görüntüle — demo gönderildikten sonra. Also open to
@@ -1175,7 +1175,7 @@ export default function ProjectDetail() {
                     the matbaa's OK (migration 048). */}
                 {canMarkDemoStarted(user, project) && (
                   <Button
-                    size="sm" variant="outline"
+                    size="sm"
                     onClick={() => setTeslimConfirm('demo-start')}
                     disabled={startingWork}
                   >
@@ -1185,7 +1185,7 @@ export default function ProjectDetail() {
                 )}
                 {canMarkOzalitStarted(user, project) && (
                   <Button
-                    size="sm" variant="outline"
+                    size="sm"
                     onClick={() => setTeslimConfirm('ozalit-start')}
                     disabled={startingWork}
                   >
@@ -1322,13 +1322,13 @@ export default function ProjectDetail() {
                 {isOzalitOnayStage && project.ozalit_received && (
                   <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
                     <CheckCircle2 className="h-4 w-4" />
-                    Teslim alındı{project.ozalit_received_by ? `, ${project.ozalit_received_by}` : ''}
+                    {project.ozalit_received_by ? `${project.ozalit_received_by} ozaliti teslim aldı` : 'Ozalit teslim alındı'}
                   </span>
                 )}
                 {isDemoOnayStage && project.demo_received && (
                   <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700">
                     <CheckCircle2 className="h-4 w-4" />
-                    Teslim alındı{project.demo_received_by ? `, ${project.demo_received_by}` : ''}
+                    {project.demo_received_by ? `${project.demo_received_by} demoyu teslim aldı` : 'Demo teslim alındı'}
                   </span>
                 )}
                 {actions.includes('approve') && (

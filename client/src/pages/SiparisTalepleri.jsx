@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ShoppingCart, Package, Eye, CheckCircle2, FileText } from 'lucide-react'
+import { ShoppingCart, Package, Eye, CheckCircle2, FileText, X } from 'lucide-react'
 import { toast } from 'sonner'
 
-import api, { ORDER_STEP_LABELS, ORDER_LEADER_ACTION_STEPS } from '@/api'
+import api, { ORDER_STEP_LABELS, ORDER_LEADER_ACTION_STEPS, ORDER_REJECT_TO } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -34,6 +34,9 @@ export default function SiparisTalepleri() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('action')
   const [signOrder, setSignOrder] = useState(null)
+  // Whether the sign dialog was opened via the card's "Reddet" shortcut
+  // (opens straight into the reject panel) vs. "Onaylayın" (normal approve view).
+  const [signReject, setSignReject] = useState(false)
   const [viewOrder, setViewOrder] = useState(null)
   const [ozalitProject, setOzalitProject] = useState(null)
   const [baskiOnayOrder, setBaskiOnayOrder] = useState(null)
@@ -55,6 +58,7 @@ export default function SiparisTalepleri() {
   function handleSigned(updated) {
     setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
     setSignOrder(null)
+    setSignReject(false)
   }
 
   // siparis_baski_onay approve closes the form dialog itself and reports
@@ -123,7 +127,8 @@ export default function SiparisTalepleri() {
               <RequestCard
                 key={r.id}
                 request={r}
-                onSign={() => setSignOrder(r)}
+                onSign={() => { setSignReject(false); setSignOrder(r) }}
+                onReject={() => { setSignReject(true); setSignOrder(r) }}
                 onView={() => setViewOrder(r)}
                 onOzalit={() => openOzalit(r)}
                 onBaskiOnay={() => setBaskiOnayOrder(r)}
@@ -136,9 +141,10 @@ export default function SiparisTalepleri() {
       <TalepSignDialog
         order={signOrder}
         open={!!signOrder}
-        onOpenChange={(v) => !v && setSignOrder(null)}
+        onOpenChange={(v) => { if (!v) { setSignOrder(null); setSignReject(false) } }}
         onSigned={handleSigned}
         onUpdated={handleUpdated}
+        initialReject={signReject}
       />
       <TalepHistoryViewer
         order={viewOrder}
@@ -167,12 +173,16 @@ function normalizeItems(items, quantity) {
   return items
 }
 
-function RequestCard({ request, onSign, onView, onOzalit, onBaskiOnay }) {
+function RequestCard({ request, onSign, onReject, onView, onOzalit, onBaskiOnay }) {
   const navigate = useNavigate()
   const statusBadge = STATUS_BADGE[request.status] ?? ''
   const statusLabel = ORDER_STEP_LABELS[request.status] ?? request.status
   const items = normalizeItems(request.items, request.quantity)
   const needsLeaderAction = LEADER_ACTION_STEPS.has(request.status)
+  // Only matbaa_onay / ekran_onay offer a reject route (see ORDER_REJECT_TO) —
+  // show the quick "Reddet" shortcut only there; other leader-action steps
+  // (pending, siparis_baski_onay) keep the Ozalit Formu quick-view instead.
+  const canRejectHere = !!ORDER_REJECT_TO[request.status]
   // siparis_baski_onay has no bare "click to advance" action — it needs the
   // print-spec form filled in first, so it opens a different dialog
   // (SiparisBaskiOnayFormDialog) than every other leader-action step.
@@ -248,10 +258,22 @@ function RequestCard({ request, onSign, onView, onOzalit, onBaskiOnay }) {
                 <Eye className="h-3.5 w-3.5" />
                 Talep
               </Button>
-              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onOzalit() }}>
-                <FileText className="h-3.5 w-3.5" />
-                Ozalit Formu
-              </Button>
+              {canRejectHere ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-destructive/30 text-destructive hover:bg-destructive/5 hover:text-destructive"
+                  onClick={(e) => { e.stopPropagation(); onReject() }}
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Reddet
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onOzalit() }}>
+                  <FileText className="h-3.5 w-3.5" />
+                  Ozalit Formu
+                </Button>
+              )}
               {needsLeaderAction && (
                 <Button
                   size="sm"

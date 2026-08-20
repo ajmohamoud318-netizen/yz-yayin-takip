@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ThumbsUp, ThumbsDown, Inbox, Send, ShoppingCart, Eye } from 'lucide-react'
+import { toast } from 'sonner'
+import { ThumbsUp, ThumbsDown, Inbox, Send, ShoppingCart, Eye, CheckCircle2 } from 'lucide-react'
 
 import api, { ORDER_STEP_LABELS } from '@/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -14,6 +15,7 @@ import ApprovalDialog from '@/components/ApprovalDialog'
 import DemoFormDialog from '@/components/DemoFormDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import BaskiOnayFormDialog from '@/components/BaskiOnayFormDialog'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
 import { canRejectAtStage, isDemoApprover, isOzalitApprover, ozalitLeaderApproved } from '@/domain'
@@ -25,12 +27,17 @@ import { formatTargetDate, formatNumber } from '@/lib/utils'
  */
 export default function Approvals({ tab = 'demo' }) {
   const { user } = useAuth()
-  const { projects, loading } = useProjects()
+  const { projects, loading, updateOne } = useProjects()
   const navigate = useNavigate()
   const [dialog, setDialog] = useState(null)
   const [demoForm, setDemoForm] = useState(null)
   const [ozalitForm, setOzalitForm] = useState(null)
   const [baskiOnayForm, setBaskiOnayForm] = useState(null)
+  // Matbaa "İşlemi Başlatın" — mirrors ProjectDetail's start-work gate so the
+  // list and detail views enforce the same rule: Teslim Et stays hidden until
+  // the matbaa has flagged the work started.
+  const [startConfirm, setStartConfirm] = useState(null)
+  const [startingWork, setStartingWork] = useState(false)
 
   // Sipariş queue (printer's sign-off step: tasarimci_onay → matbaa_onay)
   const [orders, setOrders] = useState([])
@@ -98,6 +105,23 @@ export default function Approvals({ tab = 'demo' }) {
   function handleOrderSigned(updated) {
     setOrders((prev) => prev.filter((r) => r.id !== updated.id))
     setSignOrder(null)
+  }
+
+  async function handleStartWork() {
+    if (!startConfirm) return
+    setStartingWork(true)
+    try {
+      const updated = startConfirm.sub === 'demo'
+        ? await api.markDemoStarted(startConfirm.project.id)
+        : await api.markOzalitStarted(startConfirm.project.id)
+      updateOne(updated)
+      toast.success(startConfirm.sub === 'demo' ? 'Demoya başladığınız işaretlendi.' : 'Ozalite başladığınız işaretlendi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setStartingWork(false)
+      setStartConfirm(null)
+    }
   }
 
   // Designers only have the ozalit queue — force them onto it. Baskı Onayı
@@ -219,17 +243,31 @@ export default function Approvals({ tab = 'demo' }) {
               >
                 {isPrinter ? (
                   <>
-                    <Button
-                      size="sm"
-                      className="w-full sm:flex-1"
-                      onClick={() => {
-                        if (sub === 'demo') setDemoForm({ project: p, mode: 'advance' })
-                        else setOzalitForm({ project: p, mode: 'advance' })
-                      }}
-                    >
-                      <Send className="h-4 w-4" />
-                      {sub === 'demo' ? "Demo'yu Teslim Edin" : 'Ozaliti Teslim Edin'}
-                    </Button>
+                    {/* Teslim Et stays hidden until the matbaa has pressed
+                        İşlemi Başlat — same rule as the detail page
+                        (canMarkDemoStarted/canMarkOzalitStarted). */}
+                    {(sub === 'demo' ? p.demo_started : p.ozalit_started) ? (
+                      <Button
+                        size="sm"
+                        className="w-full sm:flex-1"
+                        onClick={() => {
+                          if (sub === 'demo') setDemoForm({ project: p, mode: 'advance' })
+                          else setOzalitForm({ project: p, mode: 'advance' })
+                        }}
+                      >
+                        <Send className="h-4 w-4" />
+                        {sub === 'demo' ? "Demo'yu Teslim Edin" : 'Ozaliti Teslim Edin'}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className="w-full sm:flex-1"
+                        onClick={() => setStartConfirm({ project: p, sub })}
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        İşlemi Başlatın
+                      </Button>
+                    )}
                     <Button size="sm" variant="ghost" className="w-full sm:flex-1" onClick={() => navigate(`/projects/${p.id}`)}>
                       Detay
                     </Button>
@@ -393,6 +431,16 @@ export default function Approvals({ tab = 'demo' }) {
         project={baskiOnayForm?.project}
         mode={baskiOnayForm?.mode ?? 'approve'}
         onDone={onDone}
+      />
+      <ConfirmDialog
+        open={!!startConfirm}
+        onOpenChange={(v) => !v && setStartConfirm(null)}
+        title={startConfirm?.sub === 'demo' ? 'Demoya başladınız mı?' : 'Ozalite başladınız mı?'}
+        description="Bundan sonra ekip lideri veya tasarımcının iptal ya da düzenleme yapması, sizin onayınızı gerektiren bir değişiklik talebine dönüşür."
+        confirmLabel="İşlemi Başlatın"
+        variant="success"
+        busy={startingWork}
+        onConfirm={handleStartWork}
       />
     </>
   )
