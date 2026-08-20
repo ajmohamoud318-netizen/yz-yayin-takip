@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ShoppingCart, Package, Eye, Inbox, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -136,6 +137,7 @@ function normalizeItems(items, quantity) {
 
 function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const items = normalizeItems(order.items, order.quantity)
   const date = order.created_at
     ? new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(order.created_at))
@@ -154,7 +156,18 @@ function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
   const canAct = !isMatbaaOnay || !order.matbaa_received || canApproveMatbaaOnayNow(user, order)
 
   return (
-    <Card className="border-amber-200">
+    <Card
+      tabIndex={0}
+      aria-label={`${order.project_title} – proje detaylarını aç`}
+      className="cursor-pointer border-amber-200 transition-colors hover:border-amber-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={() => navigate(`/projects/${order.project_id}`)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          navigate(`/projects/${order.project_id}`)
+        }
+      }}
+    >
       <CardContent className="p-4 space-y-3">
         <div className="flex flex-wrap items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50">
@@ -204,16 +217,16 @@ function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
               {isMatbaaOnay ? 'Matbaa Onayı Bekliyor' : 'Onay Bekliyor'}
             </Badge>
             <div className="flex flex-wrap justify-end gap-1.5">
-              <Button size="sm" variant="outline" onClick={onView}>
+              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onView() }}>
                 <Eye className="h-3.5 w-3.5" />
                 Talep
               </Button>
-              <Button size="sm" variant="outline" onClick={onOzalit}>
+              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onOzalit() }}>
                 <FileText className="h-3.5 w-3.5" />
                 Ozalit Formu
               </Button>
               {canAct ? (
-                <Button size="sm" onClick={onSign}>
+                <Button size="sm" onClick={(e) => { e.stopPropagation(); onSign() }}>
                   {signLabel}
                 </Button>
               ) : (

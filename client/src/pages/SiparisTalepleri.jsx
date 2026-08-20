@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ShoppingCart, Package, Eye, CheckCircle2, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -167,6 +168,7 @@ function normalizeItems(items, quantity) {
 }
 
 function RequestCard({ request, onSign, onView, onOzalit, onBaskiOnay }) {
+  const navigate = useNavigate()
   const statusBadge = STATUS_BADGE[request.status] ?? ''
   const statusLabel = ORDER_STEP_LABELS[request.status] ?? request.status
   const items = normalizeItems(request.items, request.quantity)
@@ -189,7 +191,21 @@ function RequestCard({ request, onSign, onView, onOzalit, onBaskiOnay }) {
       : 'Onayla'
 
   return (
-    <Card className={cn(needsLeaderAction && 'border-amber-200')}>
+    <Card
+      tabIndex={0}
+      aria-label={`${request.project_title} – proje detaylarını aç`}
+      className={cn(
+        'cursor-pointer transition-colors hover:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        needsLeaderAction && 'border-amber-200',
+      )}
+      onClick={() => navigate(`/projects/${request.project_id}`)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          navigate(`/projects/${request.project_id}`)
+        }
+      }}
+    >
       <CardContent className="p-4">
         <div className="flex flex-wrap items-start gap-3">
           <div className={cn(
@@ -228,11 +244,11 @@ function RequestCard({ request, onSign, onView, onOzalit, onBaskiOnay }) {
               {statusLabel}
             </Badge>
             <div className="flex flex-wrap justify-end gap-1.5">
-              <Button size="sm" variant="outline" onClick={onView}>
+              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onView() }}>
                 <Eye className="h-3.5 w-3.5" />
                 Talep
               </Button>
-              <Button size="sm" variant="outline" onClick={onOzalit}>
+              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onOzalit() }}>
                 <FileText className="h-3.5 w-3.5" />
                 Ozalit Formu
               </Button>
@@ -241,7 +257,7 @@ function RequestCard({ request, onSign, onView, onOzalit, onBaskiOnay }) {
                   size="sm"
                   variant="default"
                   className={cn(request.status === 'pending' && 'bg-amber-500 text-white shadow-sm hover:bg-amber-600')}
-                  onClick={isBaskiOnayStep ? onBaskiOnay : onSign}
+                  onClick={(e) => { e.stopPropagation(); (isBaskiOnayStep ? onBaskiOnay : onSign)() }}
                 >
                   {actionLabel}
                 </Button>
