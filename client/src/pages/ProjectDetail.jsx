@@ -48,7 +48,8 @@ import OzalitFormDialog from '@/components/OzalitFormDialog'
 import BaskiOnayFormDialog from '@/components/BaskiOnayFormDialog'
 import DemoFormDialog from '@/components/DemoFormDialog'
 import ProjectHistory from '@/components/ProjectHistory'
-import { TalepHistoryViewer } from '@/components/TalepSignDialog'
+import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
+import SiparisBaskiOnayFormDialog from '@/components/SiparisBaskiOnayFormDialog'
 import { cn, formatDateTr, initials } from '@/lib/utils'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { isSubtaskDone, countsTowardProgress } from '@/domain/services/progress'
@@ -59,6 +60,7 @@ import {
   canRequestDemoChange, canRequestOzalitChange,
   canRespondDemoChange, canRespondOzalitChange,
 } from '@/domain'
+import { canActOnOrder } from '@/domain/constants/orders'
 
 // "Open" mirrors useOpenOrdersByProject/findOpenByProject — not yet at a
 // terminal step. A project can have more than one of these in flight at
@@ -79,6 +81,21 @@ const DISPLAY_ORDER_STEP_LABELS = {
   satista: 'Satışta',
 }
 
+// Mirrors the per-page action labels in MyProjects/SiparisOnay/SiparisTalepleri
+// (each only ever renders one of these for its own role's queue) — collected
+// here since this page shows a project's orders to whichever role opens it.
+const ORDER_ACTION_LABELS = {
+  pending: 'Tasarımcıya Aktar',
+  goruldu: 'İncele ve Gönder',
+  tasarimci_onay: 'Teslim Et',
+  ekran_onay: 'Onayla',
+  siparis_baski_onay: 'Baskı Onay Formu',
+}
+function orderActionLabel(order) {
+  if (order.status === 'matbaa_onay') return order.matbaa_received ? 'Onayla' : 'Teslim Al'
+  return ORDER_ACTION_LABELS[order.status] ?? 'Onayla'
+}
+
 /**
  * Compact stepper for a single sipariş order's own steps (Talep →
  * Satışta) — separate from the project's main design/production pipeline
@@ -89,7 +106,7 @@ const DISPLAY_ORDER_STEP_LABELS = {
  * (Matbaa raised a teslim request Satış hasn't confirmed yet) advance the
  * two derived final steps as those real events actually happen.
  */
-function OrderProgressStepper({ order, sold, handoverPending, onOpen }) {
+function OrderProgressStepper({ order, sold, handoverPending, onOpen, canAct, onAct }) {
   // The pipeline branches at goruldu (tasarimci_onay vs ekran_onay) — each
   // order's own displayed sequence comes from the path it actually took,
   // not a fixed list. See orderStepPath in domain/constants/orders.js.
@@ -100,54 +117,73 @@ function OrderProgressStepper({ order, sold, handoverPending, onOpen }) {
       ? displaySteps.length - 2
       : Math.max(0, displaySteps.indexOf(order.status))
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="w-full rounded-lg border bg-background px-3 py-2.5 text-left transition hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    <div
+      className={cn(
+        'w-full rounded-lg border bg-background px-3 py-2.5 transition',
+        canAct && 'border-amber-300 bg-amber-50/40',
+      )}
     >
-      <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <Package className="h-3.5 w-3.5" />
-        Baskı Talebi
-      </div>
-      <ol className="flex items-center">
-        {displaySteps.map((step, i) => {
-          const done = i < currentIndex
-          const current = i === currentIndex
-          return (
-            <li key={step} className="flex flex-1 items-center last:flex-none">
-              <div className="flex flex-col items-center">
-                <span
-                  className={cn(
-                    'flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold',
-                    done
-                      ? 'bg-brand-500 text-white'
-                      : current
-                        ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500'
-                        : 'bg-muted text-muted-foreground',
-                  )}
-                >
-                  {done ? '✓' : i + 1}
-                </span>
-                <span
-                  className={cn(
-                    'mt-1 max-w-[60px] text-center text-[9px] leading-tight',
-                    current ? 'font-semibold text-brand-700' : 'text-muted-foreground',
-                  )}
-                >
-                  {DISPLAY_ORDER_STEP_LABELS[step]}
-                </span>
-              </div>
-              {i < displaySteps.length - 1 && (
-                <span
-                  aria-hidden="true"
-                  className={cn('mx-1.5 mb-4 h-0.5 flex-1', i < currentIndex ? 'bg-brand-500' : 'bg-muted')}
-                />
-              )}
-            </li>
-          )
-        })}
-      </ol>
-    </button>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <Package className="h-3.5 w-3.5" />
+          Baskı Talebi
+        </div>
+        <ol className="flex items-center">
+          {displaySteps.map((step, i) => {
+            const done = i < currentIndex
+            const current = i === currentIndex
+            return (
+              <li key={step} className="flex flex-1 items-center last:flex-none">
+                <div className="flex flex-col items-center">
+                  <span
+                    className={cn(
+                      'flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold',
+                      done
+                        ? 'bg-brand-500 text-white'
+                        : current
+                          ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500'
+                          : 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    {done ? '✓' : i + 1}
+                  </span>
+                  <span
+                    className={cn(
+                      'mt-1 max-w-[60px] text-center text-[9px] leading-tight',
+                      current ? 'font-semibold text-brand-700' : 'text-muted-foreground',
+                    )}
+                  >
+                    {DISPLAY_ORDER_STEP_LABELS[step]}
+                  </span>
+                </div>
+                {i < displaySteps.length - 1 && (
+                  <span
+                    aria-hidden="true"
+                    className={cn('mx-1.5 mb-4 h-0.5 flex-1', i < currentIndex ? 'bg-brand-500' : 'bg-muted')}
+                  />
+                )}
+              </li>
+            )
+          })}
+        </ol>
+      </button>
+      {canAct && (
+        <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2">
+          <span className="text-[11px] font-medium text-amber-700">Aksiyon bekliyor</span>
+          <Button
+            size="sm"
+            className="h-7 px-2.5"
+            onClick={(e) => { e.stopPropagation(); onAct() }}
+          >
+            {orderActionLabel(order)}
+          </Button>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -202,6 +238,12 @@ export default function ProjectDetail() {
   const [projectOrders, setProjectOrders] = useState([])
   const [projectHandover, setProjectHandover] = useState(null)
   const [orderFormViewer, setOrderFormViewer] = useState(null)
+  const [signOrder, setSignOrder] = useState(null)
+  // Distinct from baskiOnayFormOpen above — that's the final production-gate
+  // "Baskı Onayı" (BaskiOnayFormDialog), unrelated to a sipariş order's own
+  // "Baskı Onayı" step (siparis_baski_onay), which needs its own form dialog
+  // (SiparisBaskiOnayFormDialog) before it can advance — see canActOnOrder.
+  const [siparisBaskiOnayOrder, setSiparisBaskiOnayOrder] = useState(null)
 
   // Orders worth showing their own tracker for: any still-active one, plus
   // (until the project actually sells) the single most recently approved
@@ -222,6 +264,36 @@ export default function ProjectDetail() {
       .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0]
     return lastApproved ? [...active, lastApproved] : active
   }, [projectOrders, sold])
+
+  // isOrderAssignedToDesigner's fallback for legacy orders with no
+  // assignee_ids of their own — same check MyProjects/SiparisOnay run
+  // against the designer's full project list, narrowed to just this project.
+  const fallbackProjectIds = useMemo(
+    () => new Set((project?.assignees ?? []).some((a) => a.id === user?.id) ? [project?.id] : []),
+    [project, user?.id],
+  )
+
+  function handleOrderSigned(updated) {
+    setProjectOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)))
+    setSignOrder(null)
+  }
+
+  // "Teslim Alındı" doesn't remove the order from the queue — it just
+  // updates the held order in place (see TalepSignDialog's onUpdated contract).
+  function handleOrderUpdated(updated) {
+    setProjectOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)))
+    setSignOrder(updated)
+  }
+
+  function handleSiparisBaskiOnayApproved(updated) {
+    setProjectOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)))
+    if (updated.status !== 'siparis_baski_onay') setSiparisBaskiOnayOrder(null)
+  }
+
+  function openOrderAction(order) {
+    if (order.status === 'siparis_baski_onay') setSiparisBaskiOnayOrder(order)
+    else setSignOrder(order)
+  }
 
   useEffect(() => {
     if (!id) return
@@ -1434,6 +1506,8 @@ export default function ProjectDetail() {
                 sold={sold && o.status === 'onaylandi'}
                 handoverPending={handoverPending && o.status === 'onaylandi'}
                 onOpen={() => setOrderFormViewer({ order: o })}
+                canAct={canActOnOrder(user, o, fallbackProjectIds)}
+                onAct={() => openOrderAction(o)}
               />
             ))}
           </CardContent>
@@ -1701,6 +1775,21 @@ export default function ProjectDetail() {
         initialStep={orderFormViewer?.step}
         open={!!orderFormViewer}
         onOpenChange={(v) => !v && setOrderFormViewer(null)}
+      />
+
+      <TalepSignDialog
+        order={signOrder}
+        open={!!signOrder}
+        onOpenChange={(v) => !v && setSignOrder(null)}
+        onSigned={handleOrderSigned}
+        onUpdated={handleOrderUpdated}
+      />
+
+      <SiparisBaskiOnayFormDialog
+        order={siparisBaskiOnayOrder}
+        open={!!siparisBaskiOnayOrder}
+        onOpenChange={(v) => !v && setSiparisBaskiOnayOrder(null)}
+        onApproved={handleSiparisBaskiOnayApproved}
       />
 
       <ConfirmDialog

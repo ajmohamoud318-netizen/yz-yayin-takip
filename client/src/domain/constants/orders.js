@@ -168,3 +168,38 @@ export function canApproveMatbaaOnayNow(user, order) {
     user.role === 'designer' && (order.assignee_ids ?? []).includes(user.id)
   return isAssignedDesigner && matbaaOnayLeaderApproved(order)
 }
+
+/**
+ * Does `user` owe the next action on `order` right now? Each role-scoped
+ * queue page (MyProjects, SiparisOnay, SiparisTalepleri) only ever shows
+ * orders already filtered to that one role, so none of them needed this —
+ * they just checked the matbaa_onay receipt/leader-first nuance inline.
+ * ProjectDetail shows a project's orders to whoever opens it regardless of
+ * role, so it needs the full per-step ownership check centralized here
+ * instead of re-deriving a partial version of it.
+ */
+export function canActOnOrder(user, order, fallbackProjectIds) {
+  if (!user || !order) return false
+  switch (order.status) {
+    case 'pending':
+    case 'ekran_onay':
+    case 'siparis_baski_onay':
+      return user.role === 'team_leader'
+    case 'tasarimci_onay':
+      return user.role === 'printer'
+    case 'goruldu':
+      return user.role === 'designer' && isOrderAssignedToDesigner(order, user.id, fallbackProjectIds)
+    case 'matbaa_onay': {
+      const isAssignedDesigner =
+        user.role === 'designer' && (order.assignee_ids ?? []).includes(user.id)
+      if (user.role !== 'team_leader' && !isAssignedDesigner) return false
+      // Receipt gate ("Teslim Alındı") comes before the leader-first
+      // approval and either role can clear it — canApproveMatbaaOnayNow
+      // only covers the approval half (it requires matbaa_received=true).
+      if (!order.matbaa_received) return true
+      return canApproveMatbaaOnayNow(user, order)
+    }
+    default:
+      return false
+  }
+}

@@ -10,6 +10,7 @@ import {
   isOrderAssignedToDesigner,
   matbaaOnayLeaderApproved,
   canApproveMatbaaOnayNow,
+  canActOnOrder,
 } from './orders.js'
 
 describe('order workflow step graph', () => {
@@ -144,5 +145,69 @@ describe('canApproveMatbaaOnayNow (multi-party, leader-first — mirrors canAppr
     expect(canApproveMatbaaOnayNow(OKTAY, leaderSigned)).toBe(false)
     expect(canApproveMatbaaOnayNow(undefined, leaderSigned)).toBe(false)
     expect(canApproveMatbaaOnayNow(AYSE, undefined)).toBe(false)
+  })
+})
+
+describe('canActOnOrder (ProjectDetail — any role viewing any order)', () => {
+  const AYSE = { id: 'u-ayse', role: 'team_leader' }
+  const AYLIN = { id: 'u-aylin', role: 'designer' }
+  const NUR = { id: 'u-nur', role: 'designer' }
+  const OKTAY = { id: 'u-oktay', role: 'printer' }
+  const ESRA = { id: 'u-esra', role: 'satis' }
+
+  it('pending, ekran_onay, and siparis_baski_onay are team-leader-only', () => {
+    for (const status of ['pending', 'ekran_onay', 'siparis_baski_onay']) {
+      const order = { id: 'o-1', status }
+      expect(canActOnOrder(AYSE, order)).toBe(true)
+      expect(canActOnOrder(AYLIN, order)).toBe(false)
+      expect(canActOnOrder(OKTAY, order)).toBe(false)
+    }
+  })
+
+  it('tasarimci_onay is printer-only', () => {
+    const order = { id: 'o-1', status: 'tasarimci_onay' }
+    expect(canActOnOrder(OKTAY, order)).toBe(true)
+    expect(canActOnOrder(AYSE, order)).toBe(false)
+    expect(canActOnOrder(AYLIN, order)).toBe(false)
+  })
+
+  it('goruldu is only actionable by the assigned designer', () => {
+    const order = { id: 'o-1', status: 'goruldu', assignee_ids: ['u-aylin'] }
+    expect(canActOnOrder(AYLIN, order)).toBe(true)
+    expect(canActOnOrder(NUR, order)).toBe(false)
+    expect(canActOnOrder(AYSE, order)).toBe(false)
+  })
+
+  it('goruldu falls back to project assignment for legacy orders', () => {
+    const order = { id: 'o-1', project_id: 'p-1', status: 'goruldu', assignee_ids: [] }
+    expect(canActOnOrder(AYLIN, order, new Set(['p-1']))).toBe(true)
+    expect(canActOnOrder(AYLIN, order, new Set())).toBe(false)
+  })
+
+  it('matbaa_onay: either the leader or the assigned designer can clear the receipt gate', () => {
+    const order = { id: 'o-1', status: 'matbaa_onay', assignee_ids: ['u-aylin'], matbaa_received: false }
+    expect(canActOnOrder(AYSE, order)).toBe(true)
+    expect(canActOnOrder(AYLIN, order)).toBe(true)
+    expect(canActOnOrder(NUR, order)).toBe(false)
+    expect(canActOnOrder(OKTAY, order)).toBe(false)
+  })
+
+  it('matbaa_onay: once received, approval is leader-first', () => {
+    const received = { id: 'o-1', status: 'matbaa_onay', assignee_ids: ['u-aylin'], matbaa_received: true, matbaa_approvals: [] }
+    expect(canActOnOrder(AYSE, received)).toBe(true)
+    expect(canActOnOrder(AYLIN, received)).toBe(false)
+    const leaderSigned = { ...received, matbaa_approvals: [{ id: 'u-ayse', role: 'team_leader' }] }
+    expect(canActOnOrder(AYLIN, leaderSigned)).toBe(true)
+  })
+
+  it('onaylandi and rejected are terminal — nobody owes an action', () => {
+    expect(canActOnOrder(AYSE, { id: 'o-1', status: 'onaylandi' })).toBe(false)
+    expect(canActOnOrder(AYSE, { id: 'o-1', status: 'rejected' })).toBe(false)
+  })
+
+  it('is safe with missing user, missing order, or an unrelated role', () => {
+    expect(canActOnOrder(undefined, { id: 'o-1', status: 'pending' })).toBe(false)
+    expect(canActOnOrder(AYSE, undefined)).toBe(false)
+    expect(canActOnOrder(ESRA, { id: 'o-1', status: 'pending' })).toBe(false)
   })
 })
