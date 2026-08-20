@@ -77,31 +77,49 @@ export async function status() {
   }))
 }
 
+// Session-level advisory lock guarding the whole up() run. Blue/green means
+// two containers can now boot with MIGRATE_ON_BOOT at nearly the same time;
+// without this, both could see the same file as pending and race applying
+// it. Arbitrary two-int key, namespaced away from the notification sweep's
+// lock key in notification-maintenance.js.
+const MIGRATION_LOCK_KEY = [872_190, 1]
+
 export async function up() {
-  await ensureMigrationsTable()
-  const files = await listMigrationFiles()
-  const applied = await appliedIds()
-  const pending = files.filter((m) => !applied.has(m.id))
-  if (pending.length === 0) {
-    // eslint-disable-next-line no-console
-    console.log('[migrate] nothing to do — schema is up to date')
-    return { applied: [], skipped: files.length }
+  const lockClient = await getPool().connect()
+  try {
+    // Blocking on purpose — this only runs at boot, and waiting a few
+    // seconds for the other container to finish its own migration run is
+    // preferable to erroring out.
+    await lockClient.query('SELECT pg_advisory_lock($1, $2)', MIGRATION_LOCK_KEY)
+
+    await ensureMigrationsTable()
+    const files = await listMigrationFiles()
+    const applied = await appliedIds()
+    const pending = files.filter((m) => !applied.has(m.id))
+    if (pending.length === 0) {
+      // eslint-disable-next-line no-console
+      console.log('[migrate] nothing to do — schema is up to date')
+      return { applied: [], skipped: files.length }
+    }
+    const results = []
+    for (const m of pending) {
+      const sql = await fs.readFile(m.path, 'utf8')
+      await withTx(async (client) => {
+        await client.query(sql)
+        await client.query(
+          'INSERT INTO _migrations (id, checksum) VALUES ($1, $2)',
+          [m.id, hashSql(sql)],
+        )
+      })
+      results.push(m.id)
+      // eslint-disable-next-line no-console
+      console.log(`[migrate] applied ${m.id} (${m.label})`)
+    }
+    return { applied: results, skipped: applied.size }
+  } finally {
+    await lockClient.query('SELECT pg_advisory_unlock($1, $2)', MIGRATION_LOCK_KEY)
+    lockClient.release()
   }
-  const results = []
-  for (const m of pending) {
-    const sql = await fs.readFile(m.path, 'utf8')
-    await withTx(async (client) => {
-      await client.query(sql)
-      await client.query(
-        'INSERT INTO _migrations (id, checksum) VALUES ($1, $2)',
-        [m.id, hashSql(sql)],
-      )
-    })
-    results.push(m.id)
-    // eslint-disable-next-line no-console
-    console.log(`[migrate] applied ${m.id} (${m.label})`)
-  }
-  return { applied: results, skipped: applied.size }
 }
 
 export async function down() {

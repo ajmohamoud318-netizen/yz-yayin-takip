@@ -2,7 +2,9 @@
 
 Production deployment on **Dokploy** with a **GitHub → Dockerfile** pipeline.
 Two apps share one monorepo: a static SPA and a Fastify API, each built
-from its own committed Dockerfile.
+from its own committed Dockerfile. The app tier runs as **true blue-green**:
+two full, independently-running stacks sharing one Postgres — see
+"Blue-green topology" below.
 
 ---
 
@@ -11,10 +13,75 @@ from its own committed Dockerfile.
 | Layer | Tech | Where |
 |---|---|---|
 | Frontend | React + Vite SPA, served by `serve.cjs` (built via root `Dockerfile`) | `https://yt.mucitkarinca.com` |
-| Backend  | Fastify + Node 20, pg, bcryptjs, nodemailer (built via `server/Dockerfile`) | `https://api.yt.mucitkarinca.com` |
-| Database | PostgreSQL 16 (Dokploy-managed) | internal: `yz-postgres:5432` |
+| Backend  | Fastify + Node 20, pg, bcryptjs, nodemailer (built via `server/Dockerfile`) | internal only — no public domain |
+| Database | PostgreSQL 16 (Dokploy-managed), shared by both colors | internal: `yz-postgres:5432` |
 | Email    | Resend SMTP relay | `smtp.resend.com:587` |
 | Source   | GitHub `ajmohamoud318-netizen/yz-yayin-takip`, branch `main` |
+
+---
+
+## Blue-green topology
+
+Two paired, self-contained stacks run continuously against the **same**
+Postgres:
+
+| Color | SPA service | API service |
+|---|---|---|
+| blue  | `yz-spa-blue`  | `yz-api-blue`  |
+| green | `yz-spa-green` | `yz-api-green` |
+
+- Each SPA proxies `/api/*` to **its own paired API** via `API_UPSTREAM`
+  (env-driven in `serve.cjs`, no code change needed to point a color at its
+  pair). APIs stay domain-less/internal-only — see the "Remove the public
+  domain" gotcha below, which now applies to both colors permanently, not
+  just as a one-time cleanup.
+- The public domain (`yt.mucitkarinca.com`) lives on whichever SPA is
+  **currently live**. Deploying to the idle color and smoke-testing it does
+  not affect production traffic; flipping the domain is the only action
+  that does.
+- Both API services point at the same `DATABASE_URL` and share the same
+  `yz_uploads` named volume (mounted to **both**, not one) — an avatar
+  uploaded while one color is live must be visible after a flip. Verify
+  your Dokploy version supports mounting one named volume into two
+  services; if it doesn't, avatars need object storage as a follow-up.
+- Both APIs keep `MIGRATE_ON_BOOT=true`. This is now safe because
+  `migrate.js` takes a Postgres advisory lock around the whole run — two
+  containers booting near-simultaneously (routine once there are two
+  independent services) can't race applying the same pending migration.
+  Similarly, `notification-maintenance.js`'s push-retry sweep and cleanup
+  jobs are each gated behind their own advisory lock, so only one live
+  instance's tick actually does the work — both colors running the 30s
+  sweep forever (not just briefly, during a cutover) would otherwise
+  double push-retry load continuously.
+
+### Migration discipline: expand/contract
+
+Because blue and green share one Postgres and both can be serving real
+traffic across a flip, schema changes must be split:
+
+- **Expand** (additive: new nullable column, new table,
+  `CREATE INDEX CONCURRENTLY`) — safe to ship normally. The other color's
+  currently-running code simply ignores the new shape.
+- **Contract** (drop column, rename, tighten a constraint — e.g. the kind
+  of change in `901d283 fix(db): drop old stage constraint before the
+  baskida backfill`) — only ship *after* both colors have run code that no
+  longer needs the old shape for at least one full flip cycle. Split these
+  into two releases instead of one.
+
+### Deploy / flip / rollback runbook
+
+1. Push → deploy to the **idle** color (e.g. green).
+2. Migrations auto-apply on green's API boot (advisory-locked, safe even
+   while blue is still live and serving).
+3. Smoke-test green privately: hit `yz-api-green`'s internal `/api/health`
+   (returns `commit` — the built git SHA, see `src/index.js`) to confirm
+   the new build is running, and load `yz-spa-green` directly via its
+   Dokploy-assigned internal/preview URL.
+4. **Flip**: reassign `yt.mucitkarinca.com` from `yz-spa-blue` to
+   `yz-spa-green` in Dokploy.
+5. Monitor. Keep blue running warm as an instant rollback (flip the domain
+   back — no rebuild) for a defined window (e.g. 24–48h).
+6. The next release targets blue (now idle) — ping-pong each cycle.
 
 ---
 
@@ -46,9 +113,12 @@ committed and in sync with the workspace `package.json` files.
 
 ## Dokploy apps
 
-Create **two** services from the same GitHub repo.
+Create **four** services from the same GitHub repo — two paired stacks, per
+"Blue-green topology" above. `yz-spa-blue`/`yz-api-blue` and
+`yz-spa-green`/`yz-api-green` are configured identically to each other
+except for the fields called out below (domain, `API_UPSTREAM`).
 
-### 1. SPA — `yz-spa`
+### 1. SPA — `yz-spa-blue` / `yz-spa-green`
 
 | Setting | Value |
 |---|---|
@@ -57,18 +127,18 @@ Create **two** services from the same GitHub repo.
 | **Build Pack** | **Dockerfile** (uses the root `Dockerfile`) |
 | **Dockerfile Path** | `Dockerfile` (relative to Build Path → `./Dockerfile`) |
 | Port | `3000` |
-| Domain | `yt.mucitkarinca.com` (Let's Encrypt) |
-| Trigger | On Push |
+| Domain | `yt.mucitkarinca.com` on whichever color is **live**; the idle color gets no public domain (use Dokploy's internal/preview URL to smoke-test it) |
+| Trigger | On Push (to the color currently being deployed) |
 
 > `VITE_API_BASE_URL` is wired through as a **build-time ARG** in the root
 > Dockerfile (see "Build-time Arguments" in the service config). Without
 > it the bundle is built with an empty API URL and the SPA can't reach
 > the backend.
 
-**Environment:**
+**Environment** (`yz-spa-blue` points at `yz-api-blue`, `yz-spa-green` at `yz-api-green` — never cross-wire them):
 ```
 VITE_API_BASE_URL=
-API_UPSTREAM=http://yz-api:4000
+API_UPSTREAM=http://yz-api-blue:4000   # or http://yz-api-green:4000 on the green SPA
 ```
 
 > Anything prefixed `VITE_` is baked into the JS bundle at build time —
@@ -86,9 +156,10 @@ API_UPSTREAM=http://yz-api:4000
 >   so the Cloudflare TLS failure in `CLOUDFLARE_FIX.md` no longer blocks
 >   the app.
 >
-> Set `API_UPSTREAM` to the API service's slug and port as Dokploy resolves
-> it internally (`yz-api` per the service table below — confirm the exact
-> slug in the Dokploy UI, it must match or every `/api` call returns 502).
+> Set `API_UPSTREAM` to the **paired** API service's slug and port as
+> Dokploy resolves it internally (confirm the exact slug in the Dokploy UI —
+> it must match or every `/api` call returns 502). `yz-spa-blue` →
+> `yz-api-blue`, `yz-spa-green` → `yz-api-green`.
 >
 > ⚠️ **Historical note.** Between 2026-07-20 and this change the SPA pointed
 > directly at `https://yayin-takip-backend-…sslip.io` because
@@ -99,7 +170,7 @@ API_UPSTREAM=http://yz-api:4000
 > `VITE_API_BASE_URL` without also setting `SESSION_COOKIE_SAMESITE=none`
 > and `SESSION_COOKIE_SECURE=true` on the API.
 
-### 2. API — `yz-api`
+### 2. API — `yz-api-blue` / `yz-api-green`
 
 | Setting | Value |
 |---|---|
@@ -108,29 +179,30 @@ API_UPSTREAM=http://yz-api:4000
 | **Build Pack** | **Dockerfile** (uses the committed `server/Dockerfile`) |
 | **Dockerfile Path** | `Dockerfile` (relative to Build Path → `server/Dockerfile`) |
 | Port | `4000` |
-| Domain | `api.yt.mucitkarinca.com` (Let's Encrypt) — optional, see below |
-| Trigger | On Push |
+| Domain | **none, on either color** — see below |
+| Trigger | On Push (to the color currently being deployed) |
 
-> **Remove the public domain from this service.** Browser traffic now
-> reaches the API through the SPA's `/api` proxy on the internal network,
-> so `api.yt.mucitkarinca.com` is no longer on the critical path — the app
-> works fine while it stays broken at the Cloudflare edge.
+> **No public domain on this service — for either color, permanently.**
+> Browser traffic reaches the API only through its paired SPA's `/api`
+> proxy on the internal network.
 >
-> It should be taken off rather than merely left unused, because the API
-> runs with `trustProxy: true` (so it can read the real client IP out of
+> It has to stay off rather than merely unused, because the API runs with
+> `trustProxy: true` (so it can read the real client IP out of
 > `X-Forwarded-For` for the per-IP rate limiters). Anything that can reach
 > the API *directly* can therefore forge that header and bypass the
 > login/forgot-password throttles. Closing the public route removes the
-> only way to do that.
+> only way to do that. To smoke-test a color before flipping, use Dokploy's
+> internal/preview URL, not a public domain.
 
 > The Dockerfile ships with a built-in `HEALTHCHECK` against
 > `GET /api/health`, so Dokploy's container probe will start passing
 > within ~15 s of boot (after migrations run). No extra Dokploy-side
 > healthcheck config needed.
 
-**Environment** (paste as Key/Value pairs):
+**Environment** (paste as Key/Value pairs — **identical across `yz-api-blue`
+and `yz-api-green`** except where noted):
 ```
-API_BASE_URL=https://api.yt.mucitkarinca.com
+API_BASE_URL=https://yt.mucitkarinca.com
 DATABASE_URL=postgres://postgres:<password>@yz-postgres:5432/yz_yayin_takip
 MIGRATE_ON_BOOT=true
 SEED_ON_BOOT=false
@@ -148,6 +220,13 @@ VAPID_PRIVATE_KEY=<npx web-push generate-vapid-keys>
 VAPID_SUBJECT=mailto:noreply@yt.mucitkarinca.com
 ```
 
+> `DATABASE_URL`, `SESSION_SECRET`, and the `VAPID_*` pair must be **the
+> same value on both colors** — they share one Postgres, and a push
+> subscription or session created while one color was live has to keep
+> working after a flip to the other. Generate each of these once and paste
+> the same value into both services; never regenerate independently per
+> color.
+>
 > Resend API key with **Sending access** only — never Full Access.
 
 #### Web push (VAPID) keys
@@ -186,11 +265,17 @@ operator intervention.
 Mount a Dokploy named volume at `/app/.yz-uploads` so avatars survive
 every redeploy:
 
-| Dokploy setting (on the **yz-api** service) | Value |
+| Dokploy setting (on **both** `yz-api-blue` and `yz-api-green`) | Value |
 |---|---|
-| Volume name | `yz_uploads` |
+| Volume name | `yz_uploads` (the **same** volume, mounted into both services) |
 | Mount path  | `/app/.yz-uploads` |
 | Sub-path    | *(leave empty)* |
+
+> Mount the **same** volume into both API services, not one per color — an
+> avatar uploaded while blue is live must still be there after flipping to
+> green. Confirm your Dokploy version actually supports mounting one named
+> volume into two services simultaneously before relying on this; if it
+> doesn't, avatars need object storage instead.
 
 Why `/app/.yz-uploads` and not `/tmp/yz-uploads` (the old default):
 `/tmp` is **ephemeral** — any Dokploy redeploy / container restart
@@ -204,9 +289,9 @@ mounted at the same path, so local dev and production behave the
 same.
 
 > If you ever need to swap paths (e.g. audited persistent disk on a
-> managed cluster), set `AVATAR_DIR=/your/path` on the **yz-api**
-> service. The SPA always rewrites `users.avatar_url` to the right
-> origin via `VITE_API_BASE_URL`, so the column is path-agnostic.
+> managed cluster), set `AVATAR_DIR=/your/path` on **both** `yz-api-blue`
+> and `yz-api-green`. The SPA always rewrites `users.avatar_url` to the
+> right origin via `VITE_API_BASE_URL`, so the column is path-agnostic.
 
 ### 3. Postgres — `yz-postgres`
 
@@ -253,15 +338,28 @@ GitHub → clone /server → docker build (server/Dockerfile, two stages)
 
 ## Verifying a deploy
 
-After a successful build, hit these URLs:
+Before flipping the domain, smoke-test the idle color on its internal/
+preview URL (Dokploy assigns one to every service, domain or not):
+
+| Check | Expect |
+|---|---|
+| idle SPA's preview URL | Login page (HTML) |
+| idle API's internal `/api/health` | `{"ok":true,"ts":"...","commit":"<the SHA you just pushed>"}` |
+| idle SPA preview → DevTools → Network → `/api/users` | 200 OK, no CORS errors |
+
+After flipping `yt.mucitkarinca.com` to the new color, re-check the public
+URLs:
 
 | URL | Expect |
 |---|---|
 | `https://yt.mucitkarinca.com` | Login page (HTML) |
-| `https://api.yt.mucitkarinca.com/api/health` | `{"ok":true,"ts":"..."}` |
+| `https://yt.mucitkarinca.com/api/health` (proxied) | `{"ok":true,"ts":"...","commit":"<the SHA you just pushed>"}` |
 | Browser DevTools → Network → `/api/users` | 200 OK, no CORS errors |
 | `https://yt.mucitkarinca.com/manifest.webmanifest` | JSON, `Content-Type: application/manifest+json` |
 | `https://yt.mucitkarinca.com/sw.js` | JS, `Cache-Control: no-cache` |
+
+If anything looks wrong, flip the domain back to the previous color — no
+rebuild needed, it's still running.
 
 ### Verifying web push
 
@@ -297,6 +395,17 @@ emulators and desktop DevTools do not reproduce mobile push behaviour.
    credentials live only in Dokploy's Environment tab.
 5. **Resend domain verification is mandatory** before `SMTP_FROM` will
    deliver. Add the DKIM/SPF records they provide at your registrar.
+6. **Never cross-wire a color's `API_UPSTREAM`.** `yz-spa-blue` must only
+   ever point at `yz-api-blue`, and green likewise — pointing both SPAs at
+   the same API defeats the whole point of testing a color in isolation
+   before flipping.
+7. **`DATABASE_URL`, `SESSION_SECRET`, and `VAPID_*` must be identical
+   across both API colors.** They share one Postgres and one set of push
+   subscriptions; diverging these breaks sessions or push after a flip.
+8. **Contract migrations (drop/rename/tighten) need two releases, not
+   one** — see "Migration discipline" above. Shipping a contract change in
+   the same release as the code that stops needing the old shape breaks
+   whichever color is still running the old code.
 
 ---
 
@@ -320,6 +429,15 @@ The SPA hits the API via Vite's `/api` proxy → `localhost:4000`.
 - [x] Dokploy Postgres created
 - [x] Resend domain verified, API key scoped to Sending access
 - [x] TLS issued for both hostnames
+- [x] `migrate.js` advisory-locked against concurrent blue/green boots
+- [x] Notification sweep/cleanup advisory-locked so only the lock-winning
+      color does the work each tick
+- [ ] `yz-spa-green` / `yz-api-green` services created in Dokploy (today
+      only blue exists, renamed from the original `yz-spa`/`yz-api`)
+- [ ] Confirm Dokploy supports mounting `yz_uploads` into two services at
+      once; otherwise plan avatar object storage
+- [ ] Rehearse one full flip (deploy green, smoke-test, flip domain, flip
+      back) before relying on it for a real release
 - [ ] Migrate from header-auth (`X-User-Id`) to httpOnly cookie sessions
 - [ ] Redis for sessions, cache, and pub-sub notifications
 - [ ] Fastify schema validation on every POST/PATCH route

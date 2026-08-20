@@ -32,16 +32,43 @@
  *    `--unhandled-rejections=throw`, which would turn a notification-cleanup
  *    hiccup into an outage of the actual application.
  *
- *  • ⚠️ Multi-instance caveat: if this is ever scaled past one container, every
- *    replica runs its own sweep and a retried push can go out N times. The
- *    payload `tag` collapses duplicates on the device so the user impact is
- *    nil, but if that changes, gate the interval behind a Postgres advisory
- *    lock (`pg_try_advisory_lock`) rather than an env flag.
+ *  • **Multi-instance**: blue/green means two containers now run this
+ *    continuously, not just briefly during a deploy overlap. Each tick is
+ *    gated behind a Postgres advisory lock (`pg_try_advisory_lock`) so only
+ *    whichever instance wins it actually does the work that tick — the
+ *    other no-ops and tries again next interval.
  */
 
 import { getPool } from '../db/pool.js'
 import { sweepPendingPushes, pruneOldNotifications } from './notifications.js'
 import { pruneFailedSubscriptions, isPushEnabled } from './push.js'
+
+// Two-int advisory lock keys, namespaced away from migrate.js's
+// MIGRATION_LOCK_KEY. Distinct keys per job so a slow sweep on one instance
+// doesn't block the other instance's cleanup from running its own tick.
+const SWEEP_LOCK_KEY = [872_190, 2]
+const CLEANUP_LOCK_KEY = [872_190, 3]
+
+/**
+ * Run `fn` only if this process wins the named advisory lock; otherwise skip
+ * (another instance already owns it, or is currently running it). The lock
+ * is held on a dedicated connection for the duration of `fn` and always
+ * released afterward.
+ */
+async function withAdvisoryLock(key, fn) {
+  const client = await getPool().connect()
+  try {
+    const { rows } = await client.query('SELECT pg_try_advisory_lock($1, $2) AS acquired', key)
+    if (!rows[0].acquired) return
+    try {
+      await fn()
+    } finally {
+      await client.query('SELECT pg_advisory_unlock($1, $2)', key)
+    }
+  } finally {
+    client.release()
+  }
+}
 
 /** How often the push retry sweep runs. */
 const SWEEP_MS = 30_000
@@ -57,13 +84,15 @@ async function runSweep() {
   if (sweeping) return
   sweeping = true
   try {
-    const { delivered, settled, retry } = await sweepPendingPushes()
-    if (delivered > 0 || retry > 0) {
-      // Only log when there was actually something owed — a heartbeat every
-      // 30s would bury real signal in the container logs.
-      // eslint-disable-next-line no-console
-      console.log(`[notifications] recovered push: ${delivered} sent, ${settled} settled, ${retry} pending`)
-    }
+    await withAdvisoryLock(SWEEP_LOCK_KEY, async () => {
+      const { delivered, settled, retry } = await sweepPendingPushes()
+      if (delivered > 0 || retry > 0) {
+        // Only log when there was actually something owed — a heartbeat every
+        // 30s would bury real signal in the container logs.
+        // eslint-disable-next-line no-console
+        console.log(`[notifications] recovered push: ${delivered} sent, ${settled} settled, ${retry} pending`)
+      }
+    })
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[notifications] sweep failed:', err?.message)
@@ -76,12 +105,14 @@ async function runCleanup() {
   if (cleaning) return
   cleaning = true
   try {
-    const removed = await pruneOldNotifications(getPool())
-    const devices = await pruneFailedSubscriptions()
-    if (removed > 0 || devices > 0) {
-      // eslint-disable-next-line no-console
-      console.log(`[notifications] cleanup: ${removed} notifications, ${devices} dead devices removed`)
-    }
+    await withAdvisoryLock(CLEANUP_LOCK_KEY, async () => {
+      const removed = await pruneOldNotifications(getPool())
+      const devices = await pruneFailedSubscriptions()
+      if (removed > 0 || devices > 0) {
+        // eslint-disable-next-line no-console
+        console.log(`[notifications] cleanup: ${removed} notifications, ${devices} dead devices removed`)
+      }
+    })
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[notifications] cleanup failed:', err?.message)
