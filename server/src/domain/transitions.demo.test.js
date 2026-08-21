@@ -55,6 +55,51 @@ describe('reject-to-matbaa numbering', () => {
   })
 })
 
+// Regression: a reject used to leave demo_started (and the change-request/
+// fix-pending ledger) stuck true from the PREVIOUS round. The matbaa's
+// "İşlemi Başlatın" button never came back for the new round
+// (canMarkDemoStarted requires !demo_started) while the leader/designer saw
+// "Değişiklik İste" instead of a free cancel/edit (canRequestDemoChange
+// requires demo_started) — for a round that hadn't even been redelivered yet.
+describe('reject resets the matbaa "Başladım" ledger for a fresh round', () => {
+  const startedProject = () => demoProject({
+    demo_started: true,
+    demo_started_at: '2026-01-01T00:00:00.000Z',
+    demo_started_by: 'u-p',
+    demo_started_by_name: 'Oktay',
+    demo_change_requested_at: '2026-01-02T00:00:00.000Z',
+    demo_change_requested_by: 'u-l',
+    demo_change_requested_by_name: 'Ayşenur',
+    demo_change_requested_note: 'renk yanlış',
+    demo_fix_pending: true,
+  })
+
+  it('reject-to-designer clears demo_started/change-request/fix_pending', () => {
+    const { project: next } = computeRejection(
+      startedProject(), 'tasarım değişsin', ['s1'], 'designer', ctx,
+    )
+    assert.equal(next.demo_started, false)
+    assert.equal(next.demo_started_at, null)
+    assert.equal(next.demo_started_by, null)
+    assert.equal(next.demo_started_by_name, null)
+    assert.equal(next.demo_change_requested_at, null)
+    assert.equal(next.demo_change_requested_by, null)
+    assert.equal(next.demo_change_requested_by_name, null)
+    assert.equal(next.demo_change_requested_note, null)
+    assert.equal(next.demo_fix_pending, false)
+  })
+
+  it('reject-to-matbaa (re-delivery) also clears demo_started/change-request/fix_pending', () => {
+    const { project: next } = computeRejection(
+      startedProject(), 'matbaa yeniden bassın', [], 'matbaa', ctx,
+    )
+    assert.equal(next.stage, 'demo_teslim')
+    assert.equal(next.demo_started, false)
+    assert.equal(next.demo_change_requested_at, null)
+    assert.equal(next.demo_fix_pending, false)
+  })
+})
+
 describe('demo "Teslim Alındı" gate before Onay', () => {
   it('blocks the demo approve until the delivery is marked received', () => {
     assert.throws(

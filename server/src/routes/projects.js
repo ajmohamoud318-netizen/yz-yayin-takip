@@ -1232,6 +1232,44 @@ export async function projectRoutes(fastify) {
         last_reject_target: next.last_reject_target,
         // An ozalit rejection wipes the multi-party approval ledger.
         ozalit_approvals: JSON.stringify(next.ozalit_approvals ?? []),
+        // computeRejection resets the rejected leg's "Başladım"/change-request/
+        // delivery ledger (a fresh round, same as a "Teslim Alınamadı" or a new
+        // delivery) — persist whichever of these computeRejection touched so
+        // the matbaa's "İşlemi Başlatın" button reappears instead of staying
+        // hidden behind a stale demo_started/ozalit_started true.
+        demo_held: next.demo_held,
+        demo_held_at: next.demo_held_at,
+        demo_held_by_name: next.demo_held_by_name,
+        demo_delivered_at: next.demo_delivered_at,
+        demo_delivered_by: next.demo_delivered_by,
+        demo_delivered_by_name: next.demo_delivered_by_name,
+        demo_received: next.demo_received,
+        demo_received_by: next.demo_received_by,
+        demo_received_at: next.demo_received_at,
+        demo_started: next.demo_started,
+        demo_started_at: next.demo_started_at,
+        demo_started_by: next.demo_started_by,
+        demo_started_by_name: next.demo_started_by_name,
+        demo_change_requested_at: next.demo_change_requested_at,
+        demo_change_requested_by: next.demo_change_requested_by,
+        demo_change_requested_by_name: next.demo_change_requested_by_name,
+        demo_change_requested_note: next.demo_change_requested_note,
+        demo_fix_pending: next.demo_fix_pending,
+        ekran_demo_requested_at: next.ekran_demo_requested_at,
+        ekran_demo_requested_by: next.ekran_demo_requested_by,
+        ekran_demo_requested_by_name: next.ekran_demo_requested_by_name,
+        ozalit_received: next.ozalit_received,
+        ozalit_received_by: next.ozalit_received_by,
+        ozalit_received_at: next.ozalit_received_at,
+        ozalit_started: next.ozalit_started,
+        ozalit_started_at: next.ozalit_started_at,
+        ozalit_started_by: next.ozalit_started_by,
+        ozalit_started_by_name: next.ozalit_started_by_name,
+        ozalit_change_requested_at: next.ozalit_change_requested_at,
+        ozalit_change_requested_by: next.ozalit_change_requested_by,
+        ozalit_change_requested_by_name: next.ozalit_change_requested_by_name,
+        ozalit_change_requested_note: next.ozalit_change_requested_note,
+        ozalit_fix_pending: next.ozalit_fix_pending,
       }
       // Reject-to-designer recomputes progress from the reopened subtasks;
       // reject-to-matbaa leaves subtasks (and progress) untouched.

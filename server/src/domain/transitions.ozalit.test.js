@@ -79,6 +79,34 @@ describe('multi-party ozalit approval', () => {
     const { project: next } = computeRejection(partial, 'renkler', [], 'designer', { actorName: L1.name, actor: L1 })
     assert.deepEqual(next.ozalit_approvals, [])
   })
+
+  // Regression (same bug as the demo leg — see transitions.demo.test.js):
+  // ozalit_started/change-request/fix_pending used to survive a reject,
+  // so the matbaa's "İşlemi Başlatın" stayed hidden and the leader/designer
+  // saw "Değişiklik İste" for a round that hadn't been redelivered yet.
+  it('a rejection also clears ozalit_started/change-request/fix_pending', () => {
+    const started = ozalitProject({
+      ozalit_started: true,
+      ozalit_started_at: '2026-01-01T00:00:00.000Z',
+      ozalit_started_by: 'P1',
+      ozalit_started_by_name: 'Oktay',
+      ozalit_change_requested_at: '2026-01-02T00:00:00.000Z',
+      ozalit_change_requested_by: 'L1',
+      ozalit_change_requested_by_name: 'Ayşenur',
+      ozalit_change_requested_note: 'ölçü yanlış',
+      ozalit_fix_pending: true,
+    })
+    const { project: next } = computeRejection(started, 'renkler', [], 'designer', { actorName: L1.name, actor: L1 })
+    assert.equal(next.ozalit_started, false)
+    assert.equal(next.ozalit_started_at, null)
+    assert.equal(next.ozalit_started_by, null)
+    assert.equal(next.ozalit_started_by_name, null)
+    assert.equal(next.ozalit_change_requested_at, null)
+    assert.equal(next.ozalit_change_requested_by, null)
+    assert.equal(next.ozalit_change_requested_by_name, null)
+    assert.equal(next.ozalit_change_requested_note, null)
+    assert.equal(next.ozalit_fix_pending, false)
+  })
 })
 
 describe('ozalit leader-first approval order', () => {

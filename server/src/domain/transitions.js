@@ -1488,6 +1488,55 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
     target === 'matbaa' && project.type === 'TR' && teslimStage.endsWith('_teslim')
   const toStage = toMatbaa ? teslimStage : 'tasarim'
 
+  // A reject — to either the designer (fresh redesign) or the matbaa
+  // (re-delivery of the same, unchanged design) — starts a new round for
+  // whichever leg was actually rejected, exactly like a "Teslim Alınamadı"
+  // or a fresh delivery does (see computeDemoNotReceived /
+  // computeOzalitTeslimAdvance). Without this reset, demo_started/
+  // ozalit_started stayed stuck true from the PREVIOUS round: the matbaa's
+  // "İşlemi Başlatın" button never reappeared (canMarkDemoStarted requires
+  // !demo_started) while the leader/designer instead saw "Değişiklik İste"
+  // (canRequestDemoChange requires demo_started) for a round that hadn't
+  // even been redelivered yet.
+  const legReset = isOzalit
+    ? {
+        ozalit_received: false,
+        ozalit_received_by: null,
+        ozalit_received_at: null,
+        ozalit_started: false,
+        ozalit_started_at: null,
+        ozalit_started_by: null,
+        ozalit_started_by_name: null,
+        ozalit_change_requested_at: null,
+        ozalit_change_requested_by: null,
+        ozalit_change_requested_by_name: null,
+        ozalit_change_requested_note: null,
+        ozalit_fix_pending: false,
+      }
+    : {
+        demo_held: false,
+        demo_held_at: null,
+        demo_held_by_name: null,
+        demo_delivered_at: null,
+        demo_delivered_by: null,
+        demo_delivered_by_name: null,
+        demo_received: false,
+        demo_received_by: null,
+        demo_received_at: null,
+        demo_started: false,
+        demo_started_at: null,
+        demo_started_by: null,
+        demo_started_by_name: null,
+        demo_change_requested_at: null,
+        demo_change_requested_by: null,
+        demo_change_requested_by_name: null,
+        demo_change_requested_note: null,
+        demo_fix_pending: false,
+        ekran_demo_requested_at: null,
+        ekran_demo_requested_by: null,
+        ekran_demo_requested_by_name: null,
+      }
+
   const base = {
     ...project,
     stage: toStage,
@@ -1497,6 +1546,7 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
     reject_target: toMatbaa ? 'matbaa' : null,
     ozalit_requested: false,
     updated_at: nowIso,
+    ...legReset,
     ...(isOzalit
       ? {
           ozalit_leader_approved: false,
