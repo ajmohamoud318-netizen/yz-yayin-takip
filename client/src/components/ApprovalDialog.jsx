@@ -19,7 +19,7 @@ import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { useAuth } from '@/hooks/useAuth'
 import { isSubtaskDone } from '@/domain/services/progress'
 import { cn } from '@/lib/utils'
-import {
+import SpecFormDialog, {
   specVariantForStage,
   stampSpecSignature,
 } from '@/components/SpecFormDialog'
@@ -64,6 +64,12 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
   const [revizeIds, setRevizeIds] = useState([])
   // Who the rejection is routed to: 'designer' (redesign) or 'matbaa' (re-deliver).
   const [rejectTarget, setRejectTarget] = useState('designer')
+  // Reject-to-matbaa doesn't submit straight away — it hands off to the demo/
+  // ozalit spec form so the leader can review/edit the sheet before it
+  // actually goes out (see the SpecFormDialog render below). Keeps its own
+  // `project` snapshot because closing this dialog (onOpenChange(false))
+  // typically clears the parent's project prop before the hand-off renders.
+  const [matbaaReview, setMatbaaReview] = useState(null) // { project, reason } | null
   // The Approvals list feeds this dialog a project WITHOUT its subtasks — the
   // /projects list endpoint omits them; only the single-project detail fetch
   // includes them. Without loading them here the revise picker was always empty
@@ -194,6 +200,14 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
       toast.error('Red sebebi zorunludur.')
       return
     }
+    // Reject-to-matbaa doesn't submit here — it hands off to the demo/ozalit
+    // spec form (rendered below) so the leader reviews/edits the sheet before
+    // it's actually sent. That form's own submit is what calls rejectProject.
+    if (mode === 'reject' && rejectTarget === 'matbaa') {
+      setMatbaaReview({ project, reason: reason.trim() })
+      onOpenChange(false)
+      return
+    }
     // Selecting subtasks to revise is optional — zero is allowed ("nothing
     // needs redoing, just send it back"). Only completed subtasks appear as
     // candidates (see revisableSubtasks).
@@ -252,9 +266,11 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
     }
   }
 
-  if (!project) return null
+  if (!project && !matbaaReview) return null
 
   return (
+    <>
+    {project && (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
@@ -420,11 +436,36 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
               }
               variant={mode === 'reject' ? 'destructive' : mode === 'approve' ? 'success' : 'default'}
             >
-              {busy ? 'İşleniyor…' : mode === 'approve' ? approveLabel : mode === 'reject' ? 'Reddedin' : advanceLabel}
+              {busy
+                ? 'İşleniyor…'
+                : mode === 'approve'
+                  ? approveLabel
+                  : mode === 'reject'
+                    ? (rejectTarget === 'matbaa' ? 'Devam Edin' : 'Reddedin')
+                    : advanceLabel}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
+    )}
+
+    {/* Reject-to-matbaa hand-off: review/edit the sheet before it actually
+        sends. specVariantForStage(stage) is 'ozalit' for ozalit_onay, 'demo'
+        otherwise — the only two stages this picker is ever shown on. */}
+    <SpecFormDialog
+      variant={matbaaReview ? (specVariantForStage(matbaaReview.project.stage) ?? 'demo') : 'demo'}
+      mode="advance"
+      open={!!matbaaReview}
+      project={matbaaReview?.project ?? null}
+      rejectContext={matbaaReview ? { reason: matbaaReview.reason, target: 'matbaa' } : null}
+      onOpenChange={(v) => { if (!v) setMatbaaReview(null) }}
+      onDone={(updated) => {
+        updateOne(updated)
+        onDone?.(updated)
+        setMatbaaReview(null)
+      }}
+    />
+    </>
   )
 }

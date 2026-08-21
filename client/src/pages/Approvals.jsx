@@ -17,8 +17,12 @@ import OzalitFormDialog from '@/components/OzalitFormDialog'
 import BaskiOnayFormDialog from '@/components/BaskiOnayFormDialog'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import TalepSignDialog from '@/components/TalepSignDialog'
+import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
-import { canRejectAtStage, isDemoApprover, isOzalitApprover, ozalitLeaderApproved } from '@/domain'
+import {
+  canRejectAtStage, isDemoApprover, isOzalitApprover, ozalitLeaderApproved,
+  canRequestEkranDemo, canRespondEkranDemo,
+} from '@/domain'
 import { formatTargetDate, formatNumber } from '@/lib/utils'
 
 /**
@@ -34,6 +38,10 @@ export default function Approvals({ tab = 'demo' }) {
   const [demoForm, setDemoForm] = useState(null)
   const [ozalitForm, setOzalitForm] = useState(null)
   const [baskiOnayForm, setBaskiOnayForm] = useState(null)
+  // Ekran Demo Onayı — the lightweight digital respond/request buttons a
+  // held-at-100% demo card offers (mirrors ProjectDetail.jsx).
+  const [ekranDemoRejectFor, setEkranDemoRejectFor] = useState(null) // project | null
+  const [ekranBusyId, setEkranBusyId] = useState(null)
   // Matbaa "İşlemi Başlatın" — mirrors ProjectDetail's start-work gate so the
   // list and detail views enforce the same rule: Teslim Et stays hidden until
   // the matbaa has flagged the work started.
@@ -91,10 +99,15 @@ export default function Approvals({ tab = 'demo' }) {
       // Designers only act on ozalit (multi-party), never demo.
       if (sub === 'demo') {
         if (!isLeader) return false
-        // A held demo has no pending action — it's waiting on the designer to
-        // finish and re-send — so it doesn't belong in the approval queue.
-        if (p.demo_held === true) return false
-        return p.stage === 'demo_onay' || p.stage === 'cin_demo_onay'
+        if (p.stage !== 'demo_onay' && p.stage !== 'cin_demo_onay') return false
+        // A held demo below 100% progress has no pending action yet — it's
+        // waiting on the designer to finish. But once progress hits 100%
+        // there's something to do again (respond to a pending Ekran Demo
+        // Onayı request, request one, or a manual resend) — dropping it here
+        // regardless of progress silently hid it from the queue forever,
+        // with no way back in short of visiting the project page directly.
+        if (p.demo_held === true && (p.progress ?? 0) < 100) return false
+        return true
       }
       if (sub === 'ozalit') {
         if (p.stage !== 'ozalit_onay') return false
@@ -121,6 +134,32 @@ export default function Approvals({ tab = 'demo' }) {
   function handleOrderSigned(updated) {
     setOrders((prev) => prev.filter((r) => r.id !== updated.id))
     setSignOrder(null)
+  }
+
+  async function handleEkranDemoRequest(project) {
+    setEkranBusyId(project.id)
+    try {
+      const updated = await api.requestEkranDemoOnay(project.id)
+      updateOne(updated)
+      toast.success('Ekran demo onayı istendi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setEkranBusyId(null)
+    }
+  }
+
+  async function handleEkranDemoApprove(project) {
+    setEkranBusyId(project.id)
+    try {
+      const updated = await api.approveEkranDemo(project.id)
+      updateOne(updated)
+      toast.success('Ekran demo onaylandı.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setEkranBusyId(null)
+    }
   }
 
   async function handleStartWork() {
@@ -283,16 +322,50 @@ export default function Approvals({ tab = 'demo' }) {
                     </Button>
                   </>
                 ) : heldDemo && isLeader ? (
-                  <>
-                    {/* Held demo: nothing to approve/reject until the designer
-                        re-sends. Kept in the queue for visibility. */}
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 sm:flex-1">
-                      Tasarım tamamlanmadı, tasarımcı yeni demo gönderecek
-                    </span>
-                    <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={() => navigate(`/projects/${p.id}`)}>
-                      Detay
-                    </Button>
-                  </>
+                  // A held demo only reaches this queue once progress hits
+                  // 100% (see filterQueue) — there's always something
+                  // actionable here: either respond to a pending Ekran Demo
+                  // Onayı request, or offer to start one (canRequestEkranDemo
+                  // covers the rest: stage/hold/progress already hold).
+                  canRespondEkranDemo(user, p) ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="flex-1"
+                        onClick={() => setEkranDemoRejectFor(p)}
+                        disabled={ekranBusyId === p.id}
+                      >
+                        <ThumbsDown className="h-4 w-4" />
+                        Reddet
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="success"
+                        className="flex-1"
+                        onClick={() => handleEkranDemoApprove(p)}
+                        disabled={ekranBusyId === p.id}
+                      >
+                        <ThumbsUp className="h-4 w-4" />
+                        Ekran Demoyu Onaylayın
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => handleEkranDemoRequest(p)}
+                        disabled={ekranBusyId === p.id}
+                      >
+                        <Send className="h-4 w-4" />
+                        Ekran Demo Onayı İsteyin
+                      </Button>
+                      <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={() => navigate(`/projects/${p.id}`)}>
+                        Detay
+                      </Button>
+                    </>
+                  )
                 ) : (
                   <>
                     {alreadyApproved ? (
@@ -441,6 +514,12 @@ export default function Approvals({ tab = 'demo' }) {
         project={baskiOnayForm?.project}
         mode={baskiOnayForm?.mode ?? 'approve'}
         onDone={onDone}
+      />
+      <EkranDemoRejectDialog
+        open={!!ekranDemoRejectFor}
+        onOpenChange={(v) => !v && setEkranDemoRejectFor(null)}
+        project={ekranDemoRejectFor}
+        onDone={() => setEkranDemoRejectFor(null)}
       />
       <ConfirmDialog
         open={!!startConfirm}

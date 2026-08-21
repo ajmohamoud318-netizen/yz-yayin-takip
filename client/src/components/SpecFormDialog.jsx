@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, CheckSquare, FileText, Pencil, Plus, Printer, Send, Square, X } from 'lucide-react'
+import { Check, CheckCircle2, CheckSquare, FileText, Pencil, Plus, Printer, Send, Square, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -535,8 +535,19 @@ function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
  * notifyOnSave — mode='view' only. When true, Kaydet also logs a history
  *   entry and notifies the matbaa the sheet changed (see handleSave) instead
  *   of the normal silent in-place save.
+ * onStartWork / startingWork — mode='view' only. When onStartWork is passed
+ *   (the printer may still mark demo-start/ozalit-start), the footer offers
+ *   an "İşlemi Başlatın" button so they review the spec sheet before
+ *   confirming they've begun physical work, instead of starting blind.
+ * rejectContext — { reason, target } — used with mode='advance' when a
+ *   team-leader reject-to-matbaa (ApprovalDialog) hands off here instead of
+ *   submitting blind: the leader reviews/edits the existing sheet matbaa will
+ *   redeliver, and THIS dialog's submit is what actually calls
+ *   api.rejectProject (with the reason already collected), not advanceProject.
+ *   Forces the saved sheet to load as-is (like a read-only viewer would)
+ *   instead of the normal "fresh compose" reset for a new attempt.
  */
-export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, mode, onDone, viewAttempt, notifyOnSave = false }) {
+export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, mode, onDone, viewAttempt, notifyOnSave = false, onStartWork, startingWork = false, rejectContext = null }) {
   const variant = VARIANTS[variantName]
   const { user } = useAuth()
   const { updateOne } = useProjectsStore()
@@ -637,7 +648,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       if (cancelled) return
       const data = current ?? stripStamps(carried)
       const fresh = emptyForm(variant, project, user)
-      if (readOnly || variant.restoreSavedOnEdit) {
+      if (readOnly || variant.restoreSavedOnEdit || rejectContext) {
         // Read-only viewers (printer, leader) must see the values that were
         // actually saved at submission time — otherwise the form would show
         // today's date and the matbaa's own name as the requester. Layer the
@@ -1005,10 +1016,12 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       saveSnapshot(variant, project.id, attemptNo, payload, customRows, selectedComponents)
       persistServerSnapshot(attemptNo, payload)
       await persistCatalogEdits()
-      const updated = await api.advanceProject(project.id)
+      const updated = rejectContext
+        ? await api.rejectProject(project.id, rejectContext.reason, [], rejectContext.target)
+        : await api.advanceProject(project.id)
       updateOne(updated)
-      toast.success(variant.advanceToast(project))
-      if (variant.celebrateOnAdvance) celebrate()
+      toast.success(rejectContext ? 'Reddedildi, matbaaya yeniden gönderildi.' : variant.advanceToast(project))
+      if (!rejectContext && variant.celebrateOnAdvance) celebrate()
       onDone?.(updated)
       onOpenChange(false)
     } catch (err) {
@@ -1131,6 +1144,18 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             {readOnly && <span className="ml-1 text-xs font-normal text-muted-foreground">({attemptNo}. {variant.attemptWord})</span>}
           </DialogTitle>
         </DialogHeader>
+
+        {/* Reject-to-matbaa review (ApprovalDialog hand-off) — the leader is
+            about to send this sheet back to matbaa for redelivery; make that
+            explicit and show the reason they just typed. */}
+        {rejectContext && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
+            <p className="font-semibold text-destructive">Matbaaya yeniden gönderilecek</p>
+            <p className="mt-0.5 text-muted-foreground">
+              Göndermeden önce formu gözden geçirin. Red sebebi: <span className="italic">"{rejectContext.reason}"</span>
+            </p>
+          </div>
+        )}
 
         {/* Migration 049 — only rendered on the dedicated "Gönderilen
             Demoyu/Ozaliti Düzenleyin" path (notifyOnSave), diffed against
@@ -1512,6 +1537,20 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           </div>
         )}
 
+        {/* Printer reviews the spec sheet before marking demo/ozalit started —
+            İşlemi Başlatın below locks the leader/designer's free cancel/edit
+            behind a change-request (migration 048), so this warns them here
+            rather than only after the fact. */}
+        {onStartWork && (
+          <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span>
+              İşlemi başlattığınızda, ekip lideri veya tasarımcının iptal ya da düzenleme yapması
+              sizin onayınızı gerektiren bir değişiklik talebine dönüşür.
+            </span>
+          </div>
+        )}
+
         <DialogFooter className="flex-wrap gap-2">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             {readOnly ? 'Kapatın' : 'İptal'}
@@ -1522,13 +1561,19 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               Yazdırın
             </Button>
           )}
-          {mode === 'view' && (!variant.saveRequiresEditable || !readOnly) && (
+          {mode === 'view' && user?.role !== 'printer' && (!variant.saveRequiresEditable || !readOnly) && (
             <Button disabled={busy} onClick={handleSave}>{busy ? 'Kaydediliyor…' : 'Kaydedin'}</Button>
           )}
+          {mode === 'view' && onStartWork && (
+            <Button variant="success" disabled={startingWork} onClick={onStartWork}>
+              <CheckCircle2 className="h-4 w-4" />
+              {startingWork ? 'İşleniyor…' : 'İşlemi Başlatın'}
+            </Button>
+          )}
           {mode === 'advance' && (
-            <Button disabled={busy} onClick={handleAdvance}>
+            <Button disabled={busy} onClick={handleAdvance} variant={rejectContext ? 'destructive' : 'default'}>
               <Send className="h-4 w-4" />
-              {busy ? 'Gönderiliyor…' : variant.advanceLabel(user)}
+              {busy ? 'Gönderiliyor…' : rejectContext ? 'Reddedin ve Gönderin' : variant.advanceLabel(user)}
             </Button>
           )}
           {isBaskiOnayApproval && !baskiOnayPrepared && (

@@ -706,22 +706,6 @@ export default function ProjectDetail() {
       variant: 'destructive',
       onConfirm: handleOzalitNotReceived,
     },
-    'demo-start': {
-      title: 'Demoya başladınız mı?',
-      description:
-        'Bundan sonra ekip lideri veya tasarımcının iptal ya da düzenleme yapması, sizin onayınızı gerektiren bir değişiklik talebine dönüşür.',
-      confirmLabel: 'İşlemi Başlatın',
-      variant: 'success',
-      onConfirm: handleDemoStart,
-    },
-    'ozalit-start': {
-      title: 'Ozalite başladınız mı?',
-      description:
-        'Bundan sonra ekip lideri veya tasarımcının iptal ya da düzenleme yapması, sizin onayınızı gerektiren bir değişiklik talebine dönüşür.',
-      confirmLabel: 'İşlemi Başlatın',
-      variant: 'success',
-      onConfirm: handleOzalitStart,
-    },
     'demo-cancel': {
       title: 'Demo talebini iptal edin mi?',
       description:
@@ -1246,11 +1230,13 @@ export default function ProjectDetail() {
                 )}
                 {/* Matbaa "Başladım" — flag-only, marks physical work begun.
                     Once set, a cancel/edit from the leader/designer needs
-                    the matbaa's OK (migration 048). */}
+                    the matbaa's OK (migration 048). Opens the spec form first
+                    so the matbaa reviews what they're about to produce —
+                    İşlemi Başlatın itself lives in the form's footer. */}
                 {canMarkDemoStarted(user, project) && (
                   <Button
                     size="sm"
-                    onClick={() => setTeslimConfirm('demo-start')}
+                    onClick={() => { setDemoFormMode('view'); setDemoFormAttempt(null); setDemoFormNotify(false); setDemoFormOpen(true) }}
                     disabled={startingWork}
                   >
                     <CheckCircle2 className="h-4 w-4" />
@@ -1260,7 +1246,7 @@ export default function ProjectDetail() {
                 {canMarkOzalitStarted(user, project) && (
                   <Button
                     size="sm"
-                    onClick={() => setTeslimConfirm('ozalit-start')}
+                    onClick={() => { setOzalitFormMode('view'); setOzalitFormAttempt(null); setOzalitFormNotify(false); setOzalitFormOpen(true) }}
                     disabled={startingWork}
                   >
                     <CheckCircle2 className="h-4 w-4" />
@@ -1904,6 +1890,8 @@ export default function ProjectDetail() {
         viewAttempt={ozalitFormAttempt}
         notifyOnSave={ozalitFormNotify}
         onDone={onActionDone}
+        onStartWork={canMarkOzalitStarted(user, project) ? async () => { await handleOzalitStart(); setOzalitFormOpen(false) } : undefined}
+        startingWork={startingWork}
       />
 
       <BaskiOnayFormDialog
@@ -1921,6 +1909,8 @@ export default function ProjectDetail() {
         mode={demoFormMode}
         viewAttempt={demoFormAttempt}
         notifyOnSave={demoFormNotify}
+        onStartWork={canMarkDemoStarted(user, project) ? async () => { await handleDemoStart(); setDemoFormOpen(false) } : undefined}
+        startingWork={startingWork}
         onDone={onActionDone}
       />
 
