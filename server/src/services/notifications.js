@@ -597,6 +597,38 @@ export async function notifyOzalitEdited(client, { project, actor }) {
 }
 
 /**
+ * The leader/assigned designer asked for an Ekran Demo Onayı instead of a
+ * physical re-demo (migration 050) — tells the team leaders, who are the
+ * only ones who can act on it.
+ */
+export async function notifyEkranDemoRequested(client, { project, actor }) {
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  const who = actor?.name ?? 'Ekipten biri'
+  return emit(client, {
+    actorId: actor?.id, title: who, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: leaders, type: 'ekran_demo_requested', tone: 'amber',
+    body: `${project.title} için ekran demo onayı istedi, onayınız bekleniyor`,
+  })
+}
+
+/**
+ * A team leader declined a pending Ekran Demo Onayı — tells the requester
+ * (and the rest of the leader/designer set) to fall back to the normal
+ * physical Demo İste.
+ */
+export async function notifyEkranDemoRejected(client, { project, actor, assignees, reason }) {
+  const designers = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  return emit(client, {
+    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: [...leaders, ...designers], type: 'ekran_demo_rejected', tone: 'rose',
+    body: reason
+      ? `Ekran demo onayı reddedildi: ${reason}, normal demo süreciyle devam edin`
+      : 'Ekran demo onayı reddedildi, normal demo süreciyle devam edin',
+  })
+}
+
+/**
  * A project pipeline transition (advance / approve / reject) just committed.
  * `toStage` / `fromStage` / `action` come straight from the history row the
  * route already built. We map the resulting state to the people who now need
@@ -655,9 +687,13 @@ export async function notifyProjectTransition(client, {
     // Matbaa must deliver the requested demo.
     case 'demo_teslim':
     case 'cin_demo_teslim':
+      // ?action=teslim tells ProjectDetail to open the demo form itself on
+      // arrival, instead of the printer landing on the page and having to
+      // find the "Teslim Edin" button — the printer's whole job here IS the
+      // form, so skip the extra tap.
       return emit(client, {
         ...base, recipientIds: printers, type: 'demo_delivery_pending', tone: 'blue',
-        body: 'Demo teslimi bekleniyor', link: `/projects/${project.id}`,
+        body: 'Demo teslimi bekleniyor', link: `/projects/${project.id}?action=teslim`,
       })
 
     // Matbaa delivered the demo. NOT an approval ping: nobody can approve yet
@@ -678,9 +714,10 @@ export async function notifyProjectTransition(client, {
     // for redelivery (no fresh request needed — same as demo's teslim case).
     case 'ozalit_teslim':
       if (project.ozalit_requested || project.reject_target === 'matbaa') {
+        // Same ?action=teslim handoff as demo_teslim above.
         return emit(client, {
           ...base, recipientIds: printers, type: 'ozalit_delivery_pending', tone: 'blue',
-          body: 'Ozalit teslimi bekleniyor', link: `/projects/${project.id}`,
+          body: 'Ozalit teslimi bekleniyor', link: `/projects/${project.id}?action=teslim`,
         })
       }
       return emit(client, {
@@ -927,9 +964,19 @@ export async function notifyOrderTransition(client, {
     ? assigneeIds
     : await activeUserIdsByRole(client, owner)
 
+  // tasarimci_onay is the printer's own sign-off step. The queue at
+  // /approvals/siparis normally makes them tap a card's "Teslim Edin" button
+  // before TalepSignDialog opens; the printer works form-first, so the tap
+  // should land straight in the form instead. Carrying the order id lets
+  // Approvals.jsx open it on arrival — every other step's link is a plain
+  // list page its owner (leader/designer) is expected to triage first.
+  const link = newStatus === 'tasarimci_onay' && order?.id
+    ? `/approvals/siparis?order=${order.id}`
+    : (ORDER_STEP_LINK[newStatus] ?? '/siparis-talepleri')
+
   return emit(client, {
     ...base, recipientIds, type: 'order_step', tone: ORDER_STEP_TONE[newStatus] ?? 'blue',
-    body: ORDER_STEP_BODY[newStatus] ?? 'Baskı güncellendi', link: ORDER_STEP_LINK[newStatus] ?? '/siparis-talepleri',
+    body: ORDER_STEP_BODY[newStatus] ?? 'Baskı güncellendi', link,
   })
 }
 

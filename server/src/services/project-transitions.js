@@ -36,6 +36,9 @@ import {
   computeDemoChangeDecline,
   computeOzalitChangeAccept,
   computeOzalitChangeDecline,
+  computeEkranDemoRequest,
+  computeEkranDemoApprove,
+  computeEkranDemoReject,
 } from '../domain/transitions.js'
 
 /**
@@ -163,6 +166,21 @@ export function applyOzalitChangeAccept(project, { user }) {
 }
 export function applyOzalitChangeDecline(project, { user }) {
   return computeOzalitChangeDecline(project, user)
+}
+
+/**
+ * `POST /projects/:id/ekran-demo-request`, `/ekran-demo-approve`,
+ * `/ekran-demo-reject`. Ekran Demo Onayı — the lightweight digital
+ * alternative to a physical re-demo for a held demo at 100% progress.
+ */
+export function applyEkranDemoRequest(project, { user }) {
+  return computeEkranDemoRequest(project, user)
+}
+export function applyEkranDemoApprove(project, { user }) {
+  return computeEkranDemoApprove(project, user)
+}
+export function applyEkranDemoReject(project, { user, reason }) {
+  return computeEkranDemoReject(project, user, { reason })
 }
 
 /** `POST /projects/:id/reject`. */

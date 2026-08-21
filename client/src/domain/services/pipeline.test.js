@@ -275,10 +275,10 @@ describe('demo/ozalit "Başladım" gate + cancel + change-request (migration 048
     expect(canMarkOzalitStarted(AYSE, { stage: 'ozalit_teslim' })).toBe(false)
   })
 
-  it('canCancelDemoRequest: leader or assigned designer, before matbaa starts', () => {
+  it('canCancelDemoRequest: team-leader-only, before matbaa starts', () => {
     const project = { stage: 'demo_teslim', demo_started: false, assignees }
     expect(canCancelDemoRequest(AYSE, project)).toBe(true)
-    expect(canCancelDemoRequest(AYLIN, project)).toBe(true)
+    expect(canCancelDemoRequest(AYLIN, project)).toBe(false)
     expect(canCancelDemoRequest(STRANGER, project)).toBe(false)
     expect(canCancelDemoRequest(OKTAY, project)).toBe(false)
     expect(canCancelDemoRequest(AYSE, { ...project, demo_started: true })).toBe(false)
@@ -292,10 +292,10 @@ describe('demo/ozalit "Başladım" gate + cancel + change-request (migration 048
     expect(canCancelOzalitRequest(AYSE, { ...project, ozalit_started: true })).toBe(false)
   })
 
-  it('canRequestDemoChange: only once started, and not while a request is already pending', () => {
+  it('canRequestDemoChange: team-leader-only, once started, and not while a request is already pending', () => {
     const project = { stage: 'demo_teslim', demo_started: true, assignees }
     expect(canRequestDemoChange(AYSE, project)).toBe(true)
-    expect(canRequestDemoChange(AYLIN, project)).toBe(true)
+    expect(canRequestDemoChange(AYLIN, project)).toBe(false)
     expect(canRequestDemoChange(STRANGER, project)).toBe(false)
     expect(canRequestDemoChange(AYSE, { ...project, demo_started: false })).toBe(false)
     expect(canRequestDemoChange(AYSE, { ...project, demo_change_requested_at: '2026-01-01' })).toBe(false)

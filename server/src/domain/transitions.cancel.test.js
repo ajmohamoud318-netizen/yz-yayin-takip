@@ -65,17 +65,19 @@ describe('demo cancel', () => {
     assert.equal(next.reject_target, null)
   })
 
-  it('an assigned designer can cancel', () => {
+  it('is team-leader-only — an assigned designer cannot cancel', () => {
     const designer = { id: 'u-d', role: 'designer', name: 'Aylin' }
-    const { project: next } = computeDemoCancel(demoProject(), designer, { designerIds: ['u-d'] })
-    assert.equal(next.stage, 'tasarim')
+    assert.throws(
+      () => computeDemoCancel(demoProject(), designer, { designerIds: ['u-d'] }),
+      /yalnızca ekip lideri yapabilir/,
+    )
   })
 
-  it('rejects a user who is neither leader nor assigned designer', () => {
+  it('rejects a non-leader stranger the same way', () => {
     const stranger = { id: 'u-x', role: 'designer', name: 'Biri' }
     assert.throws(
       () => computeDemoCancel(demoProject(), stranger, { designerIds: ['u-d'] }),
-      /yalnızca ekip lideri veya atanmış tasarımcı/,
+      /yalnızca ekip lideri yapabilir/,
     )
   })
 
@@ -102,17 +104,19 @@ describe('ozalit cancel', () => {
     assert.equal(next.ozalit_requested, false)
   })
 
-  it('an assigned designer can cancel', () => {
+  it('is team-leader-only — an assigned designer cannot cancel', () => {
     const designer = { id: 'u-d', role: 'designer', name: 'Aylin' }
-    const { project: next } = computeOzalitCancel(ozalitProject(), designer, { designerIds: ['u-d'] })
-    assert.equal(next.stage, 'tasarim')
+    assert.throws(
+      () => computeOzalitCancel(ozalitProject(), designer, { designerIds: ['u-d'] }),
+      /yalnızca ekip lideri yapabilir/,
+    )
   })
 
-  it('rejects a user who is neither leader nor assigned designer', () => {
+  it('rejects a non-leader stranger the same way', () => {
     const stranger = { id: 'u-x', role: 'designer', name: 'Biri' }
     assert.throws(
       () => computeOzalitCancel(ozalitProject(), stranger, { designerIds: ['u-d'] }),
-      /yalnızca ekip lideri veya atanmış tasarımcı/,
+      /yalnızca ekip lideri yapabilir/,
     )
   })
 

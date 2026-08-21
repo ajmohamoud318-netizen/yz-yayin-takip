@@ -105,11 +105,10 @@ describe('demo change-request', () => {
     )
   })
 
-  it('rejects a user who is neither leader nor assigned designer', () => {
-    const stranger = { id: 'u-x', role: 'designer', name: 'Biri' }
+  it('is team-leader-only — an assigned designer cannot request a change', () => {
     assert.throws(
-      () => computeDemoChangeRequest(demoProject({ demo_started: true }), stranger, {}, { designerIds: ['u-d'] }),
-      /yalnızca ekip lideri veya atanmış tasarımcı/,
+      () => computeDemoChangeRequest(demoProject({ demo_started: true }), designer, {}, { designerIds: ['u-d'] }),
+      /yalnızca ekip lideri yapabilir/,
     )
   })
 })

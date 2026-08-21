@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
-import { ThumbsUp, ThumbsDown, Inbox, Send, ShoppingCart, Eye, CheckCircle2 } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, Inbox, Send, ShoppingCart, CheckCircle2 } from 'lucide-react'
 
 import api, { ORDER_STEP_LABELS } from '@/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -16,7 +16,7 @@ import DemoFormDialog from '@/components/DemoFormDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import BaskiOnayFormDialog from '@/components/BaskiOnayFormDialog'
 import ConfirmDialog from '@/components/ConfirmDialog'
-import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
+import TalepSignDialog from '@/components/TalepSignDialog'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
 import { canRejectAtStage, isDemoApprover, isOzalitApprover, ozalitLeaderApproved } from '@/domain'
 import { formatTargetDate, formatNumber } from '@/lib/utils'
@@ -29,6 +29,7 @@ export default function Approvals({ tab = 'demo' }) {
   const { user } = useAuth()
   const { projects, loading, updateOne } = useProjects()
   const navigate = useNavigate()
+  const location = useLocation()
   const [dialog, setDialog] = useState(null)
   const [demoForm, setDemoForm] = useState(null)
   const [ozalitForm, setOzalitForm] = useState(null)
@@ -43,7 +44,6 @@ export default function Approvals({ tab = 'demo' }) {
   const [orders, setOrders] = useState([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [signOrder, setSignOrder] = useState(null)
-  const [viewOrder, setViewOrder] = useState(null)
 
   const isPrinter = user?.role === 'printer'
   const isLeader = user?.role === 'team_leader'
@@ -61,6 +61,22 @@ export default function Approvals({ tab = 'demo' }) {
       .then((reqs) => setOrders(reqs.filter((r) => r.status === 'tasarimci_onay')))
       .finally(() => setOrdersLoading(false))
   }, [isPrinter, tab])
+
+  // A tasarimci_onay push/bell tap lands here with ?order=<id> — the printer
+  // works form-first, so open TalepSignDialog straight away instead of
+  // leaving them to find the right card's "Teslim Edin" button. Strip the
+  // param once consumed so a later re-render (or the dialog re-opening after
+  // close) doesn't fire it again.
+  useEffect(() => {
+    if (!isPrinter || tab !== 'siparis' || orders.length === 0) return
+    const params = new URLSearchParams(location.search)
+    const orderId = params.get('order')
+    if (!orderId) return
+    const match = orders.find((o) => o.id === orderId)
+    params.delete('order')
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true })
+    if (match) setSignOrder(match)
+  }, [isPrinter, tab, orders, location.search, location.pathname, navigate])
 
   const filterQueue = (sub) =>
     projects.filter((p) => {
@@ -158,7 +174,6 @@ export default function Approvals({ tab = 'demo' }) {
                   key={order.id}
                   order={order}
                   onSign={() => setSignOrder(order)}
-                  onView={() => setViewOrder(order)}
                 />
               ))}
             </div>
@@ -170,11 +185,6 @@ export default function Approvals({ tab = 'demo' }) {
           open={!!signOrder}
           onOpenChange={(v) => !v && setSignOrder(null)}
           onSigned={handleOrderSigned}
-        />
-        <TalepHistoryViewer
-          order={viewOrder}
-          open={!!viewOrder}
-          onOpenChange={(v) => !v && setViewOrder(null)}
         />
       </>
     )
@@ -452,7 +462,7 @@ function normalizeItems(items, quantity) {
   return items
 }
 
-function SiparisOrderCard({ order, onSign, onView }) {
+function SiparisOrderCard({ order, onSign }) {
   const items = normalizeItems(order.items, order.quantity)
   const date = order.created_at
     ? new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(order.created_at))
@@ -493,10 +503,6 @@ function SiparisOrderCard({ order, onSign, onView }) {
         )}
 
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="ghost" className="flex-1" onClick={onView}>
-            <Eye className="h-3.5 w-3.5" />
-            Formu Görüntüleyin
-          </Button>
           <Button size="sm" className="flex-1" onClick={onSign}>
             Teslim Edin
           </Button>

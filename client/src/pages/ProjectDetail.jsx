@@ -48,8 +48,9 @@ import OzalitFormDialog from '@/components/OzalitFormDialog'
 import BaskiOnayFormDialog from '@/components/BaskiOnayFormDialog'
 import DemoFormDialog from '@/components/DemoFormDialog'
 import ProjectHistory from '@/components/ProjectHistory'
-import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
+import TalepSignDialog from '@/components/TalepSignDialog'
 import SiparisBaskiOnayFormDialog from '@/components/SiparisBaskiOnayFormDialog'
+import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import { cn, formatDateTr, initials } from '@/lib/utils'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { isSubtaskDone, countsTowardProgress } from '@/domain/services/progress'
@@ -57,8 +58,10 @@ import {
   canApproveOzalitNow, ozalitLeaderApproved,
   canMarkDemoStarted, canMarkOzalitStarted,
   canCancelDemoRequest, canCancelOzalitRequest,
+  canEditSentDemoRequest, canEditSentOzalitRequest,
   canRequestDemoChange, canRequestOzalitChange,
   canRespondDemoChange, canRespondOzalitChange,
+  canRequestEkranDemo, canRespondEkranDemo,
 } from '@/domain'
 import { canActOnOrder } from '@/domain/constants/orders'
 
@@ -100,13 +103,12 @@ function orderActionLabel(order) {
  * Compact stepper for a single sipariş order's own steps (Talep →
  * Satışta) — separate from the project's main design/production pipeline
  * (StageBar), which doesn't move while an order is in flight and says
- * nothing about it. Clicking opens the full sign-off history via
- * `onOpen`, matching the click affordance ProjectHistory's order entries
- * already use. `sold` (project.stage === 'satista') and `handoverPending`
- * (Matbaa raised a teslim request Satış hasn't confirmed yet) advance the
- * two derived final steps as those real events actually happen.
+ * nothing about it. `sold` (project.stage === 'satista') and
+ * `handoverPending` (Matbaa raised a teslim request Satış hasn't confirmed
+ * yet) advance the two derived final steps as those real events actually
+ * happen.
  */
-function OrderProgressStepper({ order, sold, handoverPending, onOpen, canAct, onAct }) {
+function OrderProgressStepper({ order, sold, handoverPending, canAct, onAct }) {
   // The pipeline branches at goruldu (tasarimci_onay vs ekran_onay) — each
   // order's own displayed sequence comes from the path it actually took,
   // not a fixed list. See orderStepPath in domain/constants/orders.js.
@@ -123,54 +125,48 @@ function OrderProgressStepper({ order, sold, handoverPending, onOpen, canAct, on
         canAct && 'border-amber-300 bg-amber-50/40',
       )}
     >
-      <button
-        type="button"
-        onClick={onOpen}
-        className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-          <Package className="h-3.5 w-3.5" />
-          Baskı Talebi
-        </div>
-        <ol className="flex items-center">
-          {displaySteps.map((step, i) => {
-            const done = i < currentIndex
-            const current = i === currentIndex
-            return (
-              <li key={step} className="flex flex-1 items-center last:flex-none">
-                <div className="flex flex-col items-center">
-                  <span
-                    className={cn(
-                      'flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold',
-                      done
-                        ? 'bg-brand-500 text-white'
-                        : current
-                          ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500'
-                          : 'bg-muted text-muted-foreground',
-                    )}
-                  >
-                    {done ? '✓' : i + 1}
-                  </span>
-                  <span
-                    className={cn(
-                      'mt-1 max-w-[60px] text-center text-[9px] leading-tight',
-                      current ? 'font-semibold text-brand-700' : 'text-muted-foreground',
-                    )}
-                  >
-                    {DISPLAY_ORDER_STEP_LABELS[step]}
-                  </span>
-                </div>
-                {i < displaySteps.length - 1 && (
-                  <span
-                    aria-hidden="true"
-                    className={cn('mx-1.5 mb-4 h-0.5 flex-1', i < currentIndex ? 'bg-brand-500' : 'bg-muted')}
-                  />
-                )}
-              </li>
-            )
-          })}
-        </ol>
-      </button>
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <Package className="h-3.5 w-3.5" />
+        Baskı Talebi
+      </div>
+      <ol className="flex items-center">
+        {displaySteps.map((step, i) => {
+          const done = i < currentIndex
+          const current = i === currentIndex
+          return (
+            <li key={step} className="flex flex-1 items-center last:flex-none">
+              <div className="flex flex-col items-center">
+                <span
+                  className={cn(
+                    'flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold',
+                    done
+                      ? 'bg-brand-500 text-white'
+                      : current
+                        ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500'
+                        : 'bg-muted text-muted-foreground',
+                  )}
+                >
+                  {done ? '✓' : i + 1}
+                </span>
+                <span
+                  className={cn(
+                    'mt-1 max-w-[60px] text-center text-[9px] leading-tight',
+                    current ? 'font-semibold text-brand-700' : 'text-muted-foreground',
+                  )}
+                >
+                  {DISPLAY_ORDER_STEP_LABELS[step]}
+                </span>
+              </div>
+              {i < displaySteps.length - 1 && (
+                <span
+                  aria-hidden="true"
+                  className={cn('mx-1.5 mb-4 h-0.5 flex-1', i < currentIndex ? 'bg-brand-500' : 'bg-muted')}
+                />
+              )}
+            </li>
+          )
+        })}
+      </ol>
       {canAct && (
         <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2">
           <span className="text-[11px] font-medium text-amber-700">Aksiyon bekliyor</span>
@@ -237,11 +233,16 @@ export default function ProjectDetail() {
   const [changeRequestOpen, setChangeRequestOpen] = useState(null)
   const [changeRequestNote, setChangeRequestNote] = useState('')
   const [requestingChange, setRequestingChange] = useState(false)
+  // Ekran Demo Onayı — lightweight digital alternative to a physical
+  // re-demo for a held demo at 100% progress (migration 050). Covers both
+  // the request and the approve step (TESLIM_CONFIRMS entries below) — only
+  // one is ever in flight at a time.
+  const [processingEkranDemo, setProcessingEkranDemo] = useState(false)
+  const [ekranDemoRejectOpen, setEkranDemoRejectOpen] = useState(false)
   const [updatingSubId, setUpdatingSubId] = useState(null) // per-subtask "what changed" note
   const [updateNote, setUpdateNote] = useState('')
   const [projectOrders, setProjectOrders] = useState([])
   const [projectHandover, setProjectHandover] = useState(null)
-  const [orderFormViewer, setOrderFormViewer] = useState(null)
   const [signOrder, setSignOrder] = useState(null)
   // Distinct from baskiOnayFormOpen above — that's the final production-gate
   // "Baskı Onayı" (BaskiOnayFormDialog), unrelated to a sipariş order's own
@@ -530,6 +531,37 @@ export default function ProjectDetail() {
     }
   }
 
+  // Ekran Demo Onayı — request the lightweight digital alternative to a
+  // physical re-demo (migration 050). Only offered on a held demo at 100%.
+  async function handleEkranDemoRequest() {
+    if (!project) return
+    setProcessingEkranDemo(true)
+    try {
+      await api.requestEkranDemoOnay(project.id)
+      await refetch()
+      toast.success('Ekran demo onayı istendi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setProcessingEkranDemo(false)
+      setTeslimConfirm(null)
+    }
+  }
+  async function handleEkranDemoApprove() {
+    if (!project) return
+    setProcessingEkranDemo(true)
+    try {
+      await api.approveEkranDemo(project.id)
+      await refetch()
+      toast.success('Ekran demo onaylandı.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setProcessingEkranDemo(false)
+      setTeslimConfirm(null)
+    }
+  }
+
   // Cancel a mistaken demo/ozalit request outright — back to tasarim, no
   // attempt bump. Only offered before the matbaa has started.
   async function handleDemoCancel() {
@@ -734,6 +766,21 @@ export default function ProjectDetail() {
       variant: 'destructive',
       onConfirm: handleOzalitChangeDecline,
     },
+    'ekran-demo-request': {
+      title: 'Ekran demo onayı istensin mi?',
+      description:
+        'Matbaaya fiziksel demo göndermeden, ekip liderinin ekrandan tek tıkla onaylamasını isteyeceksiniz.',
+      confirmLabel: 'İsteyin',
+      variant: 'default',
+      onConfirm: handleEkranDemoRequest,
+    },
+    'ekran-demo-approve': {
+      title: 'Ekran demo onaylansın mı?',
+      description: 'Onayınızla proje bir sonraki aşamaya geçecek. Bu işlem geri alınamaz.',
+      confirmLabel: 'Onaylayın',
+      variant: 'success',
+      onConfirm: handleEkranDemoApprove,
+    },
   }
   const pendingTeslim = teslimConfirm ? TESLIM_CONFIRMS[teslimConfirm] : null
 
@@ -887,6 +934,62 @@ export default function ProjectDetail() {
   // Any subtask still flagged for revision. Blocks the resubmit button until
   // the designer has revized them all (the server enforces the same gate).
   const pendingRevize = subtasksSafe.some((s) => s.needs_revize)
+
+  // Which form the "advance" action opens for the project's current stage.
+  // Pulled out of the button's onClick so a ?action=teslim deep link (see
+  // below) can trigger the exact same thing a tap on the button would.
+  function handleAdvanceAction() {
+    // An ozalit-revision redesign resubmits straight to the ozalit flow —
+    // open the ozalit form so the resubmit gets the same review step as the
+    // very first request.
+    if (project.stage === 'tasarim' && project.last_reject_type === 'ozalit') {
+      setOzalitFormMode('advance')
+      setOzalitFormAttempt(null)
+      setOzalitFormOpen(true)
+      return
+    }
+    // Demo stages open the demo form: the designer requests it at Tasarım,
+    // the matbaa forwards it at Demo Teslim, and a re-send ("Demo İste") at
+    // any demo stage fills a fresh form for the new attempt — all through
+    // the same form (read-only for the matbaa), matching the Onaylar page.
+    if (
+      project.stage === 'tasarim' ||
+      project.stage === 'demo_teslim' ||
+      project.stage === 'demo_onay' ||
+      project.stage === 'cin_demo_teslim' ||
+      project.stage === 'cin_demo_onay'
+    ) {
+      setDemoFormMode('advance')
+      setDemoFormAttempt(null)
+      setDemoFormOpen(true)
+    } else if (project.stage === 'ozalit_teslim') {
+      // ozalit teslim → onay: submit the ozalit spec form.
+      setOzalitFormMode('advance')
+      setOzalitFormAttempt(null)
+      setOzalitFormOpen(true)
+    } else {
+      setDialog('advance')
+    }
+  }
+
+  // notifyProjectTransition tags the printer's delivery-pending pushes with
+  // ?action=teslim (demo_teslim/ozalit_teslim) so the matbaa's tap opens the
+  // delivery form directly — their whole job at that stage IS the form, and
+  // making them find the "Teslim Edin" button first was the extra tap this
+  // removes. Only fires the exact button action, and only when it's actually
+  // available (role/stage/gate all still line up) — e.g. if İşlemi Başlatın
+  // hasn't been pressed yet, 'advance' isn't offered and this waits for
+  // demo_started/ozalit_started to flip before opening the form.
+  useEffect(() => {
+    if (!project || pendingRevize) return
+    const params = new URLSearchParams(location.search)
+    if (params.get('action') !== 'teslim') return
+    if (!actions.includes('advance')) return
+    handleAdvanceAction()
+    params.delete('action')
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id, project?.stage, project?.demo_started, project?.ozalit_started, pendingRevize, location.search])
 
   async function saveSubtaskChanges() {
     if (!hasSubtaskChanges) return
@@ -1135,40 +1238,7 @@ export default function ProjectDetail() {
                     size="sm"
                     disabled={pendingRevize}
                     title={pendingRevize ? 'Önce revize bekleyen alt görevleri revize edin.' : undefined}
-                    onClick={() => {
-                      // An ozalit-revision redesign resubmits straight to the
-                      // ozalit flow — open the ozalit form so the resubmit
-                      // gets the same review step as the very first request.
-                      if (project.stage === 'tasarim' && project.last_reject_type === 'ozalit') {
-                        setOzalitFormMode('advance')
-                        setOzalitFormAttempt(null)
-                        setOzalitFormOpen(true)
-                        return
-                      }
-                      // Demo stages open the demo form: the designer requests it
-                      // at Tasarım, the matbaa forwards it at Demo Teslim, and a
-                      // re-send ("Demo İste") at any demo stage fills a fresh form
-                      // for the new attempt — all through the same form (read-only
-                      // for the matbaa), matching the Onaylar page.
-                      if (
-                        project.stage === 'tasarim' ||
-                        project.stage === 'demo_teslim' ||
-                        project.stage === 'demo_onay' ||
-                        project.stage === 'cin_demo_teslim' ||
-                        project.stage === 'cin_demo_onay'
-                      ) {
-                        setDemoFormMode('advance')
-                        setDemoFormAttempt(null)
-                        setDemoFormOpen(true)
-                      } else if (project.stage === 'ozalit_teslim') {
-                        // ozalit teslim → onay: submit the ozalit spec form.
-                        setOzalitFormMode('advance')
-                        setOzalitFormAttempt(null)
-                        setOzalitFormOpen(true)
-                      } else {
-                        setDialog('advance')
-                      }
-                    }}
+                    onClick={handleAdvanceAction}
                   >
                     <Send className="h-4 w-4" />
                     {advanceLabel}
@@ -1199,7 +1269,7 @@ export default function ProjectDetail() {
                 )}
                 {/* Undo a mistaken request outright — only while the matbaa
                     hasn't started yet, so nothing was actually delivered. */}
-                {canCancelDemoRequest(user, project) && (
+                {canEditSentDemoRequest(user, project) && (
                   <Button
                     size="sm" variant="outline"
                     onClick={() => { setDemoFormMode('view'); setDemoFormAttempt(null); setDemoFormNotify(true); setDemoFormOpen(true) }}
@@ -1218,7 +1288,7 @@ export default function ProjectDetail() {
                     {cancellingRequest ? 'İşleniyor…' : 'Demo İsteğini İptal Edin'}
                   </Button>
                 )}
-                {canCancelOzalitRequest(user, project) && (
+                {canEditSentOzalitRequest(user, project) && (
                   <Button
                     size="sm" variant="outline"
                     onClick={() => { setOzalitFormMode('view'); setOzalitFormAttempt(null); setOzalitFormNotify(true); setOzalitFormOpen(true) }}
@@ -1389,6 +1459,54 @@ export default function ProjectDetail() {
                       Tasarım tamamlanmadı, tasarımcı yeni demo gönderdiğinde ilerleyecek
                     </span>
                   )}
+                {/* Ekran Demo Onayı (migration 050) — a held demo (approved
+                    at <100%) that's since reached 100% can either send a
+                    normal physical demo (the "Demo İste" advance button
+                    above) OR ask for a lightweight digital approval instead.
+                    Both are offered side by side; the designer/leader picks
+                    one. */}
+                {canRequestEkranDemo(user, project) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setTeslimConfirm('ekran-demo-request')}
+                    disabled={processingEkranDemo}
+                  >
+                    <Send className="h-4 w-4" />
+                    Ekran Demo Onayı İsteyin
+                  </Button>
+                )}
+                {project.ekran_demo_requested_at != null && !canRespondEkranDemo(user, project) && (
+                  <span
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-800"
+                    title="Ekip lideri ekrandan onayladığında proje ilerleyecek"
+                  >
+                    <Clock className="h-3.5 w-3.5" />
+                    Ekran demo onayı istendi, ekip lideri onayı bekleniyor
+                  </span>
+                )}
+                {canRespondEkranDemo(user, project) && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="success"
+                      onClick={() => setTeslimConfirm('ekran-demo-approve')}
+                      disabled={processingEkranDemo}
+                    >
+                      <ThumbsUp className="h-4 w-4" />
+                      Ekran Demoyu Onaylayın
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setEkranDemoRejectOpen(true)}
+                      disabled={processingEkranDemo}
+                    >
+                      <ThumbsDown className="h-4 w-4" />
+                      Reddet
+                    </Button>
+                  </>
+                )}
                 {actions.includes('reject') && (
                   <Button size="sm" variant="destructive" onClick={() => setDialog('reject')}>
                     <ThumbsDown className="h-4 w-4" />
@@ -1535,7 +1653,6 @@ export default function ProjectDetail() {
                 order={o}
                 sold={sold && o.status === 'onaylandi'}
                 handoverPending={handoverPending && o.status === 'onaylandi'}
-                onOpen={() => setOrderFormViewer({ order: o })}
                 canAct={canActOnOrder(user, o, fallbackProjectIds)}
                 onAct={() => openOrderAction(o)}
               />
@@ -1548,7 +1665,6 @@ export default function ProjectDetail() {
           <ProjectHistory
             entries={historyWithAttempts}
             projectType={project.type}
-            orders={projectOrders}
             onOpenDemoForm={(attempt) => {
               setDemoFormAttempt(attempt)
               setDemoFormMode('history')
@@ -1559,7 +1675,6 @@ export default function ProjectDetail() {
               setOzalitFormMode('history')
               setOzalitFormOpen(true)
             }}
-            onOpenOrderForm={setOrderFormViewer}
           />
 
           <div className="space-y-4">
@@ -1764,6 +1879,13 @@ export default function ProjectDetail() {
         onDone={onActionDone}
       />
 
+      <EkranDemoRejectDialog
+        open={ekranDemoRejectOpen}
+        onOpenChange={setEkranDemoRejectOpen}
+        project={project}
+        onDone={onActionDone}
+      />
+
       <NewProjectDialog
         open={editOpen}
         onOpenChange={setEditOpen}
@@ -1800,13 +1922,6 @@ export default function ProjectDetail() {
         viewAttempt={demoFormAttempt}
         notifyOnSave={demoFormNotify}
         onDone={onActionDone}
-      />
-
-      <TalepHistoryViewer
-        order={orderFormViewer?.order}
-        initialStep={orderFormViewer?.step}
-        open={!!orderFormViewer}
-        onOpenChange={(v) => !v && setOrderFormViewer(null)}
       />
 
       <TalepSignDialog
@@ -1859,7 +1974,7 @@ export default function ProjectDetail() {
         confirmLabel={pendingTeslim?.confirmLabel}
         cancelLabel="Vazgeç"
         variant={pendingTeslim?.variant}
-        busy={receiving || reportingNotReceived || startingWork || cancellingRequest || respondingChange}
+        busy={receiving || reportingNotReceived || startingWork || cancellingRequest || respondingChange || processingEkranDemo}
         onConfirm={() => pendingTeslim?.onConfirm?.()}
       />
 
@@ -2169,7 +2284,7 @@ function approveActionLabel(project) {
       // Dual-approval (migration 045, and ÇİN's mirror gate from migration
       // 047): the outer button just opens the dialog, but its label should
       // say which half is still owed.
-      return project.baski_onay_prepared ? 'Onaylayın' : 'Formu Hazırlayın'
+      return project.baski_onay_prepared ? 'Onaylayın' : 'Baskı Onayı Hazırlayın'
     default:
       // Demo Onay and every other approval: the leader is approving the item
       // in front of them, so the button simply reads "Onaylayın".

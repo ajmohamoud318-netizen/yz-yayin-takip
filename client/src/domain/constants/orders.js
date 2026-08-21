@@ -13,7 +13,23 @@ export const ORDER_STEP_LABELS = {
   matbaa_onay: 'Onay Bekleniyor',
   siparis_baski_onay: 'Baskı Onayı',
   onaylandi: 'Baskıda',
+  // Sub-events logged inside order_history while status stays at matbaa_onay
+  // (never an order.status value themselves) — without these, ProjectDetail's
+  // order_step_label lookup falls back to the raw step key.
+  matbaa_received: 'Matbaa Teslimi Alındı',
+  matbaa_not_received: 'Matbaa Teslimi Alınamadı',
+  matbaa_approve: 'Matbaa Onayı Verildi',
 }
+
+// Which order_history steps belong to the ozalit/proof round — i.e. should
+// render/print the Ozalit form (OzalitStepSheet), not the generic Baskı
+// Formu or the later Baskı Onayı form. matbaa_received/matbaa_not_received/
+// matbaa_approve are sub-events logged while the order sits at matbaa_onay,
+// so they belong to the same round as matbaa_onay itself.
+export const ORDER_OZALIT_ROUND_STEPS = new Set([
+  'tasarimci_onay', 'ekran_onay', 'matbaa_onay',
+  'matbaa_received', 'matbaa_not_received', 'matbaa_approve',
+])
 
 // matbaa_onay is multi-party, leader-first (every active team leader AND
 // every order assignee must approve — see computeMatbaaOnayApproval on the

@@ -17,6 +17,7 @@ import {
   applyDemoEdit, applyOzalitEdit,
   applyDemoChangeRequest, applyOzalitChangeRequest,
   applyDemoChangeAccept, applyDemoChangeDecline, applyOzalitChangeAccept, applyOzalitChangeDecline,
+  applyEkranDemoRequest, applyEkranDemoApprove, applyEkranDemoReject,
 } from '../services/project-transitions.js'
 import {
   notifyProjectCreated, notifyProjectTransition, notifyProjectDeleted,
@@ -27,6 +28,7 @@ import {
   notifyDemoChangeRequested, notifyOzalitChangeRequested,
   notifyDemoChangeAccepted, notifyDemoChangeDeclined,
   notifyOzalitChangeAccepted, notifyOzalitChangeDeclined,
+  notifyEkranDemoRequested, notifyEkranDemoRejected,
 } from '../services/notifications.js'
 import { ORDERABLE_STAGES } from '../domain/stages.js'
 // Blocks main-pipeline transitions on imported backlist products — see the
@@ -485,6 +487,14 @@ export async function projectRoutes(fastify) {
       if (Object.prototype.hasOwnProperty.call(next, 'demo_delivered_by_name')) {
         fields.demo_delivered_by_name = next.demo_delivered_by_name
       }
+      // Fresh delivery/re-send clears any leftover "fix owed" flag from the
+      // round that just ended (migration 049) — see computeDemoTeslimAdvance.
+      if (Object.prototype.hasOwnProperty.call(next, 'demo_fix_pending')) {
+        fields.demo_fix_pending = next.demo_fix_pending
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'ozalit_fix_pending')) {
+        fields.ozalit_fix_pending = next.ozalit_fix_pending
+      }
       // The ozalit_teslim two-step (request → matbaa deliver) and the
       // reject-to-matbaa lock live on these flags. Without persisting them the
       // "Ozalit İste" request set ozalit_requested=true in memory only and it
@@ -668,6 +678,7 @@ export async function projectRoutes(fastify) {
         demo_delivered_at: next.demo_delivered_at,
         demo_delivered_by: next.demo_delivered_by,
         demo_delivered_by_name: next.demo_delivered_by_name,
+        demo_fix_pending: next.demo_fix_pending,
       })
       if (history) {
         await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
@@ -737,6 +748,7 @@ export async function projectRoutes(fastify) {
         ozalit_leader_approved_at: next.ozalit_leader_approved_at,
         ozalit_designer_approvals: JSON.stringify(next.ozalit_designer_approvals ?? []),
         ozalit_approvals: JSON.stringify(next.ozalit_approvals ?? []),
+        ozalit_fix_pending: next.ozalit_fix_pending,
       })
       if (history) {
         await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
@@ -862,6 +874,7 @@ export async function projectRoutes(fastify) {
         demo_change_requested_by: next.demo_change_requested_by,
         demo_change_requested_by_name: next.demo_change_requested_by_name,
         demo_change_requested_note: next.demo_change_requested_note,
+        demo_fix_pending: next.demo_fix_pending,
         reject_target: next.reject_target,
       })
       if (history) {
@@ -896,6 +909,7 @@ export async function projectRoutes(fastify) {
         ozalit_change_requested_by: next.ozalit_change_requested_by,
         ozalit_change_requested_by_name: next.ozalit_change_requested_by_name,
         ozalit_change_requested_note: next.ozalit_change_requested_note,
+        ozalit_fix_pending: next.ozalit_fix_pending,
         reject_target: next.reject_target,
       })
       if (history) {
@@ -910,8 +924,9 @@ export async function projectRoutes(fastify) {
   // Leader/assigned designer edited the saved demo/ozalit form (SpecFormDialog
   // mode='view') while it's still with the matbaa and wants them notified.
   // Same free-edit window as demo-cancel/ozalit-cancel — refused once the
-  // matbaa has started (computeDemoEdit/computeOzalitEdit). Nothing on the
-  // project changes; this only logs history + pings the printers.
+  // matbaa has started (computeDemoEdit/computeOzalitEdit). Also the one
+  // place that clears demo_fix_pending/ozalit_fix_pending when an accepted
+  // change request owed a fix — this submission IS the fix (migration 049).
   fastify.post('/projects/:id/demo-edit-notify', { schema: schemas.projectsIdParams }, async (request) => {
     await attachUser(request)
     const result = await withTx(async (client) => {
@@ -920,12 +935,15 @@ export async function projectRoutes(fastify) {
       assertNotLegacy(project)
       project.assignees = await loadProjectAssignees(client, project)
       const designerIds = project.assignees.map((a) => a.id)
-      const { history } = applyDemoEdit(project, { user: request.user, designerIds })
+      const { project: next, history } = applyDemoEdit(project, { user: request.user, designerIds })
+      const updated = await patchProject(client, project.id, {
+        demo_fix_pending: next.demo_fix_pending,
+      })
       if (history) {
         await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
-        await notifyDemoEdited(client, { project, actor: request.user })
+        await notifyDemoEdited(client, { project: updated, actor: request.user })
       }
-      return project
+      return updated
     })
     return result
   })
@@ -938,12 +956,15 @@ export async function projectRoutes(fastify) {
       assertNotLegacy(project)
       project.assignees = await loadProjectAssignees(client, project)
       const designerIds = project.assignees.map((a) => a.id)
-      const { history } = applyOzalitEdit(project, { user: request.user, designerIds })
+      const { project: next, history } = applyOzalitEdit(project, { user: request.user, designerIds })
+      const updated = await patchProject(client, project.id, {
+        ozalit_fix_pending: next.ozalit_fix_pending,
+      })
       if (history) {
         await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
-        await notifyOzalitEdited(client, { project, actor: request.user })
+        await notifyOzalitEdited(client, { project: updated, actor: request.user })
       }
-      return project
+      return updated
     })
     return result
   })
@@ -1019,6 +1040,7 @@ export async function projectRoutes(fastify) {
         demo_change_requested_by: next.demo_change_requested_by,
         demo_change_requested_by_name: next.demo_change_requested_by_name,
         demo_change_requested_note: next.demo_change_requested_note,
+        demo_fix_pending: next.demo_fix_pending,
       })
       if (history) {
         await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
@@ -1069,6 +1091,7 @@ export async function projectRoutes(fastify) {
         ozalit_change_requested_by: next.ozalit_change_requested_by,
         ozalit_change_requested_by_name: next.ozalit_change_requested_by_name,
         ozalit_change_requested_note: next.ozalit_change_requested_note,
+        ozalit_fix_pending: next.ozalit_fix_pending,
       })
       if (history) {
         await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
@@ -1096,6 +1119,82 @@ export async function projectRoutes(fastify) {
       if (history) {
         await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
         await notifyOzalitChangeDeclined(client, { project: updated, actor: request.user, assignees: project.assignees })
+      }
+      return updated
+    })
+    return result
+  })
+
+  // Ekran Demo Onayı — the lightweight digital alternative to a physical
+  // re-demo for a held demo (demo_held) once progress reaches 100%. See
+  // computeEkranDemoRequest/Approve/Reject and migration 050.
+  fastify.post('/projects/:id/ekran-demo-request', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const { project: next, history } = applyEkranDemoRequest(project, { user: request.user })
+      const updated = await patchProject(client, project.id, {
+        ekran_demo_requested_at: next.ekran_demo_requested_at,
+        ekran_demo_requested_by: next.ekran_demo_requested_by,
+        ekran_demo_requested_by_name: next.ekran_demo_requested_by_name,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyEkranDemoRequested(client, { project: updated, actor: request.user })
+      }
+      return updated
+    })
+    return result
+  })
+
+  fastify.post('/projects/:id/ekran-demo-approve', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const { project: next, history } = applyEkranDemoApprove(project, { user: request.user })
+      const updated = await patchProject(client, project.id, {
+        stage: next.stage,
+        demo_held: next.demo_held,
+        ekran_demo_requested_at: next.ekran_demo_requested_at,
+        ekran_demo_requested_by: next.ekran_demo_requested_by,
+        ekran_demo_requested_by_name: next.ekran_demo_requested_by_name,
+        version: next.version,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyProjectTransition(client, {
+          project: updated, fromStage: history.from_stage, toStage: history.to_stage ?? updated.stage,
+          action: history.action, actor: request.user, assignees: project.assignees,
+        })
+      }
+      return updated
+    })
+    return result
+  })
+
+  fastify.post('/projects/:id/ekran-demo-reject', { schema: schemas.projectsEkranDemoReject }, async (request) => {
+    await attachUser(request)
+    const { reason } = request.body
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const { project: next, history } = applyEkranDemoReject(project, { user: request.user, reason })
+      const updated = await patchProject(client, project.id, {
+        ekran_demo_requested_at: next.ekran_demo_requested_at,
+        ekran_demo_requested_by: next.ekran_demo_requested_by,
+        ekran_demo_requested_by_name: next.ekran_demo_requested_by_name,
+      })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyEkranDemoRejected(client, { project: updated, actor: request.user, assignees: project.assignees, reason: history.reason })
       }
       return updated
     })

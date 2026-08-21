@@ -135,6 +135,11 @@ export function createApi() {
     acceptOzalitChangeRequest: (id) => projectRepo.acceptOzalitChangeRequest(id),
     declineOzalitChangeRequest: (id) => projectRepo.declineOzalitChangeRequest(id),
     prepareBaskiOnay: (id) => projectRepo.prepareBaskiOnay(id),
+    // Ekran Demo Onayı — lightweight digital alternative to a physical
+    // re-demo for a held demo at 100% progress (migration 050).
+    requestEkranDemoOnay: (id) => projectRepo.requestEkranDemoOnay(id),
+    approveEkranDemo: (id) => projectRepo.approveEkranDemo(id),
+    rejectEkranDemo: (id, reason) => projectRepo.rejectEkranDemo(id, reason),
     rejectProject: (id, reason, revizeIds, target) => projectRepo.rejectProject(id, reason, revizeIds, target),
 
     // Subtasks

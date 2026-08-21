@@ -655,6 +655,21 @@ const projectsReject = {
   },
 }
 
+// POST /ekran-demo-reject — team leader declining a pending Ekran Demo Onayı
+// request. Always falls back to the designer's normal physical demo path, so
+// unlike projectsReject there's no stage/reject_target/revizeIds to pick.
+const projectsEkranDemoReject = {
+  ...projectsIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['reason'],
+    properties: {
+      reason: { type: 'string', minLength: 1, maxLength: 2000 },
+    },
+  },
+}
+
 // POST /demo-change-request, /ozalit-change-request — leader/assigned designer
 // asking Matbaa to accept a cancel or edit once they've started work.
 const projectsChangeRequest = {
@@ -1023,6 +1038,7 @@ export const schemas = {
   projectsAdvance,
   projectsApprove,
   projectsReject,
+  projectsEkranDemoReject,
   projectsChangeRequest,
   subtasksPatch,
   subtasksUpdates,

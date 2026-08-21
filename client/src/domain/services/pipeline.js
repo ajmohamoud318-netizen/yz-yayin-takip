@@ -253,32 +253,35 @@ export function canApproveOzalitNow(user, project) {
  *                     — printer accepts/declines a pending change-request
  */
 
-function isLeaderOrAssignedDesigner(user, project) {
-  if (!user) return false
-  if (user.role === 'team_leader') return true
-  return user.role === 'designer' && (project?.assignees ?? []).some((a) => a.id === user.id)
-}
-
-/** @param {{ role: string }} user @param {{ stage: string, demo_started?: boolean }} project */
+/** @param {{ role: string }} user @param {{ stage: string, demo_started?: boolean, demo_fix_pending?: boolean }} project */
 export function canMarkDemoStarted(user, project) {
   if (user?.role !== 'printer' || !project) return false
   if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') return false
+  // An accepted change request owes a fix before work can (re)start — see
+  // computeDemoStart's server-side guard (migration 049).
+  if (project.demo_fix_pending) return false
   return !project.demo_started
 }
 
-/** @param {{ role: string }} user @param {{ stage: string, ozalit_started?: boolean }} project */
+/** @param {{ role: string }} user @param {{ stage: string, ozalit_started?: boolean, ozalit_fix_pending?: boolean }} project */
 export function canMarkOzalitStarted(user, project) {
   if (user?.role !== 'printer' || !project) return false
   if (project.stage !== 'ozalit_teslim') return false
+  if (project.ozalit_fix_pending) return false
   return !project.ozalit_started
 }
 
+// Team-leader-only, same reasoning as canEditSentDemoRequest below: cancel
+// undoes the request outright, and letting an assigned designer do that
+// independently of the leader risked the same kind of surprise the edit
+// restriction was added for — someone else's request disappearing without
+// the leader having decided that.
 /** @param {{ id: string, role: string }} user @param {object} project */
 export function canCancelDemoRequest(user, project) {
   if (!project) return false
   if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') return false
   if (project.demo_started) return false
-  return isLeaderOrAssignedDesigner(user, project)
+  return user?.role === 'team_leader'
 }
 
 /** @param {{ id: string, role: string }} user @param {object} project */
@@ -286,15 +289,42 @@ export function canCancelOzalitRequest(user, project) {
   if (!project) return false
   if (project.stage !== 'ozalit_teslim') return false
   if (!project.ozalit_requested || project.ozalit_started) return false
-  return isLeaderOrAssignedDesigner(user, project)
+  return user?.role === 'team_leader'
 }
 
+/**
+ * Only the team leader may edit-and-notify a sent demo/ozalit — narrower
+ * than canCancelDemoRequest/canCancelOzalitRequest on purpose. Letting the
+ * leader AND an assigned designer both use this at once meant whoever saved
+ * second silently overwrote the other's edit with no warning, while the
+ * matbaa got two separate "changed" pings for what looked like one event.
+ * There is exactly one team_leader account in practice, so this removes the
+ * race entirely rather than just narrowing it. Cancel and the plain view
+ * form are unaffected — designers keep those.
+ */
+export function canEditSentDemoRequest(user, project) {
+  if (!project) return false
+  if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') return false
+  if (project.demo_started) return false
+  return user?.role === 'team_leader'
+}
+
+export function canEditSentOzalitRequest(user, project) {
+  if (!project) return false
+  if (project.stage !== 'ozalit_teslim') return false
+  if (!project.ozalit_requested || project.ozalit_started) return false
+  return user?.role === 'team_leader'
+}
+
+// Team-leader-only, same as canCancelDemoRequest/canEditSentDemoRequest —
+// keeps all three of the leader/designer-facing demo/ozalit actions
+// (cancel, edit-notify, change-request) consistently gated to the one role.
 /** @param {{ id: string, role: string }} user @param {object} project */
 export function canRequestDemoChange(user, project) {
   if (!project) return false
   if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') return false
   if (!project.demo_started || project.demo_change_requested_at) return false
-  return isLeaderOrAssignedDesigner(user, project)
+  return user?.role === 'team_leader'
 }
 
 /** @param {{ id: string, role: string }} user @param {object} project */
@@ -302,12 +332,41 @@ export function canRequestOzalitChange(user, project) {
   if (!project) return false
   if (project.stage !== 'ozalit_teslim') return false
   if (!project.ozalit_requested || !project.ozalit_started || project.ozalit_change_requested_at) return false
-  return isLeaderOrAssignedDesigner(user, project)
+  return user?.role === 'team_leader'
 }
 
 /** @param {{ role: string }} user @param {{ demo_change_requested_at?: string|null }} project */
 export function canRespondDemoChange(user, project) {
   return user?.role === 'printer' && !!project?.demo_change_requested_at
+}
+
+/**
+ * Ekran Demo Onayı — a lightweight digital alternative to a physical
+ * re-demo for a HELD demo (approved at <100%) once progress reaches 100%.
+ * Mirrors the sipariş pipeline's `ekran_onay` (migration 046): a single
+ * team-leader click, no matbaa involvement. See
+ * `computeEkranDemoRequest/Approve/Reject` (server `domain/transitions.js`,
+ * migration 050).
+ *
+ *   canRequestEkranDemo — leader/assigned designer asks for it instead of
+ *                         the normal `Demo İste` resend
+ *   canRespondEkranDemo — team leader approves/rejects the pending request
+ */
+
+/** @param {{ id: string, role: string }} user @param {object} project */
+export function canRequestEkranDemo(user, project) {
+  if (!project) return false
+  if (project.stage !== 'demo_onay' && project.stage !== 'cin_demo_onay') return false
+  if (project.demo_held !== true) return false
+  if ((project.progress ?? 0) !== 100) return false
+  if (project.ekran_demo_requested_at) return false
+  if (user?.role === 'team_leader') return true
+  return user?.role === 'designer' && (project.assignees ?? []).some((a) => a.id === user.id)
+}
+
+/** @param {{ role: string }} user @param {{ ekran_demo_requested_at?: string|null }} project */
+export function canRespondEkranDemo(user, project) {
+  return user?.role === 'team_leader' && !!project?.ekran_demo_requested_at
 }
 
 /** @param {{ role: string }} user @param {{ ozalit_change_requested_at?: string|null }} project */

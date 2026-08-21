@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, CheckSquare, FileText, Plus, Printer, Send, Square, X } from 'lucide-react'
+import { Check, CheckSquare, FileText, Pencil, Plus, Printer, Send, Square, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -475,7 +475,6 @@ function ClassicRow({ label, value }) {
    output (each parça is its own sheet with its own signature block). */
 function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
   const rows = component.rows ?? []
-  const designerNames = (project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''
   return (
     <div className="overflow-hidden rounded-lg border bg-white">
       <div className="border-b px-4 py-3 text-center">
@@ -512,11 +511,8 @@ function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
         {form.matbaaYetkilisi && <ClassicRow label="MATBAA YETKİLİSİ" value={form.matbaaYetkilisi} />}
         {form.onaylayanKisi && <ClassicRow label="ONAYLAYAN KİŞİ" value={form.onaylayanKisi} />}
       </div>
-      <div className="flex divide-x">
-        <SigBox role="Tasarımcı" name={designerNames} />
-        {form.matbaaYetkilisi && <SigBox role="Matbaa Yetkilisi" name={form.matbaaYetkilisi} />}
-        {form.onaylayanKisi && <SigBox role="Ekip Lideri / Onaylayan" name={form.onaylayanKisi} />}
-      </div>
+      {/* Signature blocks removed for now — SigBox above stays defined so
+          this can be restored later without redoing the layout. */}
     </div>
   )
 }
@@ -567,7 +563,15 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     (variant.kind === 'demo' && !!project?.demo_started) ||
     (variant.kind === 'ozalit' && !!project?.ozalit_started)
   )
-  const readOnly = variant.isReadOnly({ mode, user }) || lockedByStart
+  // Migration 049: once the matbaa accepts a change request, the fix is owed
+  // and must go through the dedicated notify path (notifyOnSave=true) — the
+  // plain "Demo Formu"/"Ozalit Formu" button stays view-only here so there's
+  // no silent way to make the fix without the matbaa being told.
+  const lockedByFixPending = mode === 'view' && !notifyOnSave && (
+    (variant.kind === 'demo' && !!project?.demo_fix_pending) ||
+    (variant.kind === 'ozalit' && !!project?.ozalit_fix_pending)
+  )
+  const readOnly = variant.isReadOnly({ mode, user }) || lockedByStart || lockedByFixPending
   const printable = variant.canPrint({ user, project, readOnly })
 
   // Pull the authoritative spec from the server when the dialog opens. The
@@ -715,6 +719,87 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, project?.id, viewAttempt])
+
+  /**
+   * Baseline for the "Değişiklikler" diff panel (migration 049) — a snapshot
+   * of what the matbaa currently has, captured once when the dedicated
+   * "Gönderilen Demoyu/Ozaliti Düzenleyin" button opens the dialog. Only
+   * meaningful there (notifyOnSave=true); left null otherwise so the panel
+   * never renders on the plain view/edit path. Deliberately a fresh fetch
+   * rather than reusing the state the load effect above sets — that effect
+   * merges in fresh-form defaults for non-editable system fields, which
+   * would show up as false "changes".
+   */
+  const [baseline, setBaseline] = useState(null)
+  useEffect(() => {
+    if (!open || !project?.id || !notifyOnSave) { setBaseline(null); return }
+    let cancelled = false
+    ;(async () => {
+      const current =
+        (await fetchServerSnapshot(api, variant, project.id, attemptNo)) ??
+        loadSnapshot(variant, project.id, attemptNo)
+      if (cancelled) return
+      const carried =
+        loadSaved(variant, project.id) ??
+        (await fetchServerSnapshot(api, variant, project.id, null))
+      if (cancelled) return
+      const data = current ?? stripStamps(carried)
+      setBaseline({
+        customRows: data?.customRows ?? [],
+        selectedComponents: data?.selectedComponents ?? null,
+      })
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, project?.id, notifyOnSave])
+
+  /** Rows changed since baseline, by matching row `id` (stable across a save
+   * cycle — new rows only get a fresh id when actually added). Shared by the
+   * custom-rows diff and the per-parça-component diff below. */
+  function diffRows(baseRows, liveRows, prefix) {
+    const entries = []
+    const baseById = new Map((baseRows ?? []).map((r) => [String(r.id), r]))
+    const liveIds = new Set()
+    for (const r of liveRows ?? []) {
+      liveIds.add(String(r.id))
+      const b = baseById.get(String(r.id))
+      const label = r.label || b?.label || 'Satır'
+      if (!b) {
+        if (r.label || r.value) entries.push({ status: 'added', text: `${prefix}${label}: ${r.value || '—'}` })
+      } else if (b.label !== r.label || b.value !== r.value) {
+        entries.push({ status: 'changed', text: `${prefix}${label}: ${b.value || '—'} → ${r.value || '—'}` })
+      }
+    }
+    for (const b of baseRows ?? []) {
+      if (!liveIds.has(String(b.id)) && (b.label || b.value)) {
+        entries.push({ status: 'removed', text: `${prefix}${b.label || 'Satır'}: ${b.value || '—'}` })
+      }
+    }
+    return entries
+  }
+
+  const changeSummary = useMemo(() => {
+    if (!baseline) return null
+    const entries = [...diffRows(baseline.customRows, customRows, '')]
+
+    const baseComponents = baseline.selectedComponents ?? catalogComponents
+    const baseCompById = new Map(baseComponents.map((c) => [c.id, c]))
+    const liveCompIds = new Set()
+    for (const c of selectedComponents) {
+      liveCompIds.add(c.id)
+      const b = baseCompById.get(c.id)
+      if (!b) {
+        entries.push({ status: 'added', text: `Parça eklendi: ${c.component}` })
+        continue
+      }
+      entries.push(...diffRows(b.rows, c.rows, `${c.component} — `))
+    }
+    for (const b of baseComponents) {
+      if (!liveCompIds.has(b.id)) entries.push({ status: 'removed', text: `Parça kaldırıldı: ${b.component}` })
+    }
+    return entries
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseline, customRows, selectedComponents, catalogComponents])
 
   /* ── Ozalit "Teslim Alındı" gate ──────────────────────────────────────────
    * The ozalit approve is refused server-side until the physical proof has
@@ -977,30 +1062,38 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   }
 
   async function handleSave() {
-    if (!project) return
-    saveForm(variant, project.id, form, customRows, selectedComponents)
-    // Always silent here, even when notifyOnSave is true: /demos itself would
-    // otherwise log its own generic "Demo formu gönderildi" row on top of the
-    // dedicated notify call below, leaving two overlapping entries for one
-    // save. The edit-notify call is the sole source of both the history row
-    // and the printer ping.
-    persistServerSnapshot(attemptNo, form)
-    await persistCatalogEdits()
-    if (notifyOnSave) {
-      try {
-        if (variant.kind === 'demo') await api.notifyDemoEdit(project.id)
-        else if (variant.kind === 'ozalit') await api.notifyOzalitEdit(project.id)
-        toast.success(`${variant.title} güncellendi, matbaa bilgilendirildi.`)
-      } catch (err) {
-        // The edit itself is already saved above; only the notify step failed
-        // (e.g. matbaa started in the meantime) — say so without implying the
-        // save was lost.
-        toast.error(err.message || 'Form kaydedildi ama matbaa bilgilendirilemedi.')
+    if (!project || busy) return
+    // Unlike every other handler here (handleAdvance/handleApprove/
+    // handlePrepareBaskiOnay), this one used to have no busy guard — a rapid
+    // double-click fired handleSave twice before the first call's await
+    // chain finished and closed the dialog, each producing its own
+    // notifyDemoEdit call and its own Geçmiş row for what was one save.
+    setBusy(true)
+    try {
+      saveForm(variant, project.id, form, customRows, selectedComponents)
+      // Always silent here, even when notifyOnSave is true: /demos itself
+      // would otherwise log its own generic "Demo formu gönderildi" row on
+      // top of the dedicated notify call below, leaving two overlapping
+      // entries for one save. The edit-notify call is the sole source of
+      // both the history row and the printer ping.
+      persistServerSnapshot(attemptNo, form)
+      await persistCatalogEdits()
+      if (notifyOnSave) {
+        try {
+          if (variant.kind === 'demo') await api.notifyDemoEdit(project.id)
+          else if (variant.kind === 'ozalit') await api.notifyOzalitEdit(project.id)
+          toast.success(`${variant.title} güncellendi, matbaa bilgilendirildi.`)
+        } catch (err) {
+          // The edit itself is already saved above; only the notify step
+          // failed (e.g. matbaa started in the meantime) — say so without
+          // implying the save was lost.
+          toast.error(err.message || 'Form kaydedildi ama matbaa bilgilendirilemedi.')
+        }
+      } else {
+        toast.success(variant.saveToast)
       }
-    } else {
-      toast.success(variant.saveToast)
-    }
-    onOpenChange(false)
+      onOpenChange(false)
+    } finally { setBusy(false) }
   }
 
   function handlePrint() {
@@ -1038,6 +1131,33 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             {readOnly && <span className="ml-1 text-xs font-normal text-muted-foreground">({attemptNo}. {variant.attemptWord})</span>}
           </DialogTitle>
         </DialogHeader>
+
+        {/* Migration 049 — only rendered on the dedicated "Gönderilen
+            Demoyu/Ozaliti Düzenleyin" path (notifyOnSave), diffed against
+            what the matbaa currently has. Empty diff (nothing edited yet)
+            stays hidden rather than showing an empty box. */}
+        {changeSummary && changeSummary.length > 0 && (
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Değişiklikler
+            </p>
+            <ul className="space-y-1 text-[13px]">
+              {changeSummary.map((c, i) => (
+                <li
+                  key={i}
+                  className={cn(
+                    'rounded px-2 py-1',
+                    c.status === 'removed'
+                      ? 'bg-rose-50 text-rose-700 line-through decoration-rose-400'
+                      : 'bg-emerald-50 text-emerald-700',
+                  )}
+                >
+                  {c.status === 'removed' ? '− ' : '+ '}{c.text}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {readOnlyClassic ? (
           <div className="space-y-4">
@@ -1265,13 +1385,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           </div>
         </div>
 
-        {readOnly && (
-          <div className="flex divide-x overflow-hidden rounded-lg border bg-white">
-            <SigBox role="Tasarımcı" name={(project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''} />
-            {form.matbaaYetkilisi && <SigBox role="Matbaa Yetkilisi" name={form.matbaaYetkilisi} />}
-            {form.onaylayanKisi && <SigBox role="Ekip Lideri / Onaylayan" name={form.onaylayanKisi} />}
-          </div>
-        )}
+        {/* Signature block removed for now — see the matching note on
+            ClassicSheet above; SigBox itself is left defined for restore. */}
         </>
         )}
 
@@ -1352,12 +1467,47 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             instead. Only shown to the audience who'd otherwise expect to
             edit; the printer/team_leader-only variants already lock via
             isReadOnly for role reasons and don't need this. */}
-        {lockedByStart && (user?.role === 'team_leader' || user?.role === 'designer') && (
+        {/* canRequestDemoChange/canRequestOzalitChange are team-leader-only
+            (same follow-up as cancel/edit-notify above) — the designer no
+            longer has a "Değişiklik İste" button to be pointed at. */}
+        {lockedByStart && user?.role === 'team_leader' && (
           <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
             <FileText className="h-4 w-4 shrink-0" />
             <span>
               Matbaa {variant.kind === 'demo' ? 'demo' : 'ozalit'} üzerinde çalışmaya başladı.
               Değişiklik yapmak için "Değişiklik İste" düğmesini kullanın.
+            </span>
+          </div>
+        )}
+        {lockedByStart && user?.role === 'designer' && (
+          <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+            <FileText className="h-4 w-4 shrink-0" />
+            <span>
+              Matbaa {variant.kind === 'demo' ? 'demo' : 'ozalit'} üzerinde çalışmaya başladı.
+              Değişiklik için ekip liderine bildirin.
+            </span>
+          </div>
+        )}
+
+        {/* Migration 049 (+ team-leader-only follow-up): the matbaa accepted
+            a change request and is waiting on the fix. Only the team leader
+            can act on it (canEditSentDemoRequest/canEditSentOzalitRequest),
+            so only they get pointed at the button — telling a designer to
+            click something they don't have would just be confusing. */}
+        {lockedByFixPending && user?.role === 'team_leader' && (
+          <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+            <Pencil className="h-4 w-4 shrink-0" />
+            <span>
+              Matbaa değişiklik talebinizi kabul etti ve düzeltmenizi bekliyor.
+              Düzeltmeyi yapmak için "{variant.kind === 'demo' ? 'Gönderilen Demoyu Düzenleyin' : 'Gönderilen Ozaliti Düzenleyin'}" düğmesini kullanın.
+            </span>
+          </div>
+        )}
+        {lockedByFixPending && user?.role === 'designer' && (
+          <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+            <Pencil className="h-4 w-4 shrink-0" />
+            <span>
+              Matbaa değişiklik talebinizi kabul etti, ekip lideri düzeltmeyi bekliyor.
             </span>
           </div>
         )}
@@ -1373,7 +1523,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             </Button>
           )}
           {mode === 'view' && (!variant.saveRequiresEditable || !readOnly) && (
-            <Button onClick={handleSave}>Kaydedin</Button>
+            <Button disabled={busy} onClick={handleSave}>{busy ? 'Kaydediliyor…' : 'Kaydedin'}</Button>
           )}
           {mode === 'advance' && (
             <Button disabled={busy} onClick={handleAdvance}>

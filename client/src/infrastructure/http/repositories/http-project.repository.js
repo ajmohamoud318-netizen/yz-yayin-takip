@@ -327,6 +327,23 @@ export function createHttpProjectRepository(userRepo) {
       cache.set(id, data)
       return data
     },
+    // Ekran Demo Onayı — lightweight digital alternative to a physical
+    // re-demo for a held demo at 100% progress (migration 050).
+    async requestEkranDemoOnay(id) {
+      const { data } = await httpClient.post(`/projects/${id}/ekran-demo-request`, {})
+      cache.set(id, data)
+      return data
+    },
+    async approveEkranDemo(id) {
+      const { data } = await httpClient.post(`/projects/${id}/ekran-demo-approve`, {})
+      cache.set(id, data)
+      return data
+    },
+    async rejectEkranDemo(id, reason) {
+      const { data } = await httpClient.post(`/projects/${id}/ekran-demo-reject`, { reason })
+      cache.set(id, data)
+      return data
+    },
     async rejectProject(id, reason, revizeIds, target) {
       const cached = cache.get(id)
       if (!cached) badRequest('Proje bilinmiyor, listeyi yenileyin.')

@@ -130,12 +130,14 @@ Demos are a **review checkpoint**, not a production step. The 100% gate kicks in
 - **The designer (or leader) sends a second demo** via "Demo İste" at any demo stage (allowed at any progress and any held-state — the team may iterate again once a demo has been reviewed). The server's `computeAdvance` re-send branch moves the project straight to the pipeline's teslim stage (`demo_onay → demo_teslim` for TR, `cin_demo_onay → cin_demo_teslim` for ÇİN) and bumps `demo_attempt`, so the matbaa immediately receives the new demo. The full demo loop re-runs (`demo_teslim → demo_onay`); leader approves again to advance to `ozalit_teslim`.
 - **"Teslim Alınamadı" (not received)**: the counterpart to "Teslim Alındı" — if the delivered demo never actually reached the leader/designer, either can report it instead of leaving the project stuck at `demo_onay`/`cin_demo_onay` with no way forward (Onayla/Reddet stay blocked until received; see the Demo Rule above). `computeDemoNotReceived` sends it back to the matbaa's teslim stage and bumps `demo_attempt`, same as any other back-to-teslim transition. Route: `POST /api/projects/:id/demo-not-received`.
 - **Matbaa "Başladım" gate + free cancel/edit + change-request (migration `048__demo_ozalit_started.sql`)**: before this pass, a mistaken demo request had no way back except waiting for delivery and using Reddet — which bumps `demo_attempt` even though nothing was produced. Now: while `demo_started` is false (the printer hasn't marked they've begun physical work — `POST /api/projects/:id/demo-start`, `computeDemoStart`, printer-only, flag-only, no stage change), the leader or assigned designer can **cancel outright** (`POST /api/projects/:id/demo-cancel`, `computeDemoCancel` — back to `tasarim`, deliberately does **not** bump `demo_attempt`, since nothing was delivered) or **edit the sheet directly** (the existing `SpecFormDialog` `mode='view'` save path, now also open to assigned designers via the "Demo Formu" button, not just the leader). Once `demo_started` is true, a cancel/edit is no longer free — the leader/designer instead asks (`POST /api/projects/:id/demo-change-request`, optional note, no stacking a second pending request) and the printer accepts (`POST /api/projects/:id/demo-change-accept` — "un-starts" the round, `demo_started` back to false, reopening the free path) or declines (`POST /api/projects/:id/demo-change-decline` — round stays started, leader/designer must wait for normal delivery + Reddet). `computeDemoTeslimAdvance` refuses to deliver past a pending change-request, and every fresh-round transition (delivery, "Teslim Alınamadı", held-resend) resets `demo_started`/the change-request ledger to their rest state. Client predicates: `canMarkDemoStarted`, `canCancelDemoRequest`, `canRequestDemoChange`, `canRespondDemoChange` in `client/src/domain/services/pipeline.js`.
+- **Ekran Demo Onayı — lightweight digital alternative to the held-demo resend (migration `050__ekran_demo_onay.sql`)**: a held demo (`demo_held`, above) normally needs a full physical round once the design hits 100% — `Demo İste` → matbaa delivers → leader approves again. This mirrors the sipariş pipeline's `ekran_onay` (migration 046) onto the main pipeline: once `demo_held && progress === 100`, the leader or assigned designer can instead ask for a purely digital sign-off (`POST /api/projects/:id/ekran-demo-request`, `computeEkranDemoRequest` — sets `ekran_demo_requested_at/_by/_by_name`, no stage change, no matbaa involvement). Any one active team leader then approves (`POST /api/projects/:id/ekran-demo-approve`, `computeEkranDemoApprove` — advances `demo_onay`/`cin_demo_onay` to whatever `demo_onay`'s normal ≥100% approval would, i.e. `ozalit_teslim` for TR or `cin_baski_onay` for ÇİN, and clears `demo_held`) or rejects with a required reason (`POST /api/projects/:id/ekran-demo-reject`, `computeEkranDemoReject` — clears the request only; stage and `demo_held` are untouched, so the leader/designer simply falls back to the normal physical `Demo İste`). Single-step (not multi-party like `ozalit_onay`), and rejecting never bumps `demo_attempt`/touches `last_reject_type` — it isn't a pipeline rejection, just "no, use the other path." Client predicates: `canRequestEkranDemo`, `canRespondEkranDemo` in `client/src/domain/services/pipeline.js`.
 
 Enforced by:
 - `client/src/domain/services/pipeline.js#assertCanEnterProduction` (gate at ozalit onward, not at demo)
 - `client/src/domain/services/pipeline.js#assertDemoCanAdvance` (the `<100%` hold explanation)
 - `server/src/domain/transitions.js#computeAdvance` (the "tekrar demo" branch)
 - `server/src/domain/transitions.js#computeApproval` (the demo_onay `<100%` hold branch)
+- `server/src/domain/transitions.js#computeEkranDemoRequest / computeEkranDemoApprove / computeEkranDemoReject` (the Ekran Demo Onayı side-channel)
 
 ### Rejection Rule (main pipeline)
 - Every rejection requires a written `reason` (backend-enforced)
@@ -735,6 +737,15 @@ POST   /api/projects/:id/demo-change-accept    accept a pending change-request �
 POST   /api/projects/:id/demo-change-decline   decline it — round stays started [printer]
 POST   /api/projects/:id/ozalit-change-accept  same pair, ozalit leg [printer]
 POST   /api/projects/:id/ozalit-change-decline [printer]
+POST   /api/projects/:id/ekran-demo-request    Ekran Demo Onayı — request the lightweight digital
+                                                alternative to a physical re-demo; only on a held demo
+                                                (demo_held) at 100% progress (migration 050)
+                                                [team_leader or assigned designer]
+POST   /api/projects/:id/ekran-demo-approve    approve it — advances exactly like a normal demo
+                                                approval would [team_leader]
+POST   /api/projects/:id/ekran-demo-reject     { reason } decline it — clears the request, project stays
+                                                put; leader/designer fall back to the normal Demo İste
+                                                [team_leader]
 ```
 ### Subtasks
 ```

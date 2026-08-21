@@ -85,14 +85,14 @@ describe('demo/ozalit "Başladım" + cancel + change-request adapters', () => {
     assert.equal(ozalitNext.ozalit_started, true)
   })
 
-  it('applyDemoCancel/applyOzalitCancel bind designerIds through', () => {
+  it('applyDemoCancel/applyOzalitCancel bind the (team-leader) actor through', () => {
     const { project: demoNext } = applyDemoCancel(
-      makeProject({ stage: 'demo_teslim' }), { user: designer, designerIds: [designer.id] },
+      makeProject({ stage: 'demo_teslim' }), { user: leader, designerIds: [designer.id] },
     )
     assert.equal(demoNext.stage, 'tasarim')
     const { project: ozalitNext } = applyOzalitCancel(
       makeProject({ stage: 'ozalit_teslim', ozalit_requested: true }),
-      { user: designer, designerIds: [designer.id] },
+      { user: leader, designerIds: [designer.id] },
     )
     assert.equal(ozalitNext.stage, 'tasarim')
   })

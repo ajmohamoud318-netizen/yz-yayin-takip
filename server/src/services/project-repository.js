@@ -24,8 +24,11 @@ const PROJECT_COLUMNS = `
   ozalit_approvals,
   demo_started, demo_started_at, demo_started_by, demo_started_by_name,
   demo_change_requested_at, demo_change_requested_by, demo_change_requested_by_name, demo_change_requested_note,
+  demo_fix_pending,
   ozalit_started, ozalit_started_at, ozalit_started_by, ozalit_started_by_name,
   ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name, ozalit_change_requested_note,
+  ozalit_fix_pending,
+  ekran_demo_requested_at, ekran_demo_requested_by, ekran_demo_requested_by_name,
   origin,
   catalog_hidden, catalog_hidden_at, catalog_hidden_by,
   created_at, updated_at,
@@ -395,6 +398,19 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
   'ozalit_change_requested_by',
   'ozalit_change_requested_by_name',
   'ozalit_change_requested_note',
+  // "Fix owed" gate (migration 049): set true only by an accepted change
+  // request, cleared by the matching edit-notify submission or an outright
+  // cancel. While true, computeDemoStart/computeOzalitStart refuse to
+  // re-lock the round.
+  'demo_fix_pending',
+  'ozalit_fix_pending',
+  // Ekran Demo Onayı pending-request ledger (migration 050): presence of
+  // `ekran_demo_requested_at` IS the pending flag, same convention as
+  // `demo_change_requested_at`. Set by computeEkranDemoRequest, cleared by
+  // computeEkranDemoApprove/Reject.
+  'ekran_demo_requested_at',
+  'ekran_demo_requested_by',
+  'ekran_demo_requested_by_name',
 ])
 
 export async function patchProject(client, id, fields) {
