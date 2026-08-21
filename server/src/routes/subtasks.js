@@ -3,6 +3,7 @@ import { badRequest, notFound } from '../domain/errors.js'
 import { withTx } from '../db/pool.js'
 import {
   getProject, getProjectForUpdate, patchProject, logHistory,
+  listProjectSubtasks, listProjectHistory, loadProjectAssignees,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
@@ -188,7 +189,24 @@ export async function subtaskRoutes(fastify) {
           request.user,
         )
       }
-      return { subtask: updatedSub[0], project: updProject }
+      // The client merges this straight into its project state (no
+      // follow-up GET), so it needs the same shape as GET /projects/:id —
+      // subtasks/history/assignees included, not just the bare row —
+      // otherwise addCount's setProject() wipes the Alt Görevler/Geçmiş/
+      // Tasarımcı cards until the page is manually refreshed.
+      const subtasksList = await listProjectSubtasks(client, project.id)
+      const history = await listProjectHistory(client, project.id)
+      const assignees = await loadProjectAssignees(client, updProject)
+      return {
+        subtask: updatedSub[0],
+        project: {
+          ...updProject,
+          assignees,
+          assigned_name: assignees.map((a) => a.name).join(', ') || updProject.assigned_name || '—',
+          subtasks: subtasksList,
+          history,
+        },
+      }
     })
     // Returning the full project so the client can refresh its tile without
     // a follow-up GET.
@@ -267,7 +285,21 @@ export async function subtaskRoutes(fastify) {
         },
         request.user,
       )
-      return { project, entry: rows[0] }
+      // Same shape requirement as PATCH /subtasks/:id above — saveUpdateSub
+      // merges `project.subtasks` straight into client state.
+      const subtasksList = await listProjectSubtasks(client, project.id)
+      const history = await listProjectHistory(client, project.id)
+      const assignees = await loadProjectAssignees(client, project)
+      return {
+        project: {
+          ...project,
+          assignees,
+          assigned_name: assignees.map((a) => a.name).join(', ') || project.assigned_name || '—',
+          subtasks: subtasksList,
+          history,
+        },
+        entry: rows[0],
+      }
     })
     return result
   })
