@@ -39,6 +39,13 @@ Postgres:
   **currently live**. Deploying to the idle color and smoke-testing it does
   not affect production traffic; flipping the domain is the only action
   that does.
+- **Auto-deploy is wired to green only.** `yz-spa-green` and `yz-api-green`
+  are the two services with a GitHub "On Push" trigger against `main` —
+  every push rebuilds and redeploys both of them automatically, regardless
+  of whether green is currently live or idle. `yz-spa-blue`/`yz-api-blue`
+  have no trigger; they only rebuild when you manually redeploy them in
+  Dokploy. Blue is not "the other slot in a ping-pong" — it's the fixed,
+  manually-controlled rollback anchor.
 - Both API services point at the same `DATABASE_URL` and share the same
   `yz_uploads` named volume (mounted to **both**, not one) — an avatar
   uploaded while one color is live must be visible after a flip. Verify
@@ -70,18 +77,26 @@ traffic across a flip, schema changes must be split:
 
 ### Deploy / flip / rollback runbook
 
-1. Push → deploy to the **idle** color (e.g. green).
+Green auto-deploys on every push — there's no per-release choice of which
+color to target. Blue only ever moves when you tell it to.
+
+1. Push → `yz-spa-green`/`yz-api-green` rebuild and redeploy automatically.
 2. Migrations auto-apply on green's API boot (advisory-locked, safe even
    while blue is still live and serving).
 3. Smoke-test green privately: hit `yz-api-green`'s internal `/api/health`
    (returns `commit` — the built git SHA, see `src/index.js`) to confirm
    the new build is running, and load `yz-spa-green` directly via its
    Dokploy-assigned internal/preview URL.
-4. **Flip**: reassign `yt.mucitkarinca.com` from `yz-spa-blue` to
-   `yz-spa-green` in Dokploy.
-5. Monitor. Keep blue running warm as an instant rollback (flip the domain
-   back — no rebuild) for a defined window (e.g. 24–48h).
-6. The next release targets blue (now idle) — ping-pong each cycle.
+4. **Flip** (only once green looks good): reassign `yt.mucitkarinca.com`
+   from `yz-spa-blue` to `yz-spa-green` in Dokploy. If green isn't ready,
+   just leave blue live — the next push re-tries green, no flip needed.
+5. Monitor. Keep blue running warm, still on its last build, as an instant
+   rollback (flip the domain back — no rebuild) for a defined window
+   (e.g. 24–48h).
+6. Once you're confident, manually redeploy `yz-spa-blue`/`yz-api-blue`
+   in Dokploy (same commit as green) so blue catches up and becomes a
+   fresh rollback anchor for the *next* release. Skipping this step is
+   fine — it just means blue's rollback point stays older.
 
 ---
 
@@ -128,7 +143,7 @@ except for the fields called out below (domain, `API_UPSTREAM`).
 | **Dockerfile Path** | `Dockerfile` (relative to Build Path → `./Dockerfile`) |
 | Port | `3000` |
 | Domain | `yt.mucitkarinca.com` on whichever color is **live**; the idle color gets no public domain (use Dokploy's internal/preview URL to smoke-test it) |
-| Trigger | On Push (to the color currently being deployed) |
+| Trigger | On Push, **green only** — `yz-spa-blue` has no trigger, deploy it manually |
 
 > `VITE_API_BASE_URL` is wired through as a **build-time ARG** in the root
 > Dockerfile (see "Build-time Arguments" in the service config). Without
@@ -180,7 +195,7 @@ API_UPSTREAM=http://yz-api-blue:4000   # or http://yz-api-green:4000 on the gree
 | **Dockerfile Path** | `Dockerfile` (relative to Build Path → `server/Dockerfile`) |
 | Port | `4000` |
 | Domain | **none, on either color** — see below |
-| Trigger | On Push (to the color currently being deployed) |
+| Trigger | On Push, **green only** — `yz-api-blue` has no trigger, deploy it manually |
 
 > **No public domain on this service — for either color, permanently.**
 > Browser traffic reaches the API only through its paired SPA's `/api`
