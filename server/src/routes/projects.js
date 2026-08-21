@@ -14,6 +14,7 @@ import {
   applyAdvance, applyApproval, applyDemoReceive, applyDemoNotReceived,
   applyOzalitReceive, applyOzalitNotReceived, applyBaskiOnayPrepare, applyRejection,
   applyDemoStart, applyOzalitStart, applyDemoCancel, applyOzalitCancel,
+  applyDemoEdit, applyOzalitEdit,
   applyDemoChangeRequest, applyOzalitChangeRequest,
   applyDemoChangeAccept, applyDemoChangeDecline, applyOzalitChangeAccept, applyOzalitChangeDecline,
 } from '../services/project-transitions.js'
@@ -22,6 +23,7 @@ import {
   notifyProductCatalogChanged, notifyDemoReceived, notifyOzalitReceived,
   notifyBaskiOnayPrepared,
   notifyDemoStarted, notifyOzalitStarted, notifyDemoCancelled, notifyOzalitCancelled,
+  notifyDemoEdited, notifyOzalitEdited,
   notifyDemoChangeRequested, notifyOzalitChangeRequested,
   notifyDemoChangeAccepted, notifyDemoChangeDeclined,
   notifyOzalitChangeAccepted, notifyOzalitChangeDeclined,
@@ -901,6 +903,47 @@ export async function projectRoutes(fastify) {
         await notifyOzalitCancelled(client, { project: updated, actor: request.user })
       }
       return updated
+    })
+    return result
+  })
+
+  // Leader/assigned designer edited the saved demo/ozalit form (SpecFormDialog
+  // mode='view') while it's still with the matbaa and wants them notified.
+  // Same free-edit window as demo-cancel/ozalit-cancel — refused once the
+  // matbaa has started (computeDemoEdit/computeOzalitEdit). Nothing on the
+  // project changes; this only logs history + pings the printers.
+  fastify.post('/projects/:id/demo-edit-notify', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const designerIds = project.assignees.map((a) => a.id)
+      const { history } = applyDemoEdit(project, { user: request.user, designerIds })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyDemoEdited(client, { project, actor: request.user })
+      }
+      return project
+    })
+    return result
+  })
+
+  fastify.post('/projects/:id/ozalit-edit-notify', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    const result = await withTx(async (client) => {
+      const project = await getProjectForUpdate(client, request.params.id)
+      if (!project) notFound('Proje bulunamadı.')
+      assertNotLegacy(project)
+      project.assignees = await loadProjectAssignees(client, project)
+      const designerIds = project.assignees.map((a) => a.id)
+      const { history } = applyOzalitEdit(project, { user: request.user, designerIds })
+      if (history) {
+        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await notifyOzalitEdited(client, { project, actor: request.user })
+      }
+      return project
     })
     return result
   })

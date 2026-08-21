@@ -126,6 +126,8 @@ export function createApi() {
     markOzalitStarted: (id) => projectRepo.markOzalitStarted(id),
     cancelDemoRequest: (id) => projectRepo.cancelDemoRequest(id),
     cancelOzalitRequest: (id) => projectRepo.cancelOzalitRequest(id),
+    notifyDemoEdit: (id) => projectRepo.notifyDemoEdit(id),
+    notifyOzalitEdit: (id) => projectRepo.notifyOzalitEdit(id),
     requestDemoChange: (id, note) => projectRepo.requestDemoChange(id, note),
     requestOzalitChange: (id, note) => projectRepo.requestOzalitChange(id, note),
     acceptDemoChangeRequest: (id) => projectRepo.acceptDemoChangeRequest(id),

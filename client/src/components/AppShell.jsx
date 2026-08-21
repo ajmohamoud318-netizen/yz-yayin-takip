@@ -679,6 +679,8 @@ const TYPE_ICON = {
   demo_held: CheckCircle2,
   demo_approval_pending: BadgeCheck,
   ozalit_requestable: FileText,
+  demo_edited: FileText,
+  ozalit_edited: FileText,
   ozalit_delivery_pending: Send,
   ozalit_receipt_pending: Truck,
   ozalit_received: PackageCheck,

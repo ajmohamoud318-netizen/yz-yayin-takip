@@ -274,6 +274,19 @@ export function createHttpProjectRepository(userRepo) {
       cache.set(id, data)
       return data
     },
+    // Notify the matbaa that a still-in-flight demo/ozalit form was edited.
+    // Same free-edit window as cancel; logs history + pings printers only,
+    // no project fields change.
+    async notifyDemoEdit(id) {
+      const { data } = await httpClient.post(`/projects/${id}/demo-edit-notify`, {})
+      cache.set(id, data)
+      return data
+    },
+    async notifyOzalitEdit(id) {
+      const { data } = await httpClient.post(`/projects/${id}/ozalit-edit-notify`, {})
+      cache.set(id, data)
+      return data
+    },
     // Ask the matbaa to accept a cancel/edit once they've started work.
     async requestDemoChange(id, note) {
       const { data } = await httpClient.post(`/projects/${id}/demo-change-request`, { note })

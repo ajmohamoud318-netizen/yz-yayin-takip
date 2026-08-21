@@ -887,6 +887,74 @@ export function computeOzalitCancel(project, actor, ctx = {}) {
 }
 
 /* ============================================================================
+ *  demoEdit / ozalitEdit(project, actor, ctx) → history only
+ *
+ *  The leader/assigned designer edited the demo/ozalit form's saved values
+ *  (SpecFormDialog mode='view', see handleSave) while it's still sitting with
+ *  the matbaa. The edit itself is free — same window as cancel — but unlike
+ *  every other save in that dialog, this one is NOT silent: it exists purely
+ *  to log a history entry and notify the printer their sheet changed. No
+ *  project column is touched, so there's no `project` key in the return —
+ *  only `history`. Same guard as computeDemoCancel/computeOzalitCancel:
+ *  once the matbaa has started, this is refused and the change-request flow
+ *  must be used instead.
+ * ========================================================================== */
+export function computeDemoEdit(project, actor, ctx = {}) {
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') {
+    badRequest('Bildirim yalnızca demo matbaa sürecindeyken yapılabilir.')
+  }
+  const designerIds = ctx.designerIds ?? []
+  const isLeader = actor?.role === 'team_leader'
+  const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
+  if (!isLeader && !isAssignedDesigner) {
+    badRequest('Bu işlemi yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
+  }
+  if (project.demo_started) {
+    badRequest('Matbaa demoya başladı, değişiklik isteyin.')
+  }
+  return {
+    history: makeEntry(project, {
+      action: 'system',
+      event: 'demo_form_edited',
+      from_stage: project.stage,
+      to_stage: project.stage,
+      done_by_name: actorName,
+      note: 'Demo formu güncellendi',
+    }),
+  }
+}
+
+export function computeOzalitEdit(project, actor, ctx = {}) {
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (project.stage !== 'ozalit_teslim') {
+    badRequest('Bildirim yalnızca ozalit matbaa sürecindeyken yapılabilir.')
+  }
+  if (!project.ozalit_requested) {
+    badRequest('Bekleyen bir ozalit talebi yok.')
+  }
+  const designerIds = ctx.designerIds ?? []
+  const isLeader = actor?.role === 'team_leader'
+  const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
+  if (!isLeader && !isAssignedDesigner) {
+    badRequest('Bu işlemi yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
+  }
+  if (project.ozalit_started) {
+    badRequest('Matbaa ozalite başladı, değişiklik isteyin.')
+  }
+  return {
+    history: makeEntry(project, {
+      action: 'system',
+      event: 'ozalit_form_edited',
+      from_stage: project.stage,
+      to_stage: project.stage,
+      done_by_name: actorName,
+      note: 'Ozalit formu güncellendi',
+    }),
+  }
+}
+
+/* ============================================================================
  *  demoChangeRequest / ozalitChangeRequest(project, actor, { note }, ctx)
  *    → next project state
  *

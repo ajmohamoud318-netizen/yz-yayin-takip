@@ -114,6 +114,13 @@ const EVENTS = {
 
   demo_form: { icon: Send, tone: 'pipeline', weight: 'major', group: 'approval', label: 'Demo Formu Gönderildi' },
   ozalit_form: { icon: Send, tone: 'pipeline', weight: 'major', group: 'approval', label: 'Ozalit Formu Gönderildi' },
+  // "Formu Düzenleyin" (ProjectDetail.jsx) — a correction to an already-sent
+  // demo/ozalit while it's still with the matbaa, before demo_form/ozalit_form
+  // above ever fires again. Without an entry here `action: 'system'` fell
+  // through to the generic 'İlerletildi' label, which reads as a stage
+  // advance that never happened.
+  demo_form_edited: { icon: ClipboardEdit, tone: 'neutral', weight: 'minor', group: 'approval', label: 'Demo Formu Güncellendi' },
+  ozalit_form_edited: { icon: ClipboardEdit, tone: 'neutral', weight: 'minor', group: 'approval', label: 'Ozalit Formu Güncellendi' },
 
   // The receipt gates. These are `action: 'advance'` rows that don't move the
   // stage, so without an entry here they fell through to ADVANCE_LABELS and

@@ -28,6 +28,8 @@ import {
   computeOzalitStart,
   computeDemoCancel,
   computeOzalitCancel,
+  computeDemoEdit,
+  computeOzalitEdit,
   computeDemoChangeRequest,
   computeOzalitChangeRequest,
   computeDemoChangeAccept,
@@ -119,6 +121,19 @@ export function applyDemoCancel(project, { user, designerIds = [] }) {
 }
 export function applyOzalitCancel(project, { user, designerIds = [] }) {
   return computeOzalitCancel(project, user, { designerIds })
+}
+
+/**
+ * `POST /projects/:id/demo-edit-notify`, `/ozalit-edit-notify`. Logs a
+ * history entry and notifies the matbaa that the leader/assigned designer
+ * changed the saved form — same free-edit window as cancel, but nothing on
+ * `projects` changes (see computeDemoEdit).
+ */
+export function applyDemoEdit(project, { user, designerIds = [] }) {
+  return computeDemoEdit(project, user, { designerIds })
+}
+export function applyOzalitEdit(project, { user, designerIds = [] }) {
+  return computeOzalitEdit(project, user, { designerIds })
 }
 
 /**

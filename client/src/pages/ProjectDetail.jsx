@@ -213,6 +213,10 @@ export default function ProjectDetail() {
   const [demoFormMode, setDemoFormMode] = useState('advance') // 'advance' | 'view' | 'history'
   const [demoFormAttempt, setDemoFormAttempt] = useState(null)
   const [ozalitFormAttempt, setOzalitFormAttempt] = useState(null)
+  // Set true only when the new "Formu Düzenleyin" button opens the dialog —
+  // makes mode='view' Kaydet notify the matbaa instead of saving silently.
+  const [demoFormNotify, setDemoFormNotify] = useState(false)
+  const [ozalitFormNotify, setOzalitFormNotify] = useState(false)
   const [baskiOnayFormOpen, setBaskiOnayFormOpen] = useState(false)
   const [baskiOnayFormMode, setBaskiOnayFormMode] = useState('approve') // 'approve' | 'view'
   const [toggling, setToggling] = useState(null)
@@ -1091,7 +1095,7 @@ export default function ProjectDetail() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => { setDemoFormMode('view'); setDemoFormAttempt(null); setDemoFormOpen(true) }}
+                    onClick={() => { setDemoFormMode('view'); setDemoFormAttempt(null); setDemoFormNotify(false); setDemoFormOpen(true) }}
                   >
                     <FileText className="h-4 w-4" />
                     Demo Formu
@@ -1108,7 +1112,7 @@ export default function ProjectDetail() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => { setOzalitFormMode('view'); setOzalitFormAttempt(null); setOzalitFormOpen(true) }}
+                    onClick={() => { setOzalitFormMode('view'); setOzalitFormAttempt(null); setOzalitFormNotify(false); setOzalitFormOpen(true) }}
                   >
                     <FileText className="h-4 w-4" />
                     Ozalit Formu
@@ -1197,12 +1201,30 @@ export default function ProjectDetail() {
                     hasn't started yet, so nothing was actually delivered. */}
                 {canCancelDemoRequest(user, project) && (
                   <Button
+                    size="sm" variant="outline"
+                    onClick={() => { setDemoFormMode('view'); setDemoFormAttempt(null); setDemoFormNotify(true); setDemoFormOpen(true) }}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Formu Düzenleyin
+                  </Button>
+                )}
+                {canCancelDemoRequest(user, project) && (
+                  <Button
                     size="sm" variant="destructive"
                     onClick={() => setTeslimConfirm('demo-cancel')}
                     disabled={cancellingRequest}
                   >
                     <Trash2 className="h-4 w-4" />
                     {cancellingRequest ? 'İşleniyor…' : 'Demo İsteğini İptal Edin'}
+                  </Button>
+                )}
+                {canCancelOzalitRequest(user, project) && (
+                  <Button
+                    size="sm" variant="outline"
+                    onClick={() => { setOzalitFormMode('view'); setOzalitFormAttempt(null); setOzalitFormNotify(true); setOzalitFormOpen(true) }}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Formu Düzenleyin
                   </Button>
                 )}
                 {canCancelOzalitRequest(user, project) && (
@@ -1754,10 +1776,11 @@ export default function ProjectDetail() {
 
       <OzalitFormDialog
         open={ozalitFormOpen}
-        onOpenChange={(v) => { setOzalitFormOpen(v); if (!v) setOzalitFormAttempt(null) }}
+        onOpenChange={(v) => { setOzalitFormOpen(v); if (!v) { setOzalitFormAttempt(null); setOzalitFormNotify(false) } }}
         project={project}
         mode={ozalitFormMode}
         viewAttempt={ozalitFormAttempt}
+        notifyOnSave={ozalitFormNotify}
         onDone={onActionDone}
       />
 
@@ -1771,10 +1794,11 @@ export default function ProjectDetail() {
 
       <DemoFormDialog
         open={demoFormOpen}
-        onOpenChange={(v) => { setDemoFormOpen(v); if (!v) setDemoFormAttempt(null) }}
+        onOpenChange={(v) => { setDemoFormOpen(v); if (!v) { setDemoFormAttempt(null); setDemoFormNotify(false) } }}
         project={project}
         mode={demoFormMode}
         viewAttempt={demoFormAttempt}
+        notifyOnSave={demoFormNotify}
         onDone={onActionDone}
       />
 

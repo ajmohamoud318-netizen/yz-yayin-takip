@@ -536,8 +536,11 @@ function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
  *   'history'  — read-only snapshot view (requires viewAttempt)
  *
  * viewAttempt — attempt number to load from snapshot (used with mode='history')
+ * notifyOnSave — mode='view' only. When true, Kaydet also logs a history
+ *   entry and notifies the matbaa the sheet changed (see handleSave) instead
+ *   of the normal silent in-place save.
  */
-export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, mode, onDone, viewAttempt }) {
+export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, mode, onDone, viewAttempt, notifyOnSave = false }) {
   const variant = VARIANTS[variantName]
   const { user } = useAuth()
   const { updateOne } = useProjectsStore()
@@ -976,9 +979,27 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   async function handleSave() {
     if (!project) return
     saveForm(variant, project.id, form, customRows, selectedComponents)
+    // Always silent here, even when notifyOnSave is true: /demos itself would
+    // otherwise log its own generic "Demo formu gönderildi" row on top of the
+    // dedicated notify call below, leaving two overlapping entries for one
+    // save. The edit-notify call is the sole source of both the history row
+    // and the printer ping.
     persistServerSnapshot(attemptNo, form)
     await persistCatalogEdits()
-    toast.success(variant.saveToast)
+    if (notifyOnSave) {
+      try {
+        if (variant.kind === 'demo') await api.notifyDemoEdit(project.id)
+        else if (variant.kind === 'ozalit') await api.notifyOzalitEdit(project.id)
+        toast.success(`${variant.title} güncellendi, matbaa bilgilendirildi.`)
+      } catch (err) {
+        // The edit itself is already saved above; only the notify step failed
+        // (e.g. matbaa started in the meantime) — say so without implying the
+        // save was lost.
+        toast.error(err.message || 'Form kaydedildi ama matbaa bilgilendirilemedi.')
+      }
+    } else {
+      toast.success(variant.saveToast)
+    }
     onOpenChange(false)
   }
 

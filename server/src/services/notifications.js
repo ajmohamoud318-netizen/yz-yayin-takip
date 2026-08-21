@@ -574,6 +574,29 @@ export async function notifyOzalitCancelled(client, { project, actor }) {
 }
 
 /**
+ * The leader/assigned designer edited a demo/ozalit form that's still
+ * sitting with the matbaa (before they started work) — tells the printers
+ * the sheet changed so they don't work from stale values.
+ */
+export async function notifyDemoEdited(client, { project, actor }) {
+  const printers = await activeUserIdsByRole(client, 'printer')
+  return emit(client, {
+    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: printers, type: 'demo_edited', tone: 'amber',
+    body: 'Demo formu güncellendi, yeni haliyle inceleyin',
+  })
+}
+
+export async function notifyOzalitEdited(client, { project, actor }) {
+  const printers = await activeUserIdsByRole(client, 'printer')
+  return emit(client, {
+    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: printers, type: 'ozalit_edited', tone: 'amber',
+    body: 'Ozalit formu güncellendi, yeni haliyle inceleyin',
+  })
+}
+
+/**
  * A project pipeline transition (advance / approve / reject) just committed.
  * `toStage` / `fromStage` / `action` come straight from the history row the
  * route already built. We map the resulting state to the people who now need
