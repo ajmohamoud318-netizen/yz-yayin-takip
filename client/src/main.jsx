@@ -10,6 +10,30 @@ import { initPwaInstall } from './hooks/usePwaInstall.js'
 import './index.css'
 
 /**
+ * Recover from a stale chunk reference after a deploy.
+ *
+ * Every deploy rebuilds the client with fresh content-hashed filenames and
+ * replaces the previous build's files outright (see DEPLOY.md — single
+ * container swap, no overlap window for the old assets). A tab that loaded
+ * index.html moments before a new deploy landed can still hold references to
+ * chunk files that no longer exist on the server; the next React.lazy()
+ * route the user opens then 404s instead of rendering. Vite fires
+ * `vite:preloadError` for exactly this case in production builds, so we
+ * recover by reloading once — that re-fetches the current index.html and a
+ * chunk set that's internally consistent again. Guarded with sessionStorage
+ * so a genuinely broken deploy causes one reload, not a refresh loop.
+ */
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault()
+  const key = 'yz:preload-reload-at'
+  const last = Number(sessionStorage.getItem(key) || 0)
+  if (Date.now() - last > 10_000) {
+    sessionStorage.setItem(key, String(Date.now()))
+    window.location.reload()
+  }
+})
+
+/**
  * Capture the install prompt before React mounts. Chrome fires
  * `beforeinstallprompt` once, very early, and only a preventDefault()'d event
  * can be replayed later from our own UI (see SetupSheet).
