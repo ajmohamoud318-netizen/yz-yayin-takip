@@ -1205,7 +1205,7 @@ export default function ProjectDetail() {
                     onClick={() => { setDemoFormMode('view'); setDemoFormAttempt(null); setDemoFormNotify(true); setDemoFormOpen(true) }}
                   >
                     <Pencil className="h-4 w-4" />
-                    Formu Düzenleyin
+                    Gönderilen Demoyu Düzenleyin
                   </Button>
                 )}
                 {canCancelDemoRequest(user, project) && (
@@ -1224,7 +1224,7 @@ export default function ProjectDetail() {
                     onClick={() => { setOzalitFormMode('view'); setOzalitFormAttempt(null); setOzalitFormNotify(true); setOzalitFormOpen(true) }}
                   >
                     <Pencil className="h-4 w-4" />
-                    Formu Düzenleyin
+                    Gönderilen Ozaliti Düzenleyin
                   </Button>
                 )}
                 {canCancelOzalitRequest(user, project) && (
