@@ -44,11 +44,9 @@ const deepClone = (x) => JSON.parse(JSON.stringify(x ?? []))
  *   open     – boolean (ignored when `inline`)
  *   onOpenChange – (bool) => void (ignored when `inline`)
  *   onApproved   – (updatedOrder) => void, called after a successful approve
- *   mode     – 'approve' (default) or 'view' (read-only, opened from the
- *              signed-step history viewer)
- *   inline   – when true, renders just the sheet content (no Dialog chrome)
- *              — used by TalepHistoryViewer, which already provides its own
- *              Dialog/DialogContent wrapper.
+ *   mode     – 'approve' (default) or 'view' (read-only)
+ *   inline   – when true, renders just the sheet content (no Dialog chrome),
+ *              for embedding inside another dialog's own wrapper.
  */
 export default function SiparisBaskiOnayFormDialog({
   order, open, onOpenChange, onApproved, mode = 'approve', inline = false,

@@ -113,8 +113,6 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
 
   const isDemo = docType === 'demo'
   const kind = isDemo ? 'demo' : 'ozalit'
-  const designerNames =
-    (project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''
   const attemptLabel = `${attemptNo}. ${isDemo ? 'DEMO' : 'OZALİT'}`
 
   // One classic sheet per parça — same set the printout produces.
@@ -159,28 +157,8 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
                     </div>
                   ))}
                 </div>
-                {/* Signatures for this parça */}
-                <div className="grid grid-cols-3 border-t">
-                  {[
-                    ['Tasarımcı', designerNames],
-                    ['Ekip Lideri / Onaylayan', form?.onaylayanKisi ?? ''],
-                    ['Matbaa Yetkilisi', printerName],
-                  ].map(([role, name], i) => (
-                    <div key={role} className={cn('p-3', i < 2 && 'border-r')}>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{role}</p>
-                      {name ? (
-                        <p className="mt-1 text-foreground" style={{ fontFamily: "'Parisienne', cursive", fontSize: '1.5rem', lineHeight: 1.25 }}>
-                          {name}
-                        </p>
-                      ) : (
-                        <>
-                          <div className="mb-1 mt-8 border-t" />
-                          <p className="text-center text-[10px] text-muted-foreground">İmza</p>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                {/* Signature block removed for now (see SpecFormDialog's
+                    matching note on SigBox). */}
               </div>
             )
           })}

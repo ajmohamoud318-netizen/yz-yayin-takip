@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Package, Eye } from 'lucide-react'
+import { Package } from 'lucide-react'
 
 import api, { ORDER_STEP_LABELS } from '@/api'
 import { useAuth } from '@/hooks/useAuth'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { TalepHistoryViewer } from '@/components/TalepSignDialog'
 import { cn, formatNumber } from '@/lib/utils'
 
 const STATUS_BADGE = {
@@ -24,7 +22,6 @@ export default function SiparisListesi() {
   const { user } = useAuth()
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
-  const [viewOrder, setViewOrder] = useState(null)
 
   useEffect(() => {
     api.listOrderRequests()
@@ -48,43 +45,35 @@ export default function SiparisListesi() {
   }
 
   return (
-    <>
-      <div className="space-y-6">
-        <header>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Taleplerim
-            {pendingCount > 0 && (
-              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700 align-middle">
-                {pendingCount} beklemede
-              </span>
-            )}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Gönderdiğiniz baskı taleplerinin durumu. Yeni baskı vermek için Ürünler sayfasını kullanın.
-          </p>
-        </header>
+    <div className="space-y-6">
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Taleplerim
+          {pendingCount > 0 && (
+            <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700 align-middle">
+              {pendingCount} beklemede
+            </span>
+          )}
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Gönderdiğiniz baskı taleplerinin durumu. Yeni baskı vermek için Ürünler sayfasını kullanın.
+        </p>
+      </header>
 
-        {requests.length === 0 ? (
-          <Card>
-            <CardContent className="p-10 text-center text-sm text-muted-foreground">
-              Henüz baskı talebiniz yok.
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            {requests.map((r) => (
-              <RequestRow key={r.id} request={r} onView={() => setViewOrder(r)} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      <TalepHistoryViewer
-        order={viewOrder}
-        open={!!viewOrder}
-        onOpenChange={(v) => !v && setViewOrder(null)}
-      />
-    </>
+      {requests.length === 0 ? (
+        <Card>
+          <CardContent className="p-10 text-center text-sm text-muted-foreground">
+            Henüz baskı talebiniz yok.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {requests.map((r) => (
+            <RequestRow key={r.id} request={r} />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -94,7 +83,7 @@ function normalizeItems(items, quantity) {
   return items
 }
 
-function RequestRow({ request, onView }) {
+function RequestRow({ request }) {
   const statusBadge = STATUS_BADGE[request.status] ?? ''
   const statusLabel = ORDER_STEP_LABELS[request.status] ?? request.status
   const date = request.created_at
@@ -105,13 +94,7 @@ function RequestRow({ request, onView }) {
   const totalSteps = STEP_ORDER.length
 
   return (
-    <Card
-      role="button"
-      tabIndex={0}
-      onClick={onView}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onView() } }}
-      className="cursor-pointer transition-colors hover:border-primary/40 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
+    <Card>
       <CardContent className="p-3">
         <div className="flex flex-wrap items-start gap-3">
           <Package className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
@@ -153,13 +136,7 @@ function RequestRow({ request, onView }) {
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">
             <Badge variant="outline" className={cn('text-[10px]', statusBadge)}>{statusLabel}</Badge>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-muted-foreground">{date}</span>
-              <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={(e) => { e.stopPropagation(); onView() }}>
-                <Eye className="h-3 w-3" />
-                Form
-              </Button>
-            </div>
+            <span className="text-[11px] text-muted-foreground">{date}</span>
           </div>
         </div>
       </CardContent>

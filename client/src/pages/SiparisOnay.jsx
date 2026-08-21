@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ShoppingCart, Package, Eye, Inbox, FileText } from 'lucide-react'
+import { ShoppingCart, Package, Inbox, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 
 import api from '@/api'
@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
+import TalepSignDialog from '@/components/TalepSignDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import { canApproveMatbaaOnayNow, isOrderAssignedToDesigner } from '@/domain/constants/orders'
 import { cn, formatNumber } from '@/lib/utils'
@@ -21,7 +21,6 @@ export default function SiparisOnay() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [signOrder, setSignOrder] = useState(null)
-  const [viewOrder, setViewOrder] = useState(null)
   const [ozalitProject, setOzalitProject] = useState(null) // real Ozalit Üretim Formu
 
   // Open the real Ozalit Üretim Formu for the order's project.
@@ -99,7 +98,6 @@ export default function SiparisOnay() {
                 key={order.id}
                 order={order}
                 onSign={() => setSignOrder(order)}
-                onView={() => setViewOrder(order)}
                 onOzalit={() => openOzalit(order)}
               />
             ))}
@@ -113,11 +111,6 @@ export default function SiparisOnay() {
         onOpenChange={(v) => !v && setSignOrder(null)}
         onSigned={handleSigned}
         onUpdated={handleUpdated}
-      />
-      <TalepHistoryViewer
-        order={viewOrder}
-        open={!!viewOrder}
-        onOpenChange={(v) => !v && setViewOrder(null)}
       />
       <OzalitFormDialog
         open={!!ozalitProject}
@@ -135,7 +128,7 @@ function normalizeItems(items, quantity) {
   return items
 }
 
-function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
+function DesignerOrderCard({ order, onSign, onOzalit }) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const items = normalizeItems(order.items, order.quantity)
@@ -217,10 +210,6 @@ function DesignerOrderCard({ order, onSign, onView, onOzalit }) {
               {isMatbaaOnay ? 'Matbaa Onayı Bekliyor' : 'Onay Bekliyor'}
             </Badge>
             <div className="flex flex-wrap justify-end gap-1.5">
-              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onView() }}>
-                <Eye className="h-3.5 w-3.5" />
-                Talep
-              </Button>
               <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onOzalit() }}>
                 <FileText className="h-3.5 w-3.5" />
                 Ozalit Formu

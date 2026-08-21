@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ShoppingCart, Package, Eye, CheckCircle2, FileText, X } from 'lucide-react'
+import { ShoppingCart, Package, CheckCircle2, FileText, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import api, { ORDER_STEP_LABELS, ORDER_LEADER_ACTION_STEPS, ORDER_REJECT_TO } from '@/api'
@@ -9,7 +9,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
+import TalepSignDialog from '@/components/TalepSignDialog'
 import SiparisBaskiOnayFormDialog from '@/components/SiparisBaskiOnayFormDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import { cn, formatNumber } from '@/lib/utils'
@@ -37,7 +37,6 @@ export default function SiparisTalepleri() {
   // Whether the sign dialog was opened via the card's "Reddet" shortcut
   // (opens straight into the reject panel) vs. "Onaylayın" (normal approve view).
   const [signReject, setSignReject] = useState(false)
-  const [viewOrder, setViewOrder] = useState(null)
   const [ozalitProject, setOzalitProject] = useState(null)
   const [baskiOnayOrder, setBaskiOnayOrder] = useState(null)
 
@@ -129,7 +128,6 @@ export default function SiparisTalepleri() {
                 request={r}
                 onSign={() => { setSignReject(false); setSignOrder(r) }}
                 onReject={() => { setSignReject(true); setSignOrder(r) }}
-                onView={() => setViewOrder(r)}
                 onOzalit={() => openOzalit(r)}
                 onBaskiOnay={() => setBaskiOnayOrder(r)}
               />
@@ -145,11 +143,6 @@ export default function SiparisTalepleri() {
         onSigned={handleSigned}
         onUpdated={handleUpdated}
         initialReject={signReject}
-      />
-      <TalepHistoryViewer
-        order={viewOrder}
-        open={!!viewOrder}
-        onOpenChange={(v) => !v && setViewOrder(null)}
       />
       <OzalitFormDialog
         open={!!ozalitProject}
@@ -173,7 +166,7 @@ function normalizeItems(items, quantity) {
   return items
 }
 
-function RequestCard({ request, onSign, onReject, onView, onOzalit, onBaskiOnay }) {
+function RequestCard({ request, onSign, onReject, onOzalit, onBaskiOnay }) {
   const navigate = useNavigate()
   const statusBadge = STATUS_BADGE[request.status] ?? ''
   const statusLabel = ORDER_STEP_LABELS[request.status] ?? request.status
@@ -254,10 +247,6 @@ function RequestCard({ request, onSign, onReject, onView, onOzalit, onBaskiOnay 
               {statusLabel}
             </Badge>
             <div className="flex flex-wrap justify-end gap-1.5">
-              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onView() }}>
-                <Eye className="h-3.5 w-3.5" />
-                Talep
-              </Button>
               {canRejectHere ? (
                 <Button
                   size="sm"

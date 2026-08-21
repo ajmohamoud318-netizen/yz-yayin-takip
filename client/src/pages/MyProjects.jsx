@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, ShoppingCart, Package, Eye } from 'lucide-react'
+import { Search, ShoppingCart, Package } from 'lucide-react'
 
 import api, { ORDER_STEP_LABELS } from '@/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -12,7 +12,7 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import TalepSignDialog, { TalepHistoryViewer } from '@/components/TalepSignDialog'
+import TalepSignDialog from '@/components/TalepSignDialog'
 import OrderBadge from '@/components/OrderBadge'
 import { STAGE_LABELS, STATUS_META, TYPE_LABELS, statusKeyForProject } from '@/api'
 import { canApproveMatbaaOnayNow, isOrderAssignedToDesigner } from '@/domain/constants/orders'
@@ -36,7 +36,6 @@ export default function MyProjects() {
   // Sipariş queue: orders at 'goruldu' for projects assigned to this designer
   const [siparisQueue, setSiparisQueue] = useState([])
   const [signOrder, setSignOrder] = useState(null)
-  const [viewOrder, setViewOrder] = useState(null)
 
   // Filter to projects this designer is assigned to. Today only the
   // legacy `projects.assigned_to` column is the source of truth on the
@@ -139,7 +138,6 @@ export default function MyProjects() {
                   key={order.id}
                   order={order}
                   onSign={() => setSignOrder(order)}
-                  onView={() => setViewOrder(order)}
                 />
               ))}
             </div>
@@ -309,11 +307,6 @@ export default function MyProjects() {
         onSigned={handleOrderSigned}
         onUpdated={handleOrderUpdated}
       />
-      <TalepHistoryViewer
-        order={viewOrder}
-        open={!!viewOrder}
-        onOpenChange={(v) => !v && setViewOrder(null)}
-      />
     </>
   )
 }
@@ -324,7 +317,7 @@ function normalizeItems(items, quantity) {
   return items
 }
 
-function SiparisOrderRow({ order, onSign, onView }) {
+function SiparisOrderRow({ order, onSign }) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const items = normalizeItems(order.items, order.quantity)
@@ -379,18 +372,6 @@ function SiparisOrderRow({ order, onSign, onView }) {
               {ORDER_STEP_LABELS[order.status] ?? order.status}
             </Badge>
             <div className="flex gap-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 flex-1 px-2 sm:flex-none"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onView()
-                }}
-              >
-                <Eye className="h-3.5 w-3.5" />
-                <span className="sr-only">Form</span>
-              </Button>
               {canAct ? (
                 <Button
                   size="sm"

@@ -43,23 +43,19 @@ export function buildSpecRows({ component, form, kind }) {
   return rows
 }
 
-function sheetSection({ title, attemptLabel, rows, designerNames, onaylayanKisi, matbaaYetkilisi }) {
+// designerNames/onaylayanKisi/matbaaYetkilisi are still passed in by callers
+// (buildSpecRows prints ONAYLAYAN KİŞİ / MATBAA YETKİLİSİ as plain rows) but
+// the signature block itself is removed for now.
+function sheetSection({ title, attemptLabel, rows }) {
   const today = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
   const tableRows = (rows ?? [])
     .map(([l, v]) => `<tr><td class="label">${esc(l)}</td><td class="colon">:</td><td class="val">${esc(v || '')}</td></tr>`)
     .join('')
-  const sig = (role, name) =>
-    `<div class="sig-box"><p class="sig-role">${esc(role)}</p><p class="sig-name">${esc(name || '')}</p><div class="sig-line"></div><p class="sig-hint">İmza</p></div>`
   return `<section class="sheet">
     <div class="doc-title">${esc(title)}</div>
     <div class="attempt-label">${esc(attemptLabel)}</div>
     <table>${tableRows}</table>
     <div class="date-line">Tarih: ${esc(today)}</div>
-    <div class="sig-section">
-      ${sig('Tasarımcı', designerNames)}
-      ${onaylayanKisi ? sig('Ekip Lideri / Onaylayan', onaylayanKisi) : ''}
-      ${matbaaYetkilisi ? sig('Matbaa Yetkilisi', matbaaYetkilisi) : ''}
-    </div>
   </section>`
 }
 

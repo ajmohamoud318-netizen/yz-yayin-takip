@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { ChevronDown, ChevronUp, FileText, History, ShoppingCart, ThumbsDown } from 'lucide-react'
+import { ChevronDown, ChevronUp, FileText, History, ThumbsDown } from 'lucide-react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
@@ -46,11 +46,9 @@ const INITIAL_LIMIT = 15
 function ProjectHistory({
   entries = [],
   projectType,
-  orders = [],
   loading = false,
   onOpenDemoForm,
   onOpenOzalitForm,
-  onOpenOrderForm,
 }) {
   const [filter, setFilter] = useState('all')
   const [expanded, setExpanded] = useState(false)
@@ -197,10 +195,8 @@ function ProjectHistory({
                             isLast={i === day.nodes.length - 1}
                             reduce={reduce}
                             projectType={projectType}
-                            orders={orders}
                             onOpenDemoForm={onOpenDemoForm}
                             onOpenOzalitForm={onOpenOzalitForm}
-                            onOpenOrderForm={onOpenOrderForm}
                           />
                         ),
                       )}
@@ -228,8 +224,8 @@ export default memo(ProjectHistory)
  * attached-form actions.
  */
 function MajorRow({
-  entry, meta, index, isLast, reduce, projectType, orders,
-  onOpenDemoForm, onOpenOzalitForm, onOpenOrderForm,
+  entry, meta, index, isLast, reduce, projectType,
+  onOpenDemoForm, onOpenOzalitForm,
 }) {
   const Icon = meta.icon
   const tone = TONES[meta.tone] ?? TONES.neutral
@@ -237,9 +233,6 @@ function MajorRow({
 
   const demoForm = hasDemoForm(entry)
   const ozalitForm = hasOzalitForm(entry, projectType)
-  const order = isOrderEntry(entry) && orders.length > 0
-    ? (entry.order_id ? orders.find((o) => o.id === entry.order_id) : orders[0])
-    : null
 
   // Round number, shown only where it disambiguates. "Demo 2" next to a
   // rejection is the difference between reading the log and reconstructing it.
@@ -301,7 +294,7 @@ function MajorRow({
           </div>
         )}
 
-        {(demoForm || ozalitForm || order) && (
+        {(demoForm || ozalitForm) && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {demoForm && (
               <FormButton onClick={() => onOpenDemoForm?.(entry.demoAttemptAt)} icon={FileText}>
@@ -311,15 +304,6 @@ function MajorRow({
             {ozalitForm && (
               <FormButton onClick={() => onOpenOzalitForm?.(entry.ozalitAttemptAt)} icon={FileText}>
                 Ozalit Formu
-              </FormButton>
-            )}
-            {order && (
-              <FormButton
-                onClick={() => onOpenOrderForm?.({ order, step: entry.order_step })}
-                icon={ShoppingCart}
-                tone="order"
-              >
-                Baskı Formu
               </FormButton>
             )}
           </div>
@@ -471,7 +455,7 @@ function HistorySkeleton() {
 /*  Bits                                                               */
 /* ------------------------------------------------------------------ */
 
-function FormButton({ onClick, icon: Icon, tone = 'default', children }) {
+function FormButton({ onClick, icon: Icon, children }) {
   return (
     <button
       type="button"
@@ -480,9 +464,7 @@ function FormButton({ onClick, icon: Icon, tone = 'default', children }) {
         'inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5',
         'text-[11px] font-medium text-muted-foreground',
         'transition-[color,border-color,background-color,transform] duration-150 active:translate-y-px',
-        tone === 'order'
-          ? 'hover:border-violet-500/50 hover:bg-violet-500/10 hover:text-violet-700 dark:hover:text-violet-300'
-          : 'hover:border-primary/50 hover:bg-primary/5 hover:text-primary',
+        'hover:border-primary/50 hover:bg-primary/5 hover:text-primary',
       )}
     >
       <Icon className="h-2.5 w-2.5" />
