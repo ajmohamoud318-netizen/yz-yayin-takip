@@ -38,7 +38,7 @@ export default function StageBar({ type, stage, compact = false }) {
           <span
             key={s}
             className={`h-1.5 flex-1 rounded-full transition-colors duration-500 ease-out motion-reduce:transition-none ${
-              i <= currentIndex ? 'bg-brand-500' : 'bg-muted'
+              i <= currentIndex ? 'bg-brand-500' : 'bg-border'
             }`}
           />
         ))}
@@ -86,7 +86,7 @@ export default function StageBar({ type, stage, compact = false }) {
               <span
                 aria-hidden="true"
                 className={`mx-2 h-0.5 w-8 transition-colors duration-500 ease-out motion-reduce:transition-none ${
-                  i < currentIndex ? 'bg-brand-500' : 'bg-muted'
+                  i < currentIndex ? 'bg-brand-500' : 'bg-border'
                 }`}
               />
             )}

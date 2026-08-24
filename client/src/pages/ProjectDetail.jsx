@@ -978,8 +978,6 @@ export default function ProjectDetail() {
     try {
       const { project: updated } = await api.addSubtaskUpdate(sub.id, {
         note: 'Yeniden çalışıldı.',
-        by: user?.id,
-        by_name: user?.name,
       })
       setProject((prev) => ({ ...prev, subtasks: updated.subtasks, history: updated.history }))
       toast.success(`${sub.title}, yeniden çalışıldı olarak kaydedildi.`)
@@ -1704,7 +1702,7 @@ export default function ProjectDetail() {
                           <label
                             key={s.id}
                             className={cn(
-                              'flex cursor-pointer items-center gap-3 rounded-lg border bg-background px-3 py-2.5 text-sm transition',
+                              'flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border bg-background px-3 py-2.5 text-sm transition',
                               flagged
                                 ? subtaskChecked(s)
                                   ? 'border-emerald-200 bg-emerald-50/40'
@@ -1723,57 +1721,59 @@ export default function ProjectDetail() {
                               onCheckedChange={() => canEdit && !flagged && toggleSubtask(s)}
                               disabled={!canEdit || flagged}
                             />
-                            <span className={cn('flex-1', subtaskChecked(s) && 'text-muted-foreground line-through')}>
+                            <span className={cn('min-w-0 flex-1 basis-40', subtaskChecked(s) && 'text-muted-foreground line-through')}>
                               {s.title}
                             </span>
-                            {flagged && canEdit && (
-                              <button
-                                type="button"
-                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRevize(s) }}
-                                disabled={toggling === s.id}
-                                className="inline-flex items-center gap-1 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
-                              >
-                                {toggling === s.id ? 'Kaydediliyor…' : 'Revize Edin'}
-                              </button>
-                            )}
-                            {flagged && !canEdit && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                                Revize bekliyor
-                              </span>
-                            )}
-                            {lockedDone && (
-                              <span className="text-[11px] font-medium text-muted-foreground">
-                                Revize gerekmiyor
-                              </span>
-                            )}
-                            {s.assigned_to && (
-                              <span
-                                className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground"
-                                title={`Bu alt görevin tasarımcısı: ${s.assigned_name ?? s.assigned_to}`}
-                              >
-                                <UserIcon className="h-2.5 w-2.5" />
-                                {s.assigned_name ?? initials(s.assigned_to)}
-                              </span>
-                            )}
-                            {localDone[s.id] !== undefined && localDone[s.id] !== s.is_done && (
-                              <span className={cn('text-[11px] font-medium', flagged ? 'text-amber-600' : 'text-primary')}>
-                                kaydedilmedi
-                              </span>
-                            )}
-                            {!flagged && !lockedDone && subtaskChecked(s) && s.is_done && s.done_at && localDone[s.id] === undefined && (
-                              <span className="text-[11px] text-muted-foreground">{formatDateTr(s.done_at)}</span>
-                            )}
-                            {!flagged && !lockedDone && canEdit && s.is_done && localDone[s.id] === undefined && (
-                              <button
-                                type="button"
-                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRedo(s) }}
-                                disabled={toggling === s.id}
-                                title="Bu görev üzerinde tekrar çalıştığınızı kaydedin"
-                                className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition hover:border-primary/40 hover:text-primary disabled:opacity-50"
-                              >
-                                {toggling === s.id ? 'Kaydediliyor…' : 'Yeniden Çalıştım'}
-                              </button>
-                            )}
+                            <div className="flex flex-wrap items-center justify-end gap-1.5 pl-7 sm:pl-0">
+                              {flagged && canEdit && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRevize(s) }}
+                                  disabled={toggling === s.id}
+                                  className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
+                                >
+                                  {toggling === s.id ? 'Kaydediliyor…' : 'Revize Edin'}
+                                </button>
+                              )}
+                              {flagged && !canEdit && (
+                                <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                                  Revize bekliyor
+                                </span>
+                              )}
+                              {lockedDone && (
+                                <span className="whitespace-nowrap text-[11px] font-medium text-muted-foreground">
+                                  Revize gerekmiyor
+                                </span>
+                              )}
+                              {s.assigned_to && (
+                                <span
+                                  className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground"
+                                  title={`Bu alt görevin tasarımcısı: ${s.assigned_name ?? s.assigned_to}`}
+                                >
+                                  <UserIcon className="h-2.5 w-2.5 shrink-0" />
+                                  {s.assigned_name ?? initials(s.assigned_to)}
+                                </span>
+                              )}
+                              {localDone[s.id] !== undefined && localDone[s.id] !== s.is_done && (
+                                <span className={cn('whitespace-nowrap text-[11px] font-medium', flagged ? 'text-amber-600' : 'text-primary')}>
+                                  kaydedilmedi
+                                </span>
+                              )}
+                              {!flagged && !lockedDone && subtaskChecked(s) && s.is_done && s.done_at && localDone[s.id] === undefined && (
+                                <span className="whitespace-nowrap text-[11px] text-muted-foreground">{formatDateTr(s.done_at)}</span>
+                              )}
+                              {!flagged && !lockedDone && canEdit && s.is_done && localDone[s.id] === undefined && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRedo(s) }}
+                                  disabled={toggling === s.id}
+                                  title="Bu görev üzerinde tekrar çalıştığınızı kaydedin"
+                                  className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition hover:border-primary/40 hover:text-primary disabled:opacity-50"
+                                >
+                                  {toggling === s.id ? 'Kaydediliyor…' : 'Yeniden Çalıştım'}
+                                </button>
+                              )}
+                            </div>
                           </label>
                           </div>
                         )
