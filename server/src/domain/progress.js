@@ -3,9 +3,9 @@
  * — client sends the new subtask shape (or a single update), and we
  * recompute `projects.progress` in the same transaction.
  *
- * Numeric subtasks ("İç Sayfalar", "Sticker") count as done when their
- * done count >= total. Check subtasks count as done when `is_done` is
- * true.
+ * Every subtask counts as done when `is_done` is true — including the
+ * `pages`/`sticker-count` kinds ("İç Sayfalar", "Sticker"), which used to
+ * derive "done" from a counter (pages_done/stickers_done >= total) instead.
  *
  * Projects past the design gate (anything in STAGES_REQUIRING_FULL_PROGRESS)
  * are pinned at 100 — the design is frozen once it leaves tasarim.
@@ -22,16 +22,7 @@ const EXCLUDED_FROM_PROGRESS_TITLE = 'Yazılım'
 export function subtaskProgress(subtasks = []) {
   const counted = (subtasks ?? []).filter((s) => s.title !== EXCLUDED_FROM_PROGRESS_TITLE)
   if (counted.length === 0) return 0
-  let done = 0
-  for (const s of counted) {
-    if (s.kind === 'pages') {
-      if ((s.total_pages ?? 0) > 0 && (s.pages_done ?? 0) >= s.total_pages) done++
-    } else if (s.kind === 'sticker-count') {
-      if ((s.total_stickers ?? 0) > 0 && (s.stickers_done ?? 0) >= s.total_stickers) done++
-    } else if (s.is_done) {
-      done++
-    }
-  }
+  const done = counted.filter((s) => s.is_done).length
   return Math.round((done / counted.length) * 100)
 }
 

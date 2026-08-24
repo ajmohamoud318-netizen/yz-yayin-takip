@@ -31,7 +31,6 @@ import StageBar from '@/components/StageBar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -239,8 +238,6 @@ export default function ProjectDetail() {
   // one is ever in flight at a time.
   const [processingEkranDemo, setProcessingEkranDemo] = useState(false)
   const [ekranDemoRejectOpen, setEkranDemoRejectOpen] = useState(false)
-  const [updatingSubId, setUpdatingSubId] = useState(null) // per-subtask "what changed" note
-  const [updateNote, setUpdateNote] = useState('')
   const [projectOrders, setProjectOrders] = useState([])
   const [projectHandover, setProjectHandover] = useState(null)
   const [signOrder, setSignOrder] = useState(null)
@@ -847,53 +844,11 @@ export default function ProjectDetail() {
   }
 
   // Returns the effective checked state for a subtask — local pending
-  // changes win over the server value, but for `pages` /
-  // `sticker-count` rows the server value is derived from
-  // pages_done/total_pages and stickers_done/total_stickers, NOT from
-  // `is_done`. We delegate to the kind-aware `isSubtaskDone` helper in
-  // `domain/services/progress` so the "X / Y tamamlandı" header always
-  // matches the server's `subtaskProgress` — and so optimistic UI can
-  // show "done" the moment the last page is added, without waiting for
-  // the POST /api/subtasks/:id/pages round-trip to flip `is_done`.
+  // changes (not yet saved via "Değişiklikleri Kaydedin") win over the
+  // server value.
   function subtaskChecked(sub) {
     if (!sub) return false
-    if (sub.kind === 'pages' || sub.kind === 'sticker-count') {
-      return isSubtaskDone(sub)
-    }
     return localDone[sub.id] !== undefined ? localDone[sub.id] : isSubtaskDone(sub)
-  }
-
-  // ── per-subtask update log: designer records WHAT changed ──────────────────
-  function startUpdateSub(sub) {
-    setUpdatingSubId(sub.id)
-    setUpdateNote('')
-  }
-  function cancelUpdateSub() {
-    setUpdatingSubId(null)
-    setUpdateNote('')
-  }
-  async function saveUpdateSub(sub) {
-    const note = updateNote.trim()
-    if (!note) {
-      toast.error('Lütfen ne değiştirdiğinizi yazın.')
-      return
-    }
-    setToggling(sub.id)
-    try {
-      const { project: updated } = await api.addSubtaskUpdate(sub.id, {
-        note,
-        by: user?.id,
-        by_name: user?.name,
-      })
-      setProject((prev) => ({ ...prev, subtasks: updated.subtasks }))
-      setUpdatingSubId(null)
-      setUpdateNote('')
-      toast.success('Güncelleme kaydedildi.')
-    } catch (err) {
-      toast.error(err.message || 'Güncelleme kaydedilemedi.')
-    } finally {
-      setToggling(null)
-    }
   }
 
   // True if there's at least one unsaved change.
@@ -992,12 +947,9 @@ export default function ProjectDetail() {
       isAssigned &&
       !wasInRevision &&
       (project?.progress ?? 0) < 100 &&
-      progressCountedSubtasks.every((s) => {
-        const done = localDone[s.id] !== undefined ? localDone[s.id] : s.is_done
-        // Counter kinds ignore `is_done` — ask the shared predicate instead.
-        if (s.kind === 'pages' || s.kind === 'sticker-count') return isSubtaskDone(s)
-        return done
-      })
+      progressCountedSubtasks.every((s) =>
+        localDone[s.id] !== undefined ? localDone[s.id] : s.is_done,
+      )
     try {
       const changed = subtasksSafe.filter(
         (s) => localDone[s.id] !== undefined && localDone[s.id] !== s.is_done,
@@ -1016,23 +968,23 @@ export default function ProjectDetail() {
     }
   }
 
-  // Numeric subtasks ("İç Sayfalar", "Sticker") share one handler: the
-  // designer logs how many they finished, we clamp to the configured total
-  // and PATCH the matching counter column. Both kinds derive `is_done`
-  // server-side from the counter, so there's nothing to tick separately.
-  async function addCount(sub, delta) {
-    const isSticker = sub.kind === 'sticker-count'
-    const total = (isSticker ? sub.total_stickers : sub.total_pages) ?? 0
-    const done = (isSticker ? sub.stickers_done : sub.pages_done) ?? 0
-    const next = Math.max(0, Math.min(total, done + delta))
+  // A completed subtask can be worked on again without unchecking it (e.g.
+  // a designer redoes a page after a verbal note from the leader, with no
+  // formal rejection/revize flag involved) — this just logs a timeline
+  // entry via the same "subtask note" endpoint the designer's notes use,
+  // it doesn't touch is_done.
+  async function handleRedo(sub) {
     setToggling(sub.id)
     try {
-      const { project: updated } = isSticker
-        ? await api.setSubtaskStickers(sub.id, next)
-        : await api.setSubtaskPages(sub.id, next)
-      setProject((prev) => ({ ...prev, subtasks: updated.subtasks, progress: updated.progress }))
+      const { project: updated } = await api.addSubtaskUpdate(sub.id, {
+        note: 'Yeniden çalışıldı.',
+        by: user?.id,
+        by_name: user?.name,
+      })
+      setProject((prev) => ({ ...prev, subtasks: updated.subtasks, history: updated.history }))
+      toast.success(`${sub.title}, yeniden çalışıldı olarak kaydedildi.`)
     } catch (err) {
-      toast.error(err.message || (isSticker ? 'Sticker güncellenemedi.' : 'Sayfa güncellenemedi.'))
+      toast.error(err.message || 'Kaydedilemedi.')
     } finally {
       setToggling(null)
     }
@@ -1747,24 +1699,6 @@ export default function ProjectDetail() {
                         const flagged = inRevision && s.needs_revize
                         const lockedDone = inRevision && !s.needs_revize && s.is_done
 
-                        if (s.kind === 'pages' || s.kind === 'sticker-count') {
-                          return (
-                            <CountSubtaskRow
-                              key={s.id}
-                              sub={s}
-                              canEdit={canEdit}
-                              flagged={flagged}
-                              lockedDone={lockedDone}
-                              busy={toggling === s.id}
-                              revizing={toggling === s.id}
-                              onRevize={() => handleRevize(s)}
-                              onAdd={(delta) => addCount(s, delta)}
-                            />
-                          )
-                        }
-
-                        const updates = s.updates ?? []
-
                         return (
                           <div key={s.id} className="space-y-1.5">
                           <label
@@ -1828,6 +1762,17 @@ export default function ProjectDetail() {
                             )}
                             {!flagged && !lockedDone && subtaskChecked(s) && s.is_done && s.done_at && localDone[s.id] === undefined && (
                               <span className="text-[11px] text-muted-foreground">{formatDateTr(s.done_at)}</span>
+                            )}
+                            {!flagged && !lockedDone && canEdit && s.is_done && localDone[s.id] === undefined && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRedo(s) }}
+                                disabled={toggling === s.id}
+                                title="Bu görev üzerinde tekrar çalıştığınızı kaydedin"
+                                className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition hover:border-primary/40 hover:text-primary disabled:opacity-50"
+                              >
+                                {toggling === s.id ? 'Kaydediliyor…' : 'Yeniden Çalıştım'}
+                              </button>
                             )}
                           </label>
                           </div>
@@ -2006,100 +1951,6 @@ export default function ProjectDetail() {
 }
 
 /**
- * Numeric ("counter") subtask — `pages` and `sticker-count`. The designer
- * logs how many they finished today; progress is recalculated automatically
- * (done / total). `is_done` is derived from the counter on both sides, so
- * these rows deliberately have no checkbox — the row completes itself once
- * the counter reaches the total.
- */
-function CountSubtaskRow({ sub, canEdit, busy, onAdd, onRevize, revizing = false, flagged = false, lockedDone = false }) {
-  const [today, setToday] = useState('')
-  const isSticker = sub.kind === 'sticker-count'
-  const unit = isSticker ? 'sticker' : 'sayfa'
-  const total = (isSticker ? sub.total_stickers : sub.total_pages) ?? 0
-  const done = (isSticker ? sub.stickers_done : sub.pages_done) ?? 0
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0
-  const remaining = Math.max(0, total - done)
-  const isComplete = isSubtaskDone(sub)
-  // A counter saved without a total (ProductSubtaskEditor coerces an empty
-  // field to null) can never reach "done" — say so instead of showing a
-  // disabled "Tamamlandı" the designer can't act on.
-  const noTotal = total <= 0
-  const statusText = noTotal
-    ? 'Toplam sayı tanımlanmamış, takım liderine bildirin.'
-    : remaining === 0
-      ? 'Tamamlandı'
-      : `Kalan: ${remaining} ${unit}`
-
-  function submit(e) {
-    e.preventDefault()
-    const n = Number(today)
-    if (!n || n < 1) return
-    onAdd(n)
-    setToday('')
-  }
-
-  return (
-    <div
-      className={cn(
-        'rounded-lg border bg-background px-3 py-2.5',
-        isComplete && 'border-emerald-200 bg-emerald-50/40',
-        flagged && !isComplete && 'border-amber-200 bg-amber-50/40',
-        lockedDone && 'opacity-60',
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-2 text-sm font-medium">
-          {sub.title}
-          {flagged && canEdit && (
-            <button
-              type="button"
-              onClick={onRevize}
-              disabled={revizing}
-              className="inline-flex items-center gap-1 rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
-            >
-              {revizing ? 'Kaydediliyor…' : 'Revize Edin'}
-            </button>
-          )}
-          {flagged && !canEdit && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-              Revize bekliyor
-            </span>
-          )}
-          {lockedDone && (
-            <span className="text-[11px] font-medium text-muted-foreground">Revize gerekmiyor</span>
-          )}
-        </span>
-        <span className="text-xs text-muted-foreground">
-          {done} / {total} {unit} · <span className="font-semibold text-foreground">%{pct}</span>
-        </span>
-      </div>
-      <Progress value={pct} className="mt-2 h-1.5" />
-      {canEdit ? (
-        <form onSubmit={submit} className="mt-2.5 flex flex-wrap items-center gap-2">
-          <Input
-            type="number"
-            min="1"
-            max={remaining || undefined}
-            value={today}
-            onChange={(e) => setToday(e.target.value)}
-            placeholder={`Bugün biten ${unit}`}
-            className="h-8 w-40"
-            disabled={busy || remaining === 0}
-          />
-          <Button type="submit" size="sm" disabled={busy || remaining === 0 || !today}>
-            Ekle
-          </Button>
-          <span className="text-[11px] text-muted-foreground">{statusText}</span>
-        </form>
-      ) : (
-        <p className="mt-2 text-[11px] text-muted-foreground">{statusText}</p>
-      )}
-    </div>
-  )
-}
-
-/**
  * Decide which action buttons are available for the current user/stage.
  *
  * Flow: the assigned designer submits the finished design to Demo Teslim (only
@@ -2205,8 +2056,13 @@ function availableActions({ project, user }) {
     const matbaaLock = project.reject_target === 'matbaa'
     if (role === 'printer') {
       // Teslim Et stays hidden until the matbaa has pressed İşlemi Başlat —
-      // they must mark the work started before they can hand it off.
-      if ((ozalitRequested || matbaaLock) && project.ozalit_started) set.add('advance')
+      // they must mark the work started before they can hand it off. Also
+      // hidden while a change request is pending — the server refuses to
+      // deliver until the matbaa accepts/declines it (computeOzalitTeslimAdvance),
+      // so offering the button here just produces a 400.
+      if ((ozalitRequested || matbaaLock) && project.ozalit_started && !project.ozalit_change_requested_at) {
+        set.add('advance')
+      }
     } else if (!ozalitRequested && !matbaaLock && (role === 'team_leader' || isAssignedDesigner)) {
       set.add('advance')
     }
@@ -2217,8 +2073,13 @@ function availableActions({ project, user }) {
   // once baski_onay/cin_baski_onay is approved the project lands directly on
   // baskida, which the printer acts on via the handover flow instead
   // (Teslim Talepleri), not an in-detail-page advance button. Teslim Et stays
-  // hidden until İşlemi Başlat has been pressed (same rule as ozalit above).
-  if (role === 'printer' && project.type === 'TR' && stage === 'demo_teslim' && project.demo_started) {
+  // hidden until İşlemi Başlat has been pressed (same rule as ozalit above),
+  // and while a change request is pending — the server refuses delivery
+  // until the matbaa accepts/declines it (computeDemoTeslimAdvance).
+  if (
+    role === 'printer' && project.type === 'TR' && stage === 'demo_teslim' &&
+    project.demo_started && !project.demo_change_requested_at
+  ) {
     set.add('advance')
   }
 

@@ -21,7 +21,7 @@ import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
 import {
   canRejectAtStage, isDemoApprover, isOzalitApprover, ozalitLeaderApproved,
-  canRequestEkranDemo, canRespondEkranDemo,
+  canRequestEkranDemo, canRespondEkranDemo, canRespondDemoChange, canRespondOzalitChange,
 } from '@/domain'
 import { formatTargetDate, formatNumber } from '@/lib/utils'
 
@@ -294,8 +294,23 @@ export default function Approvals({ tab = 'demo' }) {
                   <>
                     {/* Teslim Et stays hidden until the matbaa has pressed
                         İşlemi Başlat — same rule as the detail page
-                        (canMarkDemoStarted/canMarkOzalitStarted). */}
-                    {(sub === 'demo' ? p.demo_started : p.ozalit_started) ? (
+                        (canMarkDemoStarted/canMarkOzalitStarted) — and while a
+                        change request is pending, since the server refuses
+                        delivery until the matbaa accepts/declines it
+                        (computeDemoTeslimAdvance/computeOzalitTeslimAdvance).
+                        The accept/decline buttons only live on the detail
+                        page, so send them there instead of failing a submit. */}
+                    {(sub === 'demo' ? canRespondDemoChange(user, p) : canRespondOzalitChange(user, p)) ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full sm:flex-1"
+                        onClick={() => navigate(`/projects/${p.id}`)}
+                      >
+                        <Send className="h-4 w-4" />
+                        Değişiklik talebini yanıtlayın
+                      </Button>
+                    ) : (sub === 'demo' ? p.demo_started : p.ozalit_started) ? (
                       <Button
                         size="sm"
                         className="w-full sm:flex-1"
