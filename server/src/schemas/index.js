@@ -912,6 +912,19 @@ const ordersReject = {
   },
 }
 
+// Body for POST .../ozalit-change-request — mirrors the main pipeline's
+// demo/ozalit change-request note (migration 048), optional free text.
+const ordersOzalitChangeRequest = {
+  ...ordersIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      note: { type: 'string', maxLength: 2000 },
+    },
+  },
+}
+
 // Save-draft (PATCH) and approve (POST) for the siparis_baski_onay
 // print-spec form share this shape — approve additionally requires
 // adet/tarih/hazirlayan to be non-empty, enforced by the route (not
@@ -1050,6 +1063,7 @@ export const schemas = {
   ordersAdvance,
   ordersReject,
   ordersIdParams,
+  ordersOzalitChangeRequest,
   ordersBaskiOnayForm,
   orderSubtasksPatch,
   handoversCreate,

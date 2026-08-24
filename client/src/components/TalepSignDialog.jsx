@@ -109,6 +109,18 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   const [confirmMatbaaNotReceived, setConfirmMatbaaNotReceived] = useState(false)
   // Designer step (status 'goruldu') can revise the product spec before signing.
   const isDesignerStep = user?.role === 'designer' && order?.status === 'goruldu'
+  // Team leader can also correct the spec while approving the ozalit round
+  // (matbaa_onay), the digital Ekran Onayı, or — before the matbaa has
+  // started work — the pending tasarimci_onay delivery itself (migration
+  // 051's cancel/edit window; once started, direct editing is refused and
+  // the request-change flow further down takes over instead). Same as the
+  // main project pipeline's own Ozalit form, where the team leader may
+  // always edit the spec regardless of stage. Designer/printer stay
+  // view-only at these steps, same as on the main pipeline.
+  const canEditSpec =
+    isDesignerStep ||
+    (user?.role === 'team_leader' && (order?.status === 'matbaa_onay' || order?.status === 'ekran_onay')) ||
+    (user?.role === 'team_leader' && order?.status === 'tasarimci_onay' && !order?.ozalit_started)
   // Resubmit-after-reject: only once this order has actually bounced back to
   // goruldu via a reject (order.last_reject_type === 'designer') does the
   // designer get to choose between another physical ozalit and a digital
@@ -145,20 +157,24 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   const originalSubsRef = useRef('[]')
 
   useEffect(() => {
-    if (open && order && isDesignerStep) {
+    if (open && order && canEditSpec) {
       setChosenRoute(null)
       const loaded = deepClone(loadProductComps(order.project_id))
       setComps(loaded)
       originalRef.current = JSON.stringify(loaded)
-      // Subtasks first (open); product info collapsed until needed.
-      setSubsOpen(true)
       setEditorOpen(false)
-      // This order's own alt görevler snapshot (order_subtasks) — already
-      // embedded on the order object from GET /order-requests, no fetch
-      // needed, and no risk of reading another concurrent order's rows.
-      const subs = deepClone(order.subtasks ?? [])
-      setSubtasks(subs)
-      originalSubsRef.current = JSON.stringify(subs)
+      if (isDesignerStep) {
+        // Subtasks first (open); product info collapsed until needed.
+        // Team-leader steps (matbaa_onay/ekran_onay) don't touch alt
+        // görevler here — only the designer's own review step does.
+        setSubsOpen(true)
+        // This order's own alt görevler snapshot (order_subtasks) — already
+        // embedded on the order object from GET /order-requests, no fetch
+        // needed, and no risk of reading another concurrent order's rows.
+        const subs = deepClone(order.subtasks ?? [])
+        setSubtasks(subs)
+        originalSubsRef.current = JSON.stringify(subs)
+      }
       let cancelled = false
       // Pull the authoritative spec from the server (the cache may be cold on
       // this browser) and prime the shared cache so every view agrees.
@@ -177,7 +193,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     // seed local edit state once when the dialog opens for this order, not
     // reset in-progress edits every time the order object is refetched
     // elsewhere (polling, onSigned/onUpdated) while the dialog stays open.
-  }, [open, order?.id, isDesignerStep])
+  }, [open, order?.id, canEditSpec, isDesignerStep])
 
   // Prime the leader's reject picker from the order's own alt görevler
   // snapshot, and reset the selection each time the dialog reopens so a
@@ -253,6 +269,21 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   const matbaaAlreadyApproved =
     isMatbaaOnayStep && (order.matbaa_approvals ?? []).some((a) => a.id === user?.id)
 
+  // Full parity with the main pipeline's demo/ozalit started/cancel/edit/
+  // change-request flow (migrations 048/049), scoped to the order's own
+  // ozalit round delivered at tasarimci_onay (migration 051). Team-leader
+  // only, same restriction as the main pipeline (avoids two people racing
+  // to edit/notify the same sent request).
+  const isTasarimciOnayStep = order.status === 'tasarimci_onay'
+  const ozalitStarted = !!order.ozalit_started
+  const ozalitChangePending = order.ozalit_change_requested_at != null
+  const canCancelOrEditOzalit =
+    user?.role === 'team_leader' && isTasarimciOnayStep && !ozalitStarted && !ozalitChangePending
+  const canRequestOzalitChange =
+    user?.role === 'team_leader' && isTasarimciOnayStep && ozalitStarted && !ozalitChangePending
+  const canRespondOzalitChange =
+    user?.role === 'printer' && isTasarimciOnayStep && ozalitChangePending
+
   // Non-designer steps each have their own plain-language action, matching the
   // trigger button that opened this dialog — no "İmzala" wording, no pen icon.
   const actionLabel = isAssignStep
@@ -300,14 +331,16 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     setSaving(true)
     try {
       let signNotes = notes.trim()
-      if (isDesignerStep) {
+      if (canEditSpec) {
         await saveProductComps(order.project_id, comps)
         const compsChanged = JSON.stringify(comps) !== originalRef.current
-        const subsChanged = JSON.stringify(subtasks) !== originalSubsRef.current
-        if (subsChanged) await saveSubtaskFlags(order.id, subtasks, originalSubsRef.current)
         const parts = []
         if (compsChanged) parts.push('ürün bilgileri')
-        if (subsChanged) parts.push('alt görevler')
+        if (isDesignerStep) {
+          const subsChanged = JSON.stringify(subtasks) !== originalSubsRef.current
+          if (subsChanged) await saveSubtaskFlags(order.id, subtasks, originalSubsRef.current)
+          if (subsChanged) parts.push('alt görevler')
+        }
         if (parts.length) {
           const phrase = `${parts.join(' ve ')} güncellendi`
           signNotes = signNotes ? `${signNotes} · ${phrase}` : phrase
@@ -377,6 +410,109 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
       toast.error(err.message || 'Reddetme başarısız.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Full parity with the main pipeline's demo/ozalit started/cancel/edit/
+  // change-request flow (migrations 048/049), scoped to the order's own
+  // ozalit round delivered at tasarimci_onay (migration 051).
+  const [ozalitBusy, setOzalitBusy] = useState(false)
+  const [changeNote, setChangeNote] = useState('')
+
+  // Matbaa marks physical work begun — after this, the team leader's free
+  // cancel/edit closes and a change request is required instead.
+  async function handleStartOzalit() {
+    setOzalitBusy(true)
+    try {
+      const updated = await api.startOrderOzalit(order.id)
+      toast.success('Başlatıldı olarak işaretlendi.')
+      onUpdated?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'İşlem başarısız.')
+    } finally {
+      setOzalitBusy(false)
+    }
+  }
+
+  // Team leader edits the product spec while it's still sitting with the
+  // matbaa, pre-start — saves to the shared Ürün Bilgileri catalog (same
+  // path the designer's own goruldu edit uses) and logs+notifies via the
+  // dedicated route, since this step's generic submit belongs to the
+  // printer (the owner of tasarimci_onay), not the leader.
+  async function handleSaveOzalitEdit() {
+    setOzalitBusy(true)
+    try {
+      await saveProductComps(order.project_id, comps)
+      const updated = await api.notifyOrderOzalitEdit(order.id)
+      toast.success('Ürün bilgileri güncellendi, matbaa bilgilendirildi.')
+      onOpenChange(false)
+      onUpdated?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'İşlem başarısız.')
+    } finally {
+      setOzalitBusy(false)
+    }
+  }
+
+  // Team leader cancels a pending (not-yet-started) ozalit request outright
+  // — closes the dialog and sends the order back to goruldu.
+  async function handleCancelOzalit() {
+    setOzalitBusy(true)
+    try {
+      const updated = await api.cancelOrderOzalit(order.id)
+      toast.success('Ozalit talebi iptal edildi.')
+      onOpenChange(false)
+      onSigned?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'İşlem başarısız.')
+    } finally {
+      setOzalitBusy(false)
+    }
+  }
+
+  // Team leader asks the matbaa to accept a cancel/edit once they've already
+  // started — doesn't close the dialog, the round stays at tasarimci_onay
+  // either way until the printer responds.
+  async function handleRequestOzalitChange() {
+    setOzalitBusy(true)
+    try {
+      const updated = await api.requestOrderOzalitChange(order.id, changeNote.trim())
+      toast.success('Değişiklik talebiniz matbaaya iletildi.')
+      setChangeNote('')
+      onUpdated?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'İşlem başarısız.')
+    } finally {
+      setOzalitBusy(false)
+    }
+  }
+
+  // Matbaa accepts the pending change-request — un-starts the round so the
+  // leader's free cancel/edit reopens.
+  async function handleAcceptOzalitChange() {
+    setOzalitBusy(true)
+    try {
+      const updated = await api.acceptOrderOzalitChange(order.id)
+      toast.success('Değişiklik talebi kabul edildi.')
+      onUpdated?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'İşlem başarısız.')
+    } finally {
+      setOzalitBusy(false)
+    }
+  }
+
+  // Matbaa declines — round stays started, nothing else changes.
+  async function handleDeclineOzalitChange() {
+    setOzalitBusy(true)
+    try {
+      const updated = await api.declineOrderOzalitChange(order.id)
+      toast.success('Değişiklik talebi reddedildi.')
+      onUpdated?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'İşlem başarısız.')
+    } finally {
+      setOzalitBusy(false)
     }
   }
 
@@ -491,7 +627,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className={cn('max-w-md', DIALOG_MOBILE_SHEET, isDesignerStep && 'max-w-lg')}>
+      <DialogContent className={cn('max-w-md', DIALOG_MOBILE_SHEET, canEditSpec && 'max-w-lg')}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isDesignerStep ? 'İnceleyin ve Gönderin' : actionLabel}
@@ -568,8 +704,12 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
             </div>
           )}
 
-          {/* Designer-only: edit the product spec (collapsed by default) */}
-          {isDesignerStep && (
+          {/* Designer at goruldu, team leader approving matbaa_onay/
+              ekran_onay, or team leader at a not-yet-started tasarimci_onay:
+              edit the product spec (collapsed by default) — mirrors the main
+              pipeline's Ozalit form, where the team leader may correct the
+              spec right up through approval. */}
+          {canEditSpec && (
             <div className="overflow-hidden rounded-lg border">
               <button
                 type="button"
@@ -832,6 +972,91 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
             </div>
           )}
 
+          {/* tasarimci_onay: printer's "İşlemi Başlatın" + change-request
+              accept/decline, or the team leader's cancel/save-edit/
+              request-change — migration 051, full parity with the main
+              pipeline's demo/ozalit started flow (migrations 048/049). */}
+          {isTasarimciOnayStep && !showReject && (
+            <div className="space-y-2.5">
+              {user?.role === 'printer' && !ozalitChangePending && (
+                <div className="flex items-center justify-between gap-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                  <span>
+                    {ozalitStarted
+                      ? 'İşe başladığınız işaretlendi.'
+                      : 'Fiziksel işe başladığınızda işaretleyin — ekip lideri bundan sonra iptal/düzenleme yerine değişiklik talebi gönderir.'}
+                  </span>
+                  {!ozalitStarted && (
+                    <Button type="button" size="sm" variant="outline" onClick={handleStartOzalit} disabled={ozalitBusy}>
+                      {ozalitBusy ? 'İşleniyor…' : 'İşlemi Başlatın'}
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {canRespondOzalitChange && (
+                <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                  <p>
+                    Ekip lideri değişiklik istedi
+                    {order.ozalit_change_requested_note ? `: "${order.ozalit_change_requested_note}"` : '.'}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button type="button" size="sm" variant="destructive" onClick={handleDeclineOzalitChange} disabled={ozalitBusy}>
+                      Reddedin
+                    </Button>
+                    <Button type="button" size="sm" variant="success" onClick={handleAcceptOzalitChange} disabled={ozalitBusy}>
+                      Kabul Edin
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {user?.role === 'team_leader' && ozalitChangePending && (
+                <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                  <Check className="h-4 w-4 shrink-0" />
+                  <span>Değişiklik talebiniz matbaada bekliyor.</span>
+                </div>
+              )}
+
+              {canRequestOzalitChange && (
+                <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    Matbaa ozalite başladı — doğrudan iptal veya düzenleme artık yapılamaz, bir değişiklik talebi gönderin.
+                  </p>
+                  <Textarea
+                    rows={2}
+                    placeholder="Değişiklik notu (isteğe bağlı)…"
+                    value={changeNote}
+                    onChange={(e) => setChangeNote(e.target.value)}
+                    className="resize-none text-sm"
+                  />
+                  <Button type="button" size="sm" variant="outline" onClick={handleRequestOzalitChange} disabled={ozalitBusy}>
+                    {ozalitBusy ? 'Gönderiliyor…' : 'Değişiklik İsteyin'}
+                  </Button>
+                </div>
+              )}
+
+              {canCancelOrEditOzalit && (
+                <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    Matbaa henüz başlamadı — ürün bilgilerini yukarıdan düzenleyip kaydedebilir, veya talebi doğrudan iptal edebilirsiniz.
+                  </p>
+                  <div className="flex shrink-0 gap-2">
+                    <Button
+                      type="button" size="sm" variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      onClick={handleCancelOzalit} disabled={ozalitBusy}
+                    >
+                      İptal Edin
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={handleSaveOzalitEdit} disabled={ozalitBusy}>
+                      {ozalitBusy ? 'Kaydediliyor…' : 'Kaydedin'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* matbaa_onay receipt gate — the approve button below stays
               disabled until the proof is acknowledged. The "not yet
               received" state itself is handled by the compact early-return
@@ -887,12 +1112,21 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
                   {saving ? 'Reddediliyor…' : 'Reddi Onaylayın'}
                 </Button>
               ) : (
-                <Button
-                  type="submit"
-                  disabled={saving || (isMatbaaOnayStep && (!canApproveMatbaaOnayNow(user, order) || matbaaAlreadyApproved))}
-                >
-                  {saving ? 'Kaydediliyor…' : isDesignerStep ? 'İnceleyin ve Gönderin' : actionLabel}
-                </Button>
+                // tasarimci_onay belongs to the printer — a team leader viewing
+                // it only ever gets the cancel/edit/change-request actions
+                // above, never this generic advance button.
+                !(user?.role === 'team_leader' && isTasarimciOnayStep) && (
+                  <Button
+                    type="submit"
+                    disabled={
+                      saving ||
+                      (isMatbaaOnayStep && (!canApproveMatbaaOnayNow(user, order) || matbaaAlreadyApproved)) ||
+                      canRespondOzalitChange
+                    }
+                  >
+                    {saving ? 'Kaydediliyor…' : isDesignerStep ? 'İnceleyin ve Gönderin' : actionLabel}
+                  </Button>
+                )
               )}
             </div>
           </DialogFooter>

@@ -6,6 +6,8 @@ import { getPool } from '../db/pool.js'
 import { ORDER_STEP_NEXT, ORDER_STEP_OWNER, ORDER_REJECT_TARGETS } from '../domain/orders.js'
 import {
   computeMatbaaReceive, computeMatbaaNotReceived, computeMatbaaOnayApproval,
+  computeOrderOzalitStart, computeOrderOzalitCancel, computeOrderOzalitEdit,
+  computeOrderOzalitChangeRequest, computeOrderOzalitChangeAccept, computeOrderOzalitChangeDecline,
 } from '../domain/order-transitions.js'
 import {
   getProject, getProjectForUpdate, patchProject, logHistory,
@@ -14,6 +16,8 @@ import { assertOrderable, isAtOrPastStage } from '../domain/pipeline.js'
 import { schemas } from '../schemas/index.js'
 import {
   notifyOrderTransition, notifyOrderRejected, notifyMatbaaReceived, notifyMatbaaApprovalPending,
+  notifyOrderOzalitStarted, notifyOrderOzalitCancelled, notifyOrderOzalitEdited,
+  notifyOrderOzalitChangeRequested, notifyOrderOzalitChangeAccepted, notifyOrderOzalitChangeDeclined,
 } from '../services/notifications.js'
 
 /**
@@ -44,6 +48,9 @@ export async function orderRoutes(fastify) {
     const { rows } = await getPool().query(
       `SELECT o.id, o.project_id, o.status, o.requested_by, o.payload, o.assignee_ids,
               o.matbaa_received, o.matbaa_received_by, o.matbaa_received_at, o.matbaa_approvals,
+              o.ozalit_started, o.ozalit_started_by, o.ozalit_started_by_name, o.ozalit_started_at,
+              o.ozalit_change_requested_at, o.ozalit_change_requested_by, o.ozalit_change_requested_by_name,
+              o.ozalit_change_requested_note, o.ozalit_fix_pending,
               o.last_reject_type, o.baski_onay_form,
               o.version, o.created_at, o.updated_at, p.title AS project_title,
               u.name AS requested_by_name
@@ -287,6 +294,9 @@ export async function orderRoutes(fastify) {
          WHERE id = $1
          RETURNING id, project_id, status, requested_by, payload, assignee_ids,
                    matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
+                   ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
+                   ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
+                   ozalit_change_requested_note, ozalit_fix_pending,
                    last_reject_type, baski_onay_form, version, created_at, updated_at`,
         [
           orderId, statusToSet,
@@ -411,6 +421,9 @@ export async function orderRoutes(fastify) {
          WHERE id = $1
          RETURNING id, project_id, status, requested_by, payload, assignee_ids,
                    matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
+                   ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
+                   ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
+                   ozalit_change_requested_note, ozalit_fix_pending,
                    last_reject_type, baski_onay_form, version, created_at, updated_at`,
         [orderId, patch.matbaa_received, patch.matbaa_received_by, patch.matbaa_received_at],
       )
@@ -462,10 +475,22 @@ export async function orderRoutes(fastify) {
            SET status = $2,
                matbaa_received = $3, matbaa_received_by = $4, matbaa_received_at = $5,
                matbaa_approvals = $6::jsonb,
+               -- Re-entering tasarimci_onay is a fresh printer round — stale
+               -- started/change-request state from the delivered-but-lost
+               -- proof must not carry over (mirrors migration 048/049's
+               -- same reset rule on the main pipeline).
+               ozalit_started = FALSE, ozalit_started_at = NULL,
+               ozalit_started_by = NULL, ozalit_started_by_name = NULL,
+               ozalit_change_requested_at = NULL, ozalit_change_requested_by = NULL,
+               ozalit_change_requested_by_name = NULL, ozalit_change_requested_note = NULL,
+               ozalit_fix_pending = FALSE,
                version = version + 1, updated_at = NOW()
          WHERE id = $1
          RETURNING id, project_id, status, requested_by, payload, assignee_ids,
                    matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
+                   ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
+                   ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
+                   ozalit_change_requested_note, ozalit_fix_pending,
                    last_reject_type, baski_onay_form, version, created_at, updated_at`,
         [
           orderId, patch.status, patch.matbaa_received, patch.matbaa_received_by,
@@ -506,6 +531,274 @@ export async function orderRoutes(fastify) {
     return result
   })
 
+  // Full parity with the main pipeline's demo/ozalit started/cancel/edit/
+  // change-request flow (migrations 048/049), scoped to the order's own
+  // ozalit round delivered at tasarimci_onay — see order-transitions.js for
+  // the shared rationale. Every route here follows the same
+  // SELECT...FOR UPDATE / compute / UPDATE / order_history / project
+  // timeline / notify shape as matbaa-receive above.
+
+  // Matbaa marks physical work begun. Idempotent (history: null on a
+  // repeat click, same as matbaa-receive).
+  fastify.post('/order-requests/:id/ozalit-start', { schema: schemas.ordersIdParams }, async (request) => {
+    await attachUser(request)
+    const orderId = request.params.id
+    const result = await withTx(async (client) => {
+      const { rows } = await client.query('SELECT * FROM order_requests WHERE id = $1 FOR UPDATE', [orderId])
+      const order = rows[0]
+      if (!order) notFound('Talep bulunamadı.')
+      const { order: patch, history } = computeOrderOzalitStart(order, request.user)
+      if (!history) {
+        const { payload, ...rest } = order
+        return rest
+      }
+      const { rows: updated } = await client.query(
+        `UPDATE order_requests
+           SET ozalit_started = $2, ozalit_started_by = $3, ozalit_started_by_name = $4, ozalit_started_at = $5,
+               version = version + 1, updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, project_id, status, requested_by, payload, assignee_ids,
+                   matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
+                   ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
+                   ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
+                   ozalit_change_requested_note, ozalit_fix_pending,
+                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+        [orderId, patch.ozalit_started, patch.ozalit_started_by, patch.ozalit_started_by_name, patch.ozalit_started_at],
+      )
+      await client.query(
+        `INSERT INTO order_history (order_id, step, signed_by_id, notes) VALUES ($1,$2,$3,$4)`,
+        [orderId, history.step, request.user.id, history.note],
+      )
+      const proj = await getProjectForUpdate(client, order.project_id)
+      if (proj) {
+        await logHistory(client, {
+          project_id: proj.id, from_stage: proj.stage, to_stage: proj.stage,
+          action: 'system', event: 'order_ozalit_started', note: history.note,
+        }, request.user)
+      }
+      await notifyOrderOzalitStarted(client, { order: updated[0], project: proj, actor: request.user })
+      return updated[0]
+    })
+    return result
+  })
+
+  // Team leader cancels a pending (not-yet-started) ozalit request outright
+  // — back to goruldu, no attempt counter bump (nothing was delivered).
+  fastify.post('/order-requests/:id/ozalit-cancel', { schema: schemas.ordersIdParams }, async (request) => {
+    await attachUser(request)
+    const orderId = request.params.id
+    const result = await withTx(async (client) => {
+      const { rows } = await client.query('SELECT * FROM order_requests WHERE id = $1 FOR UPDATE', [orderId])
+      const order = rows[0]
+      if (!order) notFound('Talep bulunamadı.')
+      const { order: patch, history } = computeOrderOzalitCancel(order, request.user)
+      const { rows: updated } = await client.query(
+        `UPDATE order_requests
+           SET status = $2,
+               ozalit_started = FALSE, ozalit_started_at = NULL,
+               ozalit_started_by = NULL, ozalit_started_by_name = NULL,
+               ozalit_change_requested_at = NULL, ozalit_change_requested_by = NULL,
+               ozalit_change_requested_by_name = NULL, ozalit_change_requested_note = NULL,
+               ozalit_fix_pending = FALSE,
+               version = version + 1, updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, project_id, status, requested_by, payload, assignee_ids,
+                   matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
+                   ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
+                   ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
+                   ozalit_change_requested_note, ozalit_fix_pending,
+                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+        [orderId, patch.status],
+      )
+      await client.query(
+        `INSERT INTO order_history (order_id, step, signed_by_id, notes) VALUES ($1,$2,$3,$4)`,
+        [orderId, history.step, request.user.id, history.note],
+      )
+      const proj = await getProjectForUpdate(client, order.project_id)
+      if (proj) {
+        await logHistory(client, {
+          project_id: proj.id, from_stage: proj.stage, to_stage: proj.stage,
+          action: 'system', event: 'order_ozalit_cancelled', note: history.note,
+        }, request.user)
+      }
+      await notifyOrderOzalitCancelled(client, { order: updated[0], project: proj, actor: request.user })
+      return updated[0]
+    })
+    return result
+  })
+
+  // Team leader edits the product spec (saved separately via the shared
+  // Ürün Bilgileri catalog — see saveProductComps on the client) while it's
+  // still sitting with the matbaa, pre-start. This route only logs the
+  // history/notify side, same split as the main pipeline's demo/ozalit edit.
+  fastify.post('/order-requests/:id/ozalit-edit-notify', { schema: schemas.ordersIdParams }, async (request) => {
+    await attachUser(request)
+    const orderId = request.params.id
+    const result = await withTx(async (client) => {
+      const { rows } = await client.query('SELECT * FROM order_requests WHERE id = $1 FOR UPDATE', [orderId])
+      const order = rows[0]
+      if (!order) notFound('Talep bulunamadı.')
+      const { order: patch, history } = computeOrderOzalitEdit(order, request.user)
+      const { rows: updated } = await client.query(
+        `UPDATE order_requests SET ozalit_fix_pending = $2, version = version + 1, updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, project_id, status, requested_by, payload, assignee_ids,
+                   matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
+                   ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
+                   ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
+                   ozalit_change_requested_note, ozalit_fix_pending,
+                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+        [orderId, patch.ozalit_fix_pending],
+      )
+      await client.query(
+        `INSERT INTO order_history (order_id, step, signed_by_id, notes) VALUES ($1,$2,$3,$4)`,
+        [orderId, history.step, request.user.id, history.note],
+      )
+      const proj = await getProjectForUpdate(client, order.project_id)
+      if (proj) {
+        await logHistory(client, {
+          project_id: proj.id, from_stage: proj.stage, to_stage: proj.stage,
+          action: 'system', event: 'order_ozalit_edited', note: history.note,
+        }, request.user)
+      }
+      await notifyOrderOzalitEdited(client, { order: updated[0], project: proj, actor: request.user })
+      return updated[0]
+    })
+    return result
+  })
+
+  // Once the matbaa has started, cancel/edit is refused — the team leader
+  // asks instead, and the printer accepts or declines below.
+  fastify.post('/order-requests/:id/ozalit-change-request', { schema: schemas.ordersOzalitChangeRequest }, async (request) => {
+    await attachUser(request)
+    const orderId = request.params.id
+    const { note } = request.body ?? {}
+    const result = await withTx(async (client) => {
+      const { rows } = await client.query('SELECT * FROM order_requests WHERE id = $1 FOR UPDATE', [orderId])
+      const order = rows[0]
+      if (!order) notFound('Talep bulunamadı.')
+      const { order: patch, history } = computeOrderOzalitChangeRequest(order, request.user, { note })
+      const { rows: updated } = await client.query(
+        `UPDATE order_requests
+           SET ozalit_change_requested_at = $2, ozalit_change_requested_by = $3,
+               ozalit_change_requested_by_name = $4, ozalit_change_requested_note = $5,
+               version = version + 1, updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, project_id, status, requested_by, payload, assignee_ids,
+                   matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
+                   ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
+                   ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
+                   ozalit_change_requested_note, ozalit_fix_pending,
+                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+        [
+          orderId, patch.ozalit_change_requested_at, patch.ozalit_change_requested_by,
+          patch.ozalit_change_requested_by_name, patch.ozalit_change_requested_note,
+        ],
+      )
+      await client.query(
+        `INSERT INTO order_history (order_id, step, signed_by_id, notes) VALUES ($1,$2,$3,$4)`,
+        [orderId, history.step, request.user.id, history.note],
+      )
+      const proj = await getProjectForUpdate(client, order.project_id)
+      if (proj) {
+        await logHistory(client, {
+          project_id: proj.id, from_stage: proj.stage, to_stage: proj.stage,
+          action: 'system', event: 'order_ozalit_change_requested', note: history.note,
+        }, request.user)
+      }
+      await notifyOrderOzalitChangeRequested(client, {
+        order: updated[0], project: proj, actor: request.user, note,
+      })
+      return updated[0]
+    })
+    return result
+  })
+
+  // Matbaa accepts the pending change-request: un-starts the round (reopens
+  // free cancel/edit) and marks a fix owed before the matbaa can re-lock it.
+  fastify.post('/order-requests/:id/ozalit-change-accept', { schema: schemas.ordersIdParams }, async (request) => {
+    await attachUser(request)
+    const orderId = request.params.id
+    const result = await withTx(async (client) => {
+      const { rows } = await client.query('SELECT * FROM order_requests WHERE id = $1 FOR UPDATE', [orderId])
+      const order = rows[0]
+      if (!order) notFound('Talep bulunamadı.')
+      const { history } = computeOrderOzalitChangeAccept(order, request.user)
+      const { rows: updated } = await client.query(
+        `UPDATE order_requests
+           SET ozalit_started = FALSE, ozalit_started_at = NULL,
+               ozalit_started_by = NULL, ozalit_started_by_name = NULL,
+               ozalit_change_requested_at = NULL, ozalit_change_requested_by = NULL,
+               ozalit_change_requested_by_name = NULL, ozalit_change_requested_note = NULL,
+               ozalit_fix_pending = TRUE,
+               version = version + 1, updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, project_id, status, requested_by, payload, assignee_ids,
+                   matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
+                   ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
+                   ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
+                   ozalit_change_requested_note, ozalit_fix_pending,
+                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+        [orderId],
+      )
+      await client.query(
+        `INSERT INTO order_history (order_id, step, signed_by_id, notes) VALUES ($1,$2,$3,$4)`,
+        [orderId, history.step, request.user.id, history.note],
+      )
+      const proj = await getProjectForUpdate(client, order.project_id)
+      if (proj) {
+        await logHistory(client, {
+          project_id: proj.id, from_stage: proj.stage, to_stage: proj.stage,
+          action: 'system', event: 'order_ozalit_change_accepted', note: history.note,
+        }, request.user)
+      }
+      await notifyOrderOzalitChangeAccepted(client, { order: updated[0], project: proj, actor: request.user })
+      return updated[0]
+    })
+    return result
+  })
+
+  // Matbaa declines the pending change-request: round stays started, nothing
+  // else changes.
+  fastify.post('/order-requests/:id/ozalit-change-decline', { schema: schemas.ordersIdParams }, async (request) => {
+    await attachUser(request)
+    const orderId = request.params.id
+    const result = await withTx(async (client) => {
+      const { rows } = await client.query('SELECT * FROM order_requests WHERE id = $1 FOR UPDATE', [orderId])
+      const order = rows[0]
+      if (!order) notFound('Talep bulunamadı.')
+      const { history } = computeOrderOzalitChangeDecline(order, request.user)
+      const { rows: updated } = await client.query(
+        `UPDATE order_requests
+           SET ozalit_change_requested_at = NULL, ozalit_change_requested_by = NULL,
+               ozalit_change_requested_by_name = NULL, ozalit_change_requested_note = NULL,
+               version = version + 1, updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, project_id, status, requested_by, payload, assignee_ids,
+                   matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
+                   ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
+                   ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
+                   ozalit_change_requested_note, ozalit_fix_pending,
+                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+        [orderId],
+      )
+      await client.query(
+        `INSERT INTO order_history (order_id, step, signed_by_id, notes) VALUES ($1,$2,$3,$4)`,
+        [orderId, history.step, request.user.id, history.note],
+      )
+      const proj = await getProjectForUpdate(client, order.project_id)
+      if (proj) {
+        await logHistory(client, {
+          project_id: proj.id, from_stage: proj.stage, to_stage: proj.stage,
+          action: 'system', event: 'order_ozalit_change_declined', note: history.note,
+        }, request.user)
+      }
+      await notifyOrderOzalitChangeDeclined(client, { order: updated[0], project: proj, actor: request.user })
+      return updated[0]
+    })
+    return result
+  })
+
   fastify.patch('/order-requests/:id/reject', { schema: schemas.ordersReject }, async (request) => {
     await attachUser(request)
     if (request.user.role !== 'team_leader') forbidden('Yalnızca takım lideri reddedebilir.')
@@ -533,10 +826,21 @@ export async function orderRoutes(fastify) {
                matbaa_received = FALSE, matbaa_received_by = NULL, matbaa_received_at = NULL,
                matbaa_approvals = '[]'::jsonb,
                last_reject_type = CASE WHEN $3 = 'designer' THEN 'designer' ELSE last_reject_type END,
+               -- A rejection sends the order back for rework, physical or
+               -- otherwise — any stale started/change-request state from
+               -- the rejected round must not carry over into the next one.
+               ozalit_started = FALSE, ozalit_started_at = NULL,
+               ozalit_started_by = NULL, ozalit_started_by_name = NULL,
+               ozalit_change_requested_at = NULL, ozalit_change_requested_by = NULL,
+               ozalit_change_requested_by_name = NULL, ozalit_change_requested_note = NULL,
+               ozalit_fix_pending = FALSE,
                version = version + 1, updated_at = NOW()
          WHERE id = $1
          RETURNING id, project_id, status, requested_by, payload, assignee_ids,
                    matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
+                   ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
+                   ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
+                   ozalit_change_requested_note, ozalit_fix_pending,
                    last_reject_type, baski_onay_form, version, created_at, updated_at`,
         [orderId, targetStatus, rejectTarget],
       )
@@ -627,6 +931,9 @@ export async function orderRoutes(fastify) {
         `UPDATE order_requests SET baski_onay_form = $2::jsonb, version = version + 1, updated_at = NOW()
          WHERE id = $1 RETURNING id, project_id, status, requested_by, payload, assignee_ids,
            matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
+           ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
+           ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
+           ozalit_change_requested_note, ozalit_fix_pending,
            last_reject_type, baski_onay_form, version, created_at, updated_at`,
         [orderId, JSON.stringify(nextForm)],
       )
@@ -661,6 +968,9 @@ export async function orderRoutes(fastify) {
                 version = version + 1, updated_at = NOW()
          WHERE id = $1 RETURNING id, project_id, status, requested_by, payload, assignee_ids,
            matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
+           ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
+           ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
+           ozalit_change_requested_note, ozalit_fix_pending,
            last_reject_type, baski_onay_form, version, created_at, updated_at`,
         [orderId, JSON.stringify(finalForm)],
       )

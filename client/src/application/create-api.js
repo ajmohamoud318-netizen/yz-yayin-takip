@@ -175,6 +175,12 @@ export function createApi() {
     updateOrderSubtask: (orderId, subtaskId, patch) => orderRepo.updateOrderSubtask(orderId, subtaskId, patch),
     saveOrderBaskiOnayForm: (id, body) => orderRepo.saveOrderBaskiOnayForm(id, body),
     approveOrderBaskiOnayForm: (id, body) => orderRepo.approveOrderBaskiOnayForm(id, body),
+    startOrderOzalit: (id) => orderRepo.startOrderOzalit(id),
+    cancelOrderOzalit: (id) => orderRepo.cancelOrderOzalit(id),
+    notifyOrderOzalitEdit: (id) => orderRepo.notifyOrderOzalitEdit(id),
+    requestOrderOzalitChange: (id, note) => orderRepo.requestOrderOzalitChange(id, note),
+    acceptOrderOzalitChange: (id) => orderRepo.acceptOrderOzalitChange(id),
+    declineOrderOzalitChange: (id) => orderRepo.declineOrderOzalitChange(id),
 
     // Handovers (Matbaa → Sales "teslim")
     listHandovers: () => handoverRepo.listHandovers(),

@@ -48,5 +48,32 @@ export function createHttpOrderRepository() {
       const { data } = await httpClient.post(`/order-requests/${id}/baski-onay-approve`, body)
       return data
     },
+    // Full parity with the main pipeline's demo/ozalit started/cancel/edit/
+    // change-request flow (migrations 048/049), scoped to the order's own
+    // ozalit round delivered at tasarimci_onay — see order-transitions.js.
+    async startOrderOzalit(id) {
+      const { data } = await httpClient.post(`/order-requests/${id}/ozalit-start`, {})
+      return data
+    },
+    async cancelOrderOzalit(id) {
+      const { data } = await httpClient.post(`/order-requests/${id}/ozalit-cancel`, {})
+      return data
+    },
+    async notifyOrderOzalitEdit(id) {
+      const { data } = await httpClient.post(`/order-requests/${id}/ozalit-edit-notify`, {})
+      return data
+    },
+    async requestOrderOzalitChange(id, note) {
+      const { data } = await httpClient.post(`/order-requests/${id}/ozalit-change-request`, { note })
+      return data
+    },
+    async acceptOrderOzalitChange(id) {
+      const { data } = await httpClient.post(`/order-requests/${id}/ozalit-change-accept`, {})
+      return data
+    },
+    async declineOrderOzalitChange(id) {
+      const { data } = await httpClient.post(`/order-requests/${id}/ozalit-change-decline`, {})
+      return data
+    },
   }
 }

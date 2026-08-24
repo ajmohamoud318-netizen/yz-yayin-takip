@@ -158,3 +158,170 @@ export function computeMatbaaOnayApproval(order, actor, ctx = {}) {
     history: { step: 'siparis_baski_onay', note: 'Matbaa onayı tamamlandı, baskı onayına gönderildi' },
   }
 }
+
+/* ============================================================================
+ *  ozalitStart / ozalitCancel / ozalitEdit / ozalitChangeRequest /
+ *  ozalitChangeAccept / ozalitChangeDecline (order, actor, ctx)
+ *    → { order, history }
+ *
+ *  Full parity with the main pipeline's demo/ozalit started+change-request
+ *  flow (migrations 048/049, transitions.js's computeOzalitStart /
+ *  computeOzalitCancel / computeOzalitEdit / computeOzalitChangeRequest /
+ *  computeOzalitChangeAccept / computeOzalitChangeDecline) applied to the
+ *  order's own ozalit round, delivered at `tasarimci_onay`:
+ *
+ *    * ozalit_started — flag-only marker the printer sets once they've
+ *      begun physical work, no status change. While FALSE, the team leader
+ *      can cancel outright (back to `goruldu`) or edit the product spec
+ *      directly — both free, no printer approval needed.
+ *    * Once started, cancel/edit is refused — the team leader instead
+ *      requests a change, and the printer accepts (un-starts the round,
+ *      sets ozalit_fix_pending so a fix is owed before re-starting) or
+ *      declines (round stays started, nothing changes).
+ *
+ *  Team-leader-only for cancel/edit/change-request (not the assigned
+ *  designer), mirroring the main pipeline's same restriction — see
+ *  computeDemoCancel's comment there for the reasoning (avoids two people
+ *  racing to edit/notify the same sent request).
+ * ========================================================================== */
+export function computeOrderOzalitStart(order, actor) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (actor?.role !== 'printer') {
+    badRequest('Bu işlemi yalnızca matbaa yapabilir.')
+  }
+  if (order.status !== 'tasarimci_onay') {
+    badRequest('Bu işlem yalnızca ozalit matbaa aşamasında yapılabilir.')
+  }
+  if (order.ozalit_started) {
+    return { order: {}, history: null } // already marked — idempotent
+  }
+  if (order.ozalit_fix_pending) {
+    badRequest('Kabul edilen değişiklik talebi için düzeltme bekleniyor, önce ürün bilgileri güncellenmelidir.')
+  }
+  return {
+    order: {
+      ozalit_started: true,
+      ozalit_started_by: actor?.id ?? null,
+      ozalit_started_by_name: actorName,
+      ozalit_started_at: now,
+    },
+    history: { step: 'ozalit_started', note: 'Matbaa ozalite başladı' },
+  }
+}
+
+export function computeOrderOzalitCancel(order, actor) {
+  if (order.status !== 'tasarimci_onay') {
+    badRequest('İptal yalnızca ozalit matbaa sürecindeyken yapılabilir.')
+  }
+  if (actor?.role !== 'team_leader') {
+    badRequest('Bu işlemi yalnızca ekip lideri yapabilir.')
+  }
+  if (order.ozalit_started) {
+    badRequest('Matbaa ozalite başladı, doğrudan iptal edilemez, değişiklik isteyin.')
+  }
+  return {
+    order: {
+      status: 'goruldu',
+      ozalit_started: false,
+      ozalit_started_at: null,
+      ozalit_started_by: null,
+      ozalit_started_by_name: null,
+      ozalit_change_requested_at: null,
+      ozalit_change_requested_by: null,
+      ozalit_change_requested_by_name: null,
+      ozalit_change_requested_note: null,
+      ozalit_fix_pending: false,
+    },
+    history: { step: 'ozalit_cancelled', note: 'Ozalit talebi iptal edildi, tasarımcıya geri döndü' },
+  }
+}
+
+export function computeOrderOzalitEdit(order, actor) {
+  if (order.status !== 'tasarimci_onay') {
+    badRequest('Bildirim yalnızca ozalit matbaa sürecindeyken yapılabilir.')
+  }
+  if (actor?.role !== 'team_leader') {
+    badRequest('Bu işlemi yalnızca ekip lideri yapabilir.')
+  }
+  if (order.ozalit_started) {
+    badRequest('Matbaa ozalite başladı, değişiklik isteyin.')
+  }
+  return {
+    // Clears the "fix owed" flag an accepted change request may have set
+    // (computeOrderOzalitChangeAccept) — this submission IS the fix. A
+    // no-op patch when there was nothing pending (already false).
+    order: { ozalit_fix_pending: false },
+    history: { step: 'ozalit_edited', note: 'Ozalit ürün bilgileri güncellendi' },
+  }
+}
+
+export function computeOrderOzalitChangeRequest(order, actor, { note } = {}) {
+  const now = new Date().toISOString()
+  const actorName = actor?.name ?? 'Bilinmeyen'
+  if (order.status !== 'tasarimci_onay') {
+    badRequest('Bu işlem yalnızca ozalit matbaa aşamasında yapılabilir.')
+  }
+  if (actor?.role !== 'team_leader') {
+    badRequest('Bu işlemi yalnızca ekip lideri yapabilir.')
+  }
+  if (!order.ozalit_started) {
+    badRequest('Matbaa henüz başlamadı, doğrudan iptal veya düzenleme yapabilirsiniz.')
+  }
+  if (order.ozalit_change_requested_at != null) {
+    badRequest('Zaten bekleyen bir değişiklik talebi var.')
+  }
+  return {
+    order: {
+      ozalit_change_requested_at: now,
+      ozalit_change_requested_by: actor?.id ?? null,
+      ozalit_change_requested_by_name: actorName,
+      ozalit_change_requested_note: note?.trim() || null,
+    },
+    history: { step: 'ozalit_change_requested', note: note?.trim() || 'Değişiklik istendi' },
+  }
+}
+
+export function computeOrderOzalitChangeAccept(order, actor) {
+  if (actor?.role !== 'printer') {
+    badRequest('Bu işlemi yalnızca matbaa yapabilir.')
+  }
+  if (order.ozalit_change_requested_at == null) {
+    badRequest('Bekleyen bir değişiklik talebi yok.')
+  }
+  return {
+    order: {
+      ozalit_started: false,
+      ozalit_started_at: null,
+      ozalit_started_by: null,
+      ozalit_started_by_name: null,
+      ozalit_change_requested_at: null,
+      ozalit_change_requested_by: null,
+      ozalit_change_requested_by_name: null,
+      ozalit_change_requested_note: null,
+      // An accepted request now owes a real fix — computeOrderOzalitStart
+      // refuses to re-lock the round until computeOrderOzalitEdit (the fix)
+      // or computeOrderOzalitCancel (withdrawn instead) clears this.
+      ozalit_fix_pending: true,
+    },
+    history: { step: 'ozalit_change_accepted', note: 'Matbaa değişiklik talebini kabul etti' },
+  }
+}
+
+export function computeOrderOzalitChangeDecline(order, actor) {
+  if (actor?.role !== 'printer') {
+    badRequest('Bu işlemi yalnızca matbaa yapabilir.')
+  }
+  if (order.ozalit_change_requested_at == null) {
+    badRequest('Bekleyen bir değişiklik talebi yok.')
+  }
+  return {
+    order: {
+      ozalit_change_requested_at: null,
+      ozalit_change_requested_by: null,
+      ozalit_change_requested_by_name: null,
+      ozalit_change_requested_note: null,
+    },
+    history: { step: 'ozalit_change_declined', note: 'Matbaa değişiklik talebini reddetti' },
+  }
+}

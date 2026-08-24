@@ -417,7 +417,7 @@ function CustomRow({ id, label, value, onChange, onRemove, readOnly }) {
         onChange={(e) => onChange(id, 'label', e.target.value)}
         placeholder="Alan adı"
         readOnly={readOnly}
-        className="h-8 rounded-none border-0 bg-white px-2 py-1 text-[13px] font-semibold uppercase tracking-wide shadow-none placeholder:normal-case placeholder:tracking-normal placeholder:font-normal focus-visible:ring-0 read-only:cursor-default"
+        className="h-8 rounded-none border-0 bg-white px-2 py-1 text-[13px] font-semibold uppercase tracking-wide shadow-none placeholder:normal-case placeholder:tracking-normal placeholder:font-normal focus-visible:ring-0 read-only:bg-transparent read-only:cursor-default"
       />
       <span className="px-2 py-1.5 text-sm font-bold">:</span>
       <div className="relative">

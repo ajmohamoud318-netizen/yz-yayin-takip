@@ -186,6 +186,7 @@ onaylandi                    Üretime Alındı
 
 - `ORDER_STEP_OWNER` maps each step to the role that must act on it
 - `ORDER_REJECT_TARGETS.matbaa_onay` = `{ designer, matbaa }` — mirrors the main pipeline's ozalit rejection target choice
+- **`tasarimci_onay` started/cancel/edit/change-request (migration 051)** — full parity with the main pipeline's demo/ozalit started flow (migrations 048/049, `computeOzalitStart`/`computeOzalitCancel`/`computeOzalitEdit`/`computeOzalitChangeRequest`/`computeOzalitChangeAccept`/`computeOzalitChangeDecline` in `transitions.js`), applied to the order's own ozalit round in `order-transitions.js`: the matbaa marks `ozalit_started` once physical work begins (`POST .../ozalit-start`); while `FALSE` the team leader (only — not the assigned designer, same restriction as the main pipeline) may cancel outright (`POST .../ozalit-cancel` → back to `goruldu`, no attempt counter) or edit the spec freely (`POST .../ozalit-edit-notify`, spec itself saved via the shared Ürün Bilgileri catalog); once `TRUE`, both are refused and the leader instead requests a change (`POST .../ozalit-change-request { note? }`), which the matbaa accepts (`POST .../ozalit-change-accept` — un-starts the round, sets `ozalit_fix_pending` so the matbaa can't re-lock it until the leader edits or cancels) or declines (`POST .../ozalit-change-decline`). All five reset to `FALSE`/`NULL` whenever the order re-enters `tasarimci_onay` for re-delivery (`matbaa-not-received`, a `matbaa`-target reject) — see migration 051.
 - `canRequestOrder` (and the throwing `assertOrderable`) gate the create-order use case to projects whose `stage ∈ ORDERABLE_STAGES = { 'baskida', 'gumruk', 'satista' }`, that have a non-empty `has_product_info` entry, and that the team leader hasn't delisted (`catalog_hidden` — see "Kaldırma")
 - The Ürünler catalog page (`pages/Urunler.jsx`) splits this pool into two groups for Sales: "Sipariş İçin Hazır" (production finished, not yet fully sold — `baskida`/`gumruk`) and "Halihazırda Satışta" (`satista`)
 - `components/OrderRequestDialog.jsx` has three entry paths, all ending in the same `POST /api/orders` calls:
@@ -804,6 +805,12 @@ GET    /api/order-requests            all orders, each with its order_history
 POST   /api/order-requests            { projectId, quantity?, notes?, items?, payload? } [satis] — project must be in an ORDERABLE_STAGES stage (baskida/gumruk/satista)
 PATCH  /api/order-requests/:id/advance  { notes?, assignees?, expectedVersion? } [role per ORDER_STEP_OWNER]
 PATCH  /api/order-requests/:id/reject   { reason, rejectTarget?, revizeIds? } [team_leader]
+POST   /api/order-requests/:id/ozalit-start           mark matbaa work begun [printer]
+POST   /api/order-requests/:id/ozalit-cancel          cancel a not-yet-started ozalit request [team_leader]
+POST   /api/order-requests/:id/ozalit-edit-notify     log+notify a pre-start spec edit [team_leader]
+POST   /api/order-requests/:id/ozalit-change-request  { note? } — request a change once started [team_leader]
+POST   /api/order-requests/:id/ozalit-change-accept   accept a pending change request [printer]
+POST   /api/order-requests/:id/ozalit-change-decline  decline a pending change request [printer]
 ```
 The route is `/api/order-requests`, not `/api/orders` — the client's use cases
 and every repository call use the former.

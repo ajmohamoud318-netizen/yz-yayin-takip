@@ -1003,6 +1003,87 @@ export async function notifyOrderRejected(client, { order, project, actor, reque
  * (computeMatbaaOnayApproval). Split into two emits since the audiences land
  * on different pages (see notifyOrderTransition's matbaa_onay case above).
  */
+/**
+ * Full parity with the main pipeline's demo/ozalit started/cancel/edit/
+ * change-request notifications (migration 048/049), scoped to the order's
+ * own ozalit round (tasarimci_onay). Only team_leader can cancel/edit/
+ * request a change on this side (see order-transitions.js), so — unlike the
+ * main pipeline's leader+designer pings — these only ever target leaders.
+ */
+export async function notifyOrderOzalitStarted(client, { order, project, actor }) {
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  return emit(client, {
+    actorId: actor?.id, title: project?.title ?? order?.project_title ?? 'Baskı',
+    projectId: order?.project_id ?? project?.id, orderId: order?.id,
+    recipientIds: leaders, type: 'order_ozalit_started', tone: 'blue',
+    body: 'Matbaa ozalite başladı, iptal veya düzenleme artık değişiklik isteği gerektirir',
+    link: '/siparis-talepleri',
+  })
+}
+
+/** A pending ozalit request was cancelled outright — tells the printers. */
+export async function notifyOrderOzalitCancelled(client, { order, project, actor }) {
+  const printers = await activeUserIdsByRole(client, 'printer')
+  return emit(client, {
+    actorId: actor?.id, title: project?.title ?? order?.project_title ?? 'Baskı',
+    projectId: order?.project_id ?? project?.id, orderId: order?.id,
+    recipientIds: printers, type: 'order_ozalit_cancelled', tone: 'rose',
+    body: 'Baskı ozalit talebi iptal edildi, bekleyen işiniz kalmadı',
+    link: '/approvals/siparis',
+  })
+}
+
+/** The leader edited the spec while it's still sitting with the matbaa. */
+export async function notifyOrderOzalitEdited(client, { order, project, actor }) {
+  const printers = await activeUserIdsByRole(client, 'printer')
+  return emit(client, {
+    actorId: actor?.id, title: project?.title ?? order?.project_title ?? 'Baskı',
+    projectId: order?.project_id ?? project?.id, orderId: order?.id,
+    recipientIds: printers, type: 'order_ozalit_edited', tone: 'amber',
+    body: 'Baskı ürün bilgileri güncellendi, yeni haliyle inceleyin',
+    link: '/approvals/siparis',
+  })
+}
+
+/** The leader asked the matbaa to accept a cancel/edit — tells the printers. */
+export async function notifyOrderOzalitChangeRequested(client, { order, project, actor, note }) {
+  const printers = await activeUserIdsByRole(client, 'printer')
+  const who = actor?.name ?? 'Ekipten biri'
+  return emit(client, {
+    actorId: actor?.id, title: who,
+    projectId: order?.project_id ?? project?.id, orderId: order?.id,
+    recipientIds: printers, type: 'order_ozalit_change_requested', tone: 'amber',
+    body: note
+      ? `${project?.title ?? order?.project_title ?? 'Baskı'} için değişiklik istedi, not: ${note}, kabul veya red bekleniyor`
+      : `${project?.title ?? order?.project_title ?? 'Baskı'} için değişiklik istedi, kabul veya red bekleniyor`,
+    link: '/approvals/siparis',
+  })
+}
+
+/** The matbaa accepted the pending change-request — free cancel/edit reopens. */
+export async function notifyOrderOzalitChangeAccepted(client, { order, project, actor }) {
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  return emit(client, {
+    actorId: actor?.id, title: project?.title ?? order?.project_title ?? 'Baskı',
+    projectId: order?.project_id ?? project?.id, orderId: order?.id,
+    recipientIds: leaders, type: 'order_ozalit_change_accepted', tone: 'green',
+    body: 'Matbaa değişiklik talebinizi kabul etti, iptal veya düzenleme artık yapılabilir',
+    link: '/siparis-talepleri',
+  })
+}
+
+/** The matbaa declined the pending change-request. */
+export async function notifyOrderOzalitChangeDeclined(client, { order, project, actor }) {
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  return emit(client, {
+    actorId: actor?.id, title: project?.title ?? order?.project_title ?? 'Baskı',
+    projectId: order?.project_id ?? project?.id, orderId: order?.id,
+    recipientIds: leaders, type: 'order_ozalit_change_declined', tone: 'rose',
+    body: 'Matbaa değişiklik talebinizi reddetti, normal teslim süreci devam ediyor',
+    link: '/siparis-talepleri',
+  })
+}
+
 export async function notifyMatbaaReceived(client, { order, project, actor, assigneeIds = [] }) {
   const leaders = await activeUserIdsByRole(client, 'team_leader')
   const who = actor?.name ?? 'Ekipten biri'

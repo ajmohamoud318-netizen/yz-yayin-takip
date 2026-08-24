@@ -19,6 +19,16 @@ export const ORDER_STEP_LABELS = {
   matbaa_received: 'Matbaa Teslimi Alındı',
   matbaa_not_received: 'Matbaa Teslimi Alınamadı',
   matbaa_approve: 'Matbaa Onayı Verildi',
+  // Sub-events for the order's own ozalit-started/cancel/edit/change-request
+  // flow (migration 051, full parity with the main pipeline's demo/ozalit
+  // started flow — migrations 048/049), logged while status stays at
+  // tasarimci_onay.
+  ozalit_started: 'Matbaa Ozalite Başladı',
+  ozalit_cancelled: 'Ozalit Talebi İptal Edildi',
+  ozalit_edited: 'Ürün Bilgileri Güncellendi',
+  ozalit_change_requested: 'Değişiklik İstendi',
+  ozalit_change_accepted: 'Değişiklik Kabul Edildi',
+  ozalit_change_declined: 'Değişiklik Reddedildi',
 }
 
 // Which order_history steps belong to the ozalit/proof round — i.e. should
@@ -29,6 +39,8 @@ export const ORDER_STEP_LABELS = {
 export const ORDER_OZALIT_ROUND_STEPS = new Set([
   'tasarimci_onay', 'ekran_onay', 'matbaa_onay',
   'matbaa_received', 'matbaa_not_received', 'matbaa_approve',
+  'ozalit_started', 'ozalit_cancelled', 'ozalit_edited',
+  'ozalit_change_requested', 'ozalit_change_accepted', 'ozalit_change_declined',
 ])
 
 // matbaa_onay is multi-party, leader-first (every active team leader AND
