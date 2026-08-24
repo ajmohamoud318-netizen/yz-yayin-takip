@@ -185,6 +185,8 @@ function ProjectHistory({
                             entries={node.entries}
                             reduce={reduce}
                             isLast={i === day.nodes.length - 1}
+                            onOpenDemoForm={onOpenDemoForm}
+                            onOpenOzalitForm={onOpenOzalitForm}
                           />
                         ) : (
                           <MajorRow
@@ -318,7 +320,7 @@ function MajorRow({
  * single fact ("6 alt görev güncellemesi") until you ask for the detail —
  * which is how a reader treats it anyway.
  */
-function FoldedRun({ entries, reduce, isLast }) {
+function FoldedRun({ entries, reduce, isLast, onOpenDemoForm, onOpenOzalitForm }) {
   const [open, setOpen] = useState(false)
   // Distinct tones present in the run, so the summary still signals whether
   // anything in there went backwards (amber) or completed (emerald).
@@ -364,7 +366,12 @@ function FoldedRun({ entries, reduce, isLast }) {
             className="overflow-hidden pl-9"
           >
             {entries.map((entry, i) => (
-              <MinorRow key={entry.id ?? i} entry={entry} />
+              <MinorRow
+                key={entry.id ?? i}
+                entry={entry}
+                onOpenDemoForm={onOpenDemoForm}
+                onOpenOzalitForm={onOpenOzalitForm}
+              />
             ))}
           </motion.ul>
         )}
@@ -373,21 +380,48 @@ function FoldedRun({ entries, reduce, isLast }) {
   )
 }
 
-/** One bookkeeping row: a dot, a line of text, a time. Nothing more. */
-function MinorRow({ entry }) {
+/**
+ * One bookkeeping row: a dot, a line of text, a time. Nothing more — except
+ * for a "Formu Düzenleyin" edit, which otherwise leaves no way to see the
+ * updated sheet: the matching "Demoya/Ozalit'e Gönderildi" major row above
+ * only ever shows the form as it was FIRST sent. handleSave (SpecFormDialog)
+ * stages an edit's snapshot under the round's NEXT attempt slot (the round
+ * itself doesn't bump until an actual resend), so the attempt to open here is
+ * entry.demoAttemptAt/ozalitAttemptAt + 1 — see the comment on `attemptNo` in
+ * SpecFormDialog.jsx.
+ */
+function MinorRow({ entry, onOpenDemoForm, onOpenOzalitForm }) {
   const tone = TONES[metaTone(entry)] ?? TONES.neutral
+  const isDemoEdit = entry.event === 'demo_form_edited'
+  const isOzalitEdit = entry.event === 'ozalit_form_edited'
   return (
-    <li className="flex items-baseline gap-2 py-1 text-[12px]">
-      <span className={cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', tone.dot)} />
-      <span className="min-w-0 flex-1 truncate text-muted-foreground" title={entry.note || undefined}>
-        {entry.note || labelOf(entry)}
-      </span>
-      <time
-        dateTime={entry.created_at}
-        className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/60"
-      >
-        {formatClock(entry.created_at)}
-      </time>
+    <li className="py-1 text-[12px]">
+      <div className="flex items-baseline gap-2">
+        <span className={cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', tone.dot)} />
+        <span className="min-w-0 flex-1 truncate text-muted-foreground" title={entry.note || undefined}>
+          {entry.note || labelOf(entry)}
+        </span>
+        <time
+          dateTime={entry.created_at}
+          className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/60"
+        >
+          {formatClock(entry.created_at)}
+        </time>
+      </div>
+      {(isDemoEdit || isOzalitEdit) && (
+        <div className="mt-1 pl-3.5">
+          <FormButton
+            onClick={() =>
+              isDemoEdit
+                ? onOpenDemoForm?.(entry.demoAttemptAt + 1)
+                : onOpenOzalitForm?.(entry.ozalitAttemptAt + 1)
+            }
+            icon={FileText}
+          >
+            {isDemoEdit ? 'Demo Formu' : 'Ozalit Formu'}
+          </FormButton>
+        </div>
+      )}
     </li>
   )
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, CheckCircle2, CheckSquare, FileText, Pencil, Plus, Printer, Send, Square, X } from 'lucide-react'
+import { ArrowRight, Check, CheckCircle2, CheckSquare, FileText, Minus, Pencil, Plus, Printer, Send, Square, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -417,7 +417,7 @@ function CustomRow({ id, label, value, onChange, onRemove, readOnly }) {
         onChange={(e) => onChange(id, 'label', e.target.value)}
         placeholder="Alan adı"
         readOnly={readOnly}
-        className="h-8 rounded-none border-0 bg-white px-2 py-1 text-[13px] font-semibold uppercase tracking-wide shadow-none placeholder:normal-case placeholder:tracking-normal placeholder:font-normal focus-visible:ring-0 read-only:bg-transparent read-only:cursor-default"
+        className="h-8 rounded-none border-0 bg-white pl-0 pr-3 py-1.5 text-[13px] font-semibold uppercase tracking-wide shadow-none placeholder:normal-case placeholder:tracking-normal placeholder:font-normal focus-visible:ring-0 read-only:bg-transparent read-only:cursor-default"
       />
       <span className="px-2 py-1.5 text-sm font-bold">:</span>
       <div className="relative">
@@ -776,14 +776,14 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       const b = baseById.get(String(r.id))
       const label = r.label || b?.label || 'Satır'
       if (!b) {
-        if (r.label || r.value) entries.push({ status: 'added', text: `${prefix}${label}: ${r.value || '—'}` })
+        if (r.label || r.value) entries.push({ status: 'added', label: `${prefix}${label}`, newValue: r.value || '—' })
       } else if (b.label !== r.label || b.value !== r.value) {
-        entries.push({ status: 'changed', text: `${prefix}${label}: ${b.value || '—'} → ${r.value || '—'}` })
+        entries.push({ status: 'changed', label: `${prefix}${label}`, oldValue: b.value || '—', newValue: r.value || '—' })
       }
     }
     for (const b of baseRows ?? []) {
       if (!liveIds.has(String(b.id)) && (b.label || b.value)) {
-        entries.push({ status: 'removed', text: `${prefix}${b.label || 'Satır'}: ${b.value || '—'}` })
+        entries.push({ status: 'removed', label: `${prefix}${b.label || 'Satır'}`, oldValue: b.value || '—' })
       }
     }
     return entries
@@ -800,13 +800,13 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       liveCompIds.add(c.id)
       const b = baseCompById.get(c.id)
       if (!b) {
-        entries.push({ status: 'added', text: `Parça eklendi: ${c.component}` })
+        entries.push({ status: 'added', label: 'Parça eklendi', newValue: c.component })
         continue
       }
       entries.push(...diffRows(b.rows, c.rows, `${c.component} — `))
     }
     for (const b of baseComponents) {
-      if (!liveCompIds.has(b.id)) entries.push({ status: 'removed', text: `Parça kaldırıldı: ${b.component}` })
+      if (!liveCompIds.has(b.id)) entries.push({ status: 'removed', label: 'Parça kaldırıldı', oldValue: b.component })
     }
     return entries
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1163,21 +1163,52 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             stays hidden rather than showing an empty box. */}
         {changeSummary && changeSummary.length > 0 && (
           <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
-            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Değişiklikler
-            </p>
-            <ul className="space-y-1 text-[13px]">
+            <div className="mb-2 flex items-center gap-1.5">
+              <Pencil className="h-3 w-3 text-primary" />
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Değişiklikler
+              </p>
+              <span className="ml-auto rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                {changeSummary.length}
+              </span>
+            </div>
+            <ul className="space-y-1">
               {changeSummary.map((c, i) => (
                 <li
                   key={i}
-                  className={cn(
-                    'rounded px-2 py-1',
-                    c.status === 'removed'
-                      ? 'bg-rose-50 text-rose-700 line-through decoration-rose-400'
-                      : 'bg-emerald-50 text-emerald-700',
-                  )}
+                  className="flex items-center gap-2 rounded-md border border-black/5 bg-white px-2.5 py-1.5 text-[13px] shadow-sm"
                 >
-                  {c.status === 'removed' ? '− ' : '+ '}{c.text}
+                  <span
+                    className={cn(
+                      'flex h-4 w-4 shrink-0 items-center justify-center rounded-full',
+                      c.status === 'removed' && 'bg-rose-100 text-rose-600',
+                      c.status === 'added' && 'bg-emerald-100 text-emerald-600',
+                      c.status === 'changed' && 'bg-amber-100 text-amber-600',
+                    )}
+                  >
+                    {c.status === 'removed' && <Minus className="h-2.5 w-2.5" />}
+                    {c.status === 'added' && <Plus className="h-2.5 w-2.5" />}
+                    {c.status === 'changed' && <Pencil className="h-2.5 w-2.5" />}
+                  </span>
+                  <span className="min-w-0 shrink-0 font-semibold text-foreground/80">{c.label}</span>
+                  <span className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5 text-right">
+                    {c.status === 'changed' && (
+                      <span className="truncate rounded bg-rose-50 px-1.5 py-0.5 text-rose-600 line-through decoration-rose-400">
+                        {c.oldValue}
+                      </span>
+                    )}
+                    {c.status === 'changed' && <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                    {c.status !== 'removed' && (
+                      <span className="truncate rounded bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">
+                        {c.newValue}
+                      </span>
+                    )}
+                    {c.status === 'removed' && (
+                      <span className="truncate rounded bg-rose-50 px-1.5 py-0.5 text-rose-600 line-through decoration-rose-400">
+                        {c.oldValue}
+                      </span>
+                    )}
+                  </span>
                 </li>
               ))}
             </ul>
