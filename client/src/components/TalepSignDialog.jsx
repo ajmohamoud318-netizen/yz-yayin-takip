@@ -277,6 +277,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   const isTasarimciOnayStep = order.status === 'tasarimci_onay'
   const ozalitStarted = !!order.ozalit_started
   const ozalitChangePending = order.ozalit_change_requested_at != null
+  const ozalitFixPending = !!order.ozalit_fix_pending
   const canCancelOrEditOzalit =
     user?.role === 'team_leader' && isTasarimciOnayStep && !ozalitStarted && !ozalitChangePending
   const canRequestOzalitChange =
@@ -978,7 +979,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
               pipeline's demo/ozalit started flow (migrations 048/049). */}
           {isTasarimciOnayStep && !showReject && (
             <div className="space-y-2.5">
-              {user?.role === 'printer' && !ozalitChangePending && (
+              {user?.role === 'printer' && !ozalitChangePending && (ozalitStarted || !ozalitFixPending) && (
                 <div className="flex items-center justify-between gap-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
                   <span>
                     {ozalitStarted

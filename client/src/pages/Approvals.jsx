@@ -22,6 +22,7 @@ import { STAGE_LABELS, TYPE_LABELS } from '@/api'
 import {
   canRejectAtStage, isDemoApprover, isOzalitApprover, ozalitLeaderApproved,
   canRequestEkranDemo, canRespondEkranDemo, canRespondDemoChange, canRespondOzalitChange,
+  canMarkDemoStarted, canMarkOzalitStarted,
 } from '@/domain'
 import { formatTargetDate, formatNumber } from '@/lib/utils'
 
@@ -322,7 +323,7 @@ export default function Approvals({ tab = 'demo' }) {
                         <Send className="h-4 w-4" />
                         {sub === 'demo' ? "Demo'yu Teslim Edin" : 'Ozaliti Teslim Edin'}
                       </Button>
-                    ) : (
+                    ) : (sub === 'demo' ? canMarkDemoStarted(user, p) : canMarkOzalitStarted(user, p)) ? (
                       <Button
                         size="sm"
                         className="w-full sm:flex-1"
@@ -331,7 +332,7 @@ export default function Approvals({ tab = 'demo' }) {
                         <CheckCircle2 className="h-4 w-4" />
                         İşlemi Başlatın
                       </Button>
-                    )}
+                    ) : null}
                     <Button size="sm" variant="ghost" className="w-full sm:flex-1" onClick={() => navigate(`/projects/${p.id}`)}>
                       Detay
                     </Button>
