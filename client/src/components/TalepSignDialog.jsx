@@ -1310,7 +1310,7 @@ function EditableComp({ comp, onChange }) {
               type="button"
               onClick={() => removeField(i)}
               aria-label="Satırı sil"
-              className="shrink-0 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive"
+              className="shrink-0 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive print:hidden"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -1319,7 +1319,7 @@ function EditableComp({ comp, onChange }) {
         <button
           type="button"
           onClick={addField}
-          className="mt-1 inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
+          className="mt-1 inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80 print:hidden"
         >
           <Plus className="h-3 w-3" /> Satır Ekle
         </button>

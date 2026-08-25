@@ -215,7 +215,7 @@ export default function AppShell() {
       {/* Desktop sidebar — wider on huge screens so the rail doesn't feel cramped */}
       <aside
         className={cn(
-          'sticky top-0 hidden h-screen shrink-0 flex-col border-r bg-background transition-[width] duration-200 ease-out lg:flex',
+          'sticky top-0 hidden h-screen shrink-0 flex-col border-r bg-background transition-[width] duration-200 ease-out lg:flex print:hidden',
           collapsed
             ? 'w-[4.25rem]'
             : 'w-64 2xl:w-72 3xl:w-80',
@@ -268,7 +268,7 @@ export default function AppShell() {
             iOS status bar once installed to the Home Screen. min-height lets the
             inset add to the 3.5rem instead of carving it up. */}
         <header
-          className="sticky top-0 z-30 flex min-h-14 items-center gap-3 border-b bg-background/95 px-3 backdrop-blur sm:px-4 lg:px-6 2xl:px-8 3xl:px-12"
+          className="sticky top-0 z-30 flex min-h-14 items-center gap-3 border-b bg-background/95 px-3 backdrop-blur sm:px-4 lg:px-6 2xl:px-8 3xl:px-12 print:hidden"
           style={{ paddingTop: 'max(0px, var(--safe-top, 0px))' }}
         >
           {/* Left — mobile menu + greeting */}
@@ -325,7 +325,7 @@ export default function AppShell() {
           key={location.pathname}
           id="main-content"
           tabIndex={-1}
-          className="page-enter min-w-0 flex-1 px-3 py-4 pb-[calc(1rem+var(--safe-bottom,0px))] sm:px-4 sm:py-6 sm:pb-[calc(1.5rem+var(--safe-bottom,0px))] lg:px-8 2xl:px-10 3xl:px-16"
+          className="page-enter min-w-0 flex-1 px-3 py-4 pb-[calc(1rem+var(--safe-bottom,0px))] sm:px-4 sm:py-6 sm:pb-[calc(1.5rem+var(--safe-bottom,0px))] lg:px-8 2xl:px-10 3xl:px-16 print:p-0"
         >
           {/* Suspense wraps the matched route so the AppShell chrome
               (sidebar + topbar + skip link) stays visible while the

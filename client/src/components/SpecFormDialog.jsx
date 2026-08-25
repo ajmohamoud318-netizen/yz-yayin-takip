@@ -18,7 +18,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { getComponentsForProject, getComponentRows, primeProductInfoCache, saveEditedComponents } from '@/data/productCatalog'
-import { printSpecSheets, buildSpecRows } from '@/lib/specPrint'
+import { printSpecSheets, buildSpecRows, buildBaskiOnayForm } from '@/lib/specPrint'
 import { hasSpecContent, specWithDemoFallback } from '@/lib/spec-seed'
 import { buildAdetRows, loadOrderAdet } from '@/data/orderAdet'
 import { formatNumber } from '@/lib/utils'
@@ -424,16 +424,23 @@ function openMultiPrint({ form, customRows, project, attemptNo, kind, selectedCo
   const comps = selected.length > 0
     ? selected
     : [{ component: form.isinAdi || project?.title || '', rows: (customRows ?? []).filter((r) => r.label) }]
-  const sheets = comps.map((c) => ({
-    // Each sheet's header is its own parça — otherwise the KUTU sheet would be
-    // titled with the book's name.
-    title: c.component || project?.title || '',
-    attemptLabel,
-    rows: buildSpecRows({ component: c, form, kind }),
-    designerNames,
-    onaylayanKisi: form?.onaylayanKisi ?? '',
-    matbaaYetkilisi: form?.matbaaYetkilisi ?? '',
-  }))
+  const sheets = comps.map((c) => (
+    // Baskı Onay prints as an actual boxed form (künye grid + spec table +
+    // signature strip) — it is what the matbaa prints from and signs. Demo /
+    // Ozalit keep the classic single-column list.
+    kind === 'baski_onay'
+      ? buildBaskiOnayForm({ component: c, form, title: project?.title || '', attemptLabel })
+      : {
+        // Each sheet's header is its own parça — otherwise the KUTU sheet
+        // would be titled with the book's name.
+        title: c.component || project?.title || '',
+        attemptLabel,
+        rows: buildSpecRows({ component: c, form, kind }),
+        designerNames,
+        onaylayanKisi: form?.onaylayanKisi ?? '',
+        matbaaYetkilisi: form?.matbaaYetkilisi ?? '',
+      }
+  ))
   const ok = printSpecSheets(sheets, { docTitle: `${attemptLabel} — ${project?.title ?? ''}` })
   if (!ok) toast.error('Pop-up engelleyiciyi kontrol edin.')
 }
@@ -494,7 +501,7 @@ function CustomRow({ id, label, value, onChange, onRemove, readOnly }) {
           <button
             type="button"
             onClick={() => onRemove(id)}
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-destructive"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-destructive print:hidden"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -1558,7 +1565,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                               type="button"
                               onClick={() => removeComponentRow(c.id, r.id)}
                               aria-label="Satırı silin"
-                              className="shrink-0 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive"
+                              className="shrink-0 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive print:hidden"
                             >
                               <X className="h-3.5 w-3.5" />
                             </button>
@@ -1569,7 +1576,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                         <button
                           type="button"
                           onClick={() => addComponentRow(c.id)}
-                          className="mt-1 inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
+                          className="mt-1 inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80 print:hidden"
                         >
                           <Plus className="h-3 w-3" /> Satır Ekleyin
                         </button>
@@ -1605,7 +1612,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
 
               {/* + Satır Ekleyin — hidden in read-only mode */}
               {!readOnly && (
-                <div className="border-b px-4 py-2.5">
+                <div className="border-b px-4 py-2.5 print:hidden">
                   <button
                     type="button"
                     onClick={addCustomRow}

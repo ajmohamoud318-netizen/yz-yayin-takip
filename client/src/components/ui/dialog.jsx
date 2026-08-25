@@ -12,7 +12,7 @@ const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-50 bg-black/60 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+      'fixed inset-0 z-50 bg-black/60 backdrop-blur-sm print:hidden data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
       className,
     )}
     {...props}
@@ -59,7 +59,7 @@ const DialogContent = React.forwardRef(({ className, children, ...props }, ref) 
         // a plain single-column grid sizes its track to the widest child's
         // min-content — a long untruncated title or a nowrap button row
         // blows the dialog out past max-w-* instead of truncating/wrapping.
-        'motion-pop fixed left-[50%] top-[50%] z-50 grid grid-cols-1 max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto overscroll-contain border bg-background p-4 shadow-lg data-[state=open]:duration-200 data-[state=closed]:duration-150 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:w-full sm:max-h-[90vh] sm:rounded-lg sm:p-6',
+        'motion-pop fixed left-[50%] top-[50%] z-50 grid grid-cols-1 max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.5rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto overscroll-contain border bg-background p-4 shadow-lg data-[state=open]:duration-200 data-[state=closed]:duration-150 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:w-full sm:max-h-[90vh] sm:rounded-lg sm:p-6 print:static print:h-auto print:max-h-none print:w-auto print:max-w-none print:translate-x-0 print:translate-y-0 print:overflow-visible print:border-0 print:p-0 print:shadow-none',
         className,
       )}
       {...props}
@@ -71,7 +71,7 @@ const DialogContent = React.forwardRef(({ className, children, ...props }, ref) 
           area on full-screen sheets — see the comment on that constant. */}
       <DialogPrimitive.Close
         data-dialog-close
-        className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-md bg-background/80 opacity-70 ring-offset-background backdrop-blur transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none sm:right-3 sm:top-3"
+        className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-md bg-background/80 opacity-70 ring-offset-background backdrop-blur transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none sm:right-3 sm:top-3 print:hidden"
       >
         <X className="h-4 w-4" />
         <span className="sr-only">Kapatın</span>
@@ -87,7 +87,8 @@ const DialogHeader = ({ className, ...props }) => (
 DialogHeader.displayName = 'DialogHeader'
 
 const DialogFooter = ({ className, ...props }) => (
-  <div className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2', className)} {...props} />
+  // The action row is interaction — a printed sheet has nothing to click.
+  <div className={cn('flex flex-col-reverse print:hidden sm:flex-row sm:justify-end sm:space-x-2', className)} {...props} />
 )
 DialogFooter.displayName = 'DialogFooter'
 

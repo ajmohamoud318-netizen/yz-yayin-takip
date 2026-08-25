@@ -503,3 +503,70 @@ html.font-creative * {
 [data-sonner-toast]:not([data-type='error']) [data-description] {
   color: #7e2547 !important;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Print                                                              */
+/* ------------------------------------------------------------------ */
+/* Ctrl+P used to put the whole SPA on paper: the sticky topbar and the
+   sidebar rail, the toast stack, and — when a form dialog was open — the
+   page BEHIND it as well, with the fixed dialog panel repeating on every
+   sheet and clipped at each page edge (three pages of chrome for one form).
+   These rules print the content and nothing else.
+
+   Unrelated to the "Yazdırın" buttons: those never print the page at all,
+   they build their own document in a new window (see lib/specPrint.js). */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  /* Overlays that live outside #root: toasts, and any open popover/menu. */
+  [data-sonner-toaster],
+  [data-radix-popper-content-wrapper] {
+    display: none !important;
+  }
+
+  /* A dialog is what you meant to print when one is open — the page behind
+     it is not, and printing both is what produced the repeated pages. */
+  body:has([role='dialog']) #root {
+    display: none !important;
+  }
+
+  /* Escape hatch for anything else that is interaction, not content. */
+  .no-print,
+  [data-no-print] {
+    display: none !important;
+  }
+
+  /* Nothing on paper scrolls: a viewport-capped, scrollable box just clips
+     its own content at the page edge. */
+  [role='dialog'] * {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Flat ink — shadows and entrance animations cost toner and mean nothing
+     on a printed sheet. */
+  *,
+  *::before,
+  *::after {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* Keep a card whole rather than splitting it across two sheets. */
+  section,
+  article,
+  table,
+  .print-block {
+    break-inside: avoid;
+  }
+}

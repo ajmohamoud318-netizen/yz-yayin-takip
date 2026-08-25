@@ -69,7 +69,7 @@ export function EditableSheetRow({ label, value, onLabel, onValue, onRemove }) {
         type="button"
         onClick={onRemove}
         aria-label="Satırı sil"
-        className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground/50 opacity-0 transition active:scale-90 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100"
+        className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground/50 opacity-0 transition active:scale-90 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100 print:hidden"
       >
         <X className="h-3.5 w-3.5" />
       </button>
@@ -109,7 +109,7 @@ export function EditableSpecSheet({ comp, onChange }) {
           />
         ))}
       </dl>
-      <div className="border-t border-dashed px-4 py-2.5">
+      <div className="border-t border-dashed px-4 py-2.5 print:hidden">
         <button
           type="button"
           onClick={addField}
