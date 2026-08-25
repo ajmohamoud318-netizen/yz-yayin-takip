@@ -389,6 +389,25 @@ function emptyForm(variant, project, user) {
   }
 }
 
+/**
+ * The Baskı Onay Formu's must-fill fields, returned as the labels of whichever
+ * are still blank.
+ *
+ * ADET and BASIM YERİ are the two facts the matbaa physically prints from, and
+ * this sheet is the last gate before baskıda — a sheet that goes out with
+ * either one blank is a sheet nobody can print. Nothing on the path used to
+ * check, so both could (and did) ship empty. Only the baski_onay variant
+ * declares these fields, so every other variant gets an empty list.
+ */
+function missingRequiredFields(variant, form) {
+  return [
+    [variant.adetField, variant.adetLabel],
+    [variant.locationField, variant.locationLabel],
+  ]
+    .filter(([field]) => field && !String(form?.[field] ?? '').trim())
+    .map(([, label]) => label)
+}
+
 /* ------------------------------------------------------------------ */
 /*  Print sheet                                                       */
 /* ------------------------------------------------------------------ */
@@ -423,11 +442,19 @@ function openMultiPrint({ form, customRows, project, attemptNo, kind, selectedCo
 /*  Small presentational pieces                                       */
 /* ------------------------------------------------------------------ */
 
-function Row({ label, name, value, onChange, readOnly }) {
+/**
+ * `required` marks a field that may never be sent blank (see
+ * missingRequiredFields). While it IS blank the input carries a red wash so
+ * the gap is visible on the sheet itself, not only in the footer warning —
+ * on a phone the footer is a scroll away from the row that needs filling.
+ */
+function Row({ label, name, value, onChange, readOnly, required = false }) {
+  const missing = required && !String(value ?? '').trim()
   return (
     <div className="grid grid-cols-[1fr_auto_2fr] items-center border-b last:border-b-0">
       <span className="py-1.5 pr-3 text-[13px] font-semibold uppercase tracking-wide text-foreground">
         {label}
+        {required && <span className="text-destructive"> *</span>}
       </span>
       <span className="px-2 py-1.5 text-sm font-bold">:</span>
       <Input
@@ -435,7 +462,11 @@ function Row({ label, name, value, onChange, readOnly }) {
         value={value}
         onChange={onChange}
         readOnly={readOnly}
-        className="h-8 rounded-none border-0 border-l px-2 py-1 text-sm shadow-none focus-visible:ring-0 read-only:bg-transparent read-only:cursor-default"
+        placeholder={missing && !readOnly ? 'Zorunlu' : undefined}
+        className={cn(
+          'h-8 rounded-none border-0 border-l px-2 py-1 text-sm shadow-none focus-visible:ring-0 read-only:bg-transparent read-only:cursor-default',
+          missing && 'bg-destructive/5 placeholder:text-destructive/60',
+        )}
       />
     </div>
   )
@@ -597,6 +628,15 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const [form, setForm] = useState(() => emptyForm(variant, project, user))
   const [customRows, setCustomRows] = useState([])
   const [selectedComponents, setSelectedComponents] = useState([]) // [{ id, component, rows }]
+  // Empty for every variant but baski_onay — see missingRequiredFields. Each
+  // write path below refuses while it is non-empty, and the footer disables
+  // its actions with the reason spelled out rather than only toasting on click.
+  const missingRequired = missingRequiredFields(variant, form)
+  function requiredFilled() {
+    if (missingRequired.length === 0) return true
+    toast.error(`${missingRequired.join(' ve ')} boş bırakılamaz.`)
+    return false
+  }
   // Slot the sheet on screen was actually loaded from — null until the load
   // effect resolves it. See liveAttempts / writeAttempt below.
   const [liveAttemptNo, setLiveAttemptNo] = useState(null)
@@ -780,6 +820,22 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           }
         }
         if (adetValue) setForm((f) => ({ ...f, [variant.adetField]: adetValue }))
+        // BASIM YERİ has no live source to fall back on — no press is recorded
+        // anywhere on the project — but the borrowed ozalit/demo sheet can
+        // still carry one as a leftover custom row (pre-restructure forms had
+        // it as a real field, see OLD_FIELD_LABELS). Lift it into the
+        // dedicated row so a required field arrives filled instead of making
+        // the leader retype what the previous sheet already said, and drop the
+        // duplicate row. 'BASIM YER' as the prefix sidesteps the İ/I casing.
+        let basimValue = data?.form?.[variant.locationField]
+        if (!basimValue) {
+          const idx = rowsForCustom.findIndex((r) => r.label?.toUpperCase().startsWith('BASIM YER'))
+          if (idx !== -1) {
+            basimValue = rowsForCustom[idx].value
+            rowsForCustom = rowsForCustom.filter((_, i) => i !== idx)
+          }
+        }
+        if (basimValue) setForm((f) => ({ ...f, [variant.locationField]: basimValue }))
         setCustomRows(rowsForCustom)
       } else {
         const hasAdet = savedRows.some((r) => r.label?.toUpperCase().startsWith('ADET'))
@@ -1112,6 +1168,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
 
   async function handleAdvance() {
     if (!project) return
+    if (!requiredFilled()) return
     setBusy(true)
     try {
       // When the printer (matbaa) is the one advancing, stamp the
@@ -1154,6 +1211,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
 
   async function handleApprove() {
     if (!project) return
+    // The approving leader can still edit this sheet, so a legacy form that
+    // was saved blank before this rule existed gets fixed here rather than
+    // approved as-is.
+    if (!requiredFilled()) return
     setBusy(true)
     try {
       // Stamp the real approver at the moment approval actually happens —
@@ -1178,6 +1239,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    */
   async function handlePrepareBaskiOnay() {
     if (!project) return
+    if (!requiredFilled()) return
     setBusy(true)
     try {
       const updated = await api.prepareBaskiOnay(project.id)
@@ -1193,6 +1255,9 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
 
   async function handleSave() {
     if (!project || busy) return
+    // Applies to the plain save too: a draft parked with a blank ADET /
+    // BASIM YERİ is exactly what the next reader picks up and sends on.
+    if (!requiredFilled()) return
     // Unlike every other handler here (handleAdvance/handleApprove/
     // handlePrepareBaskiOnay), this one used to have no busy guard — a rapid
     // double-click fired handleSave twice before the first call's await
@@ -1245,6 +1310,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
 
   function handlePrint() {
     if (!project) return
+    // A printout is the sheet leaving the app — same bar as sending it.
+    if (!readOnly && !requiredFilled()) return
     if (!readOnly) {
       saveForm(variant, project.id, form, customRows, selectedComponents)
       persistCatalogEdits()
@@ -1257,6 +1324,21 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const hasCatalog = catalogComponents.length > 0
   // Demo: system-driven fields must never be editable; Ozalit: they follow readOnly.
   const systemRowReadOnly = variant.systemFieldsEditable ? readOnly : true
+  // Side-by-side parça cards replace the single İŞİN ADI + custom-rows sheet.
+  const showsComponentCards = hasCatalog && selectedComponents.length > 0
+  // ADET — dedicated field on the Baskı Onay Formu, auto-filled from a live
+  // sipariş order or the borrowed ozalit sheet (see the load effect); the
+  // leader can still correct it. Rendered in one of two places below.
+  const adetRow = variant.adetField ? (
+    <Row
+      label={variant.adetLabel}
+      name={variant.adetField}
+      value={form[variant.adetField] ?? ''}
+      onChange={handleChange}
+      readOnly={readOnly}
+      required
+    />
+  ) : null
   // View / history / printer: render each selected parça as its own classic
   // single-column sheet (matches the printout). Editing keeps the side-by-side
   // cards. Falls back to the single sheet when nothing is selected.
@@ -1373,19 +1455,12 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             <span className="text-sm font-bold">{shownAttemptNo}. {variant.attemptUpper}</span>
           </div>
 
-          {/* ADET — dedicated top field on the Baskı Onay Formu, auto-filled
-              from a live sipariş order or the borrowed ozalit sheet (see the
-              load effect); the leader can still correct it. */}
-          {variant.adetField && (
-            <div className="border-b px-4 py-1">
-              <Row
-                label={variant.adetLabel}
-                name={variant.adetField}
-                value={form[variant.adetField] ?? ''}
-                onChange={handleChange}
-                readOnly={readOnly}
-              />
-            </div>
+          {/* With parça cards there is no single İŞİN ADI row for ADET to sit
+              under, so it stays at the top of the sheet. In the single-sheet
+              fallback it renders directly under İŞİN ADI instead — matching
+              the printout and the read-only ClassicSheet. */}
+          {adetRow && showsComponentCards && (
+            <div className="border-b px-4 py-1">{adetRow}</div>
           )}
 
           {/* Per-component picker — only when the project has product info */}
@@ -1445,7 +1520,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               Edits here flow back to Ürün Bilgileri on save. When the project
               has a catalog but nothing is selected, or has no catalog at all,
               we fall back to the single İŞİN ADI + custom-rows sheet below. */}
-          {hasCatalog && selectedComponents.length > 0 ? (
+          {showsComponentCards ? (
             <div className="border-b bg-muted/10 px-3 py-3">
               <div className="flex gap-3 overflow-x-auto pb-1">
                 {selectedComponents.map((c) => (
@@ -1514,6 +1589,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               {/* İŞİN ADI + user-added rows (no catalog / nothing selected) */}
               <div className="border-b px-4 py-1">
                 <Row label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly={systemRowReadOnly} />
+                {adetRow}
                 {customRows.map((r) => (
                   <CustomRow
                     key={r.id}
@@ -1560,6 +1636,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                 value={form[variant.locationField] ?? ''}
                 onChange={handleChange}
                 readOnly={readOnly}
+                required
               />
             )}
             <Row label={variant.personLabel} name={variant.personField} value={form[variant.personField]} onChange={handleChange} readOnly />
@@ -1716,6 +1793,15 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           </div>
         )}
 
+        {/* Says which required field is still blank, right above the buttons
+            it disables — the red row wash upstream marks the field itself. */}
+        {missingRequired.length > 0 && !readOnly && (
+          <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+            <FileText className="h-4 w-4 shrink-0" />
+            <span>{missingRequired.join(' ve ')} boş bırakılamaz. Formu göndermeden önce doldurun.</span>
+          </div>
+        )}
+
         <DialogFooter className="flex-wrap gap-2">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             {readOnly ? 'Kapatın' : 'İptal'}
@@ -1727,7 +1813,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             </Button>
           )}
           {mode === 'view' && user?.role !== 'printer' && (!variant.saveRequiresEditable || !readOnly) && (
-            <Button disabled={busy} onClick={handleSave}>{busy ? 'Kaydediliyor…' : 'Kaydedin'}</Button>
+            <Button disabled={busy || missingRequired.length > 0} onClick={handleSave}>{busy ? 'Kaydediliyor…' : 'Kaydedin'}</Button>
           )}
           {mode === 'view' && onStartWork && (
             <Button variant="success" disabled={startingWork} onClick={onStartWork}>
@@ -1736,19 +1822,19 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             </Button>
           )}
           {mode === 'advance' && (
-            <Button disabled={busy} onClick={handleAdvance} variant={rejectContext ? 'destructive' : 'default'}>
+            <Button disabled={busy || missingRequired.length > 0} onClick={handleAdvance} variant={rejectContext ? 'destructive' : 'default'}>
               <Send className="h-4 w-4" />
               {busy ? 'Gönderiliyor…' : rejectContext ? 'Reddedin ve Gönderin' : variant.advanceLabel(user)}
             </Button>
           )}
           {isBaskiOnayApproval && !baskiOnayPrepared && (
-            <Button disabled={busy} onClick={handlePrepareBaskiOnay}>
+            <Button disabled={busy || missingRequired.length > 0} onClick={handlePrepareBaskiOnay}>
               <Send className="h-4 w-4" />
               {busy ? 'Kaydediliyor…' : 'Hazırlayın ve Onaya Gönderin'}
             </Button>
           )}
           {mode === 'approve' && (!isBaskiOnayApproval || baskiOnayPrepared) && (
-            <Button variant="success" disabled={busy || needsOzalitReceive || ozalitAwaitingLeader} onClick={handleApprove}>
+            <Button variant="success" disabled={busy || needsOzalitReceive || ozalitAwaitingLeader || missingRequired.length > 0} onClick={handleApprove}>
               <Check className="h-4 w-4" />
               {busy ? 'İşleniyor…' : 'Onaylayın'}
             </Button>

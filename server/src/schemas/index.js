@@ -949,7 +949,7 @@ const ordersOzalitChangeRequest = {
 
 // Save-draft (PATCH) and approve (POST) for the siparis_baski_onay
 // print-spec form share this shape — approve additionally requires
-// adet/tarih/hazirlayan to be non-empty, enforced by the route (not
+// adet/tarih/basimYeri/hazirlayan to be non-empty, enforced by the route (not
 // `required` here) so a draft save can be partial.
 const ordersBaskiOnayForm = {
   params: {

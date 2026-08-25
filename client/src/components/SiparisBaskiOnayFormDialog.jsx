@@ -112,6 +112,7 @@ export default function SiparisBaskiOnayFormDialog({
   }
 
   function handlePrint() {
+    if (!isReadOnly && !requiredFilled()) return
     // No designer names available on the order object without an extra
     // fetch — the signature box just renders blank for "Tasarımcı" until
     // filled by hand, same as an unfilled signer anywhere else in the app.
@@ -130,7 +131,30 @@ export default function SiparisBaskiOnayFormDialog({
     if (!ok) toast.error('Pop-up engelleyiciyi kontrol edin.')
   }
 
+  /**
+   * ADET and BASIM YERİ are what the matbaa physically prints from, so this
+   * sheet may never be stored with either blank — not even as a parked draft,
+   * which is exactly what the next reader picks up and approves. Mirrors the
+   * same rule on the project-side Baskı Onay Formu (SpecFormDialog).
+   */
+  function missingRequired() {
+    return [
+      !adet.trim() && 'ADET',
+      !tarih.trim() && 'TARİH',
+      !basimYeri.trim() && 'BASIM YERİ',
+      !hazirlayan.trim() && 'HAZIRLAYAN',
+    ].filter(Boolean)
+  }
+
+  function requiredFilled() {
+    const missing = missingRequired()
+    if (missing.length === 0) return true
+    toast.error(`${missing.join(', ')} boş bırakılamaz.`)
+    return false
+  }
+
   async function handleSave() {
+    if (!requiredFilled()) return
     setSaving(true)
     try {
       const updated = await api.saveOrderBaskiOnayForm(order.id, currentPayload())
@@ -144,10 +168,7 @@ export default function SiparisBaskiOnayFormDialog({
   }
 
   async function handleApprove() {
-    if (!adet.trim() || !tarih.trim() || !hazirlayan.trim()) {
-      toast.error('Adet, tarih ve hazırlayan alanları zorunludur.')
-      return
-    }
+    if (!requiredFilled()) return
     setApproving(true)
     try {
       const updated = await api.approveOrderBaskiOnayForm(order.id, currentPayload())
@@ -183,7 +204,7 @@ export default function SiparisBaskiOnayFormDialog({
           <Input id="baski-onay-tarih" value={tarih} onChange={(e) => setTarih(e.target.value)} readOnly={isReadOnly} />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="baski-onay-yer">Basım Yeri</Label>
+          <Label htmlFor="baski-onay-yer">Basım Yeri *</Label>
           <Input id="baski-onay-yer" value={basimYeri} onChange={(e) => setBasimYeri(e.target.value)} readOnly={isReadOnly} />
         </div>
         <div className="space-y-1.5">

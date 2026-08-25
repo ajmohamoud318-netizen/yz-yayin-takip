@@ -971,7 +971,11 @@ export async function orderRoutes(fastify) {
       if (!order) notFound('Talep bulunamadı.')
       if (order.status !== 'siparis_baski_onay') badRequest('Bu işlem yalnızca baskı onay aşamasında yapılabilir.')
       const { components, adet, tarih, basimYeri, hazirlayan, notes = '' } = request.body
-      if (!adet || !tarih || !hazirlayan) badRequest('Adet, tarih ve hazırlayan alanları zorunludur.')
+      // basimYeri is required here too (it is what the matbaa prints from);
+      // the draft-save PATCH above deliberately stays partial-friendly.
+      if (![adet, tarih, basimYeri, hazirlayan].every((v) => v?.trim())) {
+        badRequest('Adet, tarih, basım yeri ve hazırlayan alanları zorunludur.')
+      }
       const now = new Date().toISOString()
       const finalForm = {
         ...order.baski_onay_form, components, adet, tarih, basimYeri, hazirlayan,
