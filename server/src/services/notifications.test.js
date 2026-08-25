@@ -8,6 +8,7 @@ import {
   notifyDemoChangeRequested, notifyOzalitChangeRequested,
   notifyDemoChangeAccepted, notifyDemoChangeDeclined,
   notifyOzalitChangeAccepted, notifyOzalitChangeDeclined,
+  notifyOrderTransition,
 } from './notifications.js'
 
 /**
@@ -398,4 +399,48 @@ test('"Ozalit Başladım" tells the leader + assigned designers', async () => {
     ['u-aylin', 'u-ayse', 'u-feyza'],
   )
   for (const r of client.rows) assert.equal(r.type, 'ozalit_started')
+})
+
+/* ==========================================================================
+ *  Order-step notification tones
+ *
+ *  `notifications.tone` is a CHECK constraint (migration 022), not a free
+ *  text column. A tone outside its five values doesn't degrade to a default
+ *  colour — it fails the INSERT inside `emit`, which runs in the SAME
+ *  transaction as the status change that called it. The whole advance rolls
+ *  back and the client gets a bare 500.
+ *
+ *  ORDER_STEP_TONE carried 'violet' for siparis_baski_onay and did exactly
+ *  that to every advance into that step. Nothing caught it because `emit`
+ *  short-circuits when the actor is the only recipient, so a dev DB with one
+ *  team leader never reaches the INSERT — the actor below is deliberately in
+ *  no role list so every step really emits.
+ * ======================================================================== */
+
+// Mirrors migration 022's CHECK. Update both together or neither.
+const ALLOWED_TONES = ['amber', 'green', 'rose', 'blue', 'pink']
+
+test('every order step emits a tone the notifications CHECK accepts', async () => {
+  const steps = [
+    'pending', 'goruldu', 'tasarimci_onay', 'ekran_onay',
+    'matbaa_onay', 'siparis_baski_onay', 'onaylandi',
+  ]
+  for (const newStatus of steps) {
+    const client = fakeClient()
+    await notifyOrderTransition(client, {
+      order: { id: 'o-1', project_id: 'p-1' },
+      project,
+      newStatus,
+      actor: { id: 'u-nobody', name: 'Biri' },
+      requesterId: 'u-esra',
+      assigneeIds: ['u-aylin'],
+    })
+    assert.ok(client.rows.length > 0, `${newStatus} emitted nothing — the tone was never exercised`)
+    for (const r of client.rows) {
+      assert.ok(
+        ALLOWED_TONES.includes(r.tone),
+        `${newStatus} emits tone "${r.tone}", which violates notifications_tone_check`,
+      )
+    }
+  }
 })

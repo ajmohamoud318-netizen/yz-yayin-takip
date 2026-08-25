@@ -331,13 +331,13 @@ export async function orderRoutes(fastify) {
          VALUES ($1,$2,$3,$4)`,
         [orderId, historyStep, request.user.id, historyNote],
       )
+      const proj = await getProjectForUpdate(client, order.project_id)
       // A matbaa_onay click that doesn't complete the round still gets its
       // own project-timeline entry (mirrors the main pipeline's ozalit
       // partial-approval logging in POST /projects/:id/approve) — the
       // round-completing click (lands on siparis_baski_onay) is covered by
       // the generic mid-flow logging block just below instead.
       if (matbaaResult && !advancing) {
-        const proj = await getProjectForUpdate(client, order.project_id)
         if (proj) {
           await logHistory(
             client,
@@ -357,8 +357,13 @@ export async function orderRoutes(fastify) {
       // so the timeline pairs every order step with the signer. `next` can
       // never be 'onaylandi' from this route any more — that transition
       // only happens via POST .../baski-onay-approve (see below).
-      {
-        const proj = await getProjectForUpdate(client, order.project_id)
+      //
+      // Only when the click actually MOVED the order. A partial matbaa_onay
+      // approval leaves it at matbaa_onay, but `next` is 'siparis_baski_onay'
+      // either way — logging it unconditionally announced "Baskı onay formuna
+      // gönderildi" on the project timeline after every single approval, while
+      // the order was still waiting on the remaining approvers.
+      if (advancing) {
         if (proj) {
           await logHistory(
             client,
@@ -394,13 +399,12 @@ export async function orderRoutes(fastify) {
         ? assignees
         : (Array.isArray(nextOrder.assignee_ids) ? nextOrder.assignee_ids : [])
       if (matbaaResult && !advancing) {
-        const proj = await getProjectForUpdate(client, order.project_id)
         await notifyMatbaaApprovalPending(client, {
           order: nextOrder, project: proj, actor: request.user, teamLeaderIds, designerIds,
         })
       } else {
         await notifyOrderTransition(client, {
-          order: nextOrder, newStatus: next, actor: request.user,
+          order: nextOrder, project: proj, newStatus: next, actor: request.user,
           requesterId: order.requested_by, assigneeIds,
         })
       }

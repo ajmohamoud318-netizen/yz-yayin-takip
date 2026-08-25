@@ -912,9 +912,21 @@ const ORDER_STEP_LINK = {
   ekran_onay: '/siparis-talepleri',
   siparis_baski_onay: '/siparis-talepleri',
 }
+// Every value here MUST be one of notifications.tone's five allowed values
+// (migration 022: amber/green/rose/blue/pink). A tone outside that set fails
+// the CHECK constraint inside `emit`, which rolls back the WHOLE advance
+// transaction — the order silently refuses to move and the client sees a bare
+// 500. 'violet' sat here and did exactly that to every advance into
+// siparis_baski_onay (the completing matbaa_onay approval and every ekran_onay
+// approval). It only ever fired in production because `emit` short-circuits
+// when the actor is the sole recipient — a single-team-leader dev DB never
+// reaches the INSERT.
+//
+// siparis_baski_onay is amber for the same reason its project-pipeline twin
+// `baski_onay_pending` is: it's a step that owes someone an action.
 const ORDER_STEP_TONE = {
   pending: 'amber', goruldu: 'green', tasarimci_onay: 'blue',
-  ekran_onay: 'blue', siparis_baski_onay: 'violet',
+  ekran_onay: 'blue', siparis_baski_onay: 'amber',
 }
 
 /**
