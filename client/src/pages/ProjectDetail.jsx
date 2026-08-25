@@ -769,11 +769,12 @@ export default function ProjectDetail() {
   const actions = availableActions({ project, user })
   const advanceLabel = project ? advanceActionLabel(project, user?.role) : 'İlerletin'
   const approveLabel = project ? approveActionLabel(project) : 'Onaylayın'
-  // Suppress the "Gönderildi" pill for anyone who instead has an action button
-  // at this stage (the printer, and now the leader/designer at Ozalit Teslim).
+  // Suppress the "İstendi"/"Gönderildi" pill for anyone who instead has an
+  // action button at this stage (the printer, and now the leader/designer at
+  // Ozalit Teslim).
   const sentStatus =
     project && user?.role !== 'printer' && !actions.includes('advance')
-      ? sentStatusLabel(project)
+      ? demoOzalitStatusLabel(project)
       : null
 
   // Pre-compute demo/ozalit attempt numbers for each history entry so the
@@ -1081,16 +1082,11 @@ export default function ProjectDetail() {
                     {TYPE_LABELS[project.type]}
                   </Badge>
                   <Badge variant="outline" className="font-medium">
-                    {/* A demo/ozalit in process reads "…Gönderildi" (same wording
-                        as the first send), not the raw pipeline stage name. The
-                        ozalit variant only once it's actually with the matbaa —
-                        ozalit_teslim also covers the "not yet requested" sub-state. */}
-                    {project.stage === 'demo_teslim' || project.stage === 'cin_demo_teslim'
-                      ? 'Demoya Gönderildi'
-                      : project.stage === 'ozalit_teslim' &&
-                          (project.ozalit_requested || project.reject_target === 'matbaa')
-                        ? "Ozalit'e Gönderildi"
-                        : STAGE_LABELS[project.stage]}
+                    {/* A demo/ozalit in process reads "…İstendi"/"…Gönderildi"
+                        instead of the raw pipeline stage name — see
+                        demoOzalitStatusLabel for the demo_started/ozalit_started
+                        split (still cancelable vs. actually with the matbaa). */}
+                    {demoOzalitStatusLabel(project) ?? STAGE_LABELS[project.stage]}
                   </Badge>
                   {project.demo_attempt > 0 && (
                     <Badge variant="outline" className="font-medium text-muted-foreground">
@@ -1989,7 +1985,7 @@ function availableActions({ project, user }) {
 
   // Team leader moves a project forward. TR demo/ozalit teslim are forwarded by
   // the printer (matbaa) via the approval queue, so the leader doesn't advance
-  // those — instead they see a "Gönderildi" status (see sentStatusLabel).
+  // those — instead they see an "İstendi"/"Gönderildi" status (see demoOzalitStatusLabel).
   //
   // The leader no longer pushes a project into Satışta: reaching Satışta now
   // happens only when Sales confirms Matbaa's handover ("Alındı"). So the leader
@@ -2021,7 +2017,7 @@ function availableActions({ project, user }) {
   // freshly delivered and awaiting the leader's decision (demo_held falsey)
   // is still in progress: the leader must approve or reject it, not spawn a
   // duplicate. And while a demo is in flight at demo_teslim / cin_demo_teslim
-  // the header shows the "Demoya Gönderildi" pill (see sentStatusLabel).
+  // the header shows the "İstendi"/"Gönderildi" pill (see demoOzalitStatusLabel).
   if (
     (stage === 'demo_onay' || stage === 'cin_demo_onay') &&
     project.demo_held === true &&
@@ -2160,14 +2156,20 @@ function approveActionLabel(project) {
   }
 }
 
-/** "Sent" status pill shown once a demo/ozalit has been forwarded. */
-function sentStatusLabel(project) {
+/**
+ * "İstendi"/"Gönderildi" status shown once a demo/ozalit has been requested.
+ * Split on demo_started/ozalit_started: while the matbaa hasn't picked it up
+ * yet the request is still just that — a cancelable request ("İstendi") —
+ * not something actually sent/with the matbaa ("Gönderildi") yet.
+ */
+function demoOzalitStatusLabel(project) {
   switch (project.stage) {
     case 'demo_teslim':
     case 'cin_demo_teslim':
-      return 'Demoya Gönderildi'
+      return project.demo_started ? 'Demoya Gönderildi' : 'Demo İstendi'
     case 'ozalit_teslim':
-      return "Ozalit'e Gönderildi"
+      if (!project.ozalit_requested && project.reject_target !== 'matbaa') return null
+      return project.ozalit_started ? "Ozalit'e Gönderildi" : 'Ozalit İstendi'
     default:
       return null
   }
