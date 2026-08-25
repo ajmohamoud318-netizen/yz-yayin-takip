@@ -398,8 +398,28 @@ export function dedupeNote(note, label) {
 const DEMO_TESLIM_STAGES = ['demo_teslim', 'cin_demo_teslim']
 const DEMO_ONAY_STAGES = ['demo_onay', 'cin_demo_onay']
 
+/**
+ * Attempt slot a row's form button should open. An edit's snapshot is staged
+ * one slot PAST the round's own so the as-first-sent sheet stays intact and
+ * reopenable (see `attemptNo` / `liveAttempts` in SpecFormDialog.jsx), so the
+ * two "Demo Formu" buttons on one round point at different slots: the major
+ * row opens what was sent, the edit row opens the correction.
+ */
+export const demoFormAttempt = (h) =>
+  h.demoAttemptAt + (h.event === 'demo_form_edited' ? 1 : 0)
+export const ozalitFormAttempt = (h) =>
+  h.ozalitAttemptAt + (h.event === 'ozalit_form_edited' ? 1 : 0)
+
 export function hasDemoForm(h) {
   if (h.event === 'demo_form') return true
+  // A correction to an already-sent demo. Its own snapshot is the ONLY place
+  // the updated sheet can be reopened from the timeline — the major
+  // "Demoya Gönderildi" row above it still shows the sheet as first sent.
+  // MinorRow offers this button, but a lone edit row never reaches MinorRow:
+  // a run of fewer than FOLD_THRESHOLD minors is unfolded back into MajorRow
+  // (see buildDays), which asks this function — so in the common case, one
+  // edit, the updated form had no way in at all.
+  if (h.event === 'demo_form_edited') return true
   if (h.action === 'advance') {
     return DEMO_TESLIM_STAGES.includes(h.to_stage) || DEMO_TESLIM_STAGES.includes(h.from_stage)
   }
@@ -412,6 +432,7 @@ export function hasDemoForm(h) {
 export function hasOzalitForm(h, projectType) {
   if (projectType !== 'TR') return false
   if (h.event === 'ozalit_form') return true
+  if (h.event === 'ozalit_form_edited') return true
   if (h.action === 'advance') {
     return h.to_stage === 'ozalit_teslim' || h.from_stage === 'ozalit_teslim'
   }

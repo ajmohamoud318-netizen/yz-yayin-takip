@@ -10,8 +10,10 @@ import {
   buildTimeline,
   dedupeNote,
   filterCounts,
+  demoFormAttempt,
   hasDemoForm,
   hasOzalitForm,
+  ozalitFormAttempt,
   historyMeta,
   isOrderEntry,
   truncateTimeline,
@@ -299,12 +301,12 @@ function MajorRow({
         {(demoForm || ozalitForm) && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {demoForm && (
-              <FormButton onClick={() => onOpenDemoForm?.(entry.demoAttemptAt)} icon={FileText}>
+              <FormButton onClick={() => onOpenDemoForm?.(demoFormAttempt(entry), entry.demoAttemptAt)} icon={FileText}>
                 Demo Formu
               </FormButton>
             )}
             {ozalitForm && (
-              <FormButton onClick={() => onOpenOzalitForm?.(entry.ozalitAttemptAt)} icon={FileText}>
+              <FormButton onClick={() => onOpenOzalitForm?.(ozalitFormAttempt(entry), entry.ozalitAttemptAt)} icon={FileText}>
                 Ozalit Formu
               </FormButton>
             )}
@@ -413,8 +415,8 @@ function MinorRow({ entry, onOpenDemoForm, onOpenOzalitForm }) {
           <FormButton
             onClick={() =>
               isDemoEdit
-                ? onOpenDemoForm?.(entry.demoAttemptAt + 1)
-                : onOpenOzalitForm?.(entry.ozalitAttemptAt + 1)
+                ? onOpenDemoForm?.(demoFormAttempt(entry), entry.demoAttemptAt)
+                : onOpenOzalitForm?.(ozalitFormAttempt(entry), entry.ozalitAttemptAt)
             }
             icon={FileText}
           >

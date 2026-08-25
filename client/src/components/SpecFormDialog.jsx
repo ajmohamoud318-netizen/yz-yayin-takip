@@ -272,7 +272,11 @@ async function fetchServerSnapshot(api, variant, projectId, attempt) {
     // listDemos is ordered newest-first; take the most recent row.
     const row = mine[0]
     const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload
-    return parseSaved(variant, JSON.stringify(payload ?? {}))
+    const parsed = parseSaved(variant, JSON.stringify(payload ?? {}))
+    // `attempt` rides along so callers that also WRITE can put the sheet back
+    // in the slot it came from instead of assuming attemptNo (see
+    // writeAttempt) — it matters only when an array was passed.
+    return parsed && { ...parsed, attempt: row.attempt }
   } catch {
     return null
   }
@@ -333,13 +337,16 @@ export async function stampSpecSignature(variantName, project, patch) {
   const form = { ...(existing.form ?? {}), ...patch }
   const customRows = existing.customRows ?? []
   const selectedComponents = existing.selectedComponents ?? null
+  // Back into the slot the sheet came from: stamping an edited sheet into the
+  // round's own slot would bury the as-first-sent snapshot Geçmiş reopens.
+  const slot = existing.attempt ?? attempt
   saveForm(variant, project.id, form, customRows, selectedComponents)
-  saveSnapshot(variant, project.id, attempt, form, customRows, selectedComponents)
+  saveSnapshot(variant, project.id, slot, form, customRows, selectedComponents)
   try {
     await api.createDemo({
       project_id: project.id,
       kind: variant.kind,
-      attempt,
+      attempt: slot,
       silent: true,
       payload: { ...form, _customRows: customRows, _selectedComponents: selectedComponents },
     })
@@ -543,6 +550,11 @@ function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
  *   'history'  — read-only snapshot view (requires viewAttempt)
  *
  * viewAttempt — attempt number to load from snapshot (used with mode='history')
+ * viewAttemptLabel — round number to PRINT on that snapshot. An edit is
+ *   stored one slot past its round (see liveAttempts), so a correction to the
+ *   1st demo lives at slot 2 and would otherwise open titled "2. Demo" — a
+ *   round that hasn't happened, contradicting the "Demo 1" badge on the very
+ *   row that opened it. Display only; every lookup still uses viewAttempt.
  * notifyOnSave — mode='view' only. When true, Kaydet also logs a history
  *   entry and notifies the matbaa the sheet changed (see handleSave) instead
  *   of the normal silent in-place save.
@@ -558,7 +570,7 @@ function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
  *   Forces the saved sheet to load as-is (like a read-only viewer would)
  *   instead of the normal "fresh compose" reset for a new attempt.
  */
-export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, mode, onDone, viewAttempt, notifyOnSave = false, onStartWork, startingWork = false, rejectContext = null }) {
+export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, mode, onDone, viewAttempt, viewAttemptLabel = null, notifyOnSave = false, onStartWork, startingWork = false, rejectContext = null }) {
   const variant = VARIANTS[variantName]
   const { user } = useAuth()
   const { updateOne } = useProjectsStore()
@@ -566,6 +578,9 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const [form, setForm] = useState(() => emptyForm(variant, project, user))
   const [customRows, setCustomRows] = useState([])
   const [selectedComponents, setSelectedComponents] = useState([]) // [{ id, component, rows }]
+  // Slot the sheet on screen was actually loaded from — null until the load
+  // effect resolves it. See liveAttempts / writeAttempt below.
+  const [liveAttemptNo, setLiveAttemptNo] = useState(null)
   const [busy, setBusy] = useState(false)
   // Bumped once the server spec has been fetched for this project, so the
   // catalog memo below recomputes with fresh data even on a cold cache.
@@ -629,6 +644,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     let cancelled = false
 
     async function load() {
+      setLiveAttemptNo(null)
       if (viewAttempt != null) {
         // History: show the snapshot exactly as it was saved — no auto-fills.
         // Server snapshot first (works on any computer), localStorage fallback.
@@ -653,6 +669,9 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         (await fetchServerSnapshot(api, variant, project.id, liveAttempts)) ??
         loadSnapshot(variant, project.id, attemptNo)
       if (cancelled) return
+      // localStorage snapshots are keyed by attemptNo already, so only a
+      // server hit can report a different slot.
+      setLiveAttemptNo(current?.attempt ?? null)
       const carried =
         loadSaved(variant, project.id) ??
         (await fetchServerSnapshot(api, variant, project.id, null))
@@ -997,6 +1016,17 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const composingNewRound = mode === 'advance' && user?.role !== 'printer'
   const liveAttempts =
     composingNewRound || notifyOnSave ? attemptNo : [attemptNo, attemptNo + 1]
+  // Saves go back to the slot the sheet was READ from, not blindly to
+  // attemptNo. When the live sheet is the edit slot, the matbaa's teslim
+  // stamps (handleAdvance) would otherwise land on attemptNo and overwrite
+  // the as-first-sent snapshot — which is precisely the row Geçmiş's
+  // "Demoya Gönderildi" reopens. The before/after pair the timeline shows
+  // (original on the major row, correction on "Demo Formu Güncellendi") only
+  // survives if each stays in its own slot. Composing a new round always
+  // resolves to attemptNo, so this is a no-op there.
+  const writeAttempt = liveAttemptNo ?? attemptNo
+  // What the sheet CALLS this round, as opposed to where it's stored.
+  const shownAttemptNo = viewAttemptLabel ?? attemptNo
 
   /** Mirror the snapshot to the server so any browser can reopen it. */
   function persistServerSnapshot(attempt, data) {
@@ -1051,8 +1081,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         payload = { ...form, [variant.personField]: user?.name ?? form[variant.personField] }
       }
       saveForm(variant, project.id, payload, customRows, selectedComponents)
-      saveSnapshot(variant, project.id, attemptNo, payload, customRows, selectedComponents)
-      persistServerSnapshot(attemptNo, payload)
+      saveSnapshot(variant, project.id, writeAttempt, payload, customRows, selectedComponents)
+      persistServerSnapshot(writeAttempt, payload)
       await persistCatalogEdits()
       const updated = rejectContext
         ? await api.rejectProject(project.id, rejectContext.reason, [], rejectContext.target)
@@ -1075,8 +1105,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       // this is the only point where "onaylayanKisi" should get a value.
       const approvedForm = { ...form, onaylayanKisi: user?.name ?? '' }
       saveForm(variant, project.id, approvedForm, customRows, selectedComponents)
-      saveSnapshot(variant, project.id, attemptNo, approvedForm, customRows, selectedComponents)
-      persistServerSnapshot(attemptNo, approvedForm)
+      saveSnapshot(variant, project.id, writeAttempt, approvedForm, customRows, selectedComponents)
+      persistServerSnapshot(writeAttempt, approvedForm)
       await persistCatalogEdits()
       const updated = await api.approveProject(project.id)
       updateOne(updated)
@@ -1099,8 +1129,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     setBusy(true)
     try {
       saveForm(variant, project.id, form, customRows, selectedComponents)
-      saveSnapshot(variant, project.id, attemptNo, form, customRows, selectedComponents)
-      persistServerSnapshot(attemptNo, form)
+      saveSnapshot(variant, project.id, writeAttempt, form, customRows, selectedComponents)
+      persistServerSnapshot(writeAttempt, form)
       await persistCatalogEdits()
       const updated = await api.prepareBaskiOnay(project.id)
       updateOne(updated)
@@ -1127,7 +1157,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       // top of the dedicated notify call below, leaving two overlapping
       // entries for one save. The edit-notify call is the sole source of
       // both the history row and the printer ping.
-      persistServerSnapshot(attemptNo, form)
+      persistServerSnapshot(writeAttempt, form)
       await persistCatalogEdits()
       if (notifyOnSave) {
         try {
@@ -1153,7 +1183,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       saveForm(variant, project.id, form, customRows, selectedComponents)
       persistCatalogEdits()
     }
-    openMultiPrint({ form, customRows, project, attemptNo, kind: variant.kind, selectedComponents })
+    openMultiPrint({ form, customRows, project, attemptNo: shownAttemptNo, kind: variant.kind, selectedComponents })
   }
 
   if (!project) return null
@@ -1179,7 +1209,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
             {variant.title}
-            {readOnly && <span className="ml-1 text-xs font-normal text-muted-foreground">({attemptNo}. {variant.attemptWord})</span>}
+            {readOnly && <span className="ml-1 text-xs font-normal text-muted-foreground">({shownAttemptNo}. {variant.attemptWord})</span>}
           </DialogTitle>
         </DialogHeader>
 
@@ -1260,7 +1290,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                 key={c.id}
                 project={project}
                 component={c}
-                attemptNo={attemptNo}
+                attemptNo={shownAttemptNo}
                 variant={variant}
                 form={form}
                 user={user}
@@ -1274,7 +1304,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             <h2 className="text-base font-bold uppercase tracking-widest text-foreground">{project.title}</h2>
           </div>
           <div className="border-b px-4 py-2 text-right">
-            <span className="text-sm font-bold">{attemptNo}. {variant.attemptUpper}</span>
+            <span className="text-sm font-bold">{shownAttemptNo}. {variant.attemptUpper}</span>
           </div>
 
           {/* ADET — dedicated top field on the Baskı Onay Formu, auto-filled
