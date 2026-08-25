@@ -254,13 +254,19 @@ export function specVariantForStage(stage) {
  * POSTs the payload to /api/demos keyed by (project, kind, attempt); this
  * fetches the latest matching row back. Returns null on any failure so the
  * localStorage path stays the fallback.
+ *
+ * `attempt` may be a number, null (any attempt), or an ARRAY of attempt
+ * numbers — /api/demos is append-only and ordered newest-first, so an array
+ * resolves to whichever of those slots was written last. See liveAttempts
+ * below for why a single round can span two slots.
  */
 async function fetchServerSnapshot(api, variant, projectId, attempt) {
   try {
     const all = await api.listDemos()
+    const wanted = attempt == null ? null : new Set(Array.isArray(attempt) ? attempt : [attempt])
     const mine = (all ?? []).filter(
       (d) => d.project_id === projectId && (d.kind ?? 'demo') === variant.kind &&
-             (attempt == null || d.attempt === attempt),
+             (wanted == null || wanted.has(d.attempt)),
     )
     if (mine.length === 0) return null
     // listDemos is ordered newest-first; take the most recent row.
@@ -313,8 +319,13 @@ export async function stampSpecSignature(variantName, project, patch) {
   // opened the form, where localStorage holds nothing at all. Without the
   // server fallbacks the signature would be written onto an otherwise empty
   // snapshot and take the spec's place.
+  // [attempt, attempt + 1]: a leader who edited the sent sheet saved it one
+  // slot past the round's own (see liveAttempts), and the teslim/onay
+  // signature belongs on THAT spec, not the superseded one. The write below
+  // stays at `attempt` — being the newest row, it's what the live lookup
+  // returns from then on.
   const existing =
-    (await fetchServerSnapshot(api, variant, project.id, attempt)) ??
+    (await fetchServerSnapshot(api, variant, project.id, [attempt, attempt + 1])) ??
     loadSnapshot(variant, project.id, attempt) ??
     stripStamps(loadSaved(variant, project.id)) ??
     stripStamps(await fetchServerSnapshot(api, variant, project.id, null)) ??
@@ -639,7 +650,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       // STAMP_FIELDS). Without that strip, a previously approved attempt's
       // ONAYLAYAN KİŞİ reappeared on the next, unapproved attempt.
       const current =
-        (await fetchServerSnapshot(api, variant, project.id, attemptNo)) ??
+        (await fetchServerSnapshot(api, variant, project.id, liveAttempts)) ??
         loadSnapshot(variant, project.id, attemptNo)
       if (cancelled) return
       const carried =
@@ -970,6 +981,22 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const willEditBump = mode === 'view' && notifyOnSave && viewAttempt == null
   const attemptNo =
     viewAttempt ?? ((project?.[variant.attemptField] ?? 0) + (willResendBump || willEditBump ? 2 : 1))
+  // Slots that can hold this round's CURRENT sheet. Because an edit-notify
+  // save lands one slot past the round's own (willEditBump) and
+  // /demo-edit-notify deliberately doesn't bump demo_attempt, the newest
+  // content for a round may sit at attemptNo + 1 while attemptNo still holds
+  // the as-first-sent snapshot Geçmiş links to. Anything showing an
+  // already-sent round must therefore read the newer of the two: the plain
+  // "Demo Formu" / "İşlemi Başlatın" viewer and the matbaa's own teslim form
+  // both loaded attemptNo alone, so after the leader corrected a sent demo
+  // the matbaa started work from — and delivered, re-saving — the pre-edit
+  // spec. Excluded: composing a NEW round (its slot is empty by definition,
+  // and the lookahead would drag the previous round's edit into a fresh
+  // sheet) and the edit dialog itself, whose attemptNo already IS the edit
+  // slot.
+  const composingNewRound = mode === 'advance' && user?.role !== 'printer'
+  const liveAttempts =
+    composingNewRound || notifyOnSave ? attemptNo : [attemptNo, attemptNo + 1]
 
   /** Mirror the snapshot to the server so any browser can reopen it. */
   function persistServerSnapshot(attempt, data) {
