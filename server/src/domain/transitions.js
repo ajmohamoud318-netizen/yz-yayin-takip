@@ -886,6 +886,25 @@ export function computeDemoStart(project, actor) {
   }
 }
 
+/**
+ * Is the ozalit round actually sitting with the matbaa right now?
+ *
+ * `ozalit_requested` alone is NOT the answer, and treating it as one is a
+ * lockout. Unlike demo — where reaching demo_teslim IS the request — ozalit
+ * has a two-step (migration 016): the project lands on ozalit_teslim first,
+ * and the leader/designer then asks with "Ozalit İste". But a reject-to-
+ * matbaa re-delivery (computeRejection → reject_target='matbaa') ALSO parks
+ * the project on ozalit_teslim, deliberately with ozalit_requested=false,
+ * and the matbaa owes a delivery there just the same.
+ *
+ * This is the exact condition computeOzalitTeslimAdvance already uses to
+ * decide whether the printer may deliver — the leader-facing actions have to
+ * agree with it, or a live round exists that only one side can act on.
+ */
+export function isOzalitRoundLive(project) {
+  return !!project?.ozalit_requested || project?.reject_target === 'matbaa'
+}
+
 export function computeOzalitStart(project, actor) {
   const now = new Date().toISOString()
   const actorName = actor?.name ?? 'Bilinmeyen'
@@ -894,6 +913,14 @@ export function computeOzalitStart(project, actor) {
   }
   if (project.stage !== 'ozalit_teslim') {
     badRequest('Bu işlem yalnızca ozalit matbaa aşamasında yapılabilir.')
+  }
+  // Nothing to start until the round is actually live. Reaching ozalit_teslim
+  // is not itself a request (see isOzalitRoundLive), so without this the
+  // matbaa could mark "başladım" on an ozalit nobody had asked for — which
+  // then left the leader with no edit, no cancel and no change-request,
+  // because all three key off the same liveness the start never required.
+  if (!isOzalitRoundLive(project)) {
+    badRequest('Henüz ozalit istenmedi, başlatılacak bir çalışma yok.')
   }
   if (project.ozalit_started) {
     return { project, history: null } // already marked — idempotent
@@ -1092,8 +1119,13 @@ export function computeOzalitEdit(project, actor, ctx = {}) {
   if (project.stage !== 'ozalit_teslim') {
     badRequest('Bildirim yalnızca ozalit matbaa sürecindeyken yapılabilir.')
   }
-  if (!project.ozalit_requested) {
-    badRequest('Bekleyen bir ozalit talebi yok.')
+  // Liveness, not `ozalit_requested`. Correcting the sheet the matbaa works
+  // from applies to a reject-to-matbaa re-delivery every bit as much as to a
+  // fresh request — the printer is holding a sheet either way. (Cancel is the
+  // one action that genuinely needs `ozalit_requested`; see
+  // computeOzalitCancel, where "nothing was delivered" is the whole premise.)
+  if (!isOzalitRoundLive(project)) {
+    badRequest('Matbaada bekleyen bir ozalit yok.')
   }
   // Team-leader-only — see computeDemoEdit's comment.
   if (actor?.role !== 'team_leader') {
@@ -1167,8 +1199,10 @@ export function computeOzalitChangeRequest(project, actor, { note } = {}, ctx = 
   if (project.stage !== 'ozalit_teslim') {
     badRequest('Bu işlem yalnızca ozalit matbaa aşamasında yapılabilir.')
   }
-  if (!project.ozalit_requested) {
-    badRequest('Bekleyen bir ozalit talebi yok.')
+  // See computeOzalitEdit — a re-delivery round is just as live, and this is
+  // the ONLY action left to the leader once the matbaa has started.
+  if (!isOzalitRoundLive(project)) {
+    badRequest('Matbaada bekleyen bir ozalit yok.')
   }
   // Team-leader-only — see canCancelDemoRequest's comment (client-side twin).
   if (actor?.role !== 'team_leader') {

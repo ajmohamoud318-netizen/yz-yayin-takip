@@ -263,10 +263,30 @@ export function canMarkDemoStarted(user, project) {
   return !project.demo_started
 }
 
+/**
+ * Is the ozalit round actually sitting with the matbaa right now? Client twin
+ * of isOzalitRoundLive in server/src/domain/transitions.js — keep them in step.
+ *
+ * `ozalit_requested` alone is not the answer. Ozalit has a two-step the demo
+ * leg doesn't (migration 016): landing on ozalit_teslim isn't the request,
+ * "Ozalit İste" is. But a reject-to-matbaa re-delivery parks the project on
+ * ozalit_teslim with ozalit_requested=false on purpose, and the matbaa owes a
+ * delivery there all the same. Gating the leader's actions on the flag alone
+ * meant that round showed the leader NO buttons at all — not edit, not
+ * cancel, not even "Değişiklik İste" — while the printer could start work on
+ * it. The demo leg has no such hole because none of its gates check a
+ * "requested" flag.
+ */
+export function isOzalitRoundLive(project) {
+  return !!project?.ozalit_requested || project?.reject_target === 'matbaa'
+}
+
 /** @param {{ role: string }} user @param {{ stage: string, ozalit_started?: boolean, ozalit_fix_pending?: boolean }} project */
 export function canMarkOzalitStarted(user, project) {
   if (user?.role !== 'printer' || !project) return false
   if (project.stage !== 'ozalit_teslim') return false
+  // Nothing to start before the round is live — see computeOzalitStart.
+  if (!isOzalitRoundLive(project)) return false
   if (project.ozalit_fix_pending) return false
   return !project.ozalit_started
 }
@@ -312,7 +332,9 @@ export function canEditSentDemoRequest(user, project) {
 export function canEditSentOzalitRequest(user, project) {
   if (!project) return false
   if (project.stage !== 'ozalit_teslim') return false
-  if (!project.ozalit_requested || project.ozalit_started) return false
+  // Liveness, not `ozalit_requested` — see isOzalitRoundLive. Cancel keeps the
+  // stricter flag on purpose; correcting a sheet the matbaa holds does not.
+  if (!isOzalitRoundLive(project) || project.ozalit_started) return false
   return user?.role === 'team_leader'
 }
 
@@ -331,7 +353,9 @@ export function canRequestDemoChange(user, project) {
 export function canRequestOzalitChange(user, project) {
   if (!project) return false
   if (project.stage !== 'ozalit_teslim') return false
-  if (!project.ozalit_requested || !project.ozalit_started || project.ozalit_change_requested_at) return false
+  // See canEditSentOzalitRequest. This is the leader's only remaining action
+  // once the matbaa has started, so a liveness mismatch here is a dead end.
+  if (!isOzalitRoundLive(project) || !project.ozalit_started || project.ozalit_change_requested_at) return false
   return user?.role === 'team_leader'
 }
 

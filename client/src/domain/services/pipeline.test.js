@@ -24,6 +24,8 @@ import {
   canApproveOzalitNow,
   canMarkDemoStarted,
   canMarkOzalitStarted,
+  canEditSentOzalitRequest,
+  isOzalitRoundLive,
   canCancelDemoRequest,
   canCancelOzalitRequest,
   canRequestDemoChange,
@@ -270,9 +272,41 @@ describe('demo/ozalit "Başladım" gate + cancel + change-request (migration 048
     expect(canMarkDemoStarted(AYSE, { stage: 'demo_teslim' })).toBe(false)
     expect(canMarkDemoStarted(OKTAY, { stage: 'demo_onay' })).toBe(false)
 
-    expect(canMarkOzalitStarted(OKTAY, { stage: 'ozalit_teslim' })).toBe(true)
-    expect(canMarkOzalitStarted(OKTAY, { stage: 'ozalit_teslim', ozalit_started: true })).toBe(false)
-    expect(canMarkOzalitStarted(AYSE, { stage: 'ozalit_teslim' })).toBe(false)
+    // Ozalit additionally needs a LIVE round (isOzalitRoundLive): reaching
+    // ozalit_teslim isn't the request the way reaching demo_teslim is.
+    const liveOzalit = { stage: 'ozalit_teslim', ozalit_requested: true }
+    expect(canMarkOzalitStarted(OKTAY, liveOzalit)).toBe(true)
+    expect(canMarkOzalitStarted(OKTAY, { ...liveOzalit, ozalit_started: true })).toBe(false)
+    expect(canMarkOzalitStarted(AYSE, liveOzalit)).toBe(false)
+    // Nobody has asked for an ozalit yet — nothing to start.
+    expect(canMarkOzalitStarted(OKTAY, { stage: 'ozalit_teslim' })).toBe(false)
+    // A reject-to-matbaa re-delivery IS live, despite ozalit_requested=false.
+    expect(canMarkOzalitStarted(OKTAY, { stage: 'ozalit_teslim', reject_target: 'matbaa' })).toBe(true)
+  })
+
+  // Regression: a reject-to-matbaa re-delivery parks the project on
+  // ozalit_teslim with ozalit_requested=false on purpose. Gating the leader's
+  // actions on that flag alone left her with NO button on a round the matbaa
+  // was actively working — not edit, not cancel, not "Değişiklik İste".
+  it('re-delivery round (reject_target=matbaa) still gives the leader a way to act', () => {
+    const redelivery = { stage: 'ozalit_teslim', ozalit_requested: false, reject_target: 'matbaa', assignees }
+    expect(isOzalitRoundLive(redelivery)).toBe(true)
+    // Before the matbaa starts: correct the sheet directly.
+    expect(canEditSentOzalitRequest(AYSE, redelivery)).toBe(true)
+    // After they start: edit closes, change-request opens — never both shut.
+    const started = { ...redelivery, ozalit_started: true }
+    expect(canEditSentOzalitRequest(AYSE, started)).toBe(false)
+    expect(canRequestOzalitChange(AYSE, started)).toBe(true)
+    // Cancel stays gated on a real pending request: this round WAS delivered
+    // and rejected, so "nothing was delivered" doesn't apply to it.
+    expect(canCancelOzalitRequest(AYSE, redelivery)).toBe(false)
+  })
+
+  it('an ozalit nobody requested exposes no leader actions either', () => {
+    const idle = { stage: 'ozalit_teslim', ozalit_requested: false, assignees }
+    expect(isOzalitRoundLive(idle)).toBe(false)
+    expect(canEditSentOzalitRequest(AYSE, idle)).toBe(false)
+    expect(canRequestOzalitChange(AYSE, { ...idle, ozalit_started: true })).toBe(false)
   })
 
   it('canCancelDemoRequest: team-leader-only, before matbaa starts', () => {

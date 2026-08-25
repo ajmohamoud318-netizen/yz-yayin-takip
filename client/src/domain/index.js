@@ -24,6 +24,7 @@ export {
   canApproveOzalitNow,
   canMarkDemoStarted,
   canMarkOzalitStarted,
+  isOzalitRoundLive,
   canCancelDemoRequest,
   canCancelOzalitRequest,
   canEditSentDemoRequest,
