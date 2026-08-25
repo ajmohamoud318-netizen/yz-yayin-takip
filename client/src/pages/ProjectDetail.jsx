@@ -2157,18 +2157,27 @@ function approveActionLabel(project) {
 }
 
 /**
- * "İstendi"/"Gönderildi" status shown once a demo/ozalit has been requested.
- * Split on demo_started/ozalit_started: while the matbaa hasn't picked it up
- * yet the request is still just that — a cancelable request ("İstendi") —
- * not something actually sent/with the matbaa ("Gönderildi") yet.
+ * "İstendi"/"Gönderildi"/"Düzeltme Bekleniyor" status shown once a demo/ozalit
+ * has been requested. Three states, checked in order:
+ *   - demo_fix_pending/ozalit_fix_pending — the matbaa accepted a change
+ *     request (computeDemoChangeAccept un-starts the round), so it's back to
+ *     demo_started=false but for a different reason than a fresh request:
+ *     the team leader owes a corrected demo/ozalit before the matbaa can
+ *     resume, not the matbaa picking up an untouched request.
+ *   - demo_started/ozalit_started false — a fresh, still-cancelable request
+ *     the matbaa hasn't picked up yet ("İstendi").
+ *   - demo_started/ozalit_started true — actually with the matbaa
+ *     ("Gönderildi").
  */
 function demoOzalitStatusLabel(project) {
   switch (project.stage) {
     case 'demo_teslim':
     case 'cin_demo_teslim':
+      if (project.demo_fix_pending) return 'Düzeltme Bekleniyor'
       return project.demo_started ? 'Demoya Gönderildi' : 'Demo İstendi'
     case 'ozalit_teslim':
       if (!project.ozalit_requested && project.reject_target !== 'matbaa') return null
+      if (project.ozalit_fix_pending) return 'Düzeltme Bekleniyor'
       return project.ozalit_started ? "Ozalit'e Gönderildi" : 'Ozalit İstendi'
     default:
       return null
