@@ -957,8 +957,19 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     mode === 'advance' &&
     user?.role !== 'printer' &&
     DEMO_RESEND_STAGES.has(project?.stage)
+  // Editing an already-sent round ("Gönderilen Demoyu/Ozaliti Düzenleyin",
+  // mode='view' + notifyOnSave) must not overwrite the pristine as-first-sent
+  // snapshot at the round's own attempt slot — ProjectHistory's edit-history
+  // row (MinorRow) always links to attemptAt+1 so the original stays intact
+  // and reopenable. Without this bump, handleSave wrote the edit back into
+  // the SAME slot the round was first sent under (both computed the same
+  // demo_attempt+1), so the edit silently replaced the original there while
+  // the history row's own "+1" lookup found nothing and fell back to a
+  // stale/unrelated snapshot — showing the wrong content under a misleading
+  // "(N+1. Demo)" title. Bumping here keeps save and that lookup in sync.
+  const willEditBump = mode === 'view' && notifyOnSave && viewAttempt == null
   const attemptNo =
-    viewAttempt ?? ((project?.[variant.attemptField] ?? 0) + (willResendBump ? 2 : 1))
+    viewAttempt ?? ((project?.[variant.attemptField] ?? 0) + (willResendBump || willEditBump ? 2 : 1))
 
   /** Mirror the snapshot to the server so any browser can reopen it. */
   function persistServerSnapshot(attempt, data) {
