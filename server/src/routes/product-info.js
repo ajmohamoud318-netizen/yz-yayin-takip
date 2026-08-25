@@ -1,5 +1,5 @@
-import { attachUser, requireRole } from '../middleware/auth.js'
-import { notFound } from '../domain/errors.js'
+import { attachUser } from '../middleware/auth.js'
+import { forbidden, notFound } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
 import { schemas } from '../schemas/index.js'
 
@@ -48,13 +48,42 @@ export async function productInfoRoutes(fastify) {
     return rows[0]
   })
 
-  // Upsert. team_leader only — this spec is what gates whether Sales can
-  // order a product (see canRequestOrder/assertOrderable), so only the
-  // role that owns the sipariş pipeline's data integrity may write it.
+  // Upsert. The team leader owns this spec — it gates whether Sales can order
+  // a product at all (see canRequestOrder/assertOrderable), so the role that
+  // owns the sipariş pipeline's data integrity is the default writer.
+  //
+  // The one exception is the designer doing THIS project's baskı check:
+  // TalepSignDialog opens a spec editor for a designer while their order sits
+  // at 'goruldu' (isDesignerStep → canEditSpec) and stamps "ürün bilgileri
+  // güncellendi" onto the sign note. Without this branch that write 403'd,
+  // and because saveComponentsForProject treats a failure as "offline" the
+  // edit silently survived in the designer's own localStorage mirror and
+  // nowhere else — the audit trail claimed a change the server never saw.
+  //
+  // Deliberately narrow: the designer must be on that order's own
+  // assignee_ids AND the order must still be at 'goruldu' (the only step
+  // whose editor is theirs). It does not let a designer create a spec for a
+  // project with no order, and the moment the order advances the window
+  // closes. Every other role still gets a 403.
   fastify.put('/product-info/:projectId', { schema: schemas.productInfoUpsert }, async (request) => {
     await attachUser(request)
-    requireRole(request, 'team_leader')
     const { projectId } = request.params
+    if (request.user.role !== 'team_leader') {
+      if (request.user.role !== 'designer') {
+        forbidden('Bu işlem yalnızca team_leader için.')
+      }
+      const { rowCount } = await getPool().query(
+        `SELECT 1 FROM order_requests
+          WHERE project_id = $1
+            AND status = 'goruldu'
+            AND assignee_ids @> $2::jsonb
+          LIMIT 1`,
+        [projectId, JSON.stringify([request.user.id])],
+      )
+      if (rowCount === 0) {
+        forbidden('Ürün bilgilerini yalnızca ekip lideri veya bu baskının atanmış tasarımcısı düzenleyebilir.')
+      }
+    }
     const { components } = request.body
 
     const proj = await getPool().query('SELECT id FROM projects WHERE id = $1 AND deleted_at IS NULL', [projectId])
