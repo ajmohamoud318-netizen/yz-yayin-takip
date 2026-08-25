@@ -85,9 +85,11 @@ describe('buildTimeline — consecutive repeats', () => {
 
   it('counts events, not rows, in the folded run’s summary', () => {
     // Four kinds, seven events — enough rows to stay folded (threshold 3).
+    // All of them genuinely bookkeeping: the demo round's own lifecycle is
+    // 'major' now and would break the run rather than join it.
     const days = buildTimeline([
-      at('08:45', { event: 'demo_started', note: 'Matbaa demoya başladı' }),
-      at('09:16', { event: 'demo_change_requested', note: 'kaaa' }),
+      at('08:45', { event: 'subtask_progress', note: 'Kapak, sayfa 12/40' }),
+      at('09:16', { event: 'subtask_done', note: 'Kapak' }),
       at('09:20', { event: 'demo_change_accepted', note: 'Matbaa değişiklik talebini kabul etti' }),
       edit('11:35'),
       edit('11:46'),
@@ -98,6 +100,36 @@ describe('buildTimeline — consecutive repeats', () => {
     expect(run.type).toBe('run')
     expect(run.rows).toHaveLength(4)
     expect(run.total).toBe(7)
+  })
+
+  /**
+   * The reported regression: a day spent entirely in a demo negotiation —
+   * matbaa starts, leader asks for a change, matbaa accepts one and declines
+   * the next — was every-row-'minor', so the run swallowed all of it and the
+   * whole day rendered as one grey line reading "22 küçük güncelleme".
+   */
+  it('never folds a whole day of demo negotiation behind one summary', () => {
+    const days = buildTimeline([
+      at('08:45', { event: 'demo_started', note: 'Matbaa demoya başladı' }),
+      at('08:45', { event: 'demo_change_requested', note: 'sayfa sayisi yanlis girildi' }),
+      at('08:46', { event: 'demo_change_accepted', note: 'Matbaa değişiklik talebini kabul etti' }),
+      at('09:16', { event: 'demo_change_requested', note: 'kaaa' }),
+      at('09:16', { event: 'demo_change_declined', note: 'Matbaa değişiklik talebini reddetti' }),
+      edit('10:04'),
+      edit('10:27'),
+    ])
+    const { nodes } = days[0]
+    expect(nodes.length).toBeGreaterThan(1)
+
+    // The rejection is a node of its own, not a line inside a fold.
+    const declined = nodes.find((n) => n.type === 'entry' && n.entry.event === 'demo_change_declined')
+    expect(declined).toBeDefined()
+
+    // …and the reason the leader typed reaches the reader at full width.
+    const requested = nodes.find(
+      (n) => n.type === 'entry' && n.entry.event === 'demo_change_requested',
+    )
+    expect(rowText(requested.entry, requested.meta).detail).toBe('sayfa sayisi yanlis girildi')
   })
 })
 
@@ -142,6 +174,28 @@ describe('historyMeta — demo/ozalit round lifecycle', () => {
 
   it('treats a cancel as a pipeline moment — it moves the project back', () => {
     expect(historyMeta({ action: 'system', event: 'demo_cancelled' }).weight).toBe('major')
+  })
+
+  /**
+   * Weight and tone have to agree. A row painted 'negative' or 'pending' is
+   * by definition something the reader has to act on, and calling it a küçük
+   * güncelleme in the same breath is the contradiction this locks shut.
+   */
+  it('gives the negotiation the weight its tone already claimed', () => {
+    for (const event of [
+      'demo_started', 'ozalit_started',
+      'demo_change_requested', 'ozalit_change_requested',
+      'demo_change_declined', 'ozalit_change_declined',
+      'ekran_demo_requested',
+    ]) {
+      expect(historyMeta({ action: 'system', event }).weight).toBe('major')
+    }
+  })
+
+  it('keeps the "evet" half of a request/answer pair as bookkeeping', () => {
+    // Its question is already a major row directly above it.
+    expect(historyMeta({ action: 'system', event: 'demo_change_accepted' }).weight).toBe('minor')
+    expect(historyMeta({ action: 'system', event: 'demo_form_edited' }).weight).toBe('minor')
   })
 })
 

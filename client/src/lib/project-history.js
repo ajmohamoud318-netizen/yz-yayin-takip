@@ -152,23 +152,44 @@ const EVENTS = {
   //
   // Labels follow ORDER_STEP_LABELS (domain/constants/orders.js) so the same
   // moment reads identically whether it happened in the sipariş lane or here.
-  demo_started: { icon: Play, tone: 'pipeline', weight: 'minor', group: 'approval', label: 'Matbaa Demoya Başladı' },
-  ozalit_started: { icon: Play, tone: 'pipeline', weight: 'minor', group: 'approval', label: 'Matbaa Ozalite Başladı' },
+  //
+  // 'major', despite repeating once per round: this is the matbaa physically
+  // picking the job up, and it is the anchor every change request that
+  // follows hangs off. As 'minor' it also left a whole day of demo
+  // negotiation with no major row to break the run, so buildDays folded the
+  // entire day into one "N küçük güncelleme" line — a rejected change is not
+  // a küçük güncelleme.
+  demo_started: { icon: Play, tone: 'pipeline', weight: 'major', group: 'approval', label: 'Matbaa Demoya Başladı' },
+  ozalit_started: { icon: Play, tone: 'pipeline', weight: 'major', group: 'approval', label: 'Matbaa Ozalite Başladı' },
   // A cancel moves the project back to tasarım, so it is a pipeline moment,
   // not bookkeeping. dedupeNote trims its note down to 'Tasarıma geri döndü'.
   demo_cancelled: { icon: Undo2, tone: 'pending', weight: 'major', group: 'approval', label: 'Demo Talebi İptal Edildi' },
   ozalit_cancelled: { icon: Undo2, tone: 'pending', weight: 'major', group: 'approval', label: 'Ozalit Talebi İptal Edildi' },
   // The change-request negotiation. 'requested' keeps its note — that note is
   // the reason the leader typed; the answers only restate their own heading.
-  demo_change_requested: { icon: MessageSquareWarning, tone: 'pending', weight: 'minor', group: 'approval', label: 'Değişiklik İstendi' },
-  ozalit_change_requested: { icon: MessageSquareWarning, tone: 'pending', weight: 'minor', group: 'approval', label: 'Değişiklik İstendi' },
+  //
+  // Weights follow what the row costs the reader, not how often it fires:
+  //   requested — carries the typed reason ("sayfa sayısı yanlış girildi").
+  //               Dense-folded, that reason shrank to a grey second line.
+  //   declined  — the change did NOT happen and the designer has to know.
+  //               A row whose tone is 'negative' can never be a küçük
+  //               güncelleme; the two contradicted each other.
+  //   accepted  — stays 'minor'. It is the "evet" half of a pair whose
+  //               question is already a major row above it. A lone accepted
+  //               row still unfolds back to full width (see buildDays), so
+  //               this only folds when it is part of a real run.
+  demo_change_requested: { icon: MessageSquareWarning, tone: 'pending', weight: 'major', group: 'approval', label: 'Değişiklik İstendi' },
+  ozalit_change_requested: { icon: MessageSquareWarning, tone: 'pending', weight: 'major', group: 'approval', label: 'Değişiklik İstendi' },
   demo_change_accepted: { icon: ThumbsUp, tone: 'positive', weight: 'minor', group: 'approval', label: 'Değişiklik Kabul Edildi', noteMode: 'echo' },
   ozalit_change_accepted: { icon: ThumbsUp, tone: 'positive', weight: 'minor', group: 'approval', label: 'Değişiklik Kabul Edildi', noteMode: 'echo' },
-  demo_change_declined: { icon: ThumbsDown, tone: 'negative', weight: 'minor', group: 'approval', label: 'Değişiklik Reddedildi', noteMode: 'echo' },
-  ozalit_change_declined: { icon: ThumbsDown, tone: 'negative', weight: 'minor', group: 'approval', label: 'Değişiklik Reddedildi', noteMode: 'echo' },
+  demo_change_declined: { icon: ThumbsDown, tone: 'negative', weight: 'major', group: 'approval', label: 'Değişiklik Reddedildi', noteMode: 'echo' },
+  ozalit_change_declined: { icon: ThumbsDown, tone: 'negative', weight: 'major', group: 'approval', label: 'Değişiklik Reddedildi', noteMode: 'echo' },
 
   // Ekran demo (ÇİN): an on-screen approval round with no physical delivery.
-  ekran_demo_requested: { icon: Monitor, tone: 'pending', weight: 'minor', group: 'approval', label: 'Ekran Demo Onayı İstendi' },
+  // 'major' for the same reason as demo_change_requested: a round whose two
+  // possible answers below are both major cannot itself be bookkeeping, and
+  // on the ÇİN lane it is often the only thing that happens all day.
+  ekran_demo_requested: { icon: Monitor, tone: 'pending', weight: 'major', group: 'approval', label: 'Ekran Demo Onayı İstendi' },
   ekran_demo_approved: { icon: ThumbsUp, tone: 'positive', weight: 'major', group: 'approval', label: 'Ekran Demo Onaylandı' },
   ekran_demo_rejected: { icon: ThumbsDown, tone: 'negative', weight: 'major', group: 'approval', label: 'Ekran Demo Reddedildi' },
   // Maker half of the baskı-onay maker/checker pair (migration 045). Its note

@@ -191,6 +191,11 @@ function ProjectHistory({
                             total={node.total}
                             reduce={reduce}
                             isLast={i === day.nodes.length - 1}
+                            // A run is allowed to hide rows from a day; it is
+                            // not allowed to BE the day. When nothing else
+                            // happened, the fold is the whole content and a
+                            // collapsed one is a dead end — open it.
+                            defaultOpen={day.nodes.length === 1}
                             onOpenDemoForm={onOpenDemoForm}
                             onOpenOzalitForm={onOpenOzalitForm}
                           />
@@ -328,9 +333,18 @@ function MajorRow({
  * A run of 3+ consecutive bookkeeping rows, folded into one node. Reads as a
  * single fact ("6 alt görev güncellemesi") until you ask for the detail —
  * which is how a reader treats it anyway.
+ *
+ * `defaultOpen` is the guard against the failure this fold can cause rather
+ * than cure: if every event on a day is 'minor', the run absorbs all of them
+ * and the day renders as ONE grey line reading "22 küçük güncelleme" — the
+ * reader is told a number and nothing else. The weights in
+ * lib/project-history.js are the first line of defence (a demo negotiation is
+ * not bookkeeping); this is the structural one, so no future minor-only mix
+ * can swallow a day again. Still collapsible — the affordance stays, only its
+ * initial state changes.
  */
-function FoldedRun({ rows, total, reduce, isLast, onOpenDemoForm, onOpenOzalitForm }) {
-  const [open, setOpen] = useState(false)
+function FoldedRun({ rows, total, reduce, isLast, defaultOpen = false, onOpenDemoForm, onOpenOzalitForm }) {
+  const [open, setOpen] = useState(defaultOpen)
   // Distinct tones present in the run, so the summary still signals whether
   // anything in there went backwards (amber) or completed (emerald).
   const tones = [...new Set(rows.map((r) => (TONES[r.meta.tone] ?? TONES.neutral).dot))]
