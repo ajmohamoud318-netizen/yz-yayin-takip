@@ -747,6 +747,7 @@ function rowToProject(r) {
     demo_change_requested_by: r.demo_change_requested_by ?? null,
     demo_change_requested_by_name: r.demo_change_requested_by_name ?? null,
     demo_change_requested_note: r.demo_change_requested_note ?? null,
+    demo_fix_pending: r.demo_fix_pending ?? false,
     ozalit_started: r.ozalit_started ?? false,
     ozalit_started_at: r.ozalit_started_at instanceof Date
       ? r.ozalit_started_at.toISOString()
@@ -759,6 +760,13 @@ function rowToProject(r) {
     ozalit_change_requested_by: r.ozalit_change_requested_by ?? null,
     ozalit_change_requested_by_name: r.ozalit_change_requested_by_name ?? null,
     ozalit_change_requested_note: r.ozalit_change_requested_note ?? null,
+    ozalit_fix_pending: r.ozalit_fix_pending ?? false,
+    // Ekran Demo Onayı pending-request ledger (migration 050).
+    ekran_demo_requested_at: r.ekran_demo_requested_at instanceof Date
+      ? r.ekran_demo_requested_at.toISOString()
+      : r.ekran_demo_requested_at,
+    ekran_demo_requested_by: r.ekran_demo_requested_by ?? null,
+    ekran_demo_requested_by_name: r.ekran_demo_requested_by_name ?? null,
     has_product_info: r.has_product_info ?? false,
     // 'pipeline' | 'legacy'. The client's projects store filters `legacy` out of
     // every pipeline view (Kanban, Tüm Projeler, counts) — see migration 031.
