@@ -5,9 +5,12 @@ import {
   ClipboardList,
   EyeOff,
   MessageSquarePlus,
+  MessageSquareWarning,
+  Monitor,
   Package,
   PackageCheck,
   PackageX,
+  Play,
   Plus,
   RotateCcw,
   Send,
@@ -15,6 +18,7 @@ import {
   ThumbsDown,
   ThumbsUp,
   Truck,
+  Undo2,
 } from 'lucide-react'
 
 /**
@@ -37,6 +41,18 @@ import {
  *           'minor' rows are bookkeeping and collapse to a single line.
  *           This is the hierarchy the flat list never had.
  *   group   which filter chip the row belongs to.
+ *   noteMode what to do with the server's free-text note, which is written
+ *           without knowing what label the row will get:
+ *             'echo'    the note only restates the label in different words
+ *                       ('Matbaa değişiklik talebini kabul etti' under
+ *                       "Değişiklik Kabul Edildi") — drop it.
+ *             'detail'  the note IS the fact and the label would only repeat
+ *                       it ('Kapak, sayfa 12/40' under "Alt Görev
+ *                       İlerlemesi") — in a dense row, print the note alone.
+ *             (default) the note carries something the label doesn't (a
+ *                       change request's reason) — print label, then note.
+ *           Exact echoes are already handled by `dedupeNote`; 'echo' is only
+ *           for the ones whose wording differs from the heading.
  */
 
 // Semantic tones. Colours resolve to the warm-paper tokens in index.css
@@ -105,12 +121,16 @@ const EVENTS = {
   catalog_delist: { icon: EyeOff, tone: 'pending', weight: 'major', group: 'order', label: 'Katalogdan Kaldırıldı' },
   catalog_relist: { icon: PackageCheck, tone: 'positive', weight: 'major', group: 'order', label: 'Katalogda Tekrar Yayında' },
 
-  subtask_done: { icon: CheckCircle2, tone: 'positive', weight: 'minor', group: 'subtask', label: 'Alt Görev Tamamlandı' },
-  subtask_undone: { icon: RotateCcw, tone: 'pending', weight: 'minor', group: 'subtask', label: 'Alt Görev Geri Alındı' },
-  subtask_revize: { icon: RotateCcw, tone: 'pending', weight: 'minor', group: 'subtask', label: 'Alt Görev Revize Edildi' },
-  subtask_progress: { icon: ClipboardList, tone: 'neutral', weight: 'minor', group: 'subtask', label: 'Alt Görev İlerlemesi' },
-  subtask_note: { icon: MessageSquarePlus, tone: 'neutral', weight: 'minor', group: 'subtask', label: 'Alt Görev Notu' },
-  subtask_list_update: { icon: ClipboardList, tone: 'neutral', weight: 'minor', group: 'subtask', label: 'Alt Görev Listesi Güncellendi' },
+  // Every subtask note is written as '<alt görev>, <ne oldu>' — 'Kapak,
+  // sayfa 12/40' — so it already carries the label's information plus the
+  // one thing the label can't know. Hence noteMode 'detail': a folded run
+  // prints the note alone rather than six identical headings.
+  subtask_done: { icon: CheckCircle2, tone: 'positive', weight: 'minor', group: 'subtask', label: 'Alt Görev Tamamlandı', noteMode: 'detail' },
+  subtask_undone: { icon: RotateCcw, tone: 'pending', weight: 'minor', group: 'subtask', label: 'Alt Görev Geri Alındı', noteMode: 'detail' },
+  subtask_revize: { icon: RotateCcw, tone: 'pending', weight: 'minor', group: 'subtask', label: 'Alt Görev Revize Edildi', noteMode: 'detail' },
+  subtask_progress: { icon: ClipboardList, tone: 'neutral', weight: 'minor', group: 'subtask', label: 'Alt Görev İlerlemesi', noteMode: 'detail' },
+  subtask_note: { icon: MessageSquarePlus, tone: 'neutral', weight: 'minor', group: 'subtask', label: 'Alt Görev Notu', noteMode: 'detail' },
+  subtask_list_update: { icon: ClipboardList, tone: 'neutral', weight: 'minor', group: 'subtask', label: 'Alt Görev Listesi Güncellendi', noteMode: 'detail' },
 
   demo_form: { icon: Send, tone: 'pipeline', weight: 'major', group: 'approval', label: 'Demo Formu Gönderildi' },
   ozalit_form: { icon: Send, tone: 'pipeline', weight: 'major', group: 'approval', label: 'Ozalit Formu Gönderildi' },
@@ -121,6 +141,39 @@ const EVENTS = {
   // advance that never happened.
   demo_form_edited: { icon: ClipboardEdit, tone: 'neutral', weight: 'minor', group: 'approval', label: 'Demo Formu Güncellendi' },
   ozalit_form_edited: { icon: ClipboardEdit, tone: 'neutral', weight: 'minor', group: 'approval', label: 'Ozalit Formu Güncellendi' },
+
+  // ── The demo/ozalit round's own lifecycle ───────────────────────────
+  // Every row below is written server-side as `action: 'system'` with no
+  // matching entry here, so all of them fell through to ACTIONS.system:
+  // no label (→ the generic 'İlerletildi', which is why the timeline printed
+  // the raw note instead — 'kaaa' as a heading), no icon of their own, and
+  // group 'subtask', which filed a matbaa change request under "Alt Görevler"
+  // and inflated that chip's count with rows that are not subtasks at all.
+  //
+  // Labels follow ORDER_STEP_LABELS (domain/constants/orders.js) so the same
+  // moment reads identically whether it happened in the sipariş lane or here.
+  demo_started: { icon: Play, tone: 'pipeline', weight: 'minor', group: 'approval', label: 'Matbaa Demoya Başladı' },
+  ozalit_started: { icon: Play, tone: 'pipeline', weight: 'minor', group: 'approval', label: 'Matbaa Ozalite Başladı' },
+  // A cancel moves the project back to tasarım, so it is a pipeline moment,
+  // not bookkeeping. dedupeNote trims its note down to 'Tasarıma geri döndü'.
+  demo_cancelled: { icon: Undo2, tone: 'pending', weight: 'major', group: 'approval', label: 'Demo Talebi İptal Edildi' },
+  ozalit_cancelled: { icon: Undo2, tone: 'pending', weight: 'major', group: 'approval', label: 'Ozalit Talebi İptal Edildi' },
+  // The change-request negotiation. 'requested' keeps its note — that note is
+  // the reason the leader typed; the answers only restate their own heading.
+  demo_change_requested: { icon: MessageSquareWarning, tone: 'pending', weight: 'minor', group: 'approval', label: 'Değişiklik İstendi' },
+  ozalit_change_requested: { icon: MessageSquareWarning, tone: 'pending', weight: 'minor', group: 'approval', label: 'Değişiklik İstendi' },
+  demo_change_accepted: { icon: ThumbsUp, tone: 'positive', weight: 'minor', group: 'approval', label: 'Değişiklik Kabul Edildi', noteMode: 'echo' },
+  ozalit_change_accepted: { icon: ThumbsUp, tone: 'positive', weight: 'minor', group: 'approval', label: 'Değişiklik Kabul Edildi', noteMode: 'echo' },
+  demo_change_declined: { icon: ThumbsDown, tone: 'negative', weight: 'minor', group: 'approval', label: 'Değişiklik Reddedildi', noteMode: 'echo' },
+  ozalit_change_declined: { icon: ThumbsDown, tone: 'negative', weight: 'minor', group: 'approval', label: 'Değişiklik Reddedildi', noteMode: 'echo' },
+
+  // Ekran demo (ÇİN): an on-screen approval round with no physical delivery.
+  ekran_demo_requested: { icon: Monitor, tone: 'pending', weight: 'minor', group: 'approval', label: 'Ekran Demo Onayı İstendi' },
+  ekran_demo_approved: { icon: ThumbsUp, tone: 'positive', weight: 'major', group: 'approval', label: 'Ekran Demo Onaylandı' },
+  ekran_demo_rejected: { icon: ThumbsDown, tone: 'negative', weight: 'major', group: 'approval', label: 'Ekran Demo Reddedildi' },
+  // Maker half of the baskı-onay maker/checker pair (migration 045). Its note
+  // dedupes down to the part the label doesn't say: 'Onay bekleniyor'.
+  baski_onay_prepared: { icon: ClipboardEdit, tone: 'pipeline', weight: 'major', group: 'approval', label: 'Baskı Onay Formu Hazırlandı' },
 
   // The receipt gates. These are `action: 'advance'` rows that don't move the
   // stage, so without an entry here they fell through to ADVANCE_LABELS and
@@ -292,38 +345,100 @@ export function buildTimeline(entries, filter = 'all') {
 
   const days = []
   let currentDay = null
+  let seq = 0
+  let lastRow = null // the row a consecutive repeat would extend
   for (const entry of ordered) {
     const key = dayKey(entry.created_at)
     if (!currentDay || currentDay.key !== key) {
       currentDay = { key, label: dayLabel(key), nodes: [] }
       days.push(currentDay)
+      seq = 0
+      // Never merge across midnight: a merged row prints one clock span, and
+      // a span cannot straddle two day headings.
+      lastRow = null
     }
     const meta = historyMeta(entry)
+
+    // Same thing, said again, back to back. Seven identical rows are one fact
+    // with a count — printing them seven times buried the round they belong
+    // to. The merged row keeps the NEWEST entry, whose attempt slot is the
+    // one a form button must open, and both clock times.
+    //
+    // Two "Demo Formu Güncellendi" rows are NOT that case any more: since
+    // migration 052 each correction records the snapshot it wrote (demo_id),
+    // so each row opens a different sheet — the one sent before the matbaa
+    // started and the one an accepted change request allowed afterwards.
+    // repeatKey carries demo_id for exactly that reason, so they stay two
+    // rows; only rows that truly print the same thing still merge.
+    if (lastRow && repeatKey(lastRow.entry) === repeatKey(entry)) {
+      lastRow.entries.push(entry)
+      lastRow.entry = entry
+      lastRow.count += 1
+      lastRow.lastAt = entry.created_at
+      continue
+    }
+
+    const row = {
+      type: 'entry',
+      id: entry.id ?? `${key}-${seq++}`,
+      entry, // the newest of the merged events — the one the row speaks as
+      entries: [entry], // every one of them, oldest first: each owns a snapshot
+      meta,
+      count: 1,
+      firstAt: entry.created_at,
+      lastAt: entry.created_at,
+    }
     const last = currentDay.nodes[currentDay.nodes.length - 1]
     // Extend the open run of minor rows, or start a new one.
     if (meta.weight === 'minor') {
-      if (last?.type === 'run') last.entries.push(entry)
-      else currentDay.nodes.push({ type: 'run', id: `run-${key}-${currentDay.nodes.length}`, entries: [entry] })
+      if (last?.type === 'run') last.rows.push(row)
+      else currentDay.nodes.push({ type: 'run', id: `run-${key}-${seq}`, rows: [row] })
     } else {
-      currentDay.nodes.push({ type: 'entry', id: entry.id ?? `${key}-${currentDay.nodes.length}`, entry, meta })
+      currentDay.nodes.push(row)
     }
+    lastRow = row
   }
 
   // A run that never reached the threshold isn't worth hiding — unfold it
   // back into individual rows so the reader doesn't click to reveal one line.
+  // `total` is the count of underlying EVENTS, not of rows: the summary has to
+  // stay truthful about how much it is hiding after the merge above.
   for (const day of days) {
     day.nodes = day.nodes.flatMap((node) => {
-      if (node.type !== 'run' || node.entries.length >= FOLD_THRESHOLD) return node
-      return node.entries.map((entry, i) => ({
-        type: 'entry',
-        id: entry.id ?? `${day.key}-mini-${i}`,
-        entry,
-        meta: historyMeta(entry),
-      }))
+      if (node.type !== 'run') return node
+      if (node.rows.length < FOLD_THRESHOLD) return node.rows
+      return { ...node, total: node.rows.reduce((n, r) => n + r.count, 0) }
     })
   }
 
   return days
+}
+
+/**
+ * Identity of a row for the consecutive-repeat merge. Everything the timeline
+ * can print has to be in here, or the merge would hide a difference the
+ * reader would have seen: a different note, a different actor, a different
+ * rejection reason, or a form button pointing at a different attempt slot.
+ *
+ * `demo_id` is deliberately absent even though two corrections of one round
+ * write different snapshots (migration 052): the merged row keeps every entry
+ * and offers one numbered link per version, so no sheet becomes unreachable.
+ * Splitting on it instead would put the seven identical headings back, which
+ * is the thing this merge exists to remove.
+ */
+function repeatKey(h) {
+  return [
+    h.event ?? h.action ?? '',
+    h.from_stage ?? '',
+    h.to_stage ?? '',
+    (h.note ?? '').trim(),
+    (h.reason ?? '').trim(),
+    h.done_by_name ?? '',
+    h.demoAttemptAt ?? '',
+    h.ozalitAttemptAt ?? '',
+    h.order_id ?? '',
+    h.order_step ?? '',
+  ].join('\u0000')
 }
 
 /** Live counts for the filter chips, so a chip never leads to an empty list. */
@@ -386,6 +501,27 @@ export function dedupeNote(note, label) {
   return n
 }
 
+/**
+ * What a row actually prints: a heading, and the note under it when the note
+ * says something the heading doesn't.
+ *
+ * The timeline used to print `entry.note || label` for its dense rows, so the
+ * note always won — and a note is free text somebody typed in a hurry. A
+ * change request reasoned "sayfa sayisi yanlis girildi" became the heading,
+ * and one typed "kaaa" became a row that said nothing at all. The heading now
+ * leads; see `noteMode` on the EVENTS table for the two exceptions.
+ *
+ * `dense` marks the one-line rows inside a folded run, which are the only
+ * place a 'detail' note stands in for its heading — a full-width row has the
+ * space for both.
+ */
+export function rowText(entry, meta, { dense = false } = {}) {
+  const note = isOrderEntry(entry) ? null : dedupeNote(entry.note, meta.label)
+  if (!note || meta.noteMode === 'echo') return { title: meta.label, detail: null }
+  if (dense && meta.noteMode === 'detail') return { title: note, detail: null }
+  return { title: meta.label, detail: note }
+}
+
 // ── Attached-form availability ────────────────────────────────────────
 //
 // Which rows get a "Demo Formu" / "Ozalit Formu" button. These predicates
@@ -399,7 +535,10 @@ const DEMO_TESLIM_STAGES = ['demo_teslim', 'cin_demo_teslim']
 const DEMO_ONAY_STAGES = ['demo_onay', 'cin_demo_onay']
 
 /**
- * Attempt slot a row's form button should open. An edit's snapshot is staged
+ * Attempt slot a row's form button should open — the fallback for rows older
+ * than migration 052, which now also carry `demo_id`: the exact snapshot the
+ * row wrote, the only thing that tells two corrections of one round apart.
+ * An edit's snapshot is staged
  * one slot PAST the round's own so the as-first-sent sheet stays intact and
  * reopenable (see `attemptNo` / `liveAttempts` in SpecFormDialog.jsx), so the
  * two "Demo Formu" buttons on one round point at different slots: the major

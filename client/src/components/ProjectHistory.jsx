@@ -8,14 +8,12 @@ import {
   HISTORY_FILTERS,
   TONES,
   buildTimeline,
-  dedupeNote,
   filterCounts,
   demoFormAttempt,
   hasDemoForm,
   hasOzalitForm,
   ozalitFormAttempt,
-  historyMeta,
-  isOrderEntry,
+  rowText,
   truncateTimeline,
 } from '@/lib/project-history.js'
 
@@ -37,6 +35,11 @@ import {
  *                 single line, and runs of 3+ fold behind one summary node.
  *   3. GROUPING — sticky day headings and filter chips with live counts, so
  *                 a chip can never lead you to an empty list.
+ *   4. REPEATS  — consecutive rows that say exactly the same thing merge into
+ *                 one row carrying a ×N badge and the clock span it covers
+ *                 (buildTimeline). Correcting a demo sheet seven times used
+ *                 to print seven identical headings; it now prints one, with
+ *                 a numbered link per version so no snapshot is lost.
  *
  * Structure is carried by hairlines and negative space rather than nested
  * cards; the only boxed element inside the timeline is a rejection reason,
@@ -184,7 +187,8 @@ function ProjectHistory({
                         node.type === 'run' ? (
                           <FoldedRun
                             key={node.id}
-                            entries={node.entries}
+                            rows={node.rows}
+                            total={node.total}
                             reduce={reduce}
                             isLast={i === day.nodes.length - 1}
                             onOpenDemoForm={onOpenDemoForm}
@@ -193,8 +197,7 @@ function ProjectHistory({
                         ) : (
                           <MajorRow
                             key={node.id}
-                            entry={node.entry}
-                            meta={node.meta}
+                            row={node}
                             index={i}
                             isLast={i === day.nodes.length - 1}
                             reduce={reduce}
@@ -228,12 +231,13 @@ export default memo(ProjectHistory)
  * attached-form actions.
  */
 function MajorRow({
-  entry, meta, index, isLast, reduce, projectType,
+  row, index, isLast, reduce, projectType,
   onOpenDemoForm, onOpenOzalitForm,
 }) {
+  const { entry, meta, count, firstAt, lastAt } = row
   const Icon = meta.icon
   const tone = TONES[meta.tone] ?? TONES.neutral
-  const note = isOrderEntry(entry) ? null : dedupeNote(entry.note, meta.label)
+  const { title, detail } = rowText(entry, meta)
 
   const demoForm = hasDemoForm(entry)
   const ozalitForm = hasOzalitForm(entry, projectType)
@@ -269,12 +273,15 @@ function MajorRow({
 
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3">
-          <p className="text-sm font-semibold leading-snug text-foreground">{meta.label}</p>
+          <div className="flex min-w-0 items-baseline gap-1.5">
+            <p className="text-sm font-semibold leading-snug text-foreground">{title}</p>
+            {count > 1 && <RepeatBadge count={count} />}
+          </div>
           <time
             dateTime={entry.created_at}
             className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground"
           >
-            {formatClock(entry.created_at)}
+            {timeSpan(firstAt, lastAt)}
           </time>
         </div>
 
@@ -289,7 +296,7 @@ function MajorRow({
           )}
         </p>
 
-        {note && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{note}</p>}
+        {detail && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{detail}</p>}
 
         {entry.reason && (
           <div className="mt-2 flex items-start gap-2 rounded-md border-l-2 border-destructive/40 bg-destructive/5 py-1.5 pl-2.5 pr-3">
@@ -301,12 +308,12 @@ function MajorRow({
         {(demoForm || ozalitForm) && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {demoForm && (
-              <FormButton onClick={() => onOpenDemoForm?.(demoFormAttempt(entry), entry.demoAttemptAt)} icon={FileText}>
+              <FormButton onClick={() => onOpenDemoForm?.(demoFormAttempt(entry), entry.demoAttemptAt, entry.demo_id)} icon={FileText}>
                 Demo Formu
               </FormButton>
             )}
             {ozalitForm && (
-              <FormButton onClick={() => onOpenOzalitForm?.(ozalitFormAttempt(entry), entry.ozalitAttemptAt)} icon={FileText}>
+              <FormButton onClick={() => onOpenOzalitForm?.(ozalitFormAttempt(entry), entry.ozalitAttemptAt, entry.demo_id)} icon={FileText}>
                 Ozalit Formu
               </FormButton>
             )}
@@ -322,11 +329,11 @@ function MajorRow({
  * single fact ("6 alt görev güncellemesi") until you ask for the detail —
  * which is how a reader treats it anyway.
  */
-function FoldedRun({ entries, reduce, isLast, onOpenDemoForm, onOpenOzalitForm }) {
+function FoldedRun({ rows, total, reduce, isLast, onOpenDemoForm, onOpenOzalitForm }) {
   const [open, setOpen] = useState(false)
   // Distinct tones present in the run, so the summary still signals whether
   // anything in there went backwards (amber) or completed (emerald).
-  const tones = [...new Set(entries.map((e) => (TONES[metaTone(e)] ?? TONES.neutral).dot))]
+  const tones = [...new Set(rows.map((r) => (TONES[r.meta.tone] ?? TONES.neutral).dot))]
 
   return (
     <motion.li layout={!reduce} className="relative pb-4 last:pb-0">
@@ -347,7 +354,7 @@ function FoldedRun({ entries, reduce, isLast, onOpenDemoForm, onOpenOzalitForm }
           </span>
         </span>
         <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] text-muted-foreground transition-colors group-hover:text-foreground">
-          <span className="font-mono tabular-nums">{entries.length}</span>
+          <span className="font-mono tabular-nums">{total}</span>
           küçük güncelleme
           <ChevronDown
             className={cn(
@@ -367,10 +374,10 @@ function FoldedRun({ entries, reduce, isLast, onOpenDemoForm, onOpenOzalitForm }
             transition={{ duration: 0.24, ease: [0.23, 1, 0.32, 1] }}
             className="overflow-hidden pl-9"
           >
-            {entries.map((entry, i) => (
+            {rows.map((row) => (
               <MinorRow
-                key={entry.id ?? i}
-                entry={entry}
+                key={row.id}
+                row={row}
                 onOpenDemoForm={onOpenDemoForm}
                 onOpenOzalitForm={onOpenOzalitForm}
               />
@@ -392,36 +399,63 @@ function FoldedRun({ entries, reduce, isLast, onOpenDemoForm, onOpenOzalitForm }
  * entry.demoAttemptAt/ozalitAttemptAt + 1 — see the comment on `attemptNo` in
  * SpecFormDialog.jsx.
  */
-function MinorRow({ entry, onOpenDemoForm, onOpenOzalitForm }) {
-  const tone = TONES[metaTone(entry)] ?? TONES.neutral
+function MinorRow({ row, onOpenDemoForm, onOpenOzalitForm }) {
+  const { entry, entries, meta, count, firstAt, lastAt } = row
+  const tone = TONES[meta.tone] ?? TONES.neutral
+  const { title, detail } = rowText(entry, meta, { dense: true })
   const isDemoEdit = entry.event === 'demo_form_edited'
   const isOzalitEdit = entry.event === 'ozalit_form_edited'
+  const formLabel = isDemoEdit ? 'Demo Formu' : 'Ozalit Formu'
+  const openForm = (e) =>
+    isDemoEdit
+      ? onOpenDemoForm?.(demoFormAttempt(e), e.demoAttemptAt, e.demo_id)
+      : onOpenOzalitForm?.(ozalitFormAttempt(e), e.ozalitAttemptAt, e.demo_id)
   return (
     <li className="py-1 text-[12px]">
       <div className="flex items-baseline gap-2">
         <span className={cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', tone.dot)} />
-        <span className="min-w-0 flex-1 truncate text-muted-foreground" title={entry.note || undefined}>
-          {entry.note || labelOf(entry)}
+        {/* Clamped, not truncated: at 390px a heading like "Ürün Bilgileri
+            Otomatik Kaydedildi" needs the second line more than the badge
+            beside it needs the space. */}
+        <span className="line-clamp-2 min-w-0 flex-1 text-muted-foreground" title={entry.note || title}>
+          {title}
         </span>
+        {count > 1 && <RepeatBadge count={count} />}
         <time
           dateTime={entry.created_at}
           className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/60"
         >
-          {formatClock(entry.created_at)}
+          {timeSpan(firstAt, lastAt)}
         </time>
       </div>
+      {detail && (
+        <p className="mt-0.5 line-clamp-2 pl-3.5 text-[11px] leading-relaxed text-muted-foreground/80">
+          {detail}
+        </p>
+      )}
       {(isDemoEdit || isOzalitEdit) && (
-        <div className="mt-1 pl-3.5">
-          <FormButton
-            onClick={() =>
-              isDemoEdit
-                ? onOpenDemoForm?.(demoFormAttempt(entry), entry.demoAttemptAt)
-                : onOpenOzalitForm?.(ozalitFormAttempt(entry), entry.ozalitAttemptAt)
-            }
-            icon={FileText}
-          >
-            {isDemoEdit ? 'Demo Formu' : 'Ozalit Formu'}
-          </FormButton>
+        <div className="mt-1 flex flex-wrap items-center gap-1 pl-3.5">
+          {count === 1 ? (
+            <FormButton onClick={() => openForm(entry)} icon={FileText}>
+              {formLabel}
+            </FormButton>
+          ) : (
+            // Merging the rows must not merge the sheets: each correction
+            // writes its own snapshot (migration 052), so the row that stands
+            // for five of them offers five numbered links, oldest first.
+            <>
+              <span className="text-[11px] text-muted-foreground/70">{formLabel}</span>
+              {entries.map((e, i) => (
+                <FormChip
+                  key={e.id ?? i}
+                  onClick={() => openForm(e)}
+                  title={`${formLabel}, ${formatClock(e.created_at)}`}
+                >
+                  {i + 1}
+                </FormChip>
+              ))}
+            </>
+          )}
         </div>
       )}
     </li>
@@ -509,13 +543,39 @@ function FormButton({ onClick, icon: Icon, children }) {
   )
 }
 
-// Local helpers — they exist only to keep the minor-row render terse.
-function metaTone(entry) {
-  return historyMeta(entry).tone
+/** One version of a sheet on a merged row — the number, not another button. */
+function FormChip({ onClick, title, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={cn(
+        'inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border bg-background px-1.5',
+        'font-mono text-[11px] tabular-nums text-muted-foreground',
+        'transition-[color,border-color,background-color,transform] duration-150 active:translate-y-px',
+        'hover:border-primary/50 hover:bg-primary/5 hover:text-primary',
+      )}
+    >
+      {children}
+    </button>
+  )
 }
 
-function labelOf(entry) {
-  return historyMeta(entry).label
+/**
+ * "×5" on a row that stands for five identical events. The count is the whole
+ * point of merging them — without it the merge would be hiding history rather
+ * than summarising it.
+ */
+function RepeatBadge({ count }) {
+  return (
+    <span
+      title={`${count} kez`}
+      className="shrink-0 rounded-full bg-muted px-1.5 py-px font-mono text-[10px] tabular-nums text-muted-foreground"
+    >
+      ×{count}
+    </span>
+  )
 }
 
 function formatClock(iso) {
@@ -523,4 +583,11 @@ function formatClock(iso) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
   return d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+}
+
+/** One clock, or the span a merged row covers. Same day by construction. */
+function timeSpan(firstAt, lastAt) {
+  const from = formatClock(firstAt)
+  const to = formatClock(lastAt)
+  return from && to && from !== to ? `${from}–${to}` : to || from
 }
