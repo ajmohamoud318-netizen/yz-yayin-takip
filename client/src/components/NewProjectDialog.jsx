@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Plus, Pencil, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, X } from 'lucide-react'
 
 import api, { TYPE_LABELS, SUBTASK_LIBRARY } from '@/api'
 import { Button } from '@/components/ui/button'
@@ -63,7 +63,7 @@ function customSubtaskKey(label) {
  * Create / edit a publication project. Team leader only.
  * Pass a `project` to open in edit mode (prefilled); otherwise it creates.
  */
-export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpdated, project }) {
+export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpdated, onDelete, project }) {
   const { user } = useAuth()
   const { addOne, updateOne } = useProjectsStore()
   const isEdit = !!project
@@ -614,13 +614,21 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
             </div>
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              İptal
-            </Button>
-            <Button type="submit" disabled={saving}>
-              {saving ? 'Kaydediliyor…' : isEdit ? 'Kaydedin' : 'Proje Oluşturun'}
-            </Button>
+          <DialogFooter className={isEdit && onDelete ? 'sm:justify-between' : undefined}>
+            {isEdit && onDelete && (
+              <Button type="button" variant="destructive" onClick={onDelete}>
+                <Trash2 className="h-4 w-4" />
+                Sil
+              </Button>
+            )}
+            <div className="flex gap-2">
+              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+                İptal
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? 'Kaydediliyor…' : isEdit ? 'Kaydedin' : 'Proje Oluşturun'}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>

@@ -1116,14 +1116,16 @@ export default function ProjectDetail() {
                 </div>
               </div>
 
+              {!isDeleted && isLeader && (
+                <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
+                  <Pencil className="h-4 w-4" />
+                  Projeyi Düzenleyin
+                </Button>
+              )}
+              </div>
+
               {!isDeleted && (
               <div className="flex flex-wrap items-center gap-2">
-                {isLeader && (
-                  <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
-                    <Pencil className="h-4 w-4" />
-                    Projeyi Düzenleyin
-                  </Button>
-                )}
                 {/* Demo formu görüntüle — demo gönderildikten sonra. Also open to
                     the assigned designer, not just the leader: demo's own
                     isReadOnly already permits designer edits in mode='view'
@@ -1473,15 +1475,8 @@ export default function ProjectDetail() {
                     {sentStatus}
                   </span>
                 )}
-                {isLeader && (
-                  <Button size="sm" variant="destructive" onClick={() => setDeleteOpen(true)}>
-                    <Trash2 className="h-4 w-4" />
-                    Sil
-                  </Button>
-                )}
               </div>
               )}
-            </div>
 
             {/* Ozalit requested — handed to the matbaa, waiting for delivery */}
             {project.stage === 'ozalit_teslim' && project.ozalit_requested && (
@@ -1842,6 +1837,10 @@ export default function ProjectDetail() {
         onUpdated={(updated) => {
           setProject((prev) => ({ ...prev, ...updated }))
           refetch()
+        }}
+        onDelete={() => {
+          setEditOpen(false)
+          setDeleteOpen(true)
         }}
       />
 
