@@ -1115,8 +1115,12 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
               ) : (
                 // tasarimci_onay belongs to the printer — a team leader viewing
                 // it only ever gets the cancel/edit/change-request actions
-                // above, never this generic advance button.
-                !(user?.role === 'team_leader' && isTasarimciOnayStep) && (
+                // above, never this generic advance button. And same as the
+                // main pipeline's demo/ozalit Teslim Et: hidden for the
+                // printer until İşlemi Başlatın has been pressed, and while a
+                // change request is pending (respond to it above instead).
+                !(user?.role === 'team_leader' && isTasarimciOnayStep) &&
+                !(user?.role === 'printer' && isTasarimciOnayStep && (!ozalitStarted || ozalitChangePending)) && (
                   <Button
                     type="submit"
                     disabled={

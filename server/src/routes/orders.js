@@ -242,6 +242,20 @@ export async function orderRoutes(fastify) {
         if (owner && request.user.role !== owner) {
           forbidden('Bu adımı yalnızca ilgili rol imzalayabilir.')
         }
+        // tasarimci_onay is the printer's ozalit round (migration 051) — same
+        // "must start, and resolve any pending change request, before
+        // delivering" rule as the main pipeline's demo/ozalit Teslim Et
+        // (computeDemoTeslimAdvance/computeOzalitTeslimAdvance). The client
+        // hides the Teslim Edin button for these cases; this is the
+        // server-side backstop.
+        if (order.status === 'tasarimci_onay') {
+          if (order.ozalit_change_requested_at != null) {
+            badRequest('Bekleyen bir değişiklik talebi var, önce kabul veya reddedin.')
+          }
+          if (!order.ozalit_started) {
+            badRequest('Teslim etmeden önce İşlemi Başlatın işaretlemelisiniz.')
+          }
+        }
       }
       // Whether THIS click completes the round. For every non-matbaa_onay
       // step it's always true; for matbaa_onay it's only true once every
