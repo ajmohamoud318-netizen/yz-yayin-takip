@@ -629,6 +629,20 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   )
   const readOnly = variant.isReadOnly({ mode, user }) || lockedByStart || lockedByFixPending
   const printable = variant.canPrint({ user, project, readOnly })
+  // The plain "Demo Formu" button (mode='view', no notify) always opens a
+  // round that has ALREADY been sent: at demo_onay it's the sheet sitting with
+  // the leader, and from ozalit_teslim onward it's the sheet the demo was
+  // APPROVED on. It therefore has to reopen exactly as it was sent and signed.
+  // The demo variant's restoreSavedOnEdit:false is about composing a NEW
+  // round; treating this viewer as composing stamped today's date, the
+  // viewer's own name as DEMO İSTEYEN KİŞİ and a blank ONAYLAYAN KİŞİ over the
+  // approved sheet — the approval signature stampSpecSignature had just
+  // written into that very snapshot. (Ozalit / Baskı Onay already restore via
+  // restoreSavedOnEdit, so in practice this only changes demo.)
+  // Excluded on purpose: "Gönderilen Demoyu Düzenleyin" (notifyOnSave), whose
+  // target is the round's separate edit slot, and mode='advance', which really
+  // is a fresh compose.
+  const viewingSentSheet = mode === 'view' && !notifyOnSave
 
   // Pull the authoritative spec from the server when the dialog opens. The
   // in-memory cache is normally primed at boot, but a project created on
@@ -698,12 +712,13 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       if (cancelled) return
       const data = current ?? stripStamps(carried)
       const fresh = emptyForm(variant, project, user)
-      if (readOnly || variant.restoreSavedOnEdit || rejectContext) {
-        // Read-only viewers (printer, leader) must see the values that were
-        // actually saved at submission time — otherwise the form would show
-        // today's date and the matbaa's own name as the requester. Layer the
-        // saved form back on top so İŞİN ADI, İSTEM TARİHİ and İSTEYEN KİŞİ
-        // reflect what was stamped. The teslim/onay stamps come through only
+      if (readOnly || variant.restoreSavedOnEdit || rejectContext || viewingSentSheet) {
+        // Read-only viewers (printer, leader) — and the plain viewer of an
+        // already-sent round (viewingSentSheet) — must see the values that
+        // were actually saved at submission time; otherwise the form would
+        // show today's date and the matbaa's own name as the requester. Layer
+        // the saved form back on top so İŞİN ADI, İSTEM TARİHİ and İSTEYEN
+        // KİŞİ reflect what was stamped. The teslim/onay stamps come through only
         // when `current` supplied them, i.e. they really happened — blank ones
         // are dropped so they can't overwrite a legitimately pre-filled
         // signature (see withoutBlankStamps).
