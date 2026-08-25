@@ -137,6 +137,23 @@ export default function Approvals({ tab = 'demo' }) {
     setSignOrder(null)
   }
 
+  // The printer's "İşlemi Başlatın" (and a change-request accept/decline)
+  // don't move the order out of tasarimci_onay — they only flip flags the
+  // dialog itself gates on: Teslim Edin stays hidden until ozalit_started.
+  // Without this handler the matbaa pressed Başlatın, got the toast, and the
+  // button never appeared — `signOrder` is a snapshot and this page loads its
+  // list once, so nothing here ever saw the update (every other
+  // TalepSignDialog mount already wires onUpdated).
+  //
+  // Merged, not replaced: the mutation routes return order_requests' own
+  // columns only, without the list query's joined project_title /
+  // requested_by_name / order_history — same contract as TeslimOnaylari's
+  // handover confirm.
+  function handleOrderUpdated(updated) {
+    setOrders((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)))
+    setSignOrder((prev) => (prev?.id === updated.id ? { ...prev, ...updated } : prev))
+  }
+
   async function handleEkranDemoRequest(project) {
     setEkranBusyId(project.id)
     try {
@@ -225,6 +242,7 @@ export default function Approvals({ tab = 'demo' }) {
           open={!!signOrder}
           onOpenChange={(v) => !v && setSignOrder(null)}
           onSigned={handleOrderSigned}
+          onUpdated={handleOrderUpdated}
         />
       </>
     )

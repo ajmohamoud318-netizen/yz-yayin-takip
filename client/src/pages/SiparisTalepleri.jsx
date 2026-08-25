@@ -55,7 +55,7 @@ export default function SiparisTalepleri() {
   }, [])
 
   function handleSigned(updated) {
-    setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
+    setRequests((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)))
     setSignOrder(null)
     setSignReject(false)
   }
@@ -64,7 +64,7 @@ export default function SiparisTalepleri() {
   // back here (mirrors handleSigned) — a bare PATCH /advance can't move
   // this step, it requires the dedicated form-fill-then-approve routes.
   function handleBaskiOnayApproved(updated) {
-    setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
+    setRequests((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)))
     if (updated.status !== 'siparis_baski_onay') setBaskiOnayOrder(null)
   }
 
@@ -72,8 +72,8 @@ export default function SiparisTalepleri() {
   // held row in sync so the card's button flips to "Onayla" (see
   // TalepSignDialog's onUpdated contract).
   function handleUpdated(updated) {
-    setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
-    setSignOrder(updated)
+    setRequests((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)))
+    setSignOrder((prev) => (prev ? { ...prev, ...updated } : updated))
   }
 
   const actionCount = requests.filter((r) => LEADER_ACTION_STEPS.has(r.status)).length

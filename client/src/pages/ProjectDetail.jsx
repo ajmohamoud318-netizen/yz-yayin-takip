@@ -282,19 +282,19 @@ export default function ProjectDetail() {
   )
 
   function handleOrderSigned(updated) {
-    setProjectOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)))
+    setProjectOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)))
     setSignOrder(null)
   }
 
   // "Teslim Alındı" doesn't remove the order from the queue — it just
   // updates the held order in place (see TalepSignDialog's onUpdated contract).
   function handleOrderUpdated(updated) {
-    setProjectOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)))
-    setSignOrder(updated)
+    setProjectOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)))
+    setSignOrder((prev) => (prev ? { ...prev, ...updated } : updated))
   }
 
   function handleSiparisBaskiOnayApproved(updated) {
-    setProjectOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)))
+    setProjectOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)))
     if (updated.status !== 'siparis_baski_onay') setSiparisBaskiOnayOrder(null)
   }
 

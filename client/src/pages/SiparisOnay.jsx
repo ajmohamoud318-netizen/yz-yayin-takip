@@ -66,8 +66,8 @@ export default function SiparisOnay() {
   // updates the held order in place so the card's button flips to "Onayla"
   // (see TalepSignDialog's onUpdated contract; the dialog itself closes).
   function handleUpdated(updated) {
-    setOrders((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
-    setSignOrder(updated)
+    setOrders((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)))
+    setSignOrder((prev) => (prev ? { ...prev, ...updated } : updated))
   }
 
   return (

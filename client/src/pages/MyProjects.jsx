@@ -96,8 +96,8 @@ export default function MyProjects() {
   // "Teslim Alındı" doesn't remove the order from the queue — see
   // TalepSignDialog's onUpdated contract.
   function handleOrderUpdated(updated) {
-    setSiparisQueue((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
-    setSignOrder(updated)
+    setSiparisQueue((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)))
+    setSignOrder((prev) => (prev ? { ...prev, ...updated } : updated))
   }
 
   const rows = useMemo(() => {

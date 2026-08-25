@@ -91,10 +91,21 @@ async function saveSubtaskFlags(orderId, subtasks, originalJson) {
  *   onOpenChange – (bool) => void
  *   onSigned    – (updatedOrder) => void  — called after successful advance
  *                  (order leaves the caller's queue, dialog closes)
- *   onUpdated   – (updatedOrder) => void  — called after "Teslim Alındı"
- *                  (mid-flow state change; the dialog still closes itself,
- *                  this just keeps the caller's list row in sync — see
- *                  handleMatbaaReceive)
+ *   onUpdated   – (updatedOrder) => void  — called after any mid-flow change
+ *                  that does NOT hand the order to the next step: "Teslim
+ *                  Alındı" (handleMatbaaReceive), the printer's "İşlemi
+ *                  Başlatın" (handleStartOzalit), and either answer to a
+ *                  change request. Required wherever this dialog is mounted,
+ *                  not just on the receipt-gate queues: the printer's own
+ *                  "Teslim Edin" button is gated on order.ozalit_started, so
+ *                  a caller that skips onUpdated leaves the dialog rendering
+ *                  the pre-start snapshot and the round can never be
+ *                  delivered.
+ *                  Callers should MERGE the reply over the row they hold
+ *                  ({ ...row, ...updated }) rather than replacing it — every
+ *                  mutation route returns order_requests' own columns only,
+ *                  without the list query's joined project_title /
+ *                  requested_by_name / order_history.
  *   initialReject – open straight into the reject panel (skipping the
  *                  approve-first click) — used by the list's own "Reddet"
  *                  button. Ignored when the step offers no reject route.
@@ -350,8 +361,15 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
       if (canEditSpec) {
         const compsChanged = JSON.stringify(comps) !== originalRef.current
         const parts = []
-        pendingWrites.push(() => saveProductComps(order.project_id, comps))
-        if (compsChanged) parts.push('ürün bilgileri')
+        // Only write when the spec actually changed. An unconditional PUT
+        // re-stamps product_info.updated_by/updated_at with whoever happened
+        // to sign, so Ürün Bilgileri's "last edited by …" credited an edit
+        // nobody made — and the sign note below is built from the same flag,
+        // so the two would disagree.
+        if (compsChanged) {
+          pendingWrites.push(() => saveProductComps(order.project_id, comps))
+          parts.push('ürün bilgileri')
+        }
         if (isDesignerStep) {
           const subsChanged = JSON.stringify(subtasks) !== originalSubsRef.current
           if (subsChanged) pendingWrites.push(() => saveSubtaskFlags(order.id, subtasks, originalSubsRef.current))
