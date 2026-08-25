@@ -1203,6 +1203,24 @@ export default function ProjectDetail() {
                     {startingWork ? 'İşleniyor…' : 'İşlemi Başlatın'}
                   </Button>
                 )}
+                {/* Fix owed, printer's turn to wait — canMarkDemoStarted/
+                    canMarkOzalitStarted above already hides İşlemi Başlatın
+                    for this, so without this the printer's action row goes
+                    silently empty with no clue why. */}
+                {user?.role === 'printer' &&
+                  (project.stage === 'demo_teslim' || project.stage === 'cin_demo_teslim') &&
+                  project.demo_fix_pending && (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700">
+                    <Clock className="h-4 w-4" />
+                    Değişiklik talebini kabul ettiniz, ekip liderinin düzeltmeyi göndermesi bekleniyor
+                  </span>
+                )}
+                {user?.role === 'printer' && project.stage === 'ozalit_teslim' && project.ozalit_fix_pending && (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700">
+                    <Clock className="h-4 w-4" />
+                    Değişiklik talebini kabul ettiniz, ekip liderinin düzeltmeyi göndermesi bekleniyor
+                  </span>
+                )}
                 {/* Undo a mistaken request outright — only while the matbaa
                     hasn't started yet, so nothing was actually delivered. */}
                 {canEditSentDemoRequest(user, project) && (

@@ -994,6 +994,16 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
                 </div>
               )}
 
+              {/* Fix owed, printer's turn to wait — the İşlemi Başlatın block
+                  above hides itself here, so without this the printer's
+                  panel goes silently empty with no clue why. */}
+              {user?.role === 'printer' && !ozalitChangePending && !ozalitStarted && ozalitFixPending && (
+                <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                  <Check className="h-4 w-4 shrink-0" />
+                  <span>Değişiklik talebini kabul ettiniz, ekip liderinin düzeltmeyi göndermesi bekleniyor.</span>
+                </div>
+              )}
+
               {canRespondOzalitChange && (
                 <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
                   <p>
