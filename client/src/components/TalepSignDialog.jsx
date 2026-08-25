@@ -153,6 +153,14 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   const [assignIds, setAssignIds] = useState([])
   const [subtasks, setSubtasks] = useState([])
   const [subsOpen, setSubsOpen] = useState(false)
+  // Ozalit round state for the tasarimci_onay step (full parity with the main
+  // pipeline's demo/ozalit started/cancel/edit/change-request flow, migrations
+  // 048/049, scoped to the order's own round from migration 051). Declared up
+  // here with the rest of the state — everything below the `if (!order) return
+  // null` guard is skipped on a null order, so a hook down there would change
+  // the hook count between renders (React #310).
+  const [ozalitBusy, setOzalitBusy] = useState(false)
+  const [changeNote, setChangeNote] = useState('')
   const originalRef = useRef('[]')
   const originalSubsRef = useRef('[]')
 
@@ -423,12 +431,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
       setSaving(false)
     }
   }
-
-  // Full parity with the main pipeline's demo/ozalit started/cancel/edit/
-  // change-request flow (migrations 048/049), scoped to the order's own
-  // ozalit round delivered at tasarimci_onay (migration 051).
-  const [ozalitBusy, setOzalitBusy] = useState(false)
-  const [changeNote, setChangeNote] = useState('')
 
   // Matbaa marks physical work begun — after this, the team leader's free
   // cancel/edit closes and a change request is required instead.
