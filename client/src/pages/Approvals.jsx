@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
-import { ThumbsUp, ThumbsDown, Inbox, Send, ShoppingCart, CheckCircle2 } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, Inbox, Send, ShoppingCart, CheckCircle2, PackageCheck } from 'lucide-react'
 
 import api, { ORDER_STEP_LABELS } from '@/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -263,6 +263,10 @@ export default function Approvals({ tab = 'demo' }) {
           const awaitingLeader =
             sub === 'ozalit' && isDesigner && !alreadyApproved && !ozalitLeaderApproved(p)
           const heldDemo = sub === 'demo' && p.demo_held === true
+          // Demo/ozalit both gate their sign-off behind a "Teslim Alındı" —
+          // when that's still owed the button is a receipt step, not an
+          // approval, so it loses the green/thumbs-up treatment too.
+          const receiptFirst = awaitsReceipt(sub, p)
           return (
           <Card
             key={p.id}
@@ -398,7 +402,7 @@ export default function Approvals({ tab = 'demo' }) {
                     ) : canApprove ? (
                       <Button
                         size="sm"
-                        variant="success"
+                        variant={receiptFirst ? 'default' : 'success'}
                         className="w-full sm:flex-1"
                         onClick={() => {
                           if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
@@ -406,12 +410,14 @@ export default function Approvals({ tab = 'demo' }) {
                           else setDialog({ project: p, mode: 'approve' })
                         }}
                       >
-                        <ThumbsUp className="h-4 w-4" />
-                        {/* Dual-approval (migration 045): the card's button
-                            just opens the dialog, but the label should say
-                            which half is owed — the dialog itself decides
-                            Hazırla vs Onayla the same way (baski_onay_prepared). */}
-                        {sub === 'baski-onay' ? (p.baski_onay_prepared ? 'Onaylayın' : 'Formu Hazırlayın') : 'Onaylayın'}
+                        {receiptFirst ? <PackageCheck className="h-4 w-4" /> : <ThumbsUp className="h-4 w-4" />}
+                        {/* The card's button just opens the dialog, but the
+                            label names the step the dialog will actually ask
+                            for: taking delivery first (demo_received /
+                            ozalit_received), or — for dual-approval baskı
+                            onayı (migration 045) — Hazırla vs Onayla, decided
+                            the same way the dialog does (baski_onay_prepared). */}
+                        {primaryActionLabel(sub, p)}
                       </Button>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/30 px-2 py-1 text-xs font-medium text-muted-foreground sm:flex-1">
@@ -429,7 +435,7 @@ export default function Approvals({ tab = 'demo' }) {
                         onClick={() => setDialog({ project: p, mode: 'reject' })}
                       >
                         <ThumbsDown className="h-4 w-4" />
-                        Reddedin
+                        {sub === 'ozalit' ? 'Ozaliti Reddedin' : 'Demoyu Reddedin'}
                       </Button>
                     )}
                     <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={() => navigate(`/projects/${p.id}`)}>
@@ -549,6 +555,31 @@ export default function Approvals({ tab = 'demo' }) {
       />
     </>
   )
+}
+
+/**
+ * Is the physical proof still un-received? Both the demo dialog
+ * (ApprovalDialog) and the ozalit form (SpecFormDialog) refuse to sign off
+ * until it's been marked "Teslim Alındı", so the card's button leads with
+ * that step instead of an "Onaylayın" that can't be honoured yet.
+ */
+function awaitsReceipt(sub, p) {
+  if (sub === 'demo') return p.demo_received !== true
+  if (sub === 'ozalit') return p.ozalit_received !== true
+  return false
+}
+
+/**
+ * The action the row actually owes, spelled out. Every queue card used to
+ * read "Onaylayın"/"Reddedin" regardless of what the dialog would ask for
+ * next — taking delivery, preparing the baskı onay form, or the sign-off
+ * itself — so the label now names the step and the queue reads as a to-do
+ * list. Mirrors ProjectDetail's approveActionLabel plus the receipt gates.
+ */
+function primaryActionLabel(sub, p) {
+  if (sub === 'baski-onay') return p.baski_onay_prepared ? 'Baskı Onayı Verin' : 'Baskı Onayı Hazırlayın'
+  if (sub === 'ozalit') return awaitsReceipt(sub, p) ? 'Ozaliti Teslim Alın' : 'Ozaliti Onaylayın'
+  return awaitsReceipt(sub, p) ? 'Demoyu Teslim Alın' : 'Demoyu Onaylayın'
 }
 
 function normalizeItems(items, quantity) {
