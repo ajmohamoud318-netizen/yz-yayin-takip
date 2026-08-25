@@ -132,7 +132,7 @@ export async function listProjects() {
     const histRes = await getPool().query(
       `SELECT h.id, h.project_id, h.from_stage, h.to_stage,
               h.action, h.event, h.reason, h.reject_target,
-              h.pass_number, h.done_by, h.note, h.created_at,
+              h.pass_number, h.done_by, h.note, h.demo_id, h.created_at,
               u.name AS done_by_name
          FROM stage_history h
          LEFT JOIN users u ON u.id = h.done_by
@@ -303,7 +303,7 @@ export async function listProjectHistory(client, projectId) {
   const { rows } = await client.query(
     `SELECT h.id, h.project_id, h.from_stage, h.to_stage,
             h.action, h.event, h.reason, h.reject_target,
-            h.pass_number, h.done_by, h.note, h.created_at,
+            h.pass_number, h.done_by, h.note, h.demo_id, h.created_at,
             u.name AS done_by_name
        FROM stage_history h
        LEFT JOIN users u ON u.id = h.done_by
@@ -515,8 +515,8 @@ export async function restoreProject(id) {
 export async function insertHistory(client, entry) {
   await client.query(
     `INSERT INTO stage_history
-       (project_id, from_stage, to_stage, action, event, reason, reject_target, pass_number, done_by, note)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+       (project_id, from_stage, to_stage, action, event, reason, reject_target, pass_number, done_by, note, demo_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
     [
       entry.project_id,
       entry.from_stage ?? null,
@@ -528,6 +528,10 @@ export async function insertHistory(client, entry) {
       entry.pass_number ?? 1,
       entry.done_by ?? null,
       entry.note ?? null,
+      // The spec-sheet snapshot this row produced, when it produced one
+      // (migration 052) — the only way to tell two corrections of the same
+      // round apart, since both share an attempt slot.
+      entry.demo_id ?? null,
     ],
   )
 }

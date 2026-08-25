@@ -132,11 +132,11 @@ export function applyOzalitCancel(project, { user, designerIds = [] }) {
  * changed the saved form — same free-edit window as cancel, but nothing on
  * `projects` changes (see computeDemoEdit).
  */
-export function applyDemoEdit(project, { user, designerIds = [] }) {
-  return computeDemoEdit(project, user, { designerIds })
+export function applyDemoEdit(project, { user, designerIds = [], demoId = null }) {
+  return computeDemoEdit(project, user, { designerIds, demoId })
 }
-export function applyOzalitEdit(project, { user, designerIds = [] }) {
-  return computeOzalitEdit(project, user, { designerIds })
+export function applyOzalitEdit(project, { user, designerIds = [], demoId = null }) {
+  return computeOzalitEdit(project, user, { designerIds, demoId })
 }
 
 /**

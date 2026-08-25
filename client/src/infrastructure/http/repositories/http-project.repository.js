@@ -277,13 +277,16 @@ export function createHttpProjectRepository(userRepo) {
     // Notify the matbaa that a still-in-flight demo/ozalit form was edited.
     // Same free-edit window as cancel; logs history + pings printers only,
     // no project fields change.
-    async notifyDemoEdit(id) {
-      const { data } = await httpClient.post(`/projects/${id}/demo-edit-notify`, {})
+    // `demoId` is the snapshot this correction just saved (migration 052).
+    // The timeline row keeps it so a later correction of the same round —
+    // which reuses the same attempt slot — can't shadow this one's sheet.
+    async notifyDemoEdit(id, demoId = null) {
+      const { data } = await httpClient.post(`/projects/${id}/demo-edit-notify`, { demo_id: demoId })
       cache.set(id, data)
       return data
     },
-    async notifyOzalitEdit(id) {
-      const { data } = await httpClient.post(`/projects/${id}/ozalit-edit-notify`, {})
+    async notifyOzalitEdit(id, demoId = null) {
+      const { data } = await httpClient.post(`/projects/${id}/ozalit-edit-notify`, { demo_id: demoId })
       cache.set(id, data)
       return data
     },

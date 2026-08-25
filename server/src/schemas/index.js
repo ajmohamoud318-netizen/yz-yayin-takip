@@ -597,6 +597,20 @@ const projectsIdParams = {
   },
 }
 
+/**
+ * `/demo-edit-notify`, `/ozalit-edit-notify`. `demo_id` is the snapshot the
+ * SPA just saved for this correction (migration 052) — optional, since an
+ * older client (or a failed snapshot POST) still notifies without one.
+ */
+const projectsFormEditNotify = {
+  ...projectsIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: { demo_id: { type: ['string', 'null'], maxLength: 64 } },
+  },
+}
+
 const projectsAdvance = {
   ...projectsIdParams,
   body: {
@@ -1047,6 +1061,7 @@ export const schemas = {
   projectsImport,
   projectsPatch,
   projectsIdParams,
+  projectsFormEditNotify,
   projectsCatalog,
   projectsAdvance,
   projectsApprove,

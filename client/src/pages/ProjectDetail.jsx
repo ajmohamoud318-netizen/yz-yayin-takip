@@ -209,8 +209,11 @@ export default function ProjectDetail() {
   const [demoFormAttempt, setDemoFormAttempt] = useState(null)
   // Round the opened snapshot belongs to — an edit sits one slot past it.
   const [demoFormRound, setDemoFormRound] = useState(null)
+  // Exact snapshot a timeline row wrote (migration 052), when it recorded one.
+  const [demoFormSnapshot, setDemoFormSnapshot] = useState(null)
   const [ozalitFormAttempt, setOzalitFormAttempt] = useState(null)
   const [ozalitFormRound, setOzalitFormRound] = useState(null)
+  const [ozalitFormSnapshot, setOzalitFormSnapshot] = useState(null)
   // Set true only when the new "Formu Düzenleyin" button opens the dialog —
   // makes mode='view' Kaydet notify the matbaa instead of saving silently.
   const [demoFormNotify, setDemoFormNotify] = useState(false)
@@ -1613,15 +1616,17 @@ export default function ProjectDetail() {
           <ProjectHistory
             entries={historyWithAttempts}
             projectType={project.type}
-            onOpenDemoForm={(attempt, round) => {
+            onOpenDemoForm={(attempt, round, snapshotId) => {
               setDemoFormAttempt(attempt)
               setDemoFormRound(round ?? null)
+              setDemoFormSnapshot(snapshotId ?? null)
               setDemoFormMode('history')
               setDemoFormOpen(true)
             }}
-            onOpenOzalitForm={(attempt, round) => {
+            onOpenOzalitForm={(attempt, round, snapshotId) => {
               setOzalitFormAttempt(attempt)
               setOzalitFormRound(round ?? null)
+              setOzalitFormSnapshot(snapshotId ?? null)
               setOzalitFormMode('history')
               setOzalitFormOpen(true)
             }}
@@ -1847,11 +1852,12 @@ export default function ProjectDetail() {
 
       <OzalitFormDialog
         open={ozalitFormOpen}
-        onOpenChange={(v) => { setOzalitFormOpen(v); if (!v) { setOzalitFormAttempt(null); setOzalitFormRound(null); setOzalitFormNotify(false) } }}
+        onOpenChange={(v) => { setOzalitFormOpen(v); if (!v) { setOzalitFormAttempt(null); setOzalitFormRound(null); setOzalitFormSnapshot(null); setOzalitFormNotify(false) } }}
         project={project}
         mode={ozalitFormMode}
         viewAttempt={ozalitFormAttempt}
         viewAttemptLabel={ozalitFormRound}
+        viewDemoId={ozalitFormSnapshot}
         notifyOnSave={ozalitFormNotify}
         onDone={onActionDone}
         onStartWork={canMarkOzalitStarted(user, project) ? async () => { await handleOzalitStart(); setOzalitFormOpen(false) } : undefined}
@@ -1868,11 +1874,12 @@ export default function ProjectDetail() {
 
       <DemoFormDialog
         open={demoFormOpen}
-        onOpenChange={(v) => { setDemoFormOpen(v); if (!v) { setDemoFormAttempt(null); setDemoFormRound(null); setDemoFormNotify(false) } }}
+        onOpenChange={(v) => { setDemoFormOpen(v); if (!v) { setDemoFormAttempt(null); setDemoFormRound(null); setDemoFormSnapshot(null); setDemoFormNotify(false) } }}
         project={project}
         mode={demoFormMode}
         viewAttempt={demoFormAttempt}
         viewAttemptLabel={demoFormRound}
+        viewDemoId={demoFormSnapshot}
         notifyOnSave={demoFormNotify}
         onStartWork={canMarkDemoStarted(user, project) ? async () => { await handleDemoStart(); setDemoFormOpen(false) } : undefined}
         startingWork={startingWork}

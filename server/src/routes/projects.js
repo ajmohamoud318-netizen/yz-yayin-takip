@@ -927,7 +927,7 @@ export async function projectRoutes(fastify) {
   // matbaa has started (computeDemoEdit/computeOzalitEdit). Also the one
   // place that clears demo_fix_pending/ozalit_fix_pending when an accepted
   // change request owed a fix — this submission IS the fix (migration 049).
-  fastify.post('/projects/:id/demo-edit-notify', { schema: schemas.projectsIdParams }, async (request) => {
+  fastify.post('/projects/:id/demo-edit-notify', { schema: schemas.projectsFormEditNotify }, async (request) => {
     await attachUser(request)
     const result = await withTx(async (client) => {
       const project = await getProjectForUpdate(client, request.params.id)
@@ -935,7 +935,9 @@ export async function projectRoutes(fastify) {
       assertNotLegacy(project)
       project.assignees = await loadProjectAssignees(client, project)
       const designerIds = project.assignees.map((a) => a.id)
-      const { project: next, history } = applyDemoEdit(project, { user: request.user, designerIds })
+      const { project: next, history } = applyDemoEdit(project, {
+        user: request.user, designerIds, demoId: request.body?.demo_id ?? null,
+      })
       const updated = await patchProject(client, project.id, {
         demo_fix_pending: next.demo_fix_pending,
       })
@@ -948,7 +950,7 @@ export async function projectRoutes(fastify) {
     return result
   })
 
-  fastify.post('/projects/:id/ozalit-edit-notify', { schema: schemas.projectsIdParams }, async (request) => {
+  fastify.post('/projects/:id/ozalit-edit-notify', { schema: schemas.projectsFormEditNotify }, async (request) => {
     await attachUser(request)
     const result = await withTx(async (client) => {
       const project = await getProjectForUpdate(client, request.params.id)
@@ -956,7 +958,9 @@ export async function projectRoutes(fastify) {
       assertNotLegacy(project)
       project.assignees = await loadProjectAssignees(client, project)
       const designerIds = project.assignees.map((a) => a.id)
-      const { project: next, history } = applyOzalitEdit(project, { user: request.user, designerIds })
+      const { project: next, history } = applyOzalitEdit(project, {
+        user: request.user, designerIds, demoId: request.body?.demo_id ?? null,
+      })
       const updated = await patchProject(client, project.id, {
         ozalit_fix_pending: next.ozalit_fix_pending,
       })

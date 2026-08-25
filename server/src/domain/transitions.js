@@ -1078,6 +1078,10 @@ export function computeDemoEdit(project, actor, ctx = {}) {
       to_stage: project.stage,
       done_by_name: actorName,
       note: 'Demo formu güncellendi',
+      // Which snapshot this correction wrote (migration 052). Two
+      // corrections of one round share an attempt slot, so without this the
+      // older row's "Demo Formu" button resolves to the newer sheet.
+      demo_id: ctx.demoId ?? null,
     }),
   }
 }
@@ -1108,6 +1112,7 @@ export function computeOzalitEdit(project, actor, ctx = {}) {
       to_stage: project.stage,
       done_by_name: actorName,
       note: 'Ozalit formu güncellendi',
+      demo_id: ctx.demoId ?? null,
     }),
   }
 }

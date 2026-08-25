@@ -282,6 +282,20 @@ async function fetchServerSnapshot(api, variant, projectId, attempt) {
   }
 }
 
+/** One exact snapshot row, addressed by id rather than by attempt slot. */
+async function fetchServerSnapshotById(api, variant, demoId) {
+  try {
+    const all = await api.listDemos()
+    const row = (all ?? []).find((d) => d.id === demoId)
+    if (!row) return null
+    const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload
+    const parsed = parseSaved(variant, JSON.stringify(payload ?? {}))
+    return parsed && { ...parsed, attempt: row.attempt }
+  } catch {
+    return null
+  }
+}
+
 function saveForm(variant, id, data, customRows, selectedComponents) {
   localStorage.setItem(STORAGE_KEY(variant, id), JSON.stringify({
     ...data,
@@ -550,6 +564,11 @@ function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
  *   'history'  — read-only snapshot view (requires viewAttempt)
  *
  * viewAttempt — attempt number to load from snapshot (used with mode='history')
+ * viewDemoId — exact snapshot row to load, when the timeline row that opened
+ *   this dialog recorded one (migration 052). Two corrections of one round
+ *   share an attempt slot, so viewAttempt alone always resolves to the later
+ *   of them; this addresses the sheet directly. Falls back to viewAttempt for
+ *   rows written before the migration.
  * viewAttemptLabel — round number to PRINT on that snapshot. An edit is
  *   stored one slot past its round (see liveAttempts), so a correction to the
  *   1st demo lives at slot 2 and would otherwise open titled "2. Demo" — a
@@ -570,7 +589,7 @@ function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
  *   Forces the saved sheet to load as-is (like a read-only viewer would)
  *   instead of the normal "fresh compose" reset for a new attempt.
  */
-export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, mode, onDone, viewAttempt, viewAttemptLabel = null, notifyOnSave = false, onStartWork, startingWork = false, rejectContext = null }) {
+export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, rejectContext = null }) {
   const variant = VARIANTS[variantName]
   const { user } = useAuth()
   const { updateOne } = useProjectsStore()
@@ -649,6 +668,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         // History: show the snapshot exactly as it was saved — no auto-fills.
         // Server snapshot first (works on any computer), localStorage fallback.
         const snap =
+          (viewDemoId ? await fetchServerSnapshotById(api, variant, viewDemoId) : null) ??
           (await fetchServerSnapshot(api, variant, project.id, viewAttempt)) ??
           loadSnapshot(variant, project.id, viewAttempt) ??
           loadSaved(variant, project.id)
@@ -759,7 +779,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     load()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, project?.id, viewAttempt])
+  }, [open, project?.id, viewAttempt, viewDemoId])
 
   /**
    * Baseline for the "Değişiklikler" diff panel (migration 049) — a snapshot
@@ -1028,9 +1048,13 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // What the sheet CALLS this round, as opposed to where it's stored.
   const shownAttemptNo = viewAttemptLabel ?? attemptNo
 
-  /** Mirror the snapshot to the server so any browser can reopen it. */
+  /**
+   * Mirror the snapshot to the server so any browser can reopen it. Resolves
+   * to the created row (or null if the POST failed) — handleSave needs its id
+   * to stamp the timeline row, everyone else can ignore it.
+   */
   function persistServerSnapshot(attempt, data) {
-    api.createDemo({
+    return api.createDemo({
       project_id: project.id,
       kind: variant.kind,
       attempt,
@@ -1040,7 +1064,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         _customRows: customRows,
         _selectedComponents: selectedComponents ?? null,
       },
-    }).catch(() => { /* localStorage still has it; don't block the flow */ })
+    }).catch(() => null /* localStorage still has it; don't block the flow */)
   }
 
   // Write any edits made in the side-by-side parça cards back to Ürün Bilgileri
@@ -1157,12 +1181,14 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       // top of the dedicated notify call below, leaving two overlapping
       // entries for one save. The edit-notify call is the sole source of
       // both the history row and the printer ping.
-      persistServerSnapshot(writeAttempt, form)
+      // Awaited here, unlike the fire-and-forget saves elsewhere: the
+      // timeline row below has to name the snapshot this correction wrote.
+      const saved = await persistServerSnapshot(writeAttempt, form)
       await persistCatalogEdits()
       if (notifyOnSave) {
         try {
-          if (variant.kind === 'demo') await api.notifyDemoEdit(project.id)
-          else if (variant.kind === 'ozalit') await api.notifyOzalitEdit(project.id)
+          if (variant.kind === 'demo') await api.notifyDemoEdit(project.id, saved?.id ?? null)
+          else if (variant.kind === 'ozalit') await api.notifyOzalitEdit(project.id, saved?.id ?? null)
           toast.success(`${variant.title} güncellendi, matbaa bilgilendirildi.`)
         } catch (err) {
           // The edit itself is already saved above; only the notify step
