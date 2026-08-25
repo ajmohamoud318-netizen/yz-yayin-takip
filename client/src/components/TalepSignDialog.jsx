@@ -332,14 +332,21 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     setSaving(true)
     try {
       let signNotes = notes.trim()
+      // Deferred, not applied: `advanceOrderRequest` below carries an
+      // expectedVersion optimistic-lock check, so a refusal here is routine
+      // — someone else signed this step first. Writing the spec and the
+      // subtask flags up front meant that refusal still left both changed,
+      // under a bare "İşlem başarısız" toast. Nothing is written until the
+      // advance has passed the lock.
+      const pendingWrites = []
       if (canEditSpec) {
-        await saveProductComps(order.project_id, comps)
         const compsChanged = JSON.stringify(comps) !== originalRef.current
         const parts = []
+        pendingWrites.push(() => saveProductComps(order.project_id, comps))
         if (compsChanged) parts.push('ürün bilgileri')
         if (isDesignerStep) {
           const subsChanged = JSON.stringify(subtasks) !== originalSubsRef.current
-          if (subsChanged) await saveSubtaskFlags(order.id, subtasks, originalSubsRef.current)
+          if (subsChanged) pendingWrites.push(() => saveSubtaskFlags(order.id, subtasks, originalSubsRef.current))
           if (subsChanged) parts.push('alt görevler')
         }
         if (parts.length) {
@@ -358,6 +365,9 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
         ...(isAssignStep ? { assignees: assignIds } : {}),
         ...(isResubmit ? { route: chosenRoute } : {}),
       })
+      // The advance passed the version check, so the edits it described in
+      // `signNotes` may now be committed.
+      for (const write of pendingWrites) await write()
       // A matbaa_onay click doesn't always complete the round — the client
       // can't tell in advance whether its own vote is the last one needed
       // (see the note above actionLabel), so it checks the server's answer.
@@ -443,8 +453,13 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   async function handleSaveOzalitEdit() {
     setOzalitBusy(true)
     try {
-      await saveProductComps(order.project_id, comps)
+      // notifyOrderOzalitEdit runs computeOrderOzalitEdit, which refuses once
+      // the matbaa has hit "Başladım" — so it goes FIRST. Writing the shared
+      // catalog before it meant a leader whose page predated that click
+      // changed the spec for good and got told only "İşlem başarısız", while
+      // the printer worked on from the version they started with.
       const updated = await api.notifyOrderOzalitEdit(order.id)
+      await saveProductComps(order.project_id, comps)
       toast.success('Ürün bilgileri güncellendi, matbaa bilgilendirildi.')
       onOpenChange(false)
       onUpdated?.(updated)

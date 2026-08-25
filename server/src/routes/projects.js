@@ -5,7 +5,7 @@ import {
   listProjects, getProject, getProjectForUpdate, getProjectIncludingDeleted,
   listProjectSubtasks, listProjectHistory,
   loadProjectAssignees,
-  patchProject, deleteProject, insertProject, logHistory,
+  patchProject, deleteProject, insertProject, logHistory, insertDemoSnapshot,
   listDeletedProjects, restoreProject, setProjectCatalogHidden,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
@@ -927,6 +927,15 @@ export async function projectRoutes(fastify) {
   // matbaa has started (computeDemoEdit/computeOzalitEdit). Also the one
   // place that clears demo_fix_pending/ozalit_fix_pending when an accepted
   // change request owed a fix — this submission IS the fix (migration 049).
+  //
+  // The corrected sheet is written HERE, inside this transaction, rather than
+  // by a separate POST /demos the client fired first: applyDemoEdit's throw
+  // has to be able to roll the correction back. With the write in its own
+  // earlier request, a leader whose page predated the matbaa's "Başladım"
+  // saved a change that stuck while this call 400'd — the printer went on
+  // cutting from the sheet they started, the app served the edited one, and
+  // neither the history row nor the ping below (the only things that make an
+  // edit visible) ever ran.
   fastify.post('/projects/:id/demo-edit-notify', { schema: schemas.projectsFormEditNotify }, async (request) => {
     await attachUser(request)
     const result = await withTx(async (client) => {
@@ -935,14 +944,31 @@ export async function projectRoutes(fastify) {
       assertNotLegacy(project)
       project.assignees = await loadProjectAssignees(client, project)
       const designerIds = project.assignees.map((a) => a.id)
+      // Guard first — everything below is unreachable once it throws.
       const { project: next, history } = applyDemoEdit(project, {
         user: request.user, designerIds, demoId: request.body?.demo_id ?? null,
       })
+      const snapshot = request.body?.payload
+        ? await insertDemoSnapshot(client, {
+          project_id: project.id,
+          kind: 'demo',
+          payload: request.body.payload,
+          attempt: request.body.attempt ?? (project.demo_attempt ?? 0) + 1,
+          created_by: request.user.id,
+        })
+        : null
       const updated = await patchProject(client, project.id, {
         demo_fix_pending: next.demo_fix_pending,
       })
       if (history) {
-        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await logHistory(client, {
+          ...history,
+          // Which snapshot this correction wrote (migration 052). Falls back
+          // to the body's demo_id for clients that still pre-write via /demos.
+          demo_id: snapshot?.id ?? history.demo_id ?? null,
+          done_by: request.user.id,
+          done_by_name: request.user.name,
+        }, request.user)
         await notifyDemoEdited(client, { project: updated, actor: request.user })
       }
       return updated
@@ -950,6 +976,8 @@ export async function projectRoutes(fastify) {
     return result
   })
 
+  // Ozalit twin of demo-edit-notify above — same in-transaction write, same
+  // reason. See its comment.
   fastify.post('/projects/:id/ozalit-edit-notify', { schema: schemas.projectsFormEditNotify }, async (request) => {
     await attachUser(request)
     const result = await withTx(async (client) => {
@@ -961,11 +989,25 @@ export async function projectRoutes(fastify) {
       const { project: next, history } = applyOzalitEdit(project, {
         user: request.user, designerIds, demoId: request.body?.demo_id ?? null,
       })
+      const snapshot = request.body?.payload
+        ? await insertDemoSnapshot(client, {
+          project_id: project.id,
+          kind: 'ozalit',
+          payload: request.body.payload,
+          attempt: request.body.attempt ?? (project.ozalit_attempt ?? 0) + 1,
+          created_by: request.user.id,
+        })
+        : null
       const updated = await patchProject(client, project.id, {
         ozalit_fix_pending: next.ozalit_fix_pending,
       })
       if (history) {
-        await logHistory(client, { ...history, done_by: request.user.id, done_by_name: request.user.name }, request.user)
+        await logHistory(client, {
+          ...history,
+          demo_id: snapshot?.id ?? history.demo_id ?? null,
+          done_by: request.user.id,
+          done_by_name: request.user.name,
+        }, request.user)
         await notifyOzalitEdited(client, { project: updated, actor: request.user })
       }
       return updated

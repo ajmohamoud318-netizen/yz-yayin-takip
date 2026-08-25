@@ -573,6 +573,29 @@ export async function logHistory(client, entry, user) {
  * excludes the deactivated user. `actor` is stamped on the history row.
  * Returns the number of projects advanced.
  */
+/**
+ * Insert one demo/ozalit form snapshot.
+ *
+ * Shared by `POST /demos` and the demo/ozalit edit-notify routes so a
+ * correction to an already-sent sheet is written inside the same transaction
+ * that authorizes it. Takes a `client` (never the pool) for exactly that
+ * reason — if the caller's guard throws afterwards, the row rolls back with
+ * it. See the "Başladım" guard in routes/demos.js for what goes wrong when
+ * the write and the guard live in separate requests.
+ */
+export async function insertDemoSnapshot(client, { project_id, kind, payload, attempt, created_by }) {
+  // demos.id is TEXT PRIMARY KEY with no default — mint a `d-<nanoid>` so the
+  // INSERT satisfies NOT NULL. The prefix keeps it visually distinct from
+  // user (u-…) / project (p-…) ids.
+  const { rows } = await client.query(
+    `INSERT INTO demos (id, project_id, kind, payload, attempt, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     RETURNING id, project_id, kind, payload, attempt, created_by, created_at`,
+    [`d-${nanoid(16)}`, project_id, kind, payload, attempt, created_by],
+  )
+  return rows[0]
+}
+
 export async function reconcileOzalitApprovals(actor) {
   const { rows: leaderRows } = await getPool().query(
     "SELECT id FROM users WHERE role = 'team_leader' AND is_active = TRUE",

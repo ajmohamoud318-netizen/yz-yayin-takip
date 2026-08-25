@@ -277,16 +277,19 @@ export function createHttpProjectRepository(userRepo) {
     // Notify the matbaa that a still-in-flight demo/ozalit form was edited.
     // Same free-edit window as cancel; logs history + pings printers only,
     // no project fields change.
-    // `demoId` is the snapshot this correction just saved (migration 052).
-    // The timeline row keeps it so a later correction of the same round —
-    // which reuses the same attempt slot — can't shadow this one's sheet.
-    async notifyDemoEdit(id, demoId = null) {
-      const { data } = await httpClient.post(`/projects/${id}/demo-edit-notify`, { demo_id: demoId })
+    // The corrected sheet is SENT here rather than pre-written through
+    // POST /demos, so the route can insert it in the same transaction that
+    // authorizes it — a refusal ("matbaa başladı") must leave no snapshot
+    // behind. The route stamps the row it created onto the timeline entry
+    // (migration 052) so a later correction of the same round, which reuses
+    // the attempt slot, can't shadow this one's sheet.
+    async notifyDemoEdit(id, { attempt, payload } = {}) {
+      const { data } = await httpClient.post(`/projects/${id}/demo-edit-notify`, { attempt, payload })
       cache.set(id, data)
       return data
     },
-    async notifyOzalitEdit(id, demoId = null) {
-      const { data } = await httpClient.post(`/projects/${id}/ozalit-edit-notify`, { demo_id: demoId })
+    async notifyOzalitEdit(id, { attempt, payload } = {}) {
+      const { data } = await httpClient.post(`/projects/${id}/ozalit-edit-notify`, { attempt, payload })
       cache.set(id, data)
       return data
     },

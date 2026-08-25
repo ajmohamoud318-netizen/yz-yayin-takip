@@ -602,12 +602,20 @@ const projectsIdParams = {
  * SPA just saved for this correction (migration 052) — optional, since an
  * older client (or a failed snapshot POST) still notifies without one.
  */
+// The corrected sheet travels WITH the notify call so the route can write it
+// inside the same transaction that authorizes it — see the route comment in
+// routes/projects.js. `demo_id` stays for older clients that still pre-wrote
+// the snapshot through POST /demos and only sent its id here.
 const projectsFormEditNotify = {
   ...projectsIdParams,
   body: {
     type: 'object',
     additionalProperties: false,
-    properties: { demo_id: { type: ['string', 'null'], maxLength: 64 } },
+    properties: {
+      demo_id: { type: ['string', 'null'], maxLength: 64 },
+      attempt: { type: 'integer', minimum: 0, maximum: 100 },
+      payload: { type: 'object' },
+    },
   },
 }
 

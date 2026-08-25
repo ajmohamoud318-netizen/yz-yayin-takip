@@ -1053,17 +1053,17 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    * to the created row (or null if the POST failed) — handleSave needs its id
    * to stamp the timeline row, everyone else can ignore it.
    */
+  function snapshotPayload(data) {
+    return { ...data, _customRows: customRows, _selectedComponents: selectedComponents ?? null }
+  }
+
   function persistServerSnapshot(attempt, data) {
     return api.createDemo({
       project_id: project.id,
       kind: variant.kind,
       attempt,
       silent: true,
-      payload: {
-        ...data,
-        _customRows: customRows,
-        _selectedComponents: selectedComponents ?? null,
-      },
+      payload: snapshotPayload(data),
     }).catch(() => null /* localStorage still has it; don't block the flow */)
   }
 
@@ -1074,6 +1074,25 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   async function persistCatalogEdits() {
     if (readOnly || !catalogComponents.length || !selectedComponents?.length) return
     try { await saveEditedComponents(project.id, selectedComponents) } catch { /* non-blocking */ }
+  }
+
+  /**
+   * Everything a successful step writes that ISN'T the step itself: the local
+   * form cache, the round's snapshot slot, and the shared Ürün Bilgileri
+   * catalog.
+   *
+   * Called AFTER the transition resolves, never before. These three used to
+   * run first, so a transition the server refused — wrong stage, a stale
+   * version, the matbaa having started — still left the edit committed
+   * everywhere the app reads from, with only a toast to say the "notify"
+   * half had failed. The transition is the authorization; nothing may be
+   * written until it has passed.
+   */
+  async function persistAfterStep(payload) {
+    saveForm(variant, project.id, payload, customRows, selectedComponents)
+    saveSnapshot(variant, project.id, writeAttempt, payload, customRows, selectedComponents)
+    await persistServerSnapshot(writeAttempt, payload)
+    await persistCatalogEdits()
   }
 
   async function handleAdvance() {
@@ -1104,13 +1123,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         // previous round's name from the loaded snapshot.
         payload = { ...form, [variant.personField]: user?.name ?? form[variant.personField] }
       }
-      saveForm(variant, project.id, payload, customRows, selectedComponents)
-      saveSnapshot(variant, project.id, writeAttempt, payload, customRows, selectedComponents)
-      persistServerSnapshot(writeAttempt, payload)
-      await persistCatalogEdits()
       const updated = rejectContext
         ? await api.rejectProject(project.id, rejectContext.reason, [], rejectContext.target)
         : await api.advanceProject(project.id)
+      await persistAfterStep(payload)
       updateOne(updated)
       toast.success(rejectContext ? 'Reddedildi, matbaaya yeniden gönderildi.' : variant.advanceToast(project))
       if (!rejectContext && variant.celebrateOnAdvance) celebrate()
@@ -1128,11 +1144,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       // Stamp the real approver at the moment approval actually happens —
       // this is the only point where "onaylayanKisi" should get a value.
       const approvedForm = { ...form, onaylayanKisi: user?.name ?? '' }
-      saveForm(variant, project.id, approvedForm, customRows, selectedComponents)
-      saveSnapshot(variant, project.id, writeAttempt, approvedForm, customRows, selectedComponents)
-      persistServerSnapshot(writeAttempt, approvedForm)
-      await persistCatalogEdits()
       const updated = await api.approveProject(project.id)
+      await persistAfterStep(approvedForm)
       updateOne(updated)
       toast.success('Onaylandı, proje üretime alındı.')
       onDone?.(updated)
@@ -1152,11 +1165,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     if (!project) return
     setBusy(true)
     try {
-      saveForm(variant, project.id, form, customRows, selectedComponents)
-      saveSnapshot(variant, project.id, writeAttempt, form, customRows, selectedComponents)
-      persistServerSnapshot(writeAttempt, form)
-      await persistCatalogEdits()
       const updated = await api.prepareBaskiOnay(project.id)
+      await persistAfterStep(form)
       updateOne(updated)
       toast.success('Baskı onay formu hazırlandı, başka bir ekip liderinin onayı bekleniyor.')
       onDone?.(updated)
@@ -1175,28 +1185,43 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     // notifyDemoEdit call and its own Geçmiş row for what was one save.
     setBusy(true)
     try {
-      saveForm(variant, project.id, form, customRows, selectedComponents)
-      // Always silent here, even when notifyOnSave is true: /demos itself
-      // would otherwise log its own generic "Demo formu gönderildi" row on
-      // top of the dedicated notify call below, leaving two overlapping
-      // entries for one save. The edit-notify call is the sole source of
-      // both the history row and the printer ping.
-      // Awaited here, unlike the fire-and-forget saves elsewhere: the
-      // timeline row below has to name the snapshot this correction wrote.
-      const saved = await persistServerSnapshot(writeAttempt, form)
-      await persistCatalogEdits()
-      if (notifyOnSave) {
+      const notify = notifyOnSave && (
+        variant.kind === 'demo' ? api.notifyDemoEdit
+          : variant.kind === 'ozalit' ? api.notifyOzalitEdit
+            : null
+      )
+      if (notify) {
+        // Correcting an already-sent round. NOTHING is written until the
+        // server has authorized it: the route inserts the snapshot inside
+        // the same transaction as computeDemoEdit/computeOzalitEdit.
+        //
+        // This used to save the sheet through POST /demos first and only
+        // then call notify, catching the refusal as "kaydedildi ama matbaa
+        // bilgilendirilemedi". That message was wrong about which half
+        // failed — the edit was live, and the matbaa (who had meanwhile hit
+        // "İşlemi Başlatın") went on working from the sheet they started
+        // while everyone else saw the corrected one, with no timeline row
+        // and no notification, because this very call is what writes both.
+        let updated
         try {
-          if (variant.kind === 'demo') await api.notifyDemoEdit(project.id, saved?.id ?? null)
-          else if (variant.kind === 'ozalit') await api.notifyOzalitEdit(project.id, saved?.id ?? null)
-          toast.success(`${variant.title} güncellendi, matbaa bilgilendirildi.`)
+          updated = await notify(project.id, { attempt: writeAttempt, payload: snapshotPayload(form) })
         } catch (err) {
-          // The edit itself is already saved above; only the notify step
-          // failed (e.g. matbaa started in the meantime) — say so without
-          // implying the save was lost.
-          toast.error(err.message || 'Form kaydedildi ama matbaa bilgilendirilemedi.')
+          // Re-read the project so the stale "Gönderilen ... Düzenleyin"
+          // button this save came from gives way to "Değişiklik İsteyin".
+          try { updateOne(await api.getProject(project.id)) } catch { /* the error below is the point */ }
+          toast.error(err.message || 'Form güncellenemedi.')
+          return
         }
+        saveForm(variant, project.id, form, customRows, selectedComponents)
+        await persistCatalogEdits()
+        updateOne(updated)
+        toast.success(`${variant.title} güncellendi, matbaa bilgilendirildi.`)
       } else {
+        saveForm(variant, project.id, form, customRows, selectedComponents)
+        // Silent: this path has no dedicated history call, and /demos would
+        // otherwise log a generic "Demo formu gönderildi" row for a plain save.
+        await persistServerSnapshot(writeAttempt, form)
+        await persistCatalogEdits()
         toast.success(variant.saveToast)
       }
       onOpenChange(false)

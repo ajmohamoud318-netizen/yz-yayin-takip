@@ -1,8 +1,7 @@
-import { nanoid } from 'nanoid'
 import { attachUser } from '../middleware/auth.js'
 import { badRequest, notFound } from '../domain/errors.js'
 import { getPool, withTx } from '../db/pool.js'
-import { logHistory } from '../services/project-repository.js'
+import { insertDemoSnapshot, logHistory } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
 
 /**
@@ -28,7 +27,8 @@ export async function demoRoutes(fastify) {
     await attachUser(request)
     const { project_id, kind = 'demo', payload = {}, attempt, silent = false } = request.body
     const proj = await getPool().query(
-      'SELECT id, demo_attempt, ozalit_attempt, origin FROM projects WHERE id = $1 AND deleted_at IS NULL', [project_id],
+      `SELECT id, demo_attempt, ozalit_attempt, origin, stage, demo_started, ozalit_started
+         FROM projects WHERE id = $1 AND deleted_at IS NULL`, [project_id],
     )
     if (proj.rowCount === 0) notFound('Proje bulunamadı.')
     // Imported backlist products (origin='legacy', migration 031) have no
@@ -36,6 +36,30 @@ export async function demoRoutes(fastify) {
     // See assertNotLegacy in routes/projects.js for the full rationale.
     if (proj.rows[0].origin === 'legacy') {
       badRequest('Kayıtlı ürün için demo/ozalit formu oluşturulamaz.')
+    }
+    // Matbaa "Başladım" gate (migration 048), enforced on the WRITE.
+    //
+    // A snapshot is the sheet the matbaa works from, so changing one is a
+    // change to their in-progress job and answers to the same gate as
+    // computeDemoEdit/computeOzalitEdit. That guard used to live only on
+    // /projects/:id/demo-edit-notify, which the client called *after* this
+    // route had already committed the row — so a refused edit still landed:
+    // the printer kept cutting from the sheet they started while the app
+    // served the edited one, with no history row and no ping, because the
+    // call that produces both is exactly the one that got refused.
+    //
+    // The matbaa is exempt: their own teslim stamps (handleAdvance) are
+    // written while started is true by definition. Everyone else must go
+    // through "Değişiklik İsteyin" and wait for the accept, which un-starts
+    // the round and reopens this path.
+    const { stage: currentStage, demo_started, ozalit_started } = proj.rows[0]
+    if (request.user.role !== 'printer') {
+      if (kind === 'demo' && demo_started && (currentStage === 'demo_teslim' || currentStage === 'cin_demo_teslim')) {
+        badRequest('Matbaa demo çalışmasına başladı, değişiklik isteyin.')
+      }
+      if (kind === 'ozalit' && ozalit_started && currentStage === 'ozalit_teslim') {
+        badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
+      }
     }
     // The attempt stamps which demo/ozalit round this form belongs to, so
     // the history timeline can reopen the exact sheet later — from any
@@ -46,17 +70,10 @@ export async function demoRoutes(fastify) {
         ? proj.rows[0].ozalit_attempt
         : proj.rows[0].demo_attempt) ?? 0
     const attemptNo = attempt ?? fallbackAttempt + 1
-    // demos.id is TEXT PRIMARY KEY with no default — the route mints a
-    // `d-<nanoid>` so the INSERT satisfies NOT NULL. The prefix keeps
-    // it visually distinct from user (u-…) / project (p-…) ids.
-    const demoId = `d-${nanoid(16)}`
     const result = await withTx(async (client) => {
-      const { rows } = await client.query(
-        `INSERT INTO demos (id, project_id, kind, payload, attempt, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6)
-         RETURNING id, project_id, kind, payload, attempt, created_by, created_at`,
-        [demoId, project_id, kind, payload, attemptNo, request.user.id],
-      )
+      const row = await insertDemoSnapshot(client, {
+        project_id, kind, payload, attempt: attemptNo, created_by: request.user.id,
+      })
       // Surface this in the project history list so the timeline isn't
       // missing designer submissions — unless the caller marks the save
       // `silent` (the spec-form dialog does: its advance/approve call
@@ -82,7 +99,7 @@ export async function demoRoutes(fastify) {
           request.user,
         )
       }
-      return rows[0]
+      return row
     })
     return result
   })
