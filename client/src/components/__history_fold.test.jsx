@@ -64,14 +64,14 @@ describe('ProjectHistory — a fold may not be the whole day', () => {
 
   it('leaves it collapsed when the day has a major row to read first', () => {
     const host = render([
-      at('08:30', { event: 'demo_started', note: 'Matbaa demoya başladı' }),
+      at('08:30', { event: 'demo_started', note: 'Matbaa demo çalışmasına başladı' }),
       subtask('08:45', 'Kapak, sayfa 12/40'),
       subtask('09:16', 'İç sayfa, sayfa 30/40'),
       subtask('10:04', 'Arka kapak, sayfa 38/40'),
     ])
     const toggle = host.querySelector('[aria-expanded]')
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(host.textContent).toContain('Matbaa Demoya Başladı')
+    expect(host.textContent).toContain('Demo Çalışması Başlatıldı')
     expect(host.textContent).not.toContain('Kapak, sayfa 12/40')
   })
 })

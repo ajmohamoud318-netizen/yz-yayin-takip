@@ -461,7 +461,7 @@ export async function notifyDemoStarted(client, { project, actor, assignees }) {
   return emit(client, {
     actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: [...leaders, ...designers], type: 'demo_started', tone: 'blue',
-    body: 'Matbaa demoya başladı, iptal veya düzenleme artık değişiklik isteği gerektirir',
+    body: 'Matbaa demo çalışmasına başladı, iptal veya düzenleme artık değişiklik isteği gerektirir',
   })
 }
 
@@ -471,7 +471,7 @@ export async function notifyOzalitStarted(client, { project, actor, assignees })
   return emit(client, {
     actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: [...leaders, ...designers], type: 'ozalit_started', tone: 'blue',
-    body: 'Matbaa ozalite başladı, iptal veya düzenleme artık değişiklik isteği gerektirir',
+    body: 'Matbaa ozalit çalışmasına başladı, iptal veya düzenleme artık değişiklik isteği gerektirir',
   })
 }
 
@@ -1016,7 +1016,7 @@ export async function notifyOrderOzalitStarted(client, { order, project, actor }
     actorId: actor?.id, title: project?.title ?? order?.project_title ?? 'Baskı',
     projectId: order?.project_id ?? project?.id, orderId: order?.id,
     recipientIds: leaders, type: 'order_ozalit_started', tone: 'blue',
-    body: 'Matbaa ozalite başladı, iptal veya düzenleme artık değişiklik isteği gerektirir',
+    body: 'Matbaa ozalit çalışmasına başladı, iptal veya düzenleme artık değişiklik isteği gerektirir',
     link: '/siparis-talepleri',
   })
 }

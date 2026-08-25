@@ -171,7 +171,7 @@ export default function Approvals({ tab = 'demo' }) {
         ? await api.markDemoStarted(startConfirm.project.id)
         : await api.markOzalitStarted(startConfirm.project.id)
       updateOne(updated)
-      toast.success(startConfirm.sub === 'demo' ? 'Demoya başladığınız işaretlendi.' : 'Ozalite başladığınız işaretlendi.')
+      toast.success(startConfirm.sub === 'demo' ? 'Demo çalışmasına başladığınız işaretlendi.' : 'Ozalit çalışmasına başladığınız işaretlendi.')
     } catch (err) {
       toast.error(err.message || 'İşlem tamamlanamadı.')
     } finally {
@@ -546,7 +546,7 @@ export default function Approvals({ tab = 'demo' }) {
       <ConfirmDialog
         open={!!startConfirm}
         onOpenChange={(v) => !v && setStartConfirm(null)}
-        title={startConfirm?.sub === 'demo' ? 'Demoya başladınız mı?' : 'Ozalite başladınız mı?'}
+        title={startConfirm?.sub === 'demo' ? 'Demo çalışmasına başladınız mı?' : 'Ozalit çalışmasına başladınız mı?'}
         description="Bundan sonra ekip lideri veya tasarımcının iptal ya da düzenleme yapması, sizin onayınızı gerektiren bir değişiklik talebine dönüşür."
         confirmLabel="İşlemi Başlatın"
         variant="success"

@@ -206,7 +206,7 @@ export function computeOrderOzalitStart(order, actor) {
       ozalit_started_by_name: actorName,
       ozalit_started_at: now,
     },
-    history: { step: 'ozalit_started', note: 'Matbaa ozalite başladı' },
+    history: { step: 'ozalit_started', note: 'Matbaa ozalit çalışmasına başladı' },
   }
 }
 
@@ -218,7 +218,7 @@ export function computeOrderOzalitCancel(order, actor) {
     badRequest('Bu işlemi yalnızca ekip lideri yapabilir.')
   }
   if (order.ozalit_started) {
-    badRequest('Matbaa ozalite başladı, doğrudan iptal edilemez, değişiklik isteyin.')
+    badRequest('Matbaa ozalit çalışmasına başladı, doğrudan iptal edilemez, değişiklik isteyin.')
   }
   return {
     order: {
@@ -245,7 +245,7 @@ export function computeOrderOzalitEdit(order, actor) {
     badRequest('Bu işlemi yalnızca ekip lideri yapabilir.')
   }
   if (order.ozalit_started) {
-    badRequest('Matbaa ozalite başladı, değişiklik isteyin.')
+    badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
   }
   return {
     // Clears the "fix owed" flag an accepted change request may have set

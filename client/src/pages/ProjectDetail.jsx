@@ -511,7 +511,7 @@ export default function ProjectDetail() {
     try {
       await api.markDemoStarted(project.id)
       await refetch()
-      toast.success('Demoya başladığınız işaretlendi.')
+      toast.success('Demo çalışmasına başladığınız işaretlendi.')
     } catch (err) {
       toast.error(err.message || 'İşlem tamamlanamadı.')
     } finally {
@@ -525,7 +525,7 @@ export default function ProjectDetail() {
     try {
       await api.markOzalitStarted(project.id)
       await refetch()
-      toast.success('Ozalite başladığınız işaretlendi.')
+      toast.success('Ozalit çalışmasına başladığınız işaretlendi.')
     } catch (err) {
       toast.error(err.message || 'İşlem tamamlanamadı.')
     } finally {
@@ -1948,7 +1948,7 @@ export default function ProjectDetail() {
           <DialogHeader>
             <DialogTitle>Değişiklik isteyin</DialogTitle>
             <DialogDescription>
-              Matbaa {changeRequestOpen === 'demo' ? 'demoya' : 'ozalite'} zaten başladı. Ne değiştirmek
+              Matbaa {changeRequestOpen === 'demo' ? 'demo' : 'ozalit'} çalışmasına başladı. Ne değiştirmek
               istediğinizi kısaca yazabilirsiniz — matbaa kabul ederse iptal veya düzenleme yapabilirsiniz.
             </DialogDescription>
           </DialogHeader>

@@ -1031,7 +1031,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
               {canRequestOzalitChange && (
                 <div className="space-y-2 rounded-md border bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">
-                    Matbaa ozalite başladı — doğrudan iptal veya düzenleme artık yapılamaz, bir değişiklik talebi gönderin.
+                    Matbaa ozalit çalışmasına başladı — doğrudan iptal veya düzenleme artık yapılamaz, bir değişiklik talebi gönderin.
                   </p>
                   <Textarea
                     rows={2}

@@ -76,7 +76,7 @@ describe('buildTimeline — consecutive repeats', () => {
     const rows = rowsOf(
       buildTimeline([
         edit('10:04'),
-        at('11:30', { event: 'demo_started', note: 'Matbaa demoya başladı' }),
+        at('11:30', { event: 'demo_started', note: 'Matbaa demo çalışmasına başladı' }),
         edit('11:35'),
       ]),
     )
@@ -110,7 +110,7 @@ describe('buildTimeline — consecutive repeats', () => {
    */
   it('never folds a whole day of demo negotiation behind one summary', () => {
     const days = buildTimeline([
-      at('08:45', { event: 'demo_started', note: 'Matbaa demoya başladı' }),
+      at('08:45', { event: 'demo_started', note: 'Matbaa demo çalışmasına başladı' }),
       at('08:45', { event: 'demo_change_requested', note: 'sayfa sayisi yanlis girildi' }),
       at('08:46', { event: 'demo_change_accepted', note: 'Matbaa değişiklik talebini kabul etti' }),
       at('09:16', { event: 'demo_change_requested', note: 'kaaa' }),
@@ -168,7 +168,7 @@ describe('historyMeta — demo/ozalit round lifecycle', () => {
 
   it('no longer labels a matbaa start as a stage advance', () => {
     const meta = historyMeta({ action: 'system', event: 'demo_started' })
-    expect(meta.label).toBe('Matbaa Demoya Başladı')
+    expect(meta.label).toBe('Demo Çalışması Başlatıldı')
     expect(meta.label).not.toBe('İlerletildi')
   })
 

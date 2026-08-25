@@ -881,7 +881,7 @@ export function computeDemoStart(project, actor) {
       from_stage: project.stage,
       to_stage: project.stage,
       done_by_name: actorName,
-      note: 'Matbaa demoya başladı',
+      note: 'Matbaa demo çalışmasına başladı',
     }),
   }
 }
@@ -917,7 +917,7 @@ export function computeOzalitStart(project, actor) {
       from_stage: project.stage,
       to_stage: project.stage,
       done_by_name: actorName,
-      note: 'Matbaa ozalite başladı',
+      note: 'Matbaa ozalit çalışmasına başladı',
     }),
   }
 }
@@ -944,7 +944,7 @@ export function computeDemoCancel(project, actor, ctx = {}) {
     badRequest('Bu işlemi yalnızca ekip lideri yapabilir.')
   }
   if (project.demo_started) {
-    badRequest('Matbaa demoya başladı, doğrudan iptal edilemez, değişiklik isteyin.')
+    badRequest('Matbaa demo çalışmasına başladı, doğrudan iptal edilemez, değişiklik isteyin.')
   }
   return {
     project: {
@@ -1000,7 +1000,7 @@ export function computeOzalitCancel(project, actor, ctx = {}) {
     badRequest('Bu işlemi yalnızca ekip lideri yapabilir.')
   }
   if (project.ozalit_started) {
-    badRequest('Matbaa ozalite başladı, doğrudan iptal edilemez, değişiklik isteyin.')
+    badRequest('Matbaa ozalit çalışmasına başladı, doğrudan iptal edilemez, değişiklik isteyin.')
   }
   return {
     project: {
@@ -1063,7 +1063,7 @@ export function computeDemoEdit(project, actor, ctx = {}) {
     badRequest('Bu işlemi yalnızca ekip lideri yapabilir.')
   }
   if (project.demo_started) {
-    badRequest('Matbaa demoya başladı, değişiklik isteyin.')
+    badRequest('Matbaa demo çalışmasına başladı, değişiklik isteyin.')
   }
   return {
     // Clears the "fix owed" flag an accepted change request may have set
@@ -1100,7 +1100,7 @@ export function computeOzalitEdit(project, actor, ctx = {}) {
     badRequest('Bu işlemi yalnızca ekip lideri yapabilir.')
   }
   if (project.ozalit_started) {
-    badRequest('Matbaa ozalite başladı, değişiklik isteyin.')
+    badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
   }
   return {
     // See computeDemoEdit's comment — this submission is the fix.

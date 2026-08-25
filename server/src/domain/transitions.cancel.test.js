@@ -84,7 +84,7 @@ describe('demo cancel', () => {
   it('refuses once the matbaa has started', () => {
     assert.throws(
       () => computeDemoCancel(demoProject({ demo_started: true }), leader, { designerIds: [] }),
-      /Matbaa demoya başladı/,
+      /Matbaa demo çalışmasına başladı/,
     )
   })
 
@@ -123,7 +123,7 @@ describe('ozalit cancel', () => {
   it('refuses once the matbaa has started', () => {
     assert.throws(
       () => computeOzalitCancel(ozalitProject({ ozalit_started: true }), leader, { designerIds: [] }),
-      /Matbaa ozalite başladı/,
+      /Matbaa ozalit çalışmasına başladı/,
     )
   })
 

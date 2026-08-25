@@ -1624,7 +1624,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
             <FileText className="h-4 w-4 shrink-0" />
             <span>
-              Matbaa {variant.kind === 'demo' ? 'demo' : 'ozalit'} üzerinde çalışmaya başladı.
+              Matbaa {variant.kind === 'demo' ? 'demo' : 'ozalit'} çalışmasına başladı.
               Değişiklik yapmak için "Değişiklik İste" düğmesini kullanın.
             </span>
           </div>
@@ -1633,7 +1633,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
             <FileText className="h-4 w-4 shrink-0" />
             <span>
-              Matbaa {variant.kind === 'demo' ? 'demo' : 'ozalit'} üzerinde çalışmaya başladı.
+              Matbaa {variant.kind === 'demo' ? 'demo' : 'ozalit'} çalışmasına başladı.
               Değişiklik için ekip liderine bildirin.
             </span>
           </div>

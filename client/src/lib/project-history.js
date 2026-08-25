@@ -159,8 +159,12 @@ const EVENTS = {
   // negotiation with no major row to break the run, so buildDays folded the
   // entire day into one "N küçük güncelleme" line — a rejected change is not
   // a küçük güncelleme.
-  demo_started: { icon: Play, tone: 'pipeline', weight: 'major', group: 'approval', label: 'Matbaa Demoya Başladı' },
-  ozalit_started: { icon: Play, tone: 'pipeline', weight: 'major', group: 'approval', label: 'Matbaa Ozalite Başladı' },
+  // noteMode 'echo': the note under these is a fixed server string that only
+  // restates the heading, and rows written before the label was reworded carry
+  // the older 'Matbaa demoya başladı' phrasing — neither says anything the
+  // heading doesn't, so an echo beats a grey second line that repeats it.
+  demo_started: { icon: Play, tone: 'pipeline', weight: 'major', group: 'approval', label: 'Demo Çalışması Başlatıldı', noteMode: 'echo' },
+  ozalit_started: { icon: Play, tone: 'pipeline', weight: 'major', group: 'approval', label: 'Ozalit Çalışması Başlatıldı', noteMode: 'echo' },
   // A cancel moves the project back to tasarım, so it is a pipeline moment,
   // not bookkeeping. dedupeNote trims its note down to 'Tasarıma geri döndü'.
   demo_cancelled: { icon: Undo2, tone: 'pending', weight: 'major', group: 'approval', label: 'Demo Talebi İptal Edildi' },
