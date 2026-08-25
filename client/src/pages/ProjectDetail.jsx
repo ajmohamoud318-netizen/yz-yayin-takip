@@ -2157,28 +2157,46 @@ function approveActionLabel(project) {
 }
 
 /**
+ * Most recent stage_history event for this project, e.g. 'demo_form_edited'.
+ * History is server-ordered oldest→newest, so the last element is current.
+ */
+function lastHistoryEvent(project) {
+  const h = project?.history ?? []
+  return h.length ? h[h.length - 1].event : null
+}
+
+/**
  * "İstendi"/"Gönderildi"/"Düzeltme Bekleniyor" status shown once a demo/ozalit
- * has been requested. Three states, checked in order:
+ * has been requested. Checked in order:
  *   - demo_fix_pending/ozalit_fix_pending — the matbaa accepted a change
  *     request (computeDemoChangeAccept un-starts the round), so it's back to
  *     demo_started=false but for a different reason than a fresh request:
  *     the team leader owes a corrected demo/ozalit before the matbaa can
  *     resume, not the matbaa picking up an untouched request.
- *   - demo_started/ozalit_started false — a fresh, still-cancelable request
- *     the matbaa hasn't picked up yet ("İstendi").
- *   - demo_started/ozalit_started true — actually with the matbaa
- *     ("Gönderildi").
+ *   - demo_started/ozalit_started true — the matbaa has actually pressed
+ *     "İşlemi Başlatın" and is producing it ("İşleme Başlandı") — not
+ *     "Gönderildi", which read as already delivered.
+ *   - the leader just submitted that owed fix (computeDemoEdit/
+ *     computeOzalitEdit, logged as demo_form_edited/ozalit_form_edited) —
+ *     back to demo_started=false like a fresh request, but this is the
+ *     *updated* form going back to the matbaa, not the original ask.
+ *   - otherwise — a fresh, still-cancelable request the matbaa hasn't
+ *     picked up yet ("İstendi").
  */
 function demoOzalitStatusLabel(project) {
   switch (project.stage) {
     case 'demo_teslim':
     case 'cin_demo_teslim':
       if (project.demo_fix_pending) return 'Düzeltme Bekleniyor'
-      return project.demo_started ? 'Demoya Gönderildi' : 'Demo İstendi'
+      if (project.demo_started) return 'Demo: İşleme Başlandı'
+      if (lastHistoryEvent(project) === 'demo_form_edited') return 'Güncel Demo Formu Matbaaya Gönderildi'
+      return 'Demo İstendi'
     case 'ozalit_teslim':
       if (!project.ozalit_requested && project.reject_target !== 'matbaa') return null
       if (project.ozalit_fix_pending) return 'Düzeltme Bekleniyor'
-      return project.ozalit_started ? "Ozalit'e Gönderildi" : 'Ozalit İstendi'
+      if (project.ozalit_started) return 'Ozalit: İşleme Başlandı'
+      if (lastHistoryEvent(project) === 'ozalit_form_edited') return 'Güncel Ozalit Formu Matbaaya Gönderildi'
+      return 'Ozalit İstendi'
     default:
       return null
   }
