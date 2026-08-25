@@ -27,8 +27,20 @@ export default function StageBar({ type, stage, compact = false }) {
     const el = currentRef.current
     const scroller = el?.parentElement?.parentElement // <li> → <ol> → scroll container
     if (!el || !scroller || scroller.scrollWidth <= scroller.clientWidth) return
-    const target = el.offsetLeft - (scroller.clientWidth - el.offsetWidth) / 2
-    scroller.scrollLeft = Math.max(0, target)
+
+    // Measure via getBoundingClientRect, not el.offsetLeft: offsetLeft is
+    // relative to the nearest *positioned* ancestor, which may not be the
+    // scroller, so it silently mis-centers and clips earlier "done" steps
+    // (e.g. cutting off step 1's circle) even when nothing needed to scroll.
+    const elRect = el.getBoundingClientRect()
+    const scrollerRect = scroller.getBoundingClientRect()
+    const alreadyVisible = elRect.left >= scrollerRect.left && elRect.right <= scrollerRect.right
+    if (alreadyVisible) return
+
+    const elOffsetLeft = elRect.left - scrollerRect.left + scroller.scrollLeft
+    const target = elOffsetLeft - (scroller.clientWidth - el.offsetWidth) / 2
+    const maxScroll = scroller.scrollWidth - scroller.clientWidth
+    scroller.scrollLeft = Math.min(Math.max(0, target), maxScroll)
   }, [currentIndex, type])
 
   if (compact) {
