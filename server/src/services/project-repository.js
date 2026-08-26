@@ -583,15 +583,20 @@ export async function logHistory(client, entry, user) {
  * it. See the "Başladım" guard in routes/demos.js for what goes wrong when
  * the write and the guard live in separate requests.
  */
-export async function insertDemoSnapshot(client, { project_id, kind, payload, attempt, created_by }) {
+export async function insertDemoSnapshot(client, { project_id, order_id = null, kind, payload, attempt, created_by }) {
   // demos.id is TEXT PRIMARY KEY with no default — mint a `d-<nanoid>` so the
   // INSERT satisfies NOT NULL. The prefix keeps it visually distinct from
   // user (u-…) / project (p-…) ids.
+  //
+  // order_id is NULL for a project's own demo/ozalit round and set for a
+  // sipariş's (migration 053). project_id is filled either way — a sipariş
+  // sheet still belongs to a product — so every read must scope on BOTH or a
+  // sipariş round shows up as the project's latest sheet.
   const { rows } = await client.query(
-    `INSERT INTO demos (id, project_id, kind, payload, attempt, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6)
-     RETURNING id, project_id, kind, payload, attempt, created_by, created_at`,
-    [`d-${nanoid(16)}`, project_id, kind, payload, attempt, created_by],
+    `INSERT INTO demos (id, project_id, order_id, kind, payload, attempt, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     RETURNING id, project_id, order_id, kind, payload, attempt, created_by, created_at`,
+    [`d-${nanoid(16)}`, project_id, order_id, kind, payload, attempt, created_by],
   )
   return rows[0]
 }

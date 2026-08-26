@@ -19,7 +19,14 @@ import {
 import api, { TYPE_LABELS } from '@/api'
 import { cn } from '@/lib/utils'
 import { getComponentsForProject, getComponentRows } from '@/data/productCatalog'
-import { printSpecSheets, buildSpecRows } from '@/lib/specPrint'
+import { printSpecSheets, buildFormSheet, buildFormKunye } from '@/lib/specPrint'
+import {
+  FormSheet,
+  FormSheetBlock,
+  FormSheetBlockTitle,
+  FormSheetHead,
+  SheetRow,
+} from '@/components/FormSheet'
 
 /* ------------------------------------------------------------------ */
 /*  localStorage helpers                                                */
@@ -87,19 +94,13 @@ function parcalarFor(project, form) {
 
 // Print every parça of a document in ONE job (one classic sheet each).
 function printDoc({ project, form, attemptNo, kind, printerName }) {
-  const designerNames = (project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''
   const attemptLabel = `${attemptNo}. ${kind === 'ozalit' ? 'OZALİT' : 'DEMO'}`
   const comps = parcalarFor(project, form)
   const list = comps.length > 0 ? comps : [{ component: form?.isinAdi || project?.title || '', rows: [] }]
-  const sheets = list.map((c) => ({
-    // Header = this parça's name, so the KUTU sheet isn't titled as the book.
-    title: c.component || project?.title || '',
-    attemptLabel,
-    rows: buildSpecRows({ component: c, form, kind }),
-    designerNames,
-    onaylayanKisi: form?.onaylayanKisi ?? '',
-    matbaaYetkilisi: printerName || form?.matbaaYetkilisi || '',
-  }))
+  // Each sheet is headed by the job and names its own parça as İŞİN ADI, so
+  // the KUTU sheet isn't titled as the book.
+  const sheetForm = { ...form, matbaaYetkilisi: printerName || form?.matbaaYetkilisi || '' }
+  const sheets = list.map((c) => buildFormSheet({ component: c, form: sheetForm, kind, title: project?.title || '', attemptLabel }))
   const ok = printSpecSheets(sheets, { docTitle: `${attemptLabel} — ${project?.title ?? ''}` })
   if (!ok) toast.error('Yazdırma penceresi açılamadı. Pop-up engelleyiciyi kontrol edin.')
 }
@@ -132,36 +133,34 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
           </DialogTitle>
         </DialogHeader>
 
+        {/* One sheet per parça — the same document printDoc() puts on paper. */}
         <div className="space-y-4">
-          {list.map((c, ci) => {
-            const rows = buildSpecRows({ component: c, form, kind })
-            return (
-              <div key={ci} className="rounded-lg border bg-white">
-                <div className="border-b px-4 py-3 text-center">
-                  <h2 className="text-base font-bold uppercase tracking-widest text-foreground">{c.component || project.title}</h2>
-                </div>
-                <div className="border-b px-4 py-2 text-right">
-                  <span className="text-sm font-bold">{attemptLabel}</span>
-                </div>
-                <div className="px-4 py-1">
-                  {rows.map(([label, val], i) => (
-                    <div
-                      key={i}
-                      className="grid grid-cols-[minmax(6rem,40%)_auto_1fr] items-start gap-2 border-b py-1.5 last:border-b-0"
-                    >
-                      <span className="pt-px text-[11px] font-semibold uppercase leading-snug tracking-wide text-muted-foreground">{label}</span>
-                      <span className="text-xs font-bold text-muted-foreground">:</span>
-                      <span className="min-w-0 whitespace-pre-wrap break-words text-[13px] leading-snug text-foreground">
-                        {val || <span className="text-muted-foreground/50">—</span>}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                {/* Signature block removed for now (see SpecFormDialog's
-                    matching note on SigBox). */}
-              </div>
-            )
-          })}
+          {list.map((c, ci) => (
+            <FormSheet key={ci}>
+              <FormSheetHead
+                title={isDemo ? 'Demo Üretim Formu' : 'Ozalit Üretim Formu'}
+                subtitle={project.title}
+                attemptLabel={attemptLabel}
+                icon={FileText}
+              />
+              <FormSheetBlock className="bg-muted/10">
+                <SheetRow label="İŞİN ADI" value={c.component || project.title} readOnly />
+                {buildFormKunye({ form, kind }).map(([label, val], i) => (
+                  <SheetRow key={i} label={label} value={val} readOnly />
+                ))}
+              </FormSheetBlock>
+              <FormSheetBlockTitle>Baskı Özellikleri</FormSheetBlockTitle>
+              <FormSheetBlock className="border-b-0">
+                {(c.rows ?? []).length === 0 ? (
+                  <p className="py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
+                ) : (
+                  (c.rows ?? []).map((r, i) => (
+                    <SheetRow key={r.id ?? i} label={r.label} value={r.value} readOnly />
+                  ))
+                )}
+              </FormSheetBlock>
+            </FormSheet>
+          ))}
         </div>
 
         <DialogFooter>

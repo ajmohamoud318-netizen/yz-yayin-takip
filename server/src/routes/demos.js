@@ -18,14 +18,17 @@ export async function demoRoutes(fastify) {
   fastify.get('/demos', async (request) => {
     await attachUser(request)
     const { rows } = await getPool().query(
-      'SELECT id, project_id, kind, payload, attempt, created_by, created_at FROM demos ORDER BY created_at DESC',
+      // order_id (migration 053) rides along so the client can tell a
+      // sipariş's ozalit sheet apart from the project's own — both carry the
+      // same project_id and kind.
+      'SELECT id, project_id, order_id, kind, payload, attempt, created_by, created_at FROM demos ORDER BY created_at DESC',
     )
     return rows
   })
 
   fastify.post('/demos', { schema: schemas.demosCreate }, async (request) => {
     await attachUser(request)
-    const { project_id, kind = 'demo', payload = {}, attempt, silent = false } = request.body
+    const { project_id, order_id = null, kind = 'demo', payload = {}, attempt, silent = false } = request.body
     const result = await withTx(async (client) => {
       // Read the project INSIDE the transaction, with the same SELECT … FOR
       // UPDATE every route in projects.js uses.
@@ -44,6 +47,21 @@ export async function demoRoutes(fastify) {
       // is committed — and then sees it. No interleaving is left.
       const project = await getProjectForUpdate(client, project_id)
       if (!project) notFound('Proje bulunamadı.')
+      // A sipariş's ozalit sheet (migration 053). Locked with the same
+      // SELECT … FOR UPDATE the project gets above, and for the same reason:
+      // the printer's own /ozalit-start commits between a check and an insert
+      // otherwise, and the started-gate below would pass on a stale row.
+      let order = null
+      if (order_id) {
+        const { rows: orderRows } = await client.query(
+          'SELECT * FROM order_requests WHERE id = $1 FOR UPDATE', [order_id],
+        )
+        order = orderRows[0]
+        if (!order) notFound('Talep bulunamadı.')
+        if (order.project_id !== project_id) {
+          badRequest('Talep bu projeye ait değil.')
+        }
+      }
       // Imported backlist products (origin='legacy', migration 031) have no
       // design phase to demo — they were inserted straight at a finished stage.
       // See assertNotLegacy in routes/projects.js for the full rationale.
@@ -66,30 +84,48 @@ export async function demoRoutes(fastify) {
       // through "Değişiklik İsteyin" and wait for the accept, which un-starts
       // the round and reopens this path.
       if (request.user.role !== 'printer') {
-        const stage = project.stage
-        if (kind === 'demo' && project.demo_started && (stage === 'demo_teslim' || stage === 'cin_demo_teslim')) {
-          badRequest('Matbaa demo çalışmasına başladı, değişiklik isteyin.')
-        }
-        if (kind === 'ozalit' && project.ozalit_started && stage === 'ozalit_teslim') {
-          badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
+        if (order) {
+          // The sipariş's own round lives at tasarimci_onay (migration 051),
+          // with the same flag under a different name.
+          if (order.ozalit_started && order.status === 'tasarimci_onay') {
+            badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
+          }
+        } else {
+          const stage = project.stage
+          if (kind === 'demo' && project.demo_started && (stage === 'demo_teslim' || stage === 'cin_demo_teslim')) {
+            badRequest('Matbaa demo çalışmasına başladı, değişiklik isteyin.')
+          }
+          if (kind === 'ozalit' && project.ozalit_started && stage === 'ozalit_teslim') {
+            badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
+          }
         }
       }
       // The attempt stamps which demo/ozalit round this form belongs to, so
       // the history timeline can reopen the exact sheet later — from any
       // browser (the SPA used to keep these only in localStorage). When the
       // client doesn't send one, derive it from the project's counter.
-      const fallbackAttempt =
-        (kind === 'ozalit' ? project.ozalit_attempt : project.demo_attempt) ?? 0
+      const fallbackAttempt = (order
+        ? order.ozalit_attempt
+        : (kind === 'ozalit' ? project.ozalit_attempt : project.demo_attempt)) ?? 0
       const attemptNo = attempt ?? fallbackAttempt + 1
       const row = await insertDemoSnapshot(client, {
-        project_id, kind, payload, attempt: attemptNo, created_by: request.user.id,
+        project_id, order_id, kind, payload, attempt: attemptNo, created_by: request.user.id,
       })
       // Surface this in the project history list so the timeline isn't
       // missing designer submissions — unless the caller marks the save
       // `silent` (the spec-form dialog does: its advance/approve call
       // already produces the meaningful "Demoya Gönderildi" entry, and a
       // second "Demo formu gönderildi" row would just be noise).
-      if (!silent) {
+      if (!silent && order) {
+        // A sipariş round's timeline is order_history, not stage_history —
+        // the project timeline already carries its own `order_*` events for
+        // the steps themselves.
+        await client.query(
+          `INSERT INTO order_history (order_id, step, signed_by_id, notes, demo_id)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [order_id, 'ozalit_form', request.user.id, 'Ozalit formu gönderildi', row.id],
+        )
+      } else if (!silent) {
         // `project` is the row this transaction already holds a lock on, so
         // its stage is current — no second read (the old one went through the
         // pool, unlocked, and could disagree with the row being written).

@@ -831,6 +831,10 @@ const demosCreate = {
     required: ['project_id'],
     properties: {
       project_id: projectId,
+      // Set for a sipariş's own ozalit round (migration 053); NULL/absent for
+      // a project's. Both carry project_id, so this is what tells the two
+      // apart on read.
+      order_id: { type: ['string', 'null'], minLength: 1, maxLength: 64 },
       kind: { type: 'string', enum: ['demo', 'ozalit', 'baski_onay'] },
       payload: { type: 'object' },
       attempt: { type: 'integer', minimum: 0, maximum: 100 },
@@ -895,9 +899,11 @@ const ordersAdvance = {
         items: { type: 'string', minLength: 1, maxLength: 64 },
       },
       expectedVersion: { type: ['integer', 'null'], minimum: 0 },
-      // Only meaningful when the order is at 'goruldu' on a RESUBMIT
+      // Only meaningful when the order is at 'kontrol_edildi' — the
+      // designer's ozalit-request step (migration 054) — on a RESUBMIT
       // (order.last_reject_type === 'designer'). The route 400s if this is
-      // sent on a first submission, or omitted on a resubmit.
+      // sent on a first submission, at any other step, or omitted on a
+      // resubmit.
       route: { type: 'string', enum: ['tasarimci_onay', 'ekran_onay'] },
     },
   },
@@ -930,6 +936,22 @@ const ordersReject = {
         maxItems: 64,
         items: { type: 'string', minLength: 1, maxLength: 64 },
       },
+    },
+  },
+}
+
+// Body for POST .../ozalit-edit-notify — the sipariş twin of
+// projectsFormEditNotify. Carries the corrected sheet so the route can write
+// the snapshot inside the same transaction that authorizes the edit; without
+// it a refused edit would still have landed via a prior POST /demos.
+const ordersOzalitEditNotify = {
+  ...ordersIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      attempt: { type: 'integer', minimum: 0, maximum: 100 },
+      payload: { type: 'object' },
     },
   },
 }
@@ -1087,6 +1109,7 @@ export const schemas = {
   ordersReject,
   ordersIdParams,
   ordersOzalitChangeRequest,
+  ordersOzalitEditNotify,
   ordersBaskiOnayForm,
   orderSubtasksPatch,
   handoversCreate,

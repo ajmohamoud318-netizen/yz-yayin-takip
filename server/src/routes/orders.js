@@ -10,7 +10,7 @@ import {
   computeOrderOzalitChangeRequest, computeOrderOzalitChangeAccept, computeOrderOzalitChangeDecline,
 } from '../domain/order-transitions.js'
 import {
-  getProject, getProjectForUpdate, patchProject, logHistory,
+  getProject, getProjectForUpdate, patchProject, logHistory, insertDemoSnapshot,
 } from '../services/project-repository.js'
 import { assertOrderable, isAtOrPastStage } from '../domain/pipeline.js'
 import { schemas } from '../schemas/index.js'
@@ -51,7 +51,7 @@ export async function orderRoutes(fastify) {
               o.ozalit_started, o.ozalit_started_by, o.ozalit_started_by_name, o.ozalit_started_at,
               o.ozalit_change_requested_at, o.ozalit_change_requested_by, o.ozalit_change_requested_by_name,
               o.ozalit_change_requested_note, o.ozalit_fix_pending,
-              o.last_reject_type, o.baski_onay_form,
+              o.last_reject_type, o.baski_onay_form, o.ozalit_attempt,
               o.version, o.created_at, o.updated_at, p.title AS project_title,
               u.name AS requested_by_name
        FROM order_requests o
@@ -63,7 +63,7 @@ export async function orderRoutes(fastify) {
     const out = []
     for (const row of rows) {
       const { rows: hist } = await getPool().query(
-        `SELECT oh.step, oh.notes, oh.signed_by_id, oh.created_at,
+        `SELECT oh.step, oh.notes, oh.signed_by_id, oh.created_at, oh.demo_id,
                 u.name AS signed_by_name, u.role AS signed_by_role
            FROM order_history oh
            LEFT JOIN users u ON u.id = oh.signed_by_id
@@ -95,6 +95,10 @@ export async function orderRoutes(fastify) {
         order_history: hist.map((h) => ({
           step: h.step,
           notes: h.notes,
+          // Which ozalit sheet this row produced (migration 053) — lets the
+          // sipariş timeline reopen the exact snapshot, not just the newest
+          // row in the attempt slot.
+          demo_id: h.demo_id ?? null,
           signed_by_id: h.signed_by_id,
           signed_by_name: h.signed_by_name,
           // The signer's CURRENT role (not their role at signing time — same
@@ -201,15 +205,20 @@ export async function orderRoutes(fastify) {
       let next = ORDER_STEP_NEXT[order.status]
       if (!next) badRequest('Bu talep zaten tamamlandı.')
 
-      // goruldu's next step is a fixed 'tasarimci_onay' on a first
-      // submission. Only on a RESUBMIT (order.last_reject_type === 'designer'
-      // — set by a prior reject-to-designer, see PATCH .../reject) does the
-      // designer get to choose between another physical ozalit and a digital
-      // Ekran Onayı. clearResubmitFlag is set whenever the order leaves
-      // goruldu at all, resubmit or not — the flag only ever needs to
-      // survive for the one click it gates.
+      // The ozalit request is the designer's SECOND step (kontrol_edildi,
+      // migration 054), so that is where the route choice lives — goruldu
+      // only records the checks and always advances to kontrol_edildi.
+      //
+      // From kontrol_edildi the next step is a fixed 'tasarimci_onay' on a
+      // first submission. Only on a RESUBMIT (order.last_reject_type ===
+      // 'designer' — set by a prior reject-to-designer, see PATCH
+      // .../reject) does the designer get to choose between another physical
+      // ozalit and a digital Ekran Onayı. clearResubmitFlag is set whenever
+      // the order leaves kontrol_edildi at all, resubmit or not — the flag
+      // only ever needs to survive for the one click it gates, and that
+      // click is now one step later than it used to be.
       let clearResubmitFlag = false
-      if (order.status === 'goruldu') {
+      if (order.status === 'kontrol_edildi') {
         const isResubmit = order.last_reject_type === 'designer'
         if (chosenRoute != null && !isResubmit) {
           badRequest('İlk gönderimde onay seçimi yapılamaz.')
@@ -221,6 +230,8 @@ export async function orderRoutes(fastify) {
           next = chosenRoute
         }
         clearResubmitFlag = true
+      } else if (chosenRoute != null) {
+        badRequest('Onay seçimi yalnızca ozalit isteme adımında yapılabilir.')
       }
 
       // matbaa_onay is multi-party (every active team leader + every order
@@ -311,7 +322,7 @@ export async function orderRoutes(fastify) {
                    ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
                    ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
                    ozalit_change_requested_note, ozalit_fix_pending,
-                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+                   last_reject_type, baski_onay_form, ozalit_attempt, version, created_at, updated_at`,
         [
           orderId, statusToSet,
           order.status === 'pending' ? JSON.stringify(assignees) : null,
@@ -375,8 +386,10 @@ export async function orderRoutes(fastify) {
               event: 'order_advance',
               note: next === 'goruldu'
                 ? 'Baskı tasarımcıya aktarıldı'
+                : next === 'kontrol_edildi'
+                  ? 'Tasarımcı kontrolleri yapıldı'
                 : next === 'tasarimci_onay'
-                  ? 'Tasarımcı onayı verildi'
+                  ? 'Ozalit istendi, matbaaya gönderildi'
                   : next === 'ekran_onay'
                     ? 'Baskı ekran onayına gönderildi'
                     : next === 'matbaa_onay'
@@ -442,7 +455,7 @@ export async function orderRoutes(fastify) {
                    ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
                    ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
                    ozalit_change_requested_note, ozalit_fix_pending,
-                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+                   last_reject_type, baski_onay_form, ozalit_attempt, version, created_at, updated_at`,
         [orderId, patch.matbaa_received, patch.matbaa_received_by, patch.matbaa_received_at],
       )
       await client.query(
@@ -502,6 +515,11 @@ export async function orderRoutes(fastify) {
                ozalit_change_requested_at = NULL, ozalit_change_requested_by = NULL,
                ozalit_change_requested_by_name = NULL, ozalit_change_requested_note = NULL,
                ozalit_fix_pending = FALSE,
+               -- A lost proof invalidates the round: the next delivery is a
+               -- NEW sipariş ozalit and gets its own sheet slot (migration
+               -- 053). Twin of computeOzalitNotReceived bumping the
+               -- project's ozalit_attempt on the main pipeline.
+               ozalit_attempt = ozalit_attempt + 1,
                version = version + 1, updated_at = NOW()
          WHERE id = $1
          RETURNING id, project_id, status, requested_by, payload, assignee_ids,
@@ -509,7 +527,7 @@ export async function orderRoutes(fastify) {
                    ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
                    ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
                    ozalit_change_requested_note, ozalit_fix_pending,
-                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+                   last_reject_type, baski_onay_form, ozalit_attempt, version, created_at, updated_at`,
         [
           orderId, patch.status, patch.matbaa_received, patch.matbaa_received_by,
           patch.matbaa_received_at, JSON.stringify(patch.matbaa_approvals),
@@ -522,9 +540,11 @@ export async function orderRoutes(fastify) {
       )
       const proj = await getProjectForUpdate(client, order.project_id)
       if (proj) {
-        // Bumps the attempt counter, same as a matbaa-target rejection —
-        // a fresh proof is a new ozalit round for the project too.
-        await patchProject(client, proj.id, { ozalit_attempt: (proj.ozalit_attempt ?? 0) + 1 })
+        // The round counter bumped above is the ORDER's own (migration 053).
+        // This used to bump projects.ozalit_attempt instead — the sipariş had
+        // no counter to call its own — which renumbered the project's ozalit
+        // rounds from a sipariş event and pushed the project past the
+        // "2+ denemede" urgency threshold AppShell reads.
         await logHistory(
           client,
           {
@@ -580,7 +600,7 @@ export async function orderRoutes(fastify) {
                    ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
                    ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
                    ozalit_change_requested_note, ozalit_fix_pending,
-                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+                   last_reject_type, baski_onay_form, ozalit_attempt, version, created_at, updated_at`,
         [orderId, patch.ozalit_started, patch.ozalit_started_by, patch.ozalit_started_by_name, patch.ozalit_started_at],
       )
       await client.query(
@@ -625,7 +645,7 @@ export async function orderRoutes(fastify) {
                    ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
                    ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
                    ozalit_change_requested_note, ozalit_fix_pending,
-                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+                   last_reject_type, baski_onay_form, ozalit_attempt, version, created_at, updated_at`,
         [orderId, patch.status],
       )
       await client.query(
@@ -645,11 +665,18 @@ export async function orderRoutes(fastify) {
     return result
   })
 
-  // Team leader edits the product spec (saved separately via the shared
-  // Ürün Bilgileri catalog — see saveProductComps on the client) while it's
-  // still sitting with the matbaa, pre-start. This route only logs the
-  // history/notify side, same split as the main pipeline's demo/ozalit edit.
-  fastify.post('/order-requests/:id/ozalit-edit-notify', { schema: schemas.ordersIdParams }, async (request) => {
+  // Team leader corrects the sipariş's ozalit sheet while it's still sitting
+  // with the matbaa, pre-start. Twin of POST /projects/:id/ozalit-edit-notify,
+  // including the reason the snapshot is written HERE rather than by a prior
+  // POST /demos: this call is the authorization, so nothing may be committed
+  // until computeOrderOzalitEdit has passed. A refused edit that had already
+  // landed left the matbaa cutting from the sheet they started while everyone
+  // else saw the corrected one, with no history row and no ping.
+  //
+  // The parça rows themselves still go to the shared Ürün Bilgileri catalog
+  // (saveProductComps on the client) — that's the reçete, and a reprint is a
+  // reprint of the same product. What lands here is this round's own sheet.
+  fastify.post('/order-requests/:id/ozalit-edit-notify', { schema: schemas.ordersOzalitEditNotify }, async (request) => {
     await attachUser(request)
     const orderId = request.params.id
     const result = await withTx(async (client) => {
@@ -657,6 +684,16 @@ export async function orderRoutes(fastify) {
       const order = rows[0]
       if (!order) notFound('Talep bulunamadı.')
       const { order: patch, history } = computeOrderOzalitEdit(order, request.user)
+      const snapshot = request.body?.payload
+        ? await insertDemoSnapshot(client, {
+          project_id: order.project_id,
+          order_id: orderId,
+          kind: 'ozalit',
+          payload: request.body.payload,
+          attempt: request.body.attempt ?? (order.ozalit_attempt ?? 0) + 1,
+          created_by: request.user.id,
+        })
+        : null
       const { rows: updated } = await client.query(
         `UPDATE order_requests SET ozalit_fix_pending = $2, version = version + 1, updated_at = NOW()
          WHERE id = $1
@@ -665,18 +702,22 @@ export async function orderRoutes(fastify) {
                    ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
                    ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
                    ozalit_change_requested_note, ozalit_fix_pending,
-                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+                   last_reject_type, baski_onay_form, ozalit_attempt, version, created_at, updated_at`,
         [orderId, patch.ozalit_fix_pending],
       )
       await client.query(
-        `INSERT INTO order_history (order_id, step, signed_by_id, notes) VALUES ($1,$2,$3,$4)`,
-        [orderId, history.step, request.user.id, history.note],
+        // demo_id (migration 053) points this row at the exact sheet the
+        // correction produced — two corrections of one round share an attempt
+        // slot, so an attempt lookup alone always resolves to the later one.
+        `INSERT INTO order_history (order_id, step, signed_by_id, notes, demo_id) VALUES ($1,$2,$3,$4,$5)`,
+        [orderId, history.step, request.user.id, history.note, snapshot?.id ?? null],
       )
       const proj = await getProjectForUpdate(client, order.project_id)
       if (proj) {
         await logHistory(client, {
           project_id: proj.id, from_stage: proj.stage, to_stage: proj.stage,
           action: 'system', event: 'order_ozalit_edited', note: history.note,
+          demo_id: snapshot?.id ?? null,
         }, request.user)
       }
       await notifyOrderOzalitEdited(client, { order: updated[0], project: proj, actor: request.user })
@@ -707,7 +748,7 @@ export async function orderRoutes(fastify) {
                    ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
                    ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
                    ozalit_change_requested_note, ozalit_fix_pending,
-                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+                   last_reject_type, baski_onay_form, ozalit_attempt, version, created_at, updated_at`,
         [
           orderId, patch.ozalit_change_requested_at, patch.ozalit_change_requested_by,
           patch.ozalit_change_requested_by_name, patch.ozalit_change_requested_note,
@@ -756,7 +797,7 @@ export async function orderRoutes(fastify) {
                    ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
                    ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
                    ozalit_change_requested_note, ozalit_fix_pending,
-                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+                   last_reject_type, baski_onay_form, ozalit_attempt, version, created_at, updated_at`,
         [orderId],
       )
       await client.query(
@@ -797,7 +838,7 @@ export async function orderRoutes(fastify) {
                    ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
                    ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
                    ozalit_change_requested_note, ozalit_fix_pending,
-                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+                   last_reject_type, baski_onay_form, ozalit_attempt, version, created_at, updated_at`,
         [orderId],
       )
       await client.query(
@@ -852,6 +893,11 @@ export async function orderRoutes(fastify) {
                ozalit_change_requested_at = NULL, ozalit_change_requested_by = NULL,
                ozalit_change_requested_by_name = NULL, ozalit_change_requested_note = NULL,
                ozalit_fix_pending = FALSE,
+               -- The rejected proof is spent — the rework comes back as a new
+               -- sipariş ozalit round with its own sheet (migration 053),
+               -- mirroring computeRejection bumping ozalit_attempt on a
+               -- matbaa-target project rejection.
+               ozalit_attempt = ozalit_attempt + 1,
                version = version + 1, updated_at = NOW()
          WHERE id = $1
          RETURNING id, project_id, status, requested_by, payload, assignee_ids,
@@ -859,7 +905,7 @@ export async function orderRoutes(fastify) {
                    ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
                    ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
                    ozalit_change_requested_note, ozalit_fix_pending,
-                   last_reject_type, baski_onay_form, version, created_at, updated_at`,
+                   last_reject_type, baski_onay_form, ozalit_attempt, version, created_at, updated_at`,
         [orderId, targetStatus, rejectTarget],
       )
       await client.query(
@@ -890,9 +936,8 @@ export async function orderRoutes(fastify) {
       }
       const proj = await getProjectForUpdate(client, order.project_id)
       if (proj) {
-        await patchProject(client, proj.id, {
-          ozalit_attempt: (proj.ozalit_attempt ?? 0) + 1,
-        })
+        // Same as matbaa-not-received above: the bump belongs to the order's
+        // own ozalit_attempt (done in the UPDATE), not the project's.
         await logHistory(
           client,
           {
@@ -952,7 +997,7 @@ export async function orderRoutes(fastify) {
            ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
            ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
            ozalit_change_requested_note, ozalit_fix_pending,
-           last_reject_type, baski_onay_form, version, created_at, updated_at`,
+           last_reject_type, baski_onay_form, ozalit_attempt, version, created_at, updated_at`,
         [orderId, JSON.stringify(nextForm)],
       )
       return updated[0]
@@ -993,7 +1038,7 @@ export async function orderRoutes(fastify) {
            ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
            ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
            ozalit_change_requested_note, ozalit_fix_pending,
-           last_reject_type, baski_onay_form, version, created_at, updated_at`,
+           last_reject_type, baski_onay_form, ozalit_attempt, version, created_at, updated_at`,
         [orderId, JSON.stringify(finalForm)],
       )
       await client.query(

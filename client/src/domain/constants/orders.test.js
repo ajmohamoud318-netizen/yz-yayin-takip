@@ -11,6 +11,7 @@ import {
   matbaaOnayLeaderApproved,
   canApproveMatbaaOnayNow,
   canActOnOrder,
+  orderOzalitFormMode,
 } from './orders.js'
 
 describe('order workflow step graph', () => {
@@ -20,11 +21,18 @@ describe('order workflow step graph', () => {
     }
   })
   it('the ekran_onay branch is valid from ekran_onay onward', () => {
-    // goruldu's default ORDER_STEP_NEXT is tasarimci_onay; the ekran_onay
-    // branch is an explicit server-side override on resubmit, not reflected
-    // in the map — this only checks the segment FROM ekran_onay onward.
+    // kontrol_edildi's default ORDER_STEP_NEXT is tasarimci_onay; the
+    // ekran_onay branch is an explicit server-side override on resubmit, not
+    // reflected in the map — this only checks the segment FROM ekran_onay on.
     expect(ORDER_STEP_NEXT.ekran_onay).toBe('siparis_baski_onay')
     expect(ORDER_STEP_NEXT.siparis_baski_onay).toBe('onaylandi')
+  })
+  it("the designer's turn is two steps: the checks, then the ozalit request", () => {
+    // Migration 054. Both belong to the same owner, and the request step is
+    // what the resubmit route choice hangs off — see the server's /advance.
+    expect(ORDER_STEP_NEXT.goruldu).toBe('kontrol_edildi')
+    expect(ORDER_STEP_NEXT.kontrol_edildi).toBe('tasarimci_onay')
+    expect(ORDER_STEP_OWNER.kontrol_edildi).toBe(ORDER_STEP_OWNER.goruldu)
   })
   it('the final step (onaylandi) has no next', () => {
     expect(ORDER_STEP_NEXT.onaylandi).toBeUndefined()
@@ -176,6 +184,22 @@ describe('canActOnOrder (ProjectDetail — any role viewing any order)', () => {
     expect(canActOnOrder(AYLIN, order)).toBe(true)
     expect(canActOnOrder(NUR, order)).toBe(false)
     expect(canActOnOrder(AYSE, order)).toBe(false)
+  })
+
+  it('kontrol_edildi is the same designer\'s second step, same assignment rule', () => {
+    const order = { id: 'o-1', status: 'kontrol_edildi', assignee_ids: ['u-aylin'] }
+    expect(canActOnOrder(AYLIN, order)).toBe(true)
+    expect(canActOnOrder(NUR, order)).toBe(false)
+    expect(canActOnOrder(AYSE, order)).toBe(false)
+  })
+
+  it('the assigned designer opens the ozalit sheet to SEND it at kontrol_edildi', () => {
+    const order = { id: 'o-1', status: 'kontrol_edildi', assignee_ids: ['u-aylin'] }
+    expect(orderOzalitFormMode(order, AYLIN)).toBe('advance')
+    // Everyone else only reads it — the request is the designer's to make.
+    expect(orderOzalitFormMode(order, NUR)).toBe('view')
+    expect(orderOzalitFormMode(order, AYSE)).toBe('view')
+    expect(orderOzalitFormMode(order, OKTAY)).toBe('view')
   })
 
   it('goruldu falls back to project assignment for legacy orders', () => {

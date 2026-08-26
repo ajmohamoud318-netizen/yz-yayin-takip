@@ -1,13 +1,14 @@
 /** Sipariş talep mini-workflow — separate from the main project pipeline. */
 
 export const ORDER_STEPS = [
-  'pending', 'goruldu', 'tasarimci_onay', 'ekran_onay', 'matbaa_onay',
-  'siparis_baski_onay', 'onaylandi',
+  'pending', 'goruldu', 'kontrol_edildi', 'tasarimci_onay', 'ekran_onay',
+  'matbaa_onay', 'siparis_baski_onay', 'onaylandi',
 ]
 
 export const ORDER_STEP_LABELS = {
   pending: 'Talep',
   goruldu: 'Tasarımcıya Aktarıldı',
+  kontrol_edildi: 'Kontrol Edildi',
   tasarimci_onay: 'Ozalit İstendi',
   ekran_onay: 'Ekran Onayı',
   matbaa_onay: 'Onay Bekleniyor',
@@ -19,6 +20,9 @@ export const ORDER_STEP_LABELS = {
   matbaa_received: 'Matbaa Teslimi Alındı',
   matbaa_not_received: 'Matbaa Teslimi Alınamadı',
   matbaa_approve: 'Matbaa Onayı Verildi',
+  // The sipariş's own ozalit sheet, written when the designer submits the
+  // Ozalit Üretim Formu at kontrol_edildi (migration 053's demos.order_id).
+  ozalit_form: 'Ozalit Formu Gönderildi',
   // Sub-events for the order's own ozalit-started/cancel/edit/change-request
   // flow (migration 051, full parity with the main pipeline's demo/ozalit
   // started flow — migrations 048/049), logged while status stays at
@@ -39,7 +43,7 @@ export const ORDER_STEP_LABELS = {
 export const ORDER_OZALIT_ROUND_STEPS = new Set([
   'tasarimci_onay', 'ekran_onay', 'matbaa_onay',
   'matbaa_received', 'matbaa_not_received', 'matbaa_approve',
-  'ozalit_started', 'ozalit_cancelled', 'ozalit_edited',
+  'ozalit_form', 'ozalit_started', 'ozalit_cancelled', 'ozalit_edited',
   'ozalit_change_requested', 'ozalit_change_accepted', 'ozalit_change_declined',
 ])
 
@@ -55,26 +59,34 @@ export const ORDER_OZALIT_ROUND_STEPS = new Set([
 // siparis_baski_onay's 'team_leader' entry is documentary only: it's never
 // reached via the generic /advance route — it requires the dedicated
 // form-fill-then-approve routes instead (see SiparisBaskiOnayFormDialog).
+//
+// goruldu and kontrol_edildi are the SAME designer's two steps (migration
+// 054): "Kontrolleri Yapın" (alt görevler + ürün bilgileri), then "Ozalit
+// İsteyin", which opens the Ozalit Üretim Formu — that form's own submit is
+// what advances the order, not a bare click.
 export const ORDER_STEP_OWNER = {
   pending: 'team_leader',
   goruldu: 'designer',
+  kontrol_edildi: 'designer',
   tasarimci_onay: 'printer',
   ekran_onay: 'team_leader',
   matbaa_onay: 'team_leader',
   siparis_baski_onay: 'team_leader',
 }
 
-// goruldu's entry below is the DEFAULT/first-submission destination only.
-// On a resubmit (order.last_reject_type === 'designer') the server overrides
-// `next` with the designer's chosen `route` ('tasarimci_onay' | 'ekran_onay')
-// instead of consulting this map — see orderStepPath below and
-// TalepSignDialog's resubmit choice UI.
+// kontrol_edildi's entry below is the DEFAULT/first-submission destination
+// only. On a resubmit (order.last_reject_type === 'designer') the server
+// overrides `next` with the designer's chosen `route` ('tasarimci_onay' |
+// 'ekran_onay') instead of consulting this map — see orderStepPath below and
+// the Ozalit Üretim Formu's own resubmit choice (SpecFormDialog's
+// orderContext), which is where that pick moved with migration 054.
 //
 // matbaa_onay now points at siparis_baski_onay, not onaylandi directly — the
 // print-spec gate sits between the proof round and production.
 export const ORDER_STEP_NEXT = {
   pending: 'goruldu',
-  goruldu: 'tasarimci_onay',
+  goruldu: 'kontrol_edildi',
+  kontrol_edildi: 'tasarimci_onay',
   tasarimci_onay: 'matbaa_onay',
   ekran_onay: 'siparis_baski_onay',
   matbaa_onay: 'siparis_baski_onay',
@@ -118,15 +130,17 @@ export const ORDER_REJECT_TO = {
   ekran_onay: 'goruldu',
 }
 
-// The pipeline is no longer strictly linear — from `goruldu` a resubmit can
-// go to either `tasarimci_onay` or `ekran_onay`. These two constants are the
-// two possible full linear paths an order can take, for anything that needs
-// to render a step sequence (pipeline visualizers, "future steps" lists).
+// The pipeline is no longer strictly linear — from `kontrol_edildi` a
+// resubmit can go to either `tasarimci_onay` or `ekran_onay`. These two
+// constants are the two possible full linear paths an order can take, for
+// anything that needs to render a step sequence (pipeline visualizers,
+// "future steps" lists).
 export const ORDER_STEP_PATH_DEFAULT = [
-  'pending', 'goruldu', 'tasarimci_onay', 'matbaa_onay', 'siparis_baski_onay', 'onaylandi',
+  'pending', 'goruldu', 'kontrol_edildi', 'tasarimci_onay', 'matbaa_onay',
+  'siparis_baski_onay', 'onaylandi',
 ]
 export const ORDER_STEP_PATH_EKRAN_ONAY = [
-  'pending', 'goruldu', 'ekran_onay', 'siparis_baski_onay', 'onaylandi',
+  'pending', 'goruldu', 'kontrol_edildi', 'ekran_onay', 'siparis_baski_onay', 'onaylandi',
 ]
 
 /**
@@ -215,7 +229,11 @@ export function canActOnOrder(user, order, fallbackProjectIds) {
       return user.role === 'team_leader'
     case 'tasarimci_onay':
       return user.role === 'printer'
+    // The designer's two steps (migration 054): the checks, then the ozalit
+    // request. Same owner, same assignment rule — only the dialog each one
+    // opens differs (TalepSignDialog vs the Ozalit Üretim Formu).
     case 'goruldu':
+    case 'kontrol_edildi':
       return user.role === 'designer' && isOrderAssignedToDesigner(order, user.id, fallbackProjectIds)
     case 'matbaa_onay': {
       const isAssignedDesigner =
@@ -230,4 +248,43 @@ export function canActOnOrder(user, order, fallbackProjectIds) {
     default:
       return false
   }
+}
+
+/**
+ * Which mode the sipariş's Ozalit Üretim Formu opens in for `user`.
+ *
+ * The sheet is the same component the main pipeline uses (SpecFormDialog's
+ * ozalit variant), so it has the same three jobs — and which one it is
+ * depends on the step exactly the way it does for a project:
+ *
+ *   • tasarimci_onay + matbaa  → 'advance'. The printer's "Ozaliti Teslim
+ *     Edin" stamps TESLİM TARİHİ / TESLİM EDEN KİŞİ / MATBAA YETKİLİSİ onto
+ *     this round's sheet, the twin of ozalit_teslim on the main pipeline.
+ *     Before this existed the sipariş's proof was delivered by a bare
+ *     advance click and none of those stamps were ever recorded.
+ *   • matbaa_onay + leader/assigned designer → 'approve'. The sipariş's
+ *     ozalit_onay: the receipt gate and the leader-first rule live inside
+ *     the form (see canApproveMatbaaOnayNow for the same checks), and the
+ *     approving signature is stamped as ONAYLAYAN KİŞİ.
+ *   • kontrol_edildi + assigned designer → 'advance'. The designer's own
+ *     "Ozalit İsteyin" step (migration 054): they author the sheet and
+ *     sending it IS the request. On a resubmit the sheet also carries the
+ *     tasarimci_onay / ekran_onay route choice — it used to sit in the sign
+ *     dialog, but that dialog no longer owns this half of the turn.
+ *   • everything else → 'view'. A read-only look at the round's sheet.
+ */
+export function orderOzalitFormMode(order, user) {
+  if (!order || !user) return 'view'
+  if (order.status === 'kontrol_edildi') {
+    const isAssignedDesigner =
+      user.role === 'designer' && (order.assignee_ids ?? []).includes(user.id)
+    if (isAssignedDesigner) return 'advance'
+  }
+  if (order.status === 'tasarimci_onay' && user.role === 'printer') return 'advance'
+  if (order.status === 'matbaa_onay') {
+    const isAssignedDesigner =
+      user.role === 'designer' && (order.assignee_ids ?? []).includes(user.id)
+    if (user.role === 'team_leader' || isAssignedDesigner) return 'approve'
+  }
+  return 'view'
 }

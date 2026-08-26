@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Check, CheckCircle2, CheckSquare, FileText, Minus, Pencil, Plus, Printer, Send, Square, X } from 'lucide-react'
+import { ArrowRight, Check, CheckCircle2, CheckSquare, FileText, Minus, Pencil, Plus, Printer, Send, Square } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -14,13 +13,22 @@ import {
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import api from '@/api'
+import {
+  FormSheet,
+  FormSheetBlock,
+  FormSheetBlockTitle,
+  FormSheetHead,
+  SheetAddRow,
+  SheetRow,
+  SheetSpecRow,
+} from '@/components/FormSheet'
 import { useAuth } from '@/hooks/useAuth'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { getComponentsForProject, getComponentRows, primeProductInfoCache, saveEditedComponents } from '@/data/productCatalog'
-import { printSpecSheets, buildSpecRows, buildBaskiOnayForm } from '@/lib/specPrint'
+import { printSpecSheets, buildFormSheet } from '@/lib/specPrint'
 import { hasSpecContent, specWithDemoFallback } from '@/lib/spec-seed'
-import { buildAdetRows, loadOrderAdet } from '@/data/orderAdet'
+import { buildAdetRows, buildOrderAdetRows, loadOrderAdet } from '@/data/orderAdet'
 import { formatNumber } from '@/lib/utils'
 import { ozalitLeaderApproved } from '@/domain'
 
@@ -259,13 +267,20 @@ export function specVariantForStage(stage) {
  * numbers — /api/demos is append-only and ordered newest-first, so an array
  * resolves to whichever of those slots was written last. See liveAttempts
  * below for why a single round can span two slots.
+ *
+ * `orderId` picks the ROUND's owner (migration 053): null for a project's own
+ * demo/ozalit round, an order id for a sipariş's. A sipariş sheet carries the
+ * same project_id and kind as the project's own, so this filter is not
+ * optional — without it the project's Ozalit Formu would open whichever
+ * sipariş happened to save last, and vice versa.
  */
-async function fetchServerSnapshot(api, variant, projectId, attempt) {
+async function fetchServerSnapshot(api, variant, projectId, attempt, orderId = null) {
   try {
     const all = await api.listDemos()
     const wanted = attempt == null ? null : new Set(Array.isArray(attempt) ? attempt : [attempt])
     const mine = (all ?? []).filter(
       (d) => d.project_id === projectId && (d.kind ?? 'demo') === variant.kind &&
+             (d.order_id ?? null) === (orderId ?? null) &&
              (wanted == null || wanted.has(d.attempt)),
     )
     if (mine.length === 0) return null
@@ -325,11 +340,20 @@ function saveSnapshot(variant, id, attempt, data, customRows, selectedComponents
  * `project` must be the state BEFORE the transition — the attempt counter is
  * only bumped by rejects / re-sends / not-received, never by a teslim or an
  * onay, so this lands on the same attempt the dialog would have used.
+ *
+ * `order` does the same for a sipariş's own ozalit round (migration 053):
+ * TalepSignDialog signs matbaa_onay without mounting the sheet, exactly the
+ * way ApprovalDialog does on the main pipeline, and the sipariş's sheet was
+ * left with an empty ONAYLAYAN KİŞİ / MATBAA YETKİLİSİ box for the same
+ * reason. Pass it and the round is read and written under the order's id and
+ * its own attempt counter; omit it and this behaves as before.
  */
-export async function stampSpecSignature(variantName, project, patch) {
+export async function stampSpecSignature(variantName, project, patch, { order = null } = {}) {
   const variant = VARIANTS[variantName]
   if (!variant || !project?.id) return
-  const attempt = (project[variant.attemptField] ?? 0) + 1
+  const orderId = order?.id ?? null
+  const scopeId = orderId ?? project.id
+  const attempt = ((order ? order.ozalit_attempt : project[variant.attemptField]) ?? 0) + 1
   // Same precedence as the dialog's own load: this attempt's snapshot is
   // authoritative; the project-level blob is a spec-only fallback with the
   // previous round's stamps stripped.
@@ -343,10 +367,10 @@ export async function stampSpecSignature(variantName, project, patch) {
   // stays at `attempt` — being the newest row, it's what the live lookup
   // returns from then on.
   const existing =
-    (await fetchServerSnapshot(api, variant, project.id, [attempt, attempt + 1])) ??
-    loadSnapshot(variant, project.id, attempt) ??
-    stripStamps(loadSaved(variant, project.id)) ??
-    stripStamps(await fetchServerSnapshot(api, variant, project.id, null)) ??
+    (await fetchServerSnapshot(api, variant, project.id, [attempt, attempt + 1], orderId)) ??
+    loadSnapshot(variant, scopeId, attempt) ??
+    stripStamps(loadSaved(variant, scopeId)) ??
+    stripStamps(await fetchServerSnapshot(api, variant, project.id, null, orderId)) ??
     { form: {}, customRows: [], selectedComponents: null }
   const form = { ...(existing.form ?? {}), ...patch }
   const customRows = existing.customRows ?? []
@@ -354,11 +378,12 @@ export async function stampSpecSignature(variantName, project, patch) {
   // Back into the slot the sheet came from: stamping an edited sheet into the
   // round's own slot would bury the as-first-sent snapshot Geçmiş reopens.
   const slot = existing.attempt ?? attempt
-  saveForm(variant, project.id, form, customRows, selectedComponents)
-  saveSnapshot(variant, project.id, slot, form, customRows, selectedComponents)
+  saveForm(variant, scopeId, form, customRows, selectedComponents)
+  saveSnapshot(variant, scopeId, slot, form, customRows, selectedComponents)
   try {
     await api.createDemo({
       project_id: project.id,
+      order_id: orderId,
       kind: variant.kind,
       attempt: slot,
       silent: true,
@@ -418,173 +443,16 @@ function missingRequiredFields(variant, form) {
  * Uses the shared specPrint helper so Dökümanlar and this dialog stay in sync.
  */
 function openMultiPrint({ form, customRows, project, attemptNo, kind, selectedComponents }) {
-  const designerNames = (project?.assignees ?? []).map((a) => a.name).join(', ') || project?.assigned_name || ''
   const attemptLabel = `${attemptNo}. ${kind === 'ozalit' ? 'OZALİT' : kind === 'baski_onay' ? 'BASKI ONAY' : 'DEMO'}`
   const selected = (selectedComponents ?? []).filter(Boolean)
   const comps = selected.length > 0
     ? selected
     : [{ component: form.isinAdi || project?.title || '', rows: (customRows ?? []).filter((r) => r.label) }]
-  const sheets = comps.map((c) => (
-    // Baskı Onay prints as an actual boxed form (künye grid + spec table +
-    // signature strip) — it is what the matbaa prints from and signs. Demo /
-    // Ozalit keep the classic single-column list.
-    kind === 'baski_onay'
-      ? buildBaskiOnayForm({ component: c, form, title: project?.title || '', attemptLabel })
-      : {
-        // Each sheet's header is its own parça — otherwise the KUTU sheet
-        // would be titled with the book's name.
-        title: c.component || project?.title || '',
-        attemptLabel,
-        rows: buildSpecRows({ component: c, form, kind }),
-        designerNames,
-        onaylayanKisi: form?.onaylayanKisi ?? '',
-        matbaaYetkilisi: form?.matbaaYetkilisi ?? '',
-      }
-  ))
+  // Each sheet is headed by the job and names its own parça as İŞİN ADI —
+  // otherwise the KUTU sheet would read as the book itself.
+  const sheets = comps.map((c) => buildFormSheet({ component: c, form, kind, title: project?.title || '', attemptLabel }))
   const ok = printSpecSheets(sheets, { docTitle: `${attemptLabel} — ${project?.title ?? ''}` })
   if (!ok) toast.error('Pop-up engelleyiciyi kontrol edin.')
-}
-
-/* ------------------------------------------------------------------ */
-/*  Small presentational pieces                                       */
-/* ------------------------------------------------------------------ */
-
-/**
- * `required` marks a field that may never be sent blank (see
- * missingRequiredFields). While it IS blank the input carries a red wash so
- * the gap is visible on the sheet itself, not only in the footer warning —
- * on a phone the footer is a scroll away from the row that needs filling.
- */
-function Row({ label, name, value, onChange, readOnly, required = false }) {
-  const missing = required && !String(value ?? '').trim()
-  return (
-    <div className="grid grid-cols-[1fr_auto_2fr] items-center border-b last:border-b-0">
-      <span className="py-1.5 pr-3 text-[13px] font-semibold uppercase tracking-wide text-foreground">
-        {label}
-        {required && <span className="text-destructive"> *</span>}
-      </span>
-      <span className="px-2 py-1.5 text-sm font-bold">:</span>
-      <Input
-        name={name}
-        value={value}
-        onChange={onChange}
-        readOnly={readOnly}
-        placeholder={missing && !readOnly ? 'Zorunlu' : undefined}
-        className={cn(
-          'h-8 rounded-none border-0 border-l px-2 py-1 text-sm shadow-none focus-visible:ring-0 read-only:bg-transparent read-only:cursor-default',
-          missing && 'bg-destructive/5 placeholder:text-destructive/60',
-        )}
-      />
-    </div>
-  )
-}
-
-function CustomRow({ id, label, value, onChange, onRemove, readOnly }) {
-  return (
-    <div className="grid grid-cols-[1fr_auto_2fr] items-center border-b last:border-b-0">
-      <Input
-        value={label}
-        onChange={(e) => onChange(id, 'label', e.target.value)}
-        placeholder="Alan adı"
-        readOnly={readOnly}
-        className="h-8 rounded-none border-0 bg-white pl-0 pr-3 py-1.5 text-[13px] font-semibold uppercase tracking-wide shadow-none placeholder:normal-case placeholder:tracking-normal placeholder:font-normal focus-visible:ring-0 read-only:bg-transparent read-only:cursor-default"
-      />
-      <span className="px-2 py-1.5 text-sm font-bold">:</span>
-      <div className="relative">
-        <Input
-          value={value}
-          onChange={(e) => onChange(id, 'value', e.target.value)}
-          readOnly={readOnly}
-          className="h-8 rounded-none border-0 border-l bg-white pr-7 px-2 py-1 text-sm shadow-none focus-visible:ring-0 read-only:bg-transparent read-only:cursor-default"
-        />
-        {!readOnly && (
-          <button
-            type="button"
-            onClick={() => onRemove(id)}
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-destructive print:hidden"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function SigBox({ role, name }) {
-  return (
-    <div className="flex flex-1 flex-col px-4 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{role}</p>
-      <div className="mt-3 flex min-h-[2.75rem] items-end border-b border-foreground/25 pb-0.5">
-        {name && (
-          <span style={{ fontFamily: "'Alex Brush', cursive", fontSize: '1.35rem', color: 'hsl(325 21% 20% / 0.8)' }}>
-            {name}
-          </span>
-        )}
-      </div>
-      <p className="mt-1 text-center text-[10px] text-muted-foreground">İmza</p>
-    </div>
-  )
-}
-
-/* Read-only definition row (label : value). Wraps long values (e.g. the
-   TUŞLAR EBAT list) instead of truncating them like a single-line input. */
-function ClassicRow({ label, value }) {
-  return (
-    <div className="grid grid-cols-[minmax(6rem,38%)_auto_1fr] items-start gap-2 border-b py-1.5 last:border-b-0">
-      <span className="pt-px text-[11px] font-semibold uppercase leading-snug tracking-wide text-muted-foreground">{label}</span>
-      <span className="text-xs font-bold text-muted-foreground">:</span>
-      <span className="min-w-0 whitespace-pre-wrap break-words text-[13px] leading-snug text-foreground">{value || '—'}</span>
-    </div>
-  )
-}
-
-/* One parça rendered in the classic single-column format (header + attempt +
-   İŞİN ADI + spec rows + system fields + signatures). Read-only. In view /
-   history mode we stack one of these per selected parça, mirroring the printed
-   output (each parça is its own sheet with its own signature block). */
-function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
-  const rows = component.rows ?? []
-  return (
-    <div className="overflow-hidden rounded-lg border bg-white">
-      <div className="border-b px-4 py-3 text-center">
-        <h2 className="text-base font-bold uppercase tracking-widest text-foreground">{component.component || project.title}</h2>
-      </div>
-      <div className="border-b px-4 py-2 text-right">
-        <span className="text-sm font-bold">{attemptNo}. {variant.attemptUpper}</span>
-      </div>
-      <div className="border-b px-4 py-1">
-        <ClassicRow label="İŞİN ADI" value={component.component} />
-        {variant.adetField && <ClassicRow label={variant.adetLabel} value={form[variant.adetField]} />}
-        {rows.map((r) => (
-          <ClassicRow key={r.id} label={r.label} value={r.value} />
-        ))}
-      </div>
-      <div className="border-b px-4 py-1">
-        {/* Who asked for this sheet, and when — shown to EVERY role including
-            the matbaa, who otherwise had no way to see how long the job had
-            been waiting (the teslim rows used to replace these). */}
-        <ClassicRow label={variant.dateLabel} value={form[variant.dateField]} />
-        {variant.locationField && <ClassicRow label={variant.locationLabel} value={form[variant.locationField]} />}
-        <ClassicRow label={variant.personLabel} value={form[variant.personField]} />
-        {/* Delivery rows. Left BLANK until the matbaa actually advances
-            (handleAdvance stamps them) — same rule as onaylayanKisi below.
-            They used to fall back to the İSTEM date/person, which printed the
-            requester's date under a "TESLİM TARİHİ" label before anything had
-            been delivered. */}
-        {(user?.role === 'printer' || form.teslimTarihi || form.teslimEdenKisi) && (
-          <>
-            <ClassicRow label="TESLİM TARİHİ" value={form.teslimTarihi ?? ''} />
-            <ClassicRow label="TESLİM EDEN KİŞİ" value={form.teslimEdenKisi ?? ''} />
-          </>
-        )}
-        {form.matbaaYetkilisi && <ClassicRow label="MATBAA YETKİLİSİ" value={form.matbaaYetkilisi} />}
-        {form.onaylayanKisi && <ClassicRow label="ONAYLAYAN KİŞİ" value={form.onaylayanKisi} />}
-      </div>
-      {/* Signature blocks removed for now — SigBox above stays defined so
-          this can be restored later without redoing the layout. */}
-    </div>
-  )
 }
 
 /* ------------------------------------------------------------------ */
@@ -627,10 +495,48 @@ function ClassicSheet({ project, component, attemptNo, variant, form, user }) {
  *   Forces the saved sheet to load as-is (like a read-only viewer would)
  *   instead of the normal "fresh compose" reset for a new attempt.
  */
-export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, rejectContext = null }) {
+export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, order = null, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, rejectContext = null }) {
   const variant = VARIANTS[variantName]
   const { user } = useAuth()
   const { updateOne } = useProjectsStore()
+  /* ── Whose ozalit round is this? ────────────────────────────────────────
+   * A sipariş (order) runs the SAME sheet as the project's own pipeline —
+   * same Baskı Reçeteleri source, same rounds, same İSTEM/TESLİM/ONAY
+   * stamps, same print output. It just keeps them under its own id
+   * (migration 053) so two concurrent reprints of one title don't share a
+   * sheet. `round` is the only place that knows which entity owns the
+   * round; everything below reads it instead of reaching into `project`.
+   *
+   * The reçete itself stays project-scoped on purpose: a reprint is a
+   * reprint of the same product, and Ürün Bilgileri / Baskı Reçeteleri is
+   * the one catalog both pipelines read and write.
+   */
+  const orderScoped = !!order
+  // Snapshot + localStorage scope. Order ids and project ids never collide,
+  // so one key space serves both.
+  const scopeId = order?.id ?? project?.id
+  const orderId = order?.id ?? null
+  const round = orderScoped
+    ? {
+      attempt: order.ozalit_attempt,
+      started: !!order.ozalit_started,
+      fixPending: !!order.ozalit_fix_pending,
+      received: !!order.matbaa_received,
+      receivedBy: order.matbaa_received_by,
+      // Leader-first, read off the order's own ledger — the twin of
+      // ozalitLeaderApproved(project) on the main pipeline.
+      leaderApproved: (order.matbaa_approvals ?? []).some((a) => a.role === 'team_leader'),
+      designerIds: Array.isArray(order.assignee_ids) ? order.assignee_ids : [],
+    }
+    : {
+      attempt: project?.[variant.attemptField],
+      started: variant.kind === 'demo' ? !!project?.demo_started : !!project?.ozalit_started,
+      fixPending: variant.kind === 'demo' ? !!project?.demo_fix_pending : !!project?.ozalit_fix_pending,
+      received: !!project?.ozalit_received,
+      receivedBy: project?.ozalit_received_by,
+      leaderApproved: ozalitLeaderApproved(project),
+      designerIds: (project?.assignees ?? []).map((a) => a.id),
+    }
   const celebrate = useDesignerCelebration()
   const [form, setForm] = useState(() => emptyForm(variant, project, user))
   const [customRows, setCustomRows] = useState([])
@@ -662,19 +568,23 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // ProjectDetail.jsx and wait for the matbaa's accept. Scoped to
   // mode==='view' only — the printer's own delivery-stamp edits
   // (mode='advance'/'approve') and history snapshots are unaffected.
-  const lockedByStart = mode === 'view' && (
-    (variant.kind === 'demo' && !!project?.demo_started) ||
-    (variant.kind === 'ozalit' && !!project?.ozalit_started)
-  )
+  const lockedByStart = mode === 'view' && round.started
   // Migration 049: once the matbaa accepts a change request, the fix is owed
   // and must go through the dedicated notify path (notifyOnSave=true) — the
   // plain "Demo Formu"/"Ozalit Formu" button stays view-only here so there's
   // no silent way to make the fix without the matbaa being told.
-  const lockedByFixPending = mode === 'view' && !notifyOnSave && (
-    (variant.kind === 'demo' && !!project?.demo_fix_pending) ||
-    (variant.kind === 'ozalit' && !!project?.ozalit_fix_pending)
-  )
-  const readOnly = variant.isReadOnly({ mode, user }) || lockedByStart || lockedByFixPending
+  const lockedByFixPending = mode === 'view' && !notifyOnSave && round.fixPending
+  /* The one sipariş step whose sheet the DESIGNER writes: "Ozalit İsteyin"
+     (order status 'kontrol_edildi', migration 054). VARIANTS.ozalit locks
+     designers out because on the project pipeline the team leader is the
+     author of that sheet — here the designer IS the requester, and this form
+     is the request. Every other order step still arrives read-only for them
+     (the matbaa's teslim, the leader's matbaa_onay approve), and a history
+     snapshot stays read-only for everyone. */
+  const authoringOrderOzalit =
+    orderScoped && mode === 'advance' && order?.status === 'kontrol_edildi'
+  const readOnly =
+    (variant.isReadOnly({ mode, user }) && !authoringOrderOzalit) || lockedByStart || lockedByFixPending
   const printable = variant.canPrint({ user, project, readOnly })
   // The plain "Demo Formu" button (mode='view', no notify) always opens a
   // round that has ALREADY been sent: at demo_onay it's the sheet sitting with
@@ -730,9 +640,9 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         // Server snapshot first (works on any computer), localStorage fallback.
         const snap =
           (viewDemoId ? await fetchServerSnapshotById(api, variant, viewDemoId) : null) ??
-          (await fetchServerSnapshot(api, variant, project.id, viewAttempt)) ??
-          loadSnapshot(variant, project.id, viewAttempt) ??
-          loadSaved(variant, project.id)
+          (await fetchServerSnapshot(api, variant, project.id, viewAttempt, orderId)) ??
+          loadSnapshot(variant, scopeId, viewAttempt) ??
+          loadSaved(variant, scopeId)
         if (cancelled) return
         setForm(snap?.form ?? emptyForm(variant, project, user))
         setCustomRows(snap?.customRows ?? [])
@@ -747,15 +657,15 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       // STAMP_FIELDS). Without that strip, a previously approved attempt's
       // ONAYLAYAN KİŞİ reappeared on the next, unapproved attempt.
       const current =
-        (await fetchServerSnapshot(api, variant, project.id, liveAttempts)) ??
-        loadSnapshot(variant, project.id, attemptNo)
+        (await fetchServerSnapshot(api, variant, project.id, liveAttempts, orderId)) ??
+        loadSnapshot(variant, scopeId, attemptNo)
       if (cancelled) return
       // localStorage snapshots are keyed by attemptNo already, so only a
       // server hit can report a different slot.
       setLiveAttemptNo(current?.attempt ?? null)
       const carried =
-        loadSaved(variant, project.id) ??
-        (await fetchServerSnapshot(api, variant, project.id, null))
+        loadSaved(variant, scopeId) ??
+        (await fetchServerSnapshot(api, variant, project.id, null, orderId))
       if (cancelled) return
       const data = current ?? stripStamps(carried)
       const fresh = emptyForm(variant, project, user)
@@ -783,8 +693,18 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       // See specWithDemoFallback.
       let spec = data
       if (variant.kind === 'ozalit' && !hasSpecContent(data)) {
-        const fromDemo =
-          loadSaved(VARIANTS.demo, project.id) ??
+        // A sipariş's first round borrows from how this product was last
+        // printed — the project's own latest ozalit sheet — before falling
+        // back to the demo sheet the project pipeline uses. Both are read
+        // project-scoped (orderId omitted) on purpose: that IS the point of
+        // the fallback. The parça rows come from Baskı Reçeteleri either way;
+        // this only carries over the custom rows and İŞİN ADI.
+        const fromPrevious = orderScoped
+          ? (await fetchServerSnapshot(api, variant, project.id, null))
+          : null
+        if (cancelled) return
+        const fromDemo = fromPrevious ??
+          loadSaved(VARIANTS.demo, scopeId) ??
           (await fetchServerSnapshot(api, VARIANTS.demo, project.id, null))
         if (cancelled) return
         spec = specWithDemoFallback(data, fromDemo)
@@ -799,7 +719,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       if (variant.kind === 'baski_onay' && !hasSpecContent(data)) {
         const fallbackVariant = project.type === 'CIN' ? VARIANTS.demo : VARIANTS.ozalit
         const fromFallback =
-          loadSaved(fallbackVariant, project.id) ??
+          loadSaved(fallbackVariant, scopeId) ??
           (await fetchServerSnapshot(api, fallbackVariant, project.id, null))
         if (cancelled) return
         spec = specWithDemoFallback(data, fromFallback)
@@ -816,8 +736,9 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         let adetValue = data?.form?.[variant.adetField]
         let rowsForCustom = savedRows
         if (!adetValue) {
-          const order = loadOrderAdet(project.id)
-          adetValue = order?.quantity ? formatNumber(order.quantity) : ''
+          // Renamed off `order` — that's the sipariş prop now.
+          const lastOrder = loadOrderAdet(project.id)
+          adetValue = lastOrder?.quantity ? formatNumber(lastOrder.quantity) : ''
           if (!adetValue) {
             const idx = savedRows.findIndex((r) => r.label?.toUpperCase().startsWith('ADET'))
             if (idx !== -1) {
@@ -846,7 +767,13 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         setCustomRows(rowsForCustom)
       } else {
         const hasAdet = savedRows.some((r) => r.label?.toUpperCase().startsWith('ADET'))
-        setCustomRows(hasAdet ? savedRows : [...buildAdetRows(project.id), ...savedRows])
+        // A sipariş carries the ordered quantity on the order itself, so its
+        // sheet reads it straight off the row. buildAdetRows is the project
+        // pipeline's fallback: localStorage, keyed by project, most recent
+        // order only — invisible on every other browser, and silently
+        // clobbered by the next order on the same title.
+        const adetRows = orderScoped ? buildOrderAdetRows(order) : buildAdetRows(project.id)
+        setCustomRows(hasAdet ? savedRows : [...adetRows, ...savedRows])
       }
       // null means never explicitly set — default to all catalog components checked.
       // [] means the user intentionally cleared them — respect that.
@@ -857,7 +784,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     load()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, project?.id, viewAttempt, viewDemoId])
+    // scopeId, not project.id: switching between two sipariş sheets on the
+    // same product has to reload, and for a project's own round the two are
+    // the same value.
+  }, [open, scopeId, viewAttempt, viewDemoId])
 
   /**
    * Baseline for the "Değişiklikler" diff panel (migration 049) — a snapshot
@@ -875,12 +805,12 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     let cancelled = false
     ;(async () => {
       const current =
-        (await fetchServerSnapshot(api, variant, project.id, attemptNo)) ??
-        loadSnapshot(variant, project.id, attemptNo)
+        (await fetchServerSnapshot(api, variant, project.id, attemptNo, orderId)) ??
+        loadSnapshot(variant, scopeId, attemptNo)
       if (cancelled) return
       const carried =
-        loadSaved(variant, project.id) ??
-        (await fetchServerSnapshot(api, variant, project.id, null))
+        loadSaved(variant, scopeId) ??
+        (await fetchServerSnapshot(api, variant, project.id, null, orderId))
       if (cancelled) return
       const data = current ?? stripStamps(carried)
       setBaseline({
@@ -890,7 +820,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, project?.id, notifyOnSave])
+  }, [open, scopeId, notifyOnSave])
 
   /** Rows changed since baseline, by matching row `id` (stable across a save
    * cycle — new rows only get a fresh id when actually added). Shared by the
@@ -949,11 +879,11 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    * made in this session, before the parent re-passes the updated project.
    */
   const isOzalitApproval = mode === 'approve' && variantName === 'ozalit'
-  const ozalitReceived = !!project?.ozalit_received || receivedLocal
+  const ozalitReceived = round.received || receivedLocal
   const needsOzalitReceive = isOzalitApproval && !ozalitReceived
   const canAckOzalit =
     user?.role === 'team_leader' ||
-    (user?.role === 'designer' && (project?.assignees ?? []).some((a) => a.id === user?.id))
+    (user?.role === 'designer' && round.designerIds.includes(user?.id))
 
   /* ── Ozalit leader-first gate ─────────────────────────────────────────────
    * The second ordering rule on the same approve: a designer counter-signs an
@@ -963,7 +893,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    * with the reason spelled out.
    */
   const ozalitAwaitingLeader =
-    isOzalitApproval && user?.role === 'designer' && !ozalitLeaderApproved(project)
+    isOzalitApproval && user?.role === 'designer' && !round.leaderApproved
 
   /* ── Baskı Onayı dual-approval (migration 045) ────────────────────────────
    * One team leader PREPARES the form; a DIFFERENT team leader gives the
@@ -982,14 +912,18 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     if (!open) return
     setReceivedLocal(false)
     setConfirmReceive(false)
-  }, [open, project?.id])
+  }, [open, scopeId])
 
   async function handleReceiveOzalit() {
     if (!project) return
     setReceiving(true)
     try {
-      const updated = await api.receiveOzalit(project.id)
-      updateOne(updated)
+      // Same gate, two ledgers: projects.ozalit_received (migration 035) and
+      // order_requests.matbaa_received (migration 038).
+      const updated = orderScoped
+        ? await api.matbaaReceiveOrder(order.id)
+        : await api.receiveOzalit(project.id)
+      if (!orderScoped) updateOne(updated)
       setReceivedLocal(true)
       setConfirmReceive(false)
       toast.success('Ozalit teslim alındı.')
@@ -1082,6 +1016,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const DEMO_RESEND_STAGES = new Set(['demo_teslim', 'demo_onay', 'cin_demo_teslim', 'cin_demo_onay'])
   const willResendBump =
     variant.kind === 'demo' &&
+    !orderScoped &&
     mode === 'advance' &&
     user?.role !== 'printer' &&
     DEMO_RESEND_STAGES.has(project?.stage)
@@ -1097,7 +1032,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // "(N+1. Demo)" title. Bumping here keeps save and that lookup in sync.
   const willEditBump = mode === 'view' && notifyOnSave && viewAttempt == null
   const attemptNo =
-    viewAttempt ?? ((project?.[variant.attemptField] ?? 0) + (willResendBump || willEditBump ? 2 : 1))
+    viewAttempt ?? ((round.attempt ?? 0) + (willResendBump || willEditBump ? 2 : 1))
   // Slots that can hold this round's CURRENT sheet. Because an edit-notify
   // save lands one slot past the round's own (willEditBump) and
   // /demo-edit-notify deliberately doesn't bump demo_attempt, the newest
@@ -1138,6 +1073,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   function persistServerSnapshot(attempt, data) {
     return api.createDemo({
       project_id: project.id,
+      // NULL for the project's own round, the sipariş's id for its own
+      // (migration 053) — this is what keeps two concurrent reprints of one
+      // title off each other's sheet.
+      order_id: orderId,
       kind: variant.kind,
       attempt,
       silent: true,
@@ -1166,14 +1105,22 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    * half had failed. The transition is the authorization; nothing may be
    * written until it has passed.
    */
-  async function persistAfterStep(payload) {
-    saveForm(variant, project.id, payload, customRows, selectedComponents)
-    saveSnapshot(variant, project.id, writeAttempt, payload, customRows, selectedComponents)
+  async function persistAfterStep(payload, { catalog = true } = {}) {
+    saveForm(variant, scopeId, payload, customRows, selectedComponents)
+    saveSnapshot(variant, scopeId, writeAttempt, payload, customRows, selectedComponents)
     await persistServerSnapshot(writeAttempt, payload)
-    await persistCatalogEdits()
+    if (catalog) await persistCatalogEdits()
   }
 
-  async function handleAdvance() {
+  /**
+   * `routeOverride` is the sipariş resubmit choice: once an order has bounced
+   * back to the designer (order.last_reject_type === 'designer'), the ozalit
+   * request may go to the matbaa for another physical proof (the default,
+   * 'tasarimci_onay') or to the team leader as a digital Ekran Onayı
+   * ('ekran_onay'). The server refuses a route on a first submission, so it
+   * is only ever sent when the footer actually offered the choice.
+   */
+  async function handleAdvance(routeOverride = null) {
     if (!project) return
     if (!requiredFilled()) return
     setBusy(true)
@@ -1202,13 +1149,47 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         // previous round's name from the loaded snapshot.
         payload = { ...form, [variant.personField]: user?.name ?? form[variant.personField] }
       }
-      const updated = rejectContext
-        ? await api.rejectProject(project.id, rejectContext.reason, [], rejectContext.target)
-        : await api.advanceProject(project.id)
-      await persistAfterStep(payload)
-      updateOne(updated)
-      toast.success(rejectContext ? 'Reddedildi, matbaaya yeniden gönderildi.' : variant.advanceToast(project))
-      if (!rejectContext && variant.celebrateOnAdvance) celebrate()
+      // The one write that must go BEFORE the transition, not after it. The
+      // reçete is the designer's to edit because of the step they are ON
+      // (kontrol_edildi — see PUT /product-info's designer window), and this
+      // advance is what ends that step. Posted afterwards, like every other
+      // path here does it, it would arrive against an order already at
+      // tasarimci_onay and take a 403 that saveComponentsForProject swallows
+      // as "offline": the parça edits would ship on the sheet and silently
+      // never reach Baskı Reçeteleri. A refused advance leaves a reçete edit
+      // the designer was entitled to make either way.
+      if (authoringOrderOzalit) await persistCatalogEdits()
+      // A sipariş's ozalit walks its own step machine (goruldu →
+      // tasarimci_onay → matbaa_onay), but the click, the stamps and the
+      // sheet it writes are the project pipeline's. expectedVersion carries
+      // the order's optimistic lock so a second signer can't be silently
+      // overwritten — the same guard TalepSignDialog uses.
+      const updated = orderScoped
+        ? await api.advanceOrderRequest(order.id, {
+          expectedVersion: order.version ?? null,
+          ...(routeOverride ? { route: routeOverride } : {}),
+        })
+        : rejectContext
+          ? await api.rejectProject(project.id, rejectContext.reason, [], rejectContext.target)
+          : await api.advanceProject(project.id)
+      await persistAfterStep(payload, { catalog: !authoringOrderOzalit })
+      if (!orderScoped) updateOne(updated)
+      toast.success(
+        rejectContext ? 'Reddedildi, matbaaya yeniden gönderildi.'
+          // The designer's own request step names what it just asked for —
+          // "Ozalit onaya gönderildi" would describe the round that hasn't
+          // been printed yet, and says nothing at all about the Ekran Onayı
+          // route this same button can take on a resubmit.
+          : authoringOrderOzalit
+            ? routeOverride === 'ekran_onay'
+              ? 'Ekran onayı istendi, ekip liderine gönderildi.'
+              : 'Ozalit istendi, matbaaya gönderildi.'
+            : variant.advanceToast(project),
+      )
+      // The sipariş's ozalit request is where the designer's work actually
+      // leaves their desk (the checks step before it is only half a turn), so
+      // it celebrates even though the project pipeline's ozalit send doesn't.
+      if (!rejectContext && (variant.celebrateOnAdvance || authoringOrderOzalit)) celebrate()
       onDone?.(updated)
       onOpenChange(false)
     } catch (err) {
@@ -1227,10 +1208,19 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       // Stamp the real approver at the moment approval actually happens —
       // this is the only point where "onaylayanKisi" should get a value.
       const approvedForm = { ...form, onaylayanKisi: user?.name ?? '' }
-      const updated = await api.approveProject(project.id)
+      // matbaa_onay is the sipariş's ozalit_onay: multi-party, leader-first,
+      // and it rides the same /advance route one vote at a time — so a click
+      // here doesn't always complete the round (see the toast below).
+      const updated = orderScoped
+        ? await api.advanceOrderRequest(order.id, { expectedVersion: order.version ?? null })
+        : await api.approveProject(project.id)
       await persistAfterStep(approvedForm)
-      updateOne(updated)
-      toast.success('Onaylandı, proje üretime alındı.')
+      if (!orderScoped) updateOne(updated)
+      toast.success(
+        !orderScoped ? 'Onaylandı, proje üretime alındı.'
+          : updated.status === order.status ? 'Onayınız kaydedildi, diğer onaylar bekleniyor.'
+            : 'Ozalit onaylandı, baskı onay formuna gönderildi.',
+      )
       onDone?.(updated)
       onOpenChange(false)
     } catch (err) {
@@ -1273,9 +1263,13 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     setBusy(true)
     try {
       const notify = notifyOnSave && (
-        variant.kind === 'demo' ? api.notifyDemoEdit
-          : variant.kind === 'ozalit' ? api.notifyOzalitEdit
-            : null
+        // A sipariş's correction goes to its own route, which writes the
+        // snapshot inside the transaction that authorizes the edit — same
+        // contract, same reason, as the project's (migration 053).
+        orderScoped ? (id, sheet) => api.notifyOrderOzalitEdit(id, sheet)
+          : variant.kind === 'demo' ? api.notifyDemoEdit
+            : variant.kind === 'ozalit' ? api.notifyOzalitEdit
+              : null
       )
       if (notify) {
         // Correcting an already-sent round. NOTHING is written until the
@@ -1291,20 +1285,27 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         // and no notification, because this very call is what writes both.
         let updated
         try {
-          updated = await notify(project.id, { attempt: writeAttempt, payload: snapshotPayload(form) })
+          updated = await notify(scopeId, { attempt: writeAttempt, payload: snapshotPayload(form) })
         } catch (err) {
           // Re-read the project so the stale "Gönderilen ... Düzenleyin"
           // button this save came from gives way to "Değişiklik İsteyin".
-          try { updateOne(await api.getProject(project.id)) } catch { /* the error below is the point */ }
+          // The sipariş's own row is refreshed by its parent's onDone
+          // instead — there's no orders store to update in place.
+          if (!orderScoped) {
+            try { updateOne(await api.getProject(project.id)) } catch { /* the error below is the point */ }
+          }
           toast.error(err.message || 'Form güncellenemedi.')
           return
         }
-        saveForm(variant, project.id, form, customRows, selectedComponents)
+        saveForm(variant, scopeId, form, customRows, selectedComponents)
         await persistCatalogEdits()
-        updateOne(updated)
+        if (!orderScoped) updateOne(updated)
+        // The sipariş has no store to write through — hand the fresh row back
+        // so the page that opened this dialog re-renders on it.
+        if (orderScoped) onDone?.(updated)
         toast.success(`${variant.title} güncellendi, matbaa bilgilendirildi.`)
       } else {
-        saveForm(variant, project.id, form, customRows, selectedComponents)
+        saveForm(variant, scopeId, form, customRows, selectedComponents)
         // Silent: this path has no dedicated history call, and /demos would
         // otherwise log a generic "Demo formu gönderildi" row for a plain save.
         await persistServerSnapshot(writeAttempt, form)
@@ -1320,7 +1321,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     // A printout is the sheet leaving the app — same bar as sending it.
     if (!readOnly && !requiredFilled()) return
     if (!readOnly) {
-      saveForm(variant, project.id, form, customRows, selectedComponents)
+      saveForm(variant, scopeId, form, customRows, selectedComponents)
       persistCatalogEdits()
     }
     openMultiPrint({ form, customRows, project, attemptNo: shownAttemptNo, kind: variant.kind, selectedComponents })
@@ -1331,25 +1332,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const hasCatalog = catalogComponents.length > 0
   // Demo: system-driven fields must never be editable; Ozalit: they follow readOnly.
   const systemRowReadOnly = variant.systemFieldsEditable ? readOnly : true
-  // Side-by-side parça cards replace the single İŞİN ADI + custom-rows sheet.
+  // Parça blocks replace the single İŞİN ADI + custom-rows body: with them on
+  // the sheet there is no one job name for the künye to carry, since each
+  // block names its own.
   const showsComponentCards = hasCatalog && selectedComponents.length > 0
-  // ADET — dedicated field on the Baskı Onay Formu, auto-filled from a live
-  // sipariş order or the borrowed ozalit sheet (see the load effect); the
-  // leader can still correct it. Rendered in one of two places below.
-  const adetRow = variant.adetField ? (
-    <Row
-      label={variant.adetLabel}
-      name={variant.adetField}
-      value={form[variant.adetField] ?? ''}
-      onChange={handleChange}
-      readOnly={readOnly}
-      required
-    />
-  ) : null
-  // View / history / printer: render each selected parça as its own classic
-  // single-column sheet (matches the printout). Editing keeps the side-by-side
-  // cards. Falls back to the single sheet when nothing is selected.
-  const readOnlyClassic = readOnly && hasCatalog && selectedComponents.length > 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1367,6 +1353,22 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             {readOnly && <span className="ml-1 text-xs font-normal text-muted-foreground">({shownAttemptNo}. {variant.attemptWord})</span>}
           </DialogTitle>
         </DialogHeader>
+
+        {/* The designer's ozalit request (migration 054). The checks are
+            already signed off one step back; this sheet is the ask itself, so
+            say what pressing send does — and name the second route when the
+            order has bounced back and both are on offer. */}
+        {authoringOrderOzalit && (
+          <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+            <p className="font-semibold text-foreground">Ozalit isteği</p>
+            <p className="mt-0.5 text-muted-foreground">
+              Kontrolleriniz kaydedildi. Formu gözden geçirin, gerekirse düzeltin ve gönderin — matbaa
+              ozaliti bu formdan basacak.
+              {order?.last_reject_type === 'designer'
+                && ' Revize sonrası olduğu için, fiziksel ozalit yerine ekip liderinden ekran onayı da isteyebilirsiniz.'}
+            </p>
+          </div>
+        )}
 
         {/* Reject-to-matbaa review (ApprovalDialog hand-off) — the leader is
             about to send this sheet back to matbaa for redelivery; make that
@@ -1438,41 +1440,70 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           </div>
         )}
 
-        {readOnlyClassic ? (
-          <div className="space-y-4">
-            {selectedComponents.map((c) => (
-              <ClassicSheet
-                key={c.id}
-                project={project}
-                component={c}
-                attemptNo={shownAttemptNo}
-                variant={variant}
-                form={form}
-                user={user}
+        {/* The dialog IS the form — the same document openMultiPrint() puts
+            on paper, rendered live: title block, künye, then a block per
+            parça. Editing and read-only share the layout; only the fields
+            switch between input and plain text, so a sheet nobody can edit
+            reads as a document rather than a page of dead inputs. */}
+        <FormSheet>
+          <FormSheetHead
+            title={variant.title}
+            subtitle={project.title}
+            attemptLabel={`${shownAttemptNo}. ${variant.attemptUpper}`}
+            icon={FileText}
+          />
+
+          {/* Künye — same fields, same order as the printed sheet's. */}
+          <FormSheetBlock className="bg-muted/10">
+            {/* Only without parça blocks: with them, each block names its own
+                job and a single İŞİN ADI row would contradict them. */}
+            {!showsComponentCards && (
+              <SheetRow label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly={systemRowReadOnly} />
+            )}
+            {/* ADET — dedicated field on the Baskı Onay Formu, auto-filled
+                from a live sipariş order or the borrowed ozalit sheet (see the
+                load effect); the leader can still correct it. */}
+            {variant.adetField && (
+              <SheetRow
+                label={variant.adetLabel}
+                name={variant.adetField}
+                value={form[variant.adetField] ?? ''}
+                onChange={handleChange}
+                readOnly={readOnly}
+                required
               />
-            ))}
-          </div>
-        ) : (
-        <>
-        <div className="rounded-lg border bg-white">
-          <div className="border-b px-4 py-3 text-center">
-            <h2 className="text-base font-bold uppercase tracking-widest text-foreground">{project.title}</h2>
-          </div>
-          <div className="border-b px-4 py-2 text-right">
-            <span className="text-sm font-bold">{shownAttemptNo}. {variant.attemptUpper}</span>
-          </div>
+            )}
+            {/* İSTEM rows are shown to every role — the matbaa needs to know
+                who requested the demo/ozalit and when, not just its own
+                delivery stamp. */}
+            <SheetRow label={variant.dateLabel} name={variant.dateField} value={form[variant.dateField]} onChange={handleChange} readOnly={systemRowReadOnly} />
+            {/* BASIM YERİ — right before HAZIRLAYAN, per the feature ask. */}
+            {variant.locationField && (
+              <SheetRow
+                label={variant.locationLabel}
+                name={variant.locationField}
+                value={form[variant.locationField] ?? ''}
+                onChange={handleChange}
+                readOnly={readOnly}
+                required
+              />
+            )}
+            <SheetRow label={variant.personLabel} name={variant.personField} value={form[variant.personField]} onChange={handleChange} readOnly />
+            {/* Blank until handleAdvance stamps them at the moment of teslimat. */}
+            {(user?.role === 'printer' || form.teslimTarihi || form.teslimEdenKisi) && (
+              <>
+                <SheetRow label="TESLİM TARİHİ" name="teslimTarihi" value={form.teslimTarihi ?? ''} onChange={handleChange} readOnly={systemRowReadOnly} />
+                <SheetRow label="TESLİM EDEN KİŞİ" name="teslimEdenKisi" value={form.teslimEdenKisi ?? ''} onChange={handleChange} readOnly />
+              </>
+            )}
+            {form.matbaaYetkilisi && <SheetRow label="MATBAA YETKİLİSİ" value={form.matbaaYetkilisi} readOnly />}
+            {form.onaylayanKisi && <SheetRow label="ONAYLAYAN KİŞİ" value={form.onaylayanKisi} readOnly />}
+          </FormSheetBlock>
 
-          {/* With parça cards there is no single İŞİN ADI row for ADET to sit
-              under, so it stays at the top of the sheet. In the single-sheet
-              fallback it renders directly under İŞİN ADI instead — matching
-              the printout and the read-only ClassicSheet. */}
-          {adetRow && showsComponentCards && (
-            <div className="border-b px-4 py-1">{adetRow}</div>
-          )}
-
-          {/* Per-component picker — only when the project has product info */}
+          {/* Per-component picker — only when the project has product info.
+              Pure editing control: it never goes on paper. */}
           {hasCatalog && !readOnly && (
-            <div className="border-b bg-muted/20 px-4 py-3">
+            <div className="border-b bg-muted/20 px-4 py-3 print:hidden">
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Parçalar (ürün bilgilerinden)
@@ -1517,152 +1548,62 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               </div>
               {selectedComponents.length > 0 && (
                 <p className="mt-2 text-[10px] text-muted-foreground">
-                  Yazdır / Gönder dediğinizde <strong>{selectedComponents.length}</strong> ayrı form oluşturulur, her parça kendi imza bloğuyla birlikte.
+                  Yazdır / Gönder dediğinizde <strong>{selectedComponents.length}</strong> ayrı form oluşturulur, her parça kendi sayfasında.
                 </p>
               )}
             </div>
           )}
 
-          {/* Selected parçalar, auto-filled side by side (scrolls horizontally).
-              Edits here flow back to Ürün Bilgileri on save. When the project
-              has a catalog but nothing is selected, or has no catalog at all,
-              we fall back to the single İŞİN ADI + custom-rows sheet below. */}
+          {/* Selected parçalar, stacked as blocks of the same sheet — each one
+              prints as its own page. Edits here flow back to Ürün Bilgileri on
+              save. With no catalog, or nothing selected, the sheet falls back
+              to plain user-added rows. */}
           {showsComponentCards ? (
-            <div className="border-b bg-muted/10 px-3 py-3">
-              <div className="flex gap-3 overflow-x-auto pb-1">
-                {selectedComponents.map((c) => (
-                  <div key={c.id} className="flex w-72 shrink-0 flex-col overflow-hidden rounded-lg border bg-white">
-                    <div className="border-b bg-muted/30 px-3 py-2 text-center text-[11px] font-bold uppercase tracking-wide text-foreground">
-                      {c.component}
-                    </div>
-                    <div className="px-2 py-1">
-                      {(c.rows ?? []).length === 0 && readOnly && (
-                        <p className="px-1 py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
-                      )}
-                      {(c.rows ?? []).map((r) =>
-                        readOnly ? (
-                          <div key={r.id} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1.3fr)] items-center gap-1 border-b py-1 last:border-b-0">
-                            <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{r.label}</span>
-                            <span className="text-xs font-bold text-muted-foreground">:</span>
-                            <span className="min-w-0 text-[12px]">{r.value}</span>
-                          </div>
-                        ) : (
-                          <div key={r.id} className="flex items-center gap-1.5 border-b py-1 last:border-b-0">
-                            <input
-                              value={r.label}
-                              onChange={(e) => updateComponentRow(c.id, r.id, 'label', e.target.value)}
-                              placeholder="ALAN"
-                              className="w-24 shrink-0 bg-transparent text-[11px] font-semibold uppercase tracking-wide outline-none placeholder:text-muted-foreground/50"
-                            />
-                            <span className="text-xs font-bold text-muted-foreground">:</span>
-                            <input
-                              value={r.value}
-                              onChange={(e) => updateComponentRow(c.id, r.id, 'value', e.target.value)}
-                              placeholder="Değer"
-                              className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/50"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeComponentRow(c.id, r.id)}
-                              aria-label="Satırı silin"
-                              className="shrink-0 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive print:hidden"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        ),
-                      )}
-                      {!readOnly && (
-                        <button
-                          type="button"
-                          onClick={() => addComponentRow(c.id)}
-                          className="mt-1 inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80 print:hidden"
-                        >
-                          <Plus className="h-3 w-3" /> Satır Ekleyin
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+            selectedComponents.map((c) => (
+              <div key={c.id} className="border-b last:border-b-0">
+                <FormSheetBlockTitle>{c.component}</FormSheetBlockTitle>
+                <FormSheetBlock className="border-b-0">
+                  {(c.rows ?? []).length === 0 && readOnly && (
+                    <p className="py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
+                  )}
+                  {(c.rows ?? []).map((r) => (
+                    <SheetSpecRow
+                      key={r.id}
+                      label={r.label}
+                      value={r.value}
+                      onLabelChange={(v) => updateComponentRow(c.id, r.id, 'label', v)}
+                      onValueChange={(v) => updateComponentRow(c.id, r.id, 'value', v)}
+                      onRemove={() => removeComponentRow(c.id, r.id)}
+                      readOnly={readOnly}
+                    />
+                  ))}
+                  {!readOnly && <SheetAddRow onClick={() => addComponentRow(c.id)} />}
+                </FormSheetBlock>
               </div>
-              {!readOnly && (
-                <p className="mt-2 px-1 text-[10px] text-muted-foreground">
-                  Buradaki düzenlemeler Ürün Bilgileri'ne de kaydedilir.
-                </p>
-              )}
-            </div>
+            ))
           ) : (
-            <>
-              {/* İŞİN ADI + user-added rows (no catalog / nothing selected) */}
-              <div className="border-b px-4 py-1">
-                <Row label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly={systemRowReadOnly} />
-                {adetRow}
-                {customRows.map((r) => (
-                  <CustomRow
-                    key={r.id}
-                    id={r.id}
-                    label={r.label}
-                    value={r.value}
-                    onChange={updateCustomRow}
-                    onRemove={removeCustomRow}
-                    readOnly={readOnly}
-                  />
-                ))}
-              </div>
-
-              {/* + Satır Ekleyin — hidden in read-only mode */}
-              {!readOnly && (
-                <div className="border-b px-4 py-2.5 print:hidden">
-                  <button
-                    type="button"
-                    onClick={addCustomRow}
-                    className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Satır Ekleyin
-                  </button>
-                </div>
-              )}
-            </>
+            <FormSheetBlock>
+              {customRows.map((r) => (
+                <SheetSpecRow
+                  key={r.id}
+                  label={r.label}
+                  value={r.value}
+                  onLabelChange={(v) => updateCustomRow(r.id, 'label', v)}
+                  onValueChange={(v) => updateCustomRow(r.id, 'value', v)}
+                  onRemove={() => removeCustomRow(r.id)}
+                  readOnly={readOnly}
+                />
+              ))}
+              {!readOnly && <SheetAddRow onClick={addCustomRow} />}
+            </FormSheetBlock>
           )}
 
-          {/*
-            Auto-filled bottom fields.
-            These are system-driven (today / signed-in user / assigned approver).
-          */}
-          <div className="px-4 py-1">
-            {/* İSTEM rows are shown to every role — the matbaa needs to know
-                who requested the demo/ozalit and when, not just its own
-                delivery stamp. */}
-            <Row label={variant.dateLabel}   name={variant.dateField}   value={form[variant.dateField]}   onChange={handleChange} readOnly={systemRowReadOnly} />
-            {/* BASIM YERİ — right before HAZIRLAYAN, per the feature ask. */}
-            {variant.locationField && (
-              <Row
-                label={variant.locationLabel}
-                name={variant.locationField}
-                value={form[variant.locationField] ?? ''}
-                onChange={handleChange}
-                readOnly={readOnly}
-                required
-              />
-            )}
-            <Row label={variant.personLabel} name={variant.personField} value={form[variant.personField]} onChange={handleChange} readOnly />
-            {/* Blank until handleAdvance stamps them at the moment of teslimat. */}
-            {(user?.role === 'printer' || form.teslimTarihi || form.teslimEdenKisi) && (
-              <>
-                <Row label="TESLİM TARİHİ"    name="teslimTarihi"   value={form.teslimTarihi   ?? ''} onChange={handleChange} readOnly={systemRowReadOnly} />
-                <Row label="TESLİM EDEN KİŞİ" name="teslimEdenKisi" value={form.teslimEdenKisi ?? ''} onChange={handleChange} readOnly />
-              </>
-            )}
-            {form.matbaaYetkilisi && <Row label="MATBAA YETKİLİSİ" name="matbaaYetkilisi" value={form.matbaaYetkilisi} onChange={handleChange} readOnly />}
-            {form.onaylayanKisi && <Row label="ONAYLAYAN KİŞİ" name="onaylayanKisi" value={form.onaylayanKisi} onChange={handleChange} readOnly />}
-          </div>
-        </div>
-
-        {/* Signature block removed for now — see the matching note on
-            ClassicSheet above; SigBox itself is left defined for restore. */}
-        </>
-        )}
+          {showsComponentCards && !readOnly && (
+            <p className="px-4 py-2 text-[10px] text-muted-foreground print:hidden">
+              Buradaki düzenlemeler Ürün Bilgileri'ne de kaydedilir.
+            </p>
+          )}
+        </FormSheet>
 
         {/* Ozalit receipt gate — the approve below stays disabled until the
             proof is acknowledged. The confirm is inline (a second click on the
@@ -1673,7 +1614,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
                 <Check className="h-4 w-4 shrink-0" />
                 <span>
-                  Ozalit teslim alındı{project?.ozalit_received_by ? `, ${project.ozalit_received_by}` : ''}.
+                  Ozalit teslim alındı{round.receivedBy ? `, ${round.receivedBy}` : ''}.
                   Onay sırası ekip liderinde, o onayladıktan sonra onaylayabilirsiniz.
                 </span>
               </div>
@@ -1681,7 +1622,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
                 <Check className="h-4 w-4 shrink-0" />
                 <span>
-                  Ozalit teslim alındı{project?.ozalit_received_by ? `, ${project.ozalit_received_by}` : ''}. Onaylayabilirsiniz.
+                  Ozalit teslim alındı{round.receivedBy ? `, ${round.receivedBy}` : ''}. Onaylayabilirsiniz.
                 </span>
               </div>
             )
@@ -1828,10 +1769,33 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               {startingWork ? 'İşleniyor…' : 'İşlemi Başlatın'}
             </Button>
           )}
+          {/* Resubmit after a reject-to-designer: the same sheet can go to the
+              matbaa for another physical ozalit (the primary button) or
+              straight to the team leader as a digital Ekran Onayı. Only
+              offered once the order has actually bounced back — a first
+              request always takes the matbaa route. */}
+          {mode === 'advance' && authoringOrderOzalit && order?.last_reject_type === 'designer' && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy || missingRequired.length > 0}
+              onClick={() => handleAdvance('ekran_onay')}
+            >
+              {busy ? 'Gönderiliyor…' : 'Ekran Onayı İsteyin'}
+            </Button>
+          )}
           {mode === 'advance' && (
-            <Button disabled={busy || missingRequired.length > 0} onClick={handleAdvance} variant={rejectContext ? 'destructive' : 'default'}>
+            <Button
+              disabled={busy || missingRequired.length > 0}
+              onClick={() => handleAdvance(authoringOrderOzalit && order?.last_reject_type === 'designer' ? 'tasarimci_onay' : null)}
+              variant={rejectContext ? 'destructive' : 'default'}
+            >
               <Send className="h-4 w-4" />
-              {busy ? 'Gönderiliyor…' : rejectContext ? 'Reddedin ve Gönderin' : variant.advanceLabel(user)}
+              {busy
+                ? 'Gönderiliyor…'
+                : rejectContext ? 'Reddedin ve Gönderin'
+                  : authoringOrderOzalit ? 'Ozalit İsteyin'
+                    : variant.advanceLabel(user)}
             </Button>
           )}
           {isBaskiOnayApproval && !baskiOnayPrepared && (

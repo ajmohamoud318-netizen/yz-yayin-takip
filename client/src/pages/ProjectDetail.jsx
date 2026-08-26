@@ -62,7 +62,7 @@ import {
   canRespondDemoChange, canRespondOzalitChange,
   canRequestEkranDemo, canRespondEkranDemo,
 } from '@/domain'
-import { canActOnOrder } from '@/domain/constants/orders'
+import { canActOnOrder, orderOzalitFormMode } from '@/domain/constants/orders'
 
 // "Open" mirrors useOpenOrdersByProject/findOpenByProject — not yet at a
 // terminal step. A project can have more than one of these in flight at
@@ -79,6 +79,9 @@ const isActiveOrder = (o) => o.status !== 'onaylandi' && o.status !== 'rejected'
 // forever.
 const DISPLAY_ORDER_STEP_LABELS = {
   ...ORDER_STEP_LABELS,
+  // Short form: the stepper gives each step ~40px at 390px, and "Kontrol
+  // Edildi" is only ever read next to the steps around it.
+  kontrol_edildi: 'Kontrol',
   teslim_bekleniyor: 'Teslim Bekleniyor',
   satista: 'Satışta',
 }
@@ -88,7 +91,8 @@ const DISPLAY_ORDER_STEP_LABELS = {
 // here since this page shows a project's orders to whichever role opens it.
 const ORDER_ACTION_LABELS = {
   pending: 'Tasarımcıya Aktarın',
-  goruldu: 'İnceleyin ve Gönderin',
+  goruldu: 'Kontrolleri Yapın',
+  kontrol_edildi: 'Ozalit İsteyin',
   tasarimci_onay: 'Teslim Edin',
   ekran_onay: 'Onaylayın',
   siparis_baski_onay: 'Baskı Onay Formu',
@@ -252,6 +256,9 @@ export default function ProjectDetail() {
   // "Baskı Onayı" step (siparis_baski_onay), which needs its own form dialog
   // (SiparisBaskiOnayFormDialog) before it can advance — see canActOnOrder.
   const [siparisBaskiOnayOrder, setSiparisBaskiOnayOrder] = useState(null)
+  // The designer's ozalit-request step — this page already holds the project,
+  // so only the order is needed (see orderOzalitFormMode for the mode).
+  const [ozalitRequestOrder, setOzalitRequestOrder] = useState(null)
 
   // Orders worth showing their own tracker for: any still-active one, plus
   // (until the project actually sells) the single most recently approved
@@ -293,6 +300,13 @@ export default function ProjectDetail() {
     setSignOrder((prev) => (prev ? { ...prev, ...updated } : updated))
   }
 
+  // The ozalit request moves the order off the designer's desk — merge the
+  // fresh row into the trackers and close.
+  function handleOrderOzalitRequested(updated) {
+    setProjectOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)))
+    setOzalitRequestOrder(null)
+  }
+
   function handleSiparisBaskiOnayApproved(updated) {
     setProjectOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)))
     if (updated.status !== 'siparis_baski_onay') setSiparisBaskiOnayOrder(null)
@@ -300,6 +314,9 @@ export default function ProjectDetail() {
 
   function openOrderAction(order) {
     if (order.status === 'siparis_baski_onay') setSiparisBaskiOnayOrder(order)
+    // "Ozalit İsteyin" (migration 054) opens the order's own Ozalit Üretim
+    // Formu — sending that sheet IS the request, so there's no sign dialog.
+    else if (order.status === 'kontrol_edildi') setOzalitRequestOrder(order)
     else setSignOrder(order)
   }
 
@@ -1892,6 +1909,15 @@ export default function ProjectDetail() {
         onOpenChange={(v) => !v && setSignOrder(null)}
         onSigned={handleOrderSigned}
         onUpdated={handleOrderUpdated}
+      />
+
+      <OzalitFormDialog
+        open={!!ozalitRequestOrder}
+        onOpenChange={(v) => !v && setOzalitRequestOrder(null)}
+        project={project}
+        order={ozalitRequestOrder}
+        mode={orderOzalitFormMode(ozalitRequestOrder, user)}
+        onDone={handleOrderOzalitRequested}
       />
 
       <SiparisBaskiOnayFormDialog

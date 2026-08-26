@@ -901,6 +901,7 @@ export async function notifyMeetingCreated(client, { meeting, actor }) {
 const ORDER_STEP_BODY = {
   pending: 'Yeni baskı talebi, onayınızı bekliyor',
   goruldu: 'Baskı kontrolünüzü bekliyor',
+  kontrol_edildi: 'Baskı kontrolleri tamam, ozalit formunu gönderin',
   tasarimci_onay: 'Baskı ozalit isteniyor',
   ekran_onay: 'Ekran onayı bekleniyor',
   siparis_baski_onay: 'Baskı onay formu bekleniyor',
@@ -908,6 +909,7 @@ const ORDER_STEP_BODY = {
 const ORDER_STEP_LINK = {
   pending: '/siparis-talepleri',
   goruldu: '/siparis-onay',
+  kontrol_edildi: '/siparis-onay',
   tasarimci_onay: '/approvals/siparis',
   ekran_onay: '/siparis-talepleri',
   siparis_baski_onay: '/siparis-talepleri',
@@ -925,8 +927,8 @@ const ORDER_STEP_LINK = {
 // siparis_baski_onay is amber for the same reason its project-pipeline twin
 // `baski_onay_pending` is: it's a step that owes someone an action.
 const ORDER_STEP_TONE = {
-  pending: 'amber', goruldu: 'green', tasarimci_onay: 'blue',
-  ekran_onay: 'blue', siparis_baski_onay: 'amber',
+  pending: 'amber', goruldu: 'green', kontrol_edildi: 'green',
+  tasarimci_onay: 'blue', ekran_onay: 'blue', siparis_baski_onay: 'amber',
 }
 
 /**

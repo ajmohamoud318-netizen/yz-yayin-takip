@@ -10,7 +10,6 @@ import api, {
 import { getComponentsForProject, saveComponentsForProject, primeProductInfoCache } from '@/data/productCatalog'
 import { buildAdetRows } from '@/data/orderAdet'
 import { useAuth } from '@/hooks/useAuth'
-import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { isSubtaskDone } from '@/domain/services/progress'
 import { Button } from '@/components/ui/button'
 import {
@@ -112,13 +111,15 @@ async function saveSubtaskFlags(orderId, subtasks, originalJson) {
  */
 export default function TalepSignDialog({ order, open, onOpenChange, onSigned, onUpdated, initialReject = false }) {
   const { user } = useAuth()
-  const celebrate = useDesignerCelebration()
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   // matbaa_onay receipt gate — "Teslim Alındı" / "Teslim Alınamadı".
   const [matbaaBusy, setMatbaaBusy] = useState(false)
   const [confirmMatbaaNotReceived, setConfirmMatbaaNotReceived] = useState(false)
-  // Designer step (status 'goruldu') can revise the product spec before signing.
+  // Designer step 1 of 2 (status 'goruldu', migration 054) — "Kontrolleri
+  // Yapın": alt görevler + ürün bilgileri. Step 2 ("Ozalit İsteyin", status
+  // 'kontrol_edildi') isn't this dialog at all: it opens the Ozalit Üretim
+  // Formu, and that form's own submit advances the order.
   const isDesignerStep = user?.role === 'designer' && order?.status === 'goruldu'
   // Team leader can also correct the spec while approving the ozalit round
   // (matbaa_onay), the digital Ekran Onayı, or — before the matbaa has
@@ -132,13 +133,11 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     isDesignerStep ||
     (user?.role === 'team_leader' && (order?.status === 'matbaa_onay' || order?.status === 'ekran_onay')) ||
     (user?.role === 'team_leader' && order?.status === 'tasarimci_onay' && !order?.ozalit_started)
-  // Resubmit-after-reject: only once this order has actually bounced back to
-  // goruldu via a reject (order.last_reject_type === 'designer') does the
-  // designer get to choose between another physical ozalit and a digital
-  // Ekran Onayı — a first submission always goes straight to tasarimci_onay,
-  // no choice offered.
-  const isResubmit = isDesignerStep && order?.last_reject_type === 'designer'
-  const [chosenRoute, setChosenRoute] = useState(null)
+  // The resubmit-after-reject choice (another physical ozalit vs. a digital
+  // Ekran Onayı) used to live here. It moved one step forward with migration
+  // 054, onto the Ozalit Üretim Formu that now makes the request — see
+  // SpecFormDialog's authoringOrderOzalit footer. The checks step never picks
+  // a route, and the server refuses one sent from here.
   const [comps, setComps] = useState([])
   const [editorOpen, setEditorOpen] = useState(false)
   // Team-leader reject of the sales-side ozalit (matbaa teslim).
@@ -177,7 +176,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
 
   useEffect(() => {
     if (open && order && canEditSpec) {
-      setChosenRoute(null)
       const loaded = deepClone(loadProductComps(order.project_id))
       setComps(loaded)
       originalRef.current = JSON.stringify(loaded)
@@ -329,10 +327,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
       toast.error('En az bir tasarımcı seçin.')
       return
     }
-    if (isResubmit && !chosenRoute) {
-      toast.error('Revize sonrası Ozalit mi yoksa Ekran Onayı mı isteneceğini seçin.')
-      return
-    }
     // Re-validate the assignee selection against the current user list before
     // submitting. Catches the case where a teammate was deactivated in
     // another tab while this dialog was open — without this, the request
@@ -389,7 +383,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
         notes: signNotes,
         expectedVersion: order.version ?? null,
         ...(isAssignStep ? { assignees: assignIds } : {}),
-        ...(isResubmit ? { route: chosenRoute } : {}),
       })
       // The advance passed the version check, so the edits it described in
       // `signNotes` may now be committed.
@@ -399,10 +392,13 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
       // (see the note above actionLabel), so it checks the server's answer.
       if (isMatbaaOnayStep && updated.status === order.status) {
         toast.success('Onayınız kaydedildi, diğer onaylar bekleniyor.')
+      } else if (isDesignerStep) {
+        // Half of the designer's turn, not the end of it — say what's next
+        // rather than announcing the bare step name ("Kontrol Edildi").
+        toast.success('Kontroller kaydedildi, şimdi ozalit isteyin.')
       } else {
         toast.success(`${nextLabel}.`)
       }
-      if (isDesignerStep) celebrate()
       setNotes('')
       onOpenChange(false)
       onSigned?.(updated)
@@ -666,11 +662,11 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
       <DialogContent className={cn('max-w-md', DIALOG_MOBILE_SHEET, canEditSpec && 'max-w-lg')}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {isDesignerStep ? 'İnceleyin ve Gönderin' : actionLabel}
+            {isDesignerStep ? 'Kontrolleri Yapın' : actionLabel}
           </DialogTitle>
           <DialogDescription>
             {isDesignerStep
-              ? 'Önce alt görevleri güncelleyin; gerekirse ürün bilgilerini düzenleyin, ardından gönderin.'
+              ? 'Alt görevleri güncelleyin, gerekirse ürün bilgilerini düzeltin. Kaydettikten sonra ozalit isteme adımına geçeceksiniz.'
               : 'Bu adımı onaylayarak imzalıyorsunuz. İşlem geri alınamaz.'}
           </DialogDescription>
         </DialogHeader>
@@ -789,44 +785,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
                   )}
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Resubmit-after-reject: choose another physical ozalit or a
-              digital Ekran Onayı. Only shown once this order has actually
-              bounced back to goruldu via a reject — a first submission has
-              no choice, it always goes to tasarimci_onay. */}
-          {isResubmit && (
-            <div className="space-y-1.5">
-              <Label>Nasıl onaylatmak istersiniz? *</Label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setChosenRoute('tasarimci_onay')}
-                  className={cn(
-                    'rounded-lg border px-3 py-2 text-left transition',
-                    chosenRoute === 'tasarimci_onay'
-                      ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
-                      : 'hover:bg-muted/50',
-                  )}
-                >
-                  <span className="block text-sm font-semibold">Tekrar Ozalit İsteyin</span>
-                  <span className="block text-xs text-muted-foreground">Matbaa fiziksel ozalit basar</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setChosenRoute('ekran_onay')}
-                  className={cn(
-                    'rounded-lg border px-3 py-2 text-left transition',
-                    chosenRoute === 'ekran_onay'
-                      ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
-                      : 'hover:bg-muted/50',
-                  )}
-                >
-                  <span className="block text-sm font-semibold">Ekran Onayı İsteyin</span>
-                  <span className="block text-xs text-muted-foreground">Ekip lideri ekrandan onaylar</span>
-                </button>
-              </div>
             </div>
           )}
 
@@ -1174,7 +1132,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
                       canRespondOzalitChange
                     }
                   >
-                    {saving ? 'Kaydediliyor…' : isDesignerStep ? 'İnceleyin ve Gönderin' : actionLabel}
+                    {saving ? 'Kaydediliyor…' : isDesignerStep ? 'Kontrolleri Yapın' : actionLabel}
                   </Button>
                 )
               )}
@@ -1410,6 +1368,7 @@ function stepShortLabel(step) {
   const map = {
     pending: 'Talep',
     goruldu: 'Aktarıldı',
+    kontrol_edildi: 'Kontrol',
     tasarimci_onay: 'Ozalit',
     ekran_onay: 'Ekran Onayı',
     matbaa_onay: 'Onay',

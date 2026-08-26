@@ -4,6 +4,8 @@ import { ShoppingCart, Package, CheckCircle2, FileText, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import api, { ORDER_STEP_LABELS, ORDER_LEADER_ACTION_STEPS, ORDER_REJECT_TO } from '@/api'
+import { orderOzalitFormMode } from '@/domain/constants/orders'
+import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -22,6 +24,7 @@ const LEADER_ACTION_STEPS = ORDER_LEADER_ACTION_STEPS
 const STATUS_BADGE = {
   pending:             'bg-amber-50 text-amber-700 border-amber-200',
   goruldu:             'bg-blue-50 text-blue-700 border-blue-200',
+  kontrol_edildi:      'bg-blue-50 text-blue-700 border-blue-200',
   tasarimci_onay:      'bg-indigo-50 text-indigo-700 border-indigo-200',
   ekran_onay:          'bg-cyan-50 text-cyan-700 border-cyan-200',
   matbaa_onay:         'bg-violet-50 text-violet-700 border-violet-200',
@@ -30,6 +33,7 @@ const STATUS_BADGE = {
 }
 
 export default function SiparisTalepleri() {
+  const { user } = useAuth()
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('action')
@@ -37,12 +41,18 @@ export default function SiparisTalepleri() {
   // Whether the sign dialog was opened via the card's "Reddet" shortcut
   // (opens straight into the reject panel) vs. "Onaylayın" (normal approve view).
   const [signReject, setSignReject] = useState(false)
-  const [ozalitProject, setOzalitProject] = useState(null)
+  // The sipariş's own ozalit sheet (migration 053) — the SAME form the main
+  // pipeline uses, kept under the order's id so two reprints of one title
+  // don't share a sheet. Both halves are needed: the order owns the round
+  // (its number, its stamps, its started/received flags), the project owns
+  // the reçete the sheet is built from.
+  const [ozalitFor, setOzalitFor] = useState(null) // { order, project }
+
   const [baskiOnayOrder, setBaskiOnayOrder] = useState(null)
 
   async function openOzalit(order) {
     try {
-      setOzalitProject(await api.getProject(order.project_id))
+      setOzalitFor({ order, project: await api.getProject(order.project_id) })
     } catch {
       toast.error('Ozalit formu açılamadı.')
     }
@@ -81,7 +91,7 @@ export default function SiparisTalepleri() {
   const filtered = requests.filter((r) => {
     if (tab === 'all') return true
     if (tab === 'action') return LEADER_ACTION_STEPS.has(r.status)
-    if (tab === 'progress') return ['goruldu', 'tasarimci_onay'].includes(r.status)
+    if (tab === 'progress') return ['goruldu', 'kontrol_edildi', 'tasarimci_onay'].includes(r.status)
     if (tab === 'done') return r.status === 'onaylandi'
     return r.status === tab
   })
@@ -145,10 +155,18 @@ export default function SiparisTalepleri() {
         initialReject={signReject}
       />
       <OzalitFormDialog
-        open={!!ozalitProject}
-        onOpenChange={(v) => !v && setOzalitProject(null)}
-        project={ozalitProject}
-        mode="view"
+        open={!!ozalitFor}
+        onOpenChange={(v) => !v && setOzalitFor(null)}
+        project={ozalitFor?.project}
+        order={ozalitFor?.order}
+        mode={orderOzalitFormMode(ozalitFor?.order, user)}
+        onDone={(updated) => {
+          handleUpdated(updated)
+          // Keep the open sheet on the fresh row — a "Teslim Alındı" or a
+          // partial approval leaves the dialog open, and its gates read the
+          // order's flags.
+          setOzalitFor((prev) => (prev ? { ...prev, order: { ...prev.order, ...updated } } : prev))
+        }}
       />
       <SiparisBaskiOnayFormDialog
         order={baskiOnayOrder}

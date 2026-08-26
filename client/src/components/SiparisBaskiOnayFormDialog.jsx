@@ -1,12 +1,21 @@
 import { useEffect, useState } from 'react'
-import { Plus, Printer, ShoppingCart, X } from 'lucide-react'
+import { Printer, ShoppingCart } from 'lucide-react'
 import { toast } from 'sonner'
 
 import api from '@/api'
 import { getComponentsForProject, getComponentRows } from '@/data/productCatalog'
-import { buildBaskiOnayForm, printSpecSheets } from '@/lib/specPrint'
+import { buildFormSheet, printSpecSheets } from '@/lib/specPrint'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
+import {
+  FormSheet,
+  FormSheetBlock,
+  FormSheetBlockTitle,
+  FormSheetHead,
+  SheetAddRow,
+  SheetRow,
+  SheetSpecRow,
+} from '@/components/FormSheet'
 import {
   Dialog,
   DialogContent,
@@ -16,7 +25,6 @@ import {
   DialogTitle,
   DIALOG_MOBILE_SHEET,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { cn, formatNumber } from '@/lib/utils'
 
 const deepClone = (x) => JSON.parse(JSON.stringify(x ?? []))
@@ -36,7 +44,7 @@ const deepClone = (x) => JSON.parse(JSON.stringify(x ?? []))
  * its snapshot lives in `order_requests.baski_onay_form` (migration 046),
  * saved/approved via PATCH/POST /order-requests/:id/baski-onay-form|approve.
  * It reuses the genuinely entity-agnostic pieces — specPrint.js's
- * buildBaskiOnayForm/printSpecSheets, and the product catalog readers.
+ * buildFormSheet/printSpecSheets, and the product catalog readers.
  *
  * Props:
  *   order    – the full order object
@@ -116,10 +124,7 @@ export default function SiparisBaskiOnayFormDialog({
   }
 
   /**
-   * One boxed Baskı Onay Formu per parça, all in a single print job — this
-   * is the sheet the matbaa prints from and signs, so it comes out as an
-   * actual form (künye grid + spec table + signature strip), not as the
-   * classic flat label:value list demo/ozalit use.
+   * One Baskı Onay Formu per parça, all in a single print job.
    */
   function handlePrint() {
     if (!isReadOnly && !requiredFilled()) return
@@ -132,7 +137,7 @@ export default function SiparisBaskiOnayFormDialog({
     }
     const bookTitle = order.project_title?.replace(/ \/ /g, ' ') ?? ''
     const list = components.length > 0 ? components : [{ component: bookTitle, rows: [] }]
-    const sheets = list.map((c) => buildBaskiOnayForm({ component: c, form, title: bookTitle }))
+    const sheets = list.map((c) => buildFormSheet({ component: c, form, kind: 'baski_onay', title: bookTitle }))
     const ok = printSpecSheets(sheets, { docTitle: `Baskı Onay Formu — ${bookTitle}` })
     if (!ok) toast.error('Pop-up engelleyiciyi kontrol edin.')
   }
@@ -191,31 +196,23 @@ export default function SiparisBaskiOnayFormDialog({
   const bookTitle = order.project_title?.replace(/ \/ /g, ' ') ?? ''
   const busy = saving || approving
 
-  /* The dialog IS the form: one white sheet — title block, künye, then a
-     block per parça — so what the leader edits on screen reads as the same
-     document handlePrint() puts on paper, instead of a stack of loose
-     inputs. Editable and read-only render the same layout; only the fields
+  /* The dialog IS the form: the same document handlePrint() puts on paper,
+     rendered live. Editable and read-only share one layout; only the fields
      switch between input and plain text. */
   const body = (
-    <div className="overflow-hidden rounded-lg border bg-white">
-      <div className="border-b px-4 py-3 text-center">
-        <h2 className="text-[12px] font-bold uppercase tracking-[0.18em] text-foreground">Baskı Onay Formu</h2>
-        <p className="mt-1.5 flex items-start justify-center gap-1.5 text-[13px] font-semibold leading-snug text-foreground">
-          <ShoppingCart className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 break-words">{bookTitle}</span>
-        </p>
-      </div>
+    <FormSheet>
+      <FormSheetHead title="Baskı Onay Formu" subtitle={bookTitle} icon={ShoppingCart} />
 
       {/* Künye — the four fields the matbaa actually prints from. */}
-      <div className="border-b bg-muted/10 px-4 py-0.5">
-        <FormRow label="ADET" name="baski-onay-adet" value={adet} onChange={setAdet} readOnly={isReadOnly} required />
-        <FormRow label="TARİH" name="baski-onay-tarih" value={tarih} onChange={setTarih} readOnly={isReadOnly} required />
-        <FormRow label="BASIM YERİ" name="baski-onay-yer" value={basimYeri} onChange={setBasimYeri} readOnly={isReadOnly} required />
-        <FormRow label="HAZIRLAYAN" name="baski-onay-hazirlayan" value={hazirlayan} onChange={setHazirlayan} readOnly={isReadOnly} required />
+      <FormSheetBlock className="bg-muted/10">
+        <SheetRow label="ADET" name="adet" value={adet} onChange={(e) => setAdet(e.target.value)} readOnly={isReadOnly} required />
+        <SheetRow label="TARİH" name="tarih" value={tarih} onChange={(e) => setTarih(e.target.value)} readOnly={isReadOnly} required />
+        <SheetRow label="BASIM YERİ" name="basimYeri" value={basimYeri} onChange={(e) => setBasimYeri(e.target.value)} readOnly={isReadOnly} required />
+        <SheetRow label="HAZIRLAYAN" name="hazirlayan" value={hazirlayan} onChange={(e) => setHazirlayan(e.target.value)} readOnly={isReadOnly} required />
         {/* Only once the approve actually stamped it — an unapproved sheet
             must not read as already signed. */}
-        {onaylayan && <FormRow label="ONAYLAYAN" value={onaylayan} readOnly />}
-      </div>
+        {onaylayan && <SheetRow label="ONAYLAYAN" value={onaylayan} readOnly />}
+      </FormSheetBlock>
 
       {/* One block per parça — each of these prints as its own sheet. */}
       {components.length === 0 ? (
@@ -223,65 +220,25 @@ export default function SiparisBaskiOnayFormDialog({
       ) : (
         components.map((c, ci) => (
           <div key={c.id ?? c.component} className="border-b last:border-b-0">
-            <div className="border-b bg-muted/30 px-4 py-1.5 text-center text-[11px] font-bold uppercase tracking-widest text-foreground">
-              {c.component}
-            </div>
-            <div className="px-4 py-0.5">
+            <FormSheetBlockTitle>{c.component}</FormSheetBlockTitle>
+            <FormSheetBlock className="border-b-0">
               {c.rows.map((r, ri) => (
-                <div key={r.id ?? ri} className={ROW_GRID}>
-                  {/* The label is editable (a leader may rename a spec field),
-                      so it is an input while editing and a plain span once the
-                      sheet is read-only — where it then matches the künye
-                      labels exactly. */}
-                  {isReadOnly ? (
-                    <span className={LABEL_CLS}>{r.label}</span>
-                  ) : (
-                    <input
-                      value={r.label}
-                      onChange={(e) => setRow(ci, ri, { label: e.target.value })}
-                      placeholder="ALAN"
-                      className={cn(LABEL_CLS, 'min-w-0 bg-transparent outline-none placeholder:text-muted-foreground/50')}
-                    />
-                  )}
-                  <span className={COLON_CLS}>:</span>
-                  <div className={cn(VALUE_CELL_CLS, 'relative')}>
-                    {isReadOnly ? (
-                      <span className={VALUE_TEXT_CLS}>{r.value || '—'}</span>
-                    ) : (
-                      <input
-                        value={r.value}
-                        onChange={(e) => setRow(ci, ri, { value: e.target.value })}
-                        placeholder="Değer"
-                        className="h-8 w-full min-w-0 bg-transparent pr-6 text-[13px] outline-none placeholder:text-muted-foreground/50"
-                      />
-                    )}
-                    {!isReadOnly && (
-                      <button
-                        type="button"
-                        onClick={() => removeRow(ci, ri)}
-                        aria-label="Satırı sil"
-                        className="absolute right-0 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive print:hidden"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
+                <SheetSpecRow
+                  key={r.id ?? ri}
+                  label={r.label}
+                  value={r.value}
+                  onLabelChange={(v) => setRow(ci, ri, { label: v })}
+                  onValueChange={(v) => setRow(ci, ri, { value: v })}
+                  onRemove={() => removeRow(ci, ri)}
+                  readOnly={isReadOnly}
+                />
               ))}
-              {!isReadOnly && (
-                <button
-                  type="button"
-                  onClick={() => addRow(ci)}
-                  className="my-1 inline-flex items-center gap-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80 print:hidden"
-                >
-                  <Plus className="h-3 w-3" /> Satır Ekleyin
-                </button>
-              )}
-            </div>
+              {!isReadOnly && <SheetAddRow onClick={() => addRow(ci)} />}
+            </FormSheetBlock>
           </div>
         ))
       )}
-    </div>
+    </FormSheet>
   )
 
   const footer = (
@@ -327,51 +284,6 @@ export default function SiparisBaskiOnayFormDialog({
         <DialogFooter className="gap-2">{footer}</DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-/* The künye rows and the parça rows share one grid, so every colon on the
-   sheet lines up and the value column reads as a real column with a rule down
-   it — that grid is what makes this look like a form rather than a list. The
-   label column is wide enough for HAZIRLAYAN / BASIM YERİ at 390px and wraps
-   rather than truncating. */
-const ROW_GRID = 'grid grid-cols-[minmax(5.5rem,36%)_auto_1fr] items-center border-b last:border-b-0'
-const LABEL_CLS = 'py-1.5 pr-2 text-[11px] font-semibold uppercase leading-snug tracking-wide text-muted-foreground'
-const COLON_CLS = 'self-stretch pt-1.5 text-center text-xs font-bold text-muted-foreground'
-const VALUE_CELL_CLS = 'min-w-0 self-stretch border-l pl-2'
-const VALUE_TEXT_CLS = 'block whitespace-pre-wrap break-words py-1.5 text-[13px] leading-snug text-foreground'
-
-/* One künye line (LABEL : value) — the same shape as a parça row, and as the
-   printed form's künye grid. Read-only renders plain text instead of a dead
-   input, so a sheet that can no longer be edited reads as a document. */
-function FormRow({ label, name, value, onChange, readOnly, required = false }) {
-  const missing = required && !String(value ?? '').trim()
-  return (
-    <div className={ROW_GRID}>
-      <span className={LABEL_CLS}>
-        {label}
-        {/* The asterisk is a fill-this-in instruction — nothing to obey on a
-            sheet that can no longer be edited, or on paper. */}
-        {required && !readOnly && <span className="text-destructive print:hidden"> *</span>}
-      </span>
-      <span className={COLON_CLS}>:</span>
-      <div className={cn(VALUE_CELL_CLS, missing && !readOnly && 'bg-destructive/5')}>
-        {readOnly ? (
-          <span className={VALUE_TEXT_CLS}>{value || '—'}</span>
-        ) : (
-          <Input
-            name={name}
-            value={value}
-            onChange={(e) => onChange?.(e.target.value)}
-            placeholder={missing ? 'Zorunlu' : undefined}
-            className={cn(
-              'h-8 min-w-0 rounded-none border-0 bg-transparent px-0 py-1 text-[13px] shadow-none focus-visible:ring-0',
-              missing && 'placeholder:text-destructive/60',
-            )}
-          />
-        )}
-      </div>
-    </div>
   )
 }
 

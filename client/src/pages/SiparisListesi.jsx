@@ -11,12 +11,13 @@ import { cn, formatNumber } from '@/lib/utils'
 const STATUS_BADGE = {
   pending:        'bg-amber-50 text-amber-700 border-amber-200',
   goruldu:        'bg-blue-50 text-blue-700 border-blue-200',
+  kontrol_edildi: 'bg-blue-50 text-blue-700 border-blue-200',
   tasarimci_onay: 'bg-indigo-50 text-indigo-700 border-indigo-200',
   matbaa_onay:    'bg-violet-50 text-violet-700 border-violet-200',
   onaylandi:      'bg-emerald-50 text-emerald-700 border-emerald-200',
 }
 
-const STEP_ORDER = ['pending', 'goruldu', 'tasarimci_onay', 'matbaa_onay', 'onaylandi']
+const STEP_ORDER = ['pending', 'goruldu', 'kontrol_edildi', 'tasarimci_onay', 'matbaa_onay', 'onaylandi']
 
 export default function SiparisListesi() {
   const { user } = useAuth()

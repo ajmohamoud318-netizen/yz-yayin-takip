@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import TalepSignDialog from '@/components/TalepSignDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
-import { canApproveMatbaaOnayNow, isOrderAssignedToDesigner } from '@/domain/constants/orders'
+import { canApproveMatbaaOnayNow, isOrderAssignedToDesigner, orderOzalitFormMode } from '@/domain/constants/orders'
 import { cn, formatNumber } from '@/lib/utils'
 
 export default function SiparisOnay() {
@@ -21,13 +21,17 @@ export default function SiparisOnay() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [signOrder, setSignOrder] = useState(null)
-  const [ozalitProject, setOzalitProject] = useState(null) // real Ozalit Üretim Formu
+  // This sipariş's OWN Ozalit Üretim Formu (migration 053) — the same
+  // component and the same reçete source the project pipeline uses, kept
+  // under the order's id so its round number and its İSTEM/TESLİM/ONAY
+  // stamps belong to this reprint and not to the product at large. It used
+  // to open the PROJECT's sheet read-only, which showed whatever the last
+  // project round said, no matter what this order was sent with.
+  const [ozalitFor, setOzalitFor] = useState(null) // { order, project }
 
-  // Open the real Ozalit Üretim Formu for the order's project.
   async function openOzalit(order) {
     try {
-      const project = await api.getProject(order.project_id)
-      setOzalitProject(project)
+      setOzalitFor({ order, project: await api.getProject(order.project_id) })
     } catch {
       toast.error('Ozalit formu açılamadı.')
     }
@@ -40,25 +44,38 @@ export default function SiparisOnay() {
     [projects, user?.id],
   )
 
-  useEffect(() => {
-    api.listOrderRequests()
-      .then((reqs) => {
-        setOrders(reqs.filter((r) => {
-          if (!isOrderAssignedToDesigner(r, user?.id, myProjectIds)) return false
-          if (r.status === 'goruldu') return true
-          // matbaa_onay is multi-party — stay in the queue until THIS
-          // designer has approved, even if a leader already has.
-          if (r.status === 'matbaa_onay') {
-            return !(r.matbaa_approvals ?? []).some((a) => a.id === user?.id)
-          }
-          return false
-        }))
-      })
-      .finally(() => setLoading(false))
+  // Does this order still owe THIS designer something? Extracted so the
+  // initial fetch and the in-place updates below can't drift apart — the
+  // ozalit form completes rounds as well as mutating them, and an order it
+  // sent on to Baskı Onayı has to leave the queue.
+  const belongsHere = useMemo(() => (r) => {
+    if (!isOrderAssignedToDesigner(r, user?.id, myProjectIds)) return false
+    // The designer's two steps (migration 054): the checks, then the ozalit
+    // request. Both are theirs, so both stay in the queue.
+    if (r.status === 'goruldu' || r.status === 'kontrol_edildi') return true
+    // matbaa_onay is multi-party — stay in the queue until THIS designer has
+    // approved, even if a leader already has.
+    if (r.status === 'matbaa_onay') {
+      return !(r.matbaa_approvals ?? []).some((a) => a.id === user?.id)
+    }
+    return false
   }, [myProjectIds, user?.id])
 
+  useEffect(() => {
+    api.listOrderRequests()
+      .then((reqs) => setOrders(reqs.filter(belongsHere)))
+      .finally(() => setLoading(false))
+  }, [belongsHere])
+
   function handleSigned(updated) {
-    setOrders((prev) => prev.filter((r) => r.id !== updated.id))
+    // Merge, then re-apply the queue rule rather than dropping the row
+    // outright: signing the checks step advances the order to
+    // 'kontrol_edildi', which is still this designer's — the card has to
+    // stay and flip its button to "Ozalit İsteyin" (same shape as
+    // handleOzalitDone below).
+    setOrders((prev) => prev
+      .map((r) => (r.id === updated.id ? { ...r, ...updated } : r))
+      .filter(belongsHere))
     setSignOrder(null)
   }
 
@@ -68,6 +85,20 @@ export default function SiparisOnay() {
   function handleUpdated(updated) {
     setOrders((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)))
     setSignOrder((prev) => (prev ? { ...prev, ...updated } : updated))
+  }
+
+  /**
+   * The ozalit sheet reports back for both kinds of outcome: an in-place one
+   * ("Teslim Alındı", one vote of a multi-party approval, a correction) and
+   * a completing one (the last approval sends the order to Baskı Onayı).
+   * Merge either way, keep the open dialog on the fresh row, then re-apply
+   * the queue rule so a finished order doesn't linger as a dead card.
+   */
+  function handleOzalitDone(updated) {
+    setOzalitFor((prev) => (prev ? { ...prev, order: { ...prev.order, ...updated } } : prev))
+    setOrders((prev) => prev
+      .map((r) => (r.id === updated.id ? { ...r, ...updated } : r))
+      .filter(belongsHere))
   }
 
   return (
@@ -113,10 +144,12 @@ export default function SiparisOnay() {
         onUpdated={handleUpdated}
       />
       <OzalitFormDialog
-        open={!!ozalitProject}
-        onOpenChange={(v) => !v && setOzalitProject(null)}
-        project={ozalitProject}
-        mode="view"
+        open={!!ozalitFor}
+        onOpenChange={(v) => !v && setOzalitFor(null)}
+        project={ozalitFor?.project}
+        order={ozalitFor?.order}
+        mode={orderOzalitFormMode(ozalitFor?.order, user)}
+        onDone={handleOzalitDone}
       />
     </>
   )
@@ -138,14 +171,22 @@ function DesignerOrderCard({ order, onSign, onOzalit }) {
 
   // Find the görüldü step to show who signed it
   const gorulduStep = (order.order_history ?? []).find((h) => h.step === 'goruldu')
-  // matbaa_onay is a different action from goruldu's "review and forward" —
-  // this designer is here to approve a delivered ozalit, not edit the spec.
+  // matbaa_onay is a different action from the designer's own two steps —
+  // here they approve a delivered ozalit, not edit the spec or request one.
   const isMatbaaOnay = order.status === 'matbaa_onay'
+  // "Ozalit İsteyin" — the designer's second step, which opens the ozalit
+  // sheet itself (mode 'advance', see orderOzalitFormMode) instead of the
+  // sign dialog.
+  const isOzalitRequest = order.status === 'kontrol_edildi'
   // Leader-first: once the ozalit is received, a designer can't approve
   // until a team leader already has (see canApproveMatbaaOnayNow). Hide
   // "Onayla" rather than show a button that just bounces off the dialog's
   // own gate.
-  const signLabel = !isMatbaaOnay ? 'İnceleyin ve Gönderin' : !order.matbaa_received ? 'Teslim Alın' : 'Onaylayın'
+  const signLabel = order.status === 'goruldu'
+    ? 'Kontrolleri Yapın'
+    : order.status === 'kontrol_edildi'
+      ? 'Ozalit İsteyin'
+      : !order.matbaa_received ? 'Teslim Alın' : 'Onaylayın'
   const canAct = !isMatbaaOnay || !order.matbaa_received || canApproveMatbaaOnayNow(user, order)
 
   return (
@@ -207,15 +248,25 @@ function DesignerOrderCard({ order, onSign, onOzalit }) {
 
           <div className="flex w-full flex-col items-end gap-2 sm:w-auto sm:shrink-0">
             <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[11px]">
-              {isMatbaaOnay ? 'Matbaa Onayı Bekliyor' : 'Onay Bekliyor'}
+              {isMatbaaOnay
+                ? 'Matbaa Onayı Bekliyor'
+                : order.status === 'kontrol_edildi' ? 'Ozalit İsteği Bekliyor' : 'Onay Bekliyor'}
             </Badge>
             <div className="flex flex-wrap justify-end gap-1.5">
-              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onOzalit() }}>
-                <FileText className="h-3.5 w-3.5" />
-                Ozalit Formu
-              </Button>
+              {/* At the request step the primary button opens this very sheet
+                  (to be filled in and sent), so a second button onto it would
+                  just be the same door twice. */}
+              {!isOzalitRequest && (
+                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onOzalit() }}>
+                  <FileText className="h-3.5 w-3.5" />
+                  Ozalit Formu
+                </Button>
+              )}
               {canAct ? (
-                <Button size="sm" onClick={(e) => { e.stopPropagation(); onSign() }}>
+                <Button
+                  size="sm"
+                  onClick={(e) => { e.stopPropagation(); if (isOzalitRequest) onOzalit(); else onSign() }}
+                >
                   {signLabel}
                 </Button>
               ) : (

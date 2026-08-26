@@ -80,7 +80,7 @@ export default function AppShell() {
   const [open, setOpen] = useState(false) // mobile drawer
   const [pendingOrders, setPendingOrders] = useState(0)    // team_leader: ORDER_LEADER_ACTION_STEPS
   const [printerOrders, setPrinterOrders] = useState(0)   // printer: tasarimci_onay
-  const [designerOrders, setDesignerOrders] = useState(0) // designer: goruldu (for their projects)
+  const [designerOrders, setDesignerOrders] = useState(0) // designer: goruldu + kontrol_edildi (for their projects)
   const [pendingHandovers, setPendingHandovers] = useState(0) // satis: teslim onay bekleyen
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -174,7 +174,7 @@ export default function AppShell() {
         const myIds = new Set(projects.filter((p) => (p.assignees ?? []).some((a) => a.id === user.id)).map((p) => p.id))
         setDesignerOrders(orders.filter((o) => {
           if (!isOrderAssignedToDesigner(o, user.id, myIds)) return false
-          if (o.status === 'goruldu') return true
+          if (o.status === 'goruldu' || o.status === 'kontrol_edildi') return true
           if (o.status === 'matbaa_onay') {
             return !(o.matbaa_approvals ?? []).some((a) => a.id === user.id)
           }

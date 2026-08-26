@@ -60,11 +60,17 @@ export async function productInfoRoutes(fastify) {
   // edit silently survived in the designer's own localStorage mirror and
   // nowhere else — the audit trail claimed a change the server never saw.
   //
+  // 'kontrol_edildi' (migration 054) is the second half of that same
+  // designer's turn: the Ozalit Üretim Formu they submit to request the
+  // ozalit writes its parça rows straight back here (persistCatalogEdits).
+  // Both steps, one owner — leaving it at 'goruldu' alone put the silent
+  // failure above right back, one step later.
+  //
   // Deliberately narrow: the designer must be on that order's own
-  // assignee_ids AND the order must still be at 'goruldu' (the only step
-  // whose editor is theirs). It does not let a designer create a spec for a
-  // project with no order, and the moment the order advances the window
-  // closes. Every other role still gets a 403.
+  // assignee_ids AND the order must still be on one of their two steps. It
+  // does not let a designer create a spec for a project with no order, and
+  // the moment the order reaches the matbaa the window closes. Every other
+  // role still gets a 403.
   fastify.put('/product-info/:projectId', { schema: schemas.productInfoUpsert }, async (request) => {
     await attachUser(request)
     const { projectId } = request.params
@@ -75,7 +81,7 @@ export async function productInfoRoutes(fastify) {
       const { rowCount } = await getPool().query(
         `SELECT 1 FROM order_requests
           WHERE project_id = $1
-            AND status = 'goruldu'
+            AND status IN ('goruldu', 'kontrol_edildi')
             AND assignee_ids @> $2::jsonb
           LIMIT 1`,
         [projectId, JSON.stringify([request.user.id])],

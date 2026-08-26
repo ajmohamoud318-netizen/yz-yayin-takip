@@ -59,8 +59,11 @@ export function createHttpOrderRepository() {
       const { data } = await httpClient.post(`/order-requests/${id}/ozalit-cancel`, {})
       return data
     },
-    async notifyOrderOzalitEdit(id) {
-      const { data } = await httpClient.post(`/order-requests/${id}/ozalit-edit-notify`, {})
+    // `sheet` is { attempt, payload } — the corrected ozalit sheet, written
+    // by the route inside the same transaction that authorizes the edit
+    // (migration 053). Omitted by callers that only changed the reçete rows.
+    async notifyOrderOzalitEdit(id, sheet = {}) {
+      const { data } = await httpClient.post(`/order-requests/${id}/ozalit-edit-notify`, sheet)
       return data
     },
     async requestOrderOzalitChange(id, note) {

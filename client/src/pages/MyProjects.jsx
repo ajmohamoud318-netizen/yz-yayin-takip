@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, ShoppingCart, Package } from 'lucide-react'
+import { toast } from 'sonner'
 
 import api, { ORDER_STEP_LABELS } from '@/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -13,9 +14,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import TalepSignDialog from '@/components/TalepSignDialog'
+import OzalitFormDialog from '@/components/OzalitFormDialog'
 import OrderBadge from '@/components/OrderBadge'
 import { STAGE_LABELS, STATUS_META, TYPE_LABELS, statusKeyForProject } from '@/api'
-import { canApproveMatbaaOnayNow, isOrderAssignedToDesigner } from '@/domain/constants/orders'
+import { canApproveMatbaaOnayNow, isOrderAssignedToDesigner, orderOzalitFormMode } from '@/domain/constants/orders'
 import { cn, formatTargetDate, formatNumber } from '@/lib/utils'
 
 const STAGE_GROUPS = {
@@ -33,9 +35,23 @@ export default function MyProjects() {
   const [typeFilter, setTypeFilter] = useState('all')
   const [stageGroup, setStageGroup] = useState('all')
 
-  // Sipariş queue: orders at 'goruldu' for projects assigned to this designer
+  // Sipariş queue: orders on this designer's own steps ('goruldu',
+  // 'kontrol_edildi') for projects assigned to them
   const [siparisQueue, setSiparisQueue] = useState([])
   const [signOrder, setSignOrder] = useState(null)
+  // The order's own Ozalit Üretim Formu, opened to BE SENT at the
+  // 'kontrol_edildi' step (migration 054). The project is fetched rather than
+  // taken from `mine` — a legacy product's order can sit here without its
+  // project being in this designer's pipeline list.
+  const [ozalitFor, setOzalitFor] = useState(null) // { order, project }
+
+  async function openOzalitRequest(order) {
+    try {
+      setOzalitFor({ order, project: await api.getProject(order.project_id) })
+    } catch {
+      toast.error('Ozalit formu açılamadı.')
+    }
+  }
 
   // Filter to projects this designer is assigned to. Today only the
   // legacy `projects.assigned_to` column is the source of truth on the
@@ -70,15 +86,16 @@ export default function MyProjects() {
   useEffect(() => {
     if (user?.role !== 'designer') return
     api.listOrderRequests().then((reqs) => {
-      // Designer signs orders at 'goruldu', and at 'matbaa_onay' until they've
-      // added their own approval to the multi-party ledger (see
-      // /siparis-onay's identical filter — must match exactly). Check the
-      // order's own assignee_ids first (authoritative — see
-      // isOrderAssignedToDesigner), falling back to project assignment only
-      // for legacy orders written before assignee_ids was populated.
+      // Designer signs orders at 'goruldu' and 'kontrol_edildi' — their two
+      // steps (migration 054) — and at 'matbaa_onay' until they've added
+      // their own approval to the multi-party ledger (see /siparis-onay's
+      // identical filter — must match exactly). Check the order's own
+      // assignee_ids first (authoritative — see isOrderAssignedToDesigner),
+      // falling back to project assignment only for legacy orders written
+      // before assignee_ids was populated.
       const relevant = reqs.filter((r) => {
         if (!isOrderAssignedToDesigner(r, user?.id, myProjectIds)) return false
-        if (r.status === 'goruldu') return true
+        if (r.status === 'goruldu' || r.status === 'kontrol_edildi') return true
         if (r.status === 'matbaa_onay') {
           return !(r.matbaa_approvals ?? []).some((a) => a.id === user?.id)
         }
@@ -89,8 +106,22 @@ export default function MyProjects() {
   }, [user?.id, user?.role, myProjectIds])
 
   function handleOrderSigned(updated) {
-    setSiparisQueue((prev) => prev.filter((r) => r.id !== updated.id))
+    // The checks step advances to 'kontrol_edildi', which is still this
+    // designer's — keep that row and let its button flip to "Ozalit İsteyin"
+    // instead of dropping it out of the queue.
+    if (updated.status === 'kontrol_edildi') {
+      setSiparisQueue((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)))
+    } else {
+      setSiparisQueue((prev) => prev.filter((r) => r.id !== updated.id))
+    }
     setSignOrder(null)
+  }
+
+  // The ozalit request completes the designer's turn — the order moves to the
+  // matbaa (or to the leader's Ekran Onayı) and leaves this queue.
+  function handleOzalitRequested(updated) {
+    setSiparisQueue((prev) => prev.filter((r) => r.id !== updated.id))
+    setOzalitFor(null)
   }
 
   // "Teslim Alındı" doesn't remove the order from the queue — see
@@ -138,6 +169,7 @@ export default function MyProjects() {
                   key={order.id}
                   order={order}
                   onSign={() => setSignOrder(order)}
+                  onOzalitRequest={() => openOzalitRequest(order)}
                 />
               ))}
             </div>
@@ -307,6 +339,14 @@ export default function MyProjects() {
         onSigned={handleOrderSigned}
         onUpdated={handleOrderUpdated}
       />
+      <OzalitFormDialog
+        open={!!ozalitFor}
+        onOpenChange={(v) => !v && setOzalitFor(null)}
+        project={ozalitFor?.project}
+        order={ozalitFor?.order}
+        mode={orderOzalitFormMode(ozalitFor?.order, user)}
+        onDone={handleOzalitRequested}
+      />
     </>
   )
 }
@@ -317,18 +357,25 @@ function normalizeItems(items, quantity) {
   return items
 }
 
-function SiparisOrderRow({ order, onSign }) {
+function SiparisOrderRow({ order, onSign, onOzalitRequest }) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const items = normalizeItems(order.items, order.quantity)
   const isMatbaaOnay = order.status === 'matbaa_onay'
+  // "Ozalit İsteyin" opens the order's own ozalit sheet to be filled in and
+  // sent (migration 054) — not the sign dialog every other step uses.
+  const isOzalitRequest = order.status === 'kontrol_edildi'
   // matbaa_onay has two distinct sub-steps: the ozalit must be marked
   // received before anyone can approve it, and once received, approval is
   // leader-first — a designer can't approve until a team leader has (see
   // canApproveMatbaaOnayNow). Label the button for whichever action is
   // actually next, and hide "Onayla" entirely rather than show a dead-end
   // button a designer's click will just bounce off.
-  const signLabel = !isMatbaaOnay ? 'İnceleyin ve Gönderin' : !order.matbaa_received ? 'Teslim Alın' : 'Onaylayın'
+  const signLabel = order.status === 'goruldu'
+    ? 'Kontrolleri Yapın'
+    : isOzalitRequest
+      ? 'Ozalit İsteyin'
+      : !order.matbaa_received ? 'Teslim Alın' : 'Onaylayın'
   const canAct = !isMatbaaOnay || !order.matbaa_received || canApproveMatbaaOnayNow(user, order)
   return (
     <Card
@@ -378,7 +425,8 @@ function SiparisOrderRow({ order, onSign }) {
                   className="h-7 flex-1 px-2.5 sm:flex-none"
                   onClick={(e) => {
                     e.stopPropagation()
-                    onSign()
+                    if (isOzalitRequest) onOzalitRequest()
+                    else onSign()
                   }}
                 >
                   {signLabel}

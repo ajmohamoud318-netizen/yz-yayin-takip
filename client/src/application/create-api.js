@@ -177,7 +177,7 @@ export function createApi() {
     approveOrderBaskiOnayForm: (id, body) => orderRepo.approveOrderBaskiOnayForm(id, body),
     startOrderOzalit: (id) => orderRepo.startOrderOzalit(id),
     cancelOrderOzalit: (id) => orderRepo.cancelOrderOzalit(id),
-    notifyOrderOzalitEdit: (id) => orderRepo.notifyOrderOzalitEdit(id),
+    notifyOrderOzalitEdit: (id, sheet) => orderRepo.notifyOrderOzalitEdit(id, sheet),
     requestOrderOzalitChange: (id, note) => orderRepo.requestOrderOzalitChange(id, note),
     acceptOrderOzalitChange: (id) => orderRepo.acceptOrderOzalitChange(id),
     declineOrderOzalitChange: (id) => orderRepo.declineOrderOzalitChange(id),
