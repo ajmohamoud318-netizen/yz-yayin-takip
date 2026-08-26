@@ -24,6 +24,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { cn, formatNumber } from '@/lib/utils'
+import { stampSpecSignature } from '@/components/SpecFormDialog'
 
 const deepClone = (x) => JSON.parse(JSON.stringify(x ?? []))
 // Reads the shared, server-backed spec (cache → local mirror → seed).
@@ -577,6 +578,14 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     setMatbaaBusy(true)
     try {
       const updated = await api.matbaaReceiveOrder(order.id)
+      // Same stamp the main pipeline's ozalit ack writes (SpecFormDialog's
+      // handleReceiveOzalit): the acknowledgment is the sheet's TESLİM ALAN
+      // KİŞİ row. This dialog signs the round without ever mounting the sheet,
+      // so it has to write the stamp itself — the sipariş's sheet is keyed by
+      // the ORDER, and stampSpecSignature only needs the project's id.
+      stampSpecSignature('ozalit', { id: order.project_id }, {
+        teslimAlanKisi: user?.name ?? '',
+      }, { order }).catch(() => {})
       toast.success('Matbaa ozaliti teslim alındı.')
       onUpdated?.(updated)
       onOpenChange(false)

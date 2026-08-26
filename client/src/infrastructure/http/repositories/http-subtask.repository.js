@@ -22,10 +22,17 @@ export function createHttpSubtaskRepository() {
     // subtask. The server recomputes pages_done / is_done on the parent
     // subtask and returns the full project shape so the SPA's
     // `setProject` can drop it in without a follow-up GET.
-    async setSubtaskPage(subtaskId, pageIndex, status) {
+    //
+    // Accepts an optional AbortController `signal` so the chip grid can
+    // cancel an in-flight PATCH when the user clicks the same chip again
+    // (or a different one) before the server has answered — without it, two
+    // near-simultaneous requests land on the client and the slower one wins
+    // the final setProject merge.
+    async setSubtaskPage(subtaskId, pageIndex, status, { signal } = {}) {
       const { data } = await httpClient.patch(
         `/subtasks/${subtaskId}/pages/${pageIndex}`,
         { status },
+        signal ? { signal } : undefined,
       )
       return { project: data.project, page: data.page }
     },

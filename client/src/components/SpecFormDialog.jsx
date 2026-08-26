@@ -28,6 +28,7 @@ import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { getComponentsForProject, getComponentRows, primeProductInfoCache, saveEditedComponents } from '@/data/productCatalog'
 import { printSpecSheets, buildFormSheet } from '@/lib/specPrint'
 import { hasSpecContent, specWithDemoFallback } from '@/lib/spec-seed'
+import { liveTeslimat, withTeslimat } from '@/lib/teslimat'
 import { buildAdetRows, buildOrderAdetRows, loadOrderAdet } from '@/data/orderAdet'
 import { formatNumber } from '@/lib/utils'
 import { ozalitLeaderApproved } from '@/domain'
@@ -176,7 +177,7 @@ const OLD_FIELD_LABELS = {
 }
 
 function knownFields(variant) {
-  const fields = ['isinAdi', variant.dateField, variant.personField, 'teslimEdenKisi', 'teslimTarihi', 'onaylayanKisi', 'matbaaYetkilisi']
+  const fields = ['isinAdi', variant.dateField, variant.personField, 'teslimEdenKisi', 'teslimTarihi', 'teslimAlanKisi', 'onaylayanKisi', 'matbaaYetkilisi']
   if (variant.adetField) fields.push(variant.adetField)
   if (variant.locationField) fields.push(variant.locationField)
   return new Set(fields)
@@ -214,12 +215,38 @@ function loadSnapshot(variant, id, attempt) { return parseSaved(variant, localSt
  * applies to matbaaYetkilisi: the matbaa who signed round 1 must not appear on
  * round 2's sheet, which may well be delivered by someone else.
  */
-const STAMP_FIELDS = ['onaylayanKisi', 'teslimTarihi', 'teslimEdenKisi', 'matbaaYetkilisi']
+const STAMP_FIELDS = ['onaylayanKisi', 'teslimTarihi', 'teslimEdenKisi', 'teslimAlanKisi', 'matbaaYetkilisi']
 
 function stripStamps(data) {
   if (!data) return data
   const form = { ...(data.form ?? {}) }
   for (const f of STAMP_FIELDS) delete form[f]
+  return { ...data, form }
+}
+
+/**
+ * Put the round's own stamps back on a form whose SPEC came from the
+ * project-level blob.
+ *
+ * `stripStamps` exists so a previous attempt's signatures can't bleed onto a
+ * fresh sheet — but the plain viewer of an ALREADY-SENT round reads its spec
+ * from that same stripped blob, and so lost the very stamps it is supposed to
+ * show. The matbaa opening the demo he had just delivered got an empty TESLİM
+ * TARİHİ / TESLİM EDEN KİŞİ pair; everyone else got no teslim rows at all,
+ * because those rows only render once one of them has a value. The stamps
+ * were never missing — `current`, this attempt's own snapshot, had them the
+ * whole time, and it was being consulted only when the blob was absent
+ * entirely.
+ *
+ * So: spec from wherever it came from, stamps from the round. Blank stamps
+ * are skipped for the reason `withoutBlankStamps` gives — "not yet" is not
+ * "by nobody".
+ */
+function withRoundStamps(data, roundSnapshot) {
+  const stamps = roundSnapshot?.form
+  if (!data || !stamps) return data
+  const form = { ...(data.form ?? {}) }
+  for (const f of STAMP_FIELDS) if (stamps[f]) form[f] = stamps[f]
   return { ...data, form }
 }
 
@@ -636,6 +663,24 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // target is the round's separate edit slot, and mode='advance', which really
   // is a fresh compose.
   const viewingSentSheet = mode === 'view' && !notifyOnSave
+  /* Whether the server's teslimat columns describe THIS sheet.
+   *
+   * They only ever hold the round the project is on right now — every
+   * transition that opens a new one nulls them (computeDemoTeslimAdvance,
+   * computeDemoNotReceived, computeRejection, the cancels) — so they may be
+   * layered onto a sheet that IS that round and no other. 'view' and
+   * 'approve' both are. 'advance' is not: it composes the NEXT round (the
+   * designer's demo request, the leader's ozalit request, a reject-to-matbaa
+   * re-delivery, and the matbaa's own teslim form, which is filled in
+   * BEFORE the delivery it stamps), and must open with those boxes empty.
+   *
+   * A snapshot from Geçmiş qualifies too, as long as it belongs to the round
+   * still open: those are corrections of the very sheet on screen, one round's
+   * worth of paper with one teslimat on it. An older round's snapshot keeps
+   * whatever it was stamped with — the columns no longer describe it.
+   * See lib/teslimat.js. */
+  const showsLiveTeslimat =
+    mode !== 'advance' && (viewAttempt == null || viewAttempt >= (round.attempt ?? 0) + 1)
 
   // Pull the authoritative spec from the server when the dialog opens. The
   // in-memory cache is normally primed at boot, but a project created on
@@ -674,13 +719,21 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       if (viewAttempt != null) {
         // History: show the snapshot exactly as it was saved — no auto-fills.
         // Server snapshot first (works on any computer), localStorage fallback.
+        // The one exception is the teslimat, and only while this snapshot is
+        // still the open round's: those three rows are resolved from the
+        // project, not from the slot the stamp landed in (see showsLiveTeslimat).
         const snap =
           (viewDemoId ? await fetchServerSnapshotById(api, variant, viewDemoId) : null) ??
           (await fetchServerSnapshot(api, variant, project.id, viewAttempt, orderId)) ??
           loadSnapshot(variant, scopeId, viewAttempt) ??
           loadSaved(variant, scopeId)
         if (cancelled) return
-        setForm(snap?.form ?? emptyForm(variant, project, user))
+        setForm(snap
+          ? withTeslimat(
+            snap.form,
+            showsLiveTeslimat ? liveTeslimat({ project, order, kind: variant.kind }) : null,
+          )
+          : emptyForm(variant, project, user))
         setCustomRows(snap?.customRows ?? [])
         setSelectedComponents(snap?.selectedComponents ?? [])
         return
@@ -708,9 +761,12 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       // reopen and the printer is unaffected. Compose / notify / approve
       // still let the server's attempt-scoped snapshot win, because that IS
       // the shared state those flows mutate.
-      const data = (mode === 'view' && !notifyOnSave)
+      const draft = (mode === 'view' && !notifyOnSave)
         ? (stripStamps(carried) ?? current)
         : (current ?? stripStamps(carried))
+      // A sheet that has already been sent has to reopen as it was sent AND
+      // signed — see withRoundStamps for what the stripped blob costs it.
+      const data = viewingSentSheet ? withRoundStamps(draft, current) : draft
       const fresh = emptyForm(variant, project, user)
       if (readOnly || variant.restoreSavedOnEdit || rejectContext || viewingSentSheet) {
         // Read-only viewers (printer, leader) — and the plain viewer of an
@@ -722,7 +778,13 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         // when `current` supplied them, i.e. they really happened — blank ones
         // are dropped so they can't overwrite a legitimately pre-filled
         // signature (see withoutBlankStamps).
-        setForm({ ...fresh, ...withoutBlankStamps(data?.form) })
+        // …and the teslimat over the top of that, from the project's own
+        // columns rather than from whichever snapshot slot the stamp happened
+        // to land in. See lib/teslimat.js and `showsLiveTeslimat`.
+        setForm(withTeslimat(
+          { ...fresh, ...withoutBlankStamps(data?.form) },
+          showsLiveTeslimat ? liveTeslimat({ project, order, kind: variant.kind }) : null,
+        ))
       } else {
         // Active editing: start from fresh, then keep only the printer-signed
         // field (matbaaYetkilisi). The system-driven fields auto-recompute.
@@ -977,6 +1039,12 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         ? await api.matbaaReceiveOrder(order.id)
         : await api.receiveOzalit(project.id)
       if (!orderScoped) updateOne(updated)
+      // The ack IS the TESLİM ALAN KİŞİ row. Onto the open sheet first, so the
+      // approve that usually follows persists it with everything else, and
+      // into the round's snapshot so Geçmiş can reopen this sheet signed.
+      setForm((f) => ({ ...f, teslimAlanKisi: user?.name ?? '' }))
+      stampSpecSignature(variantName, project, { teslimAlanKisi: user?.name ?? '' }, { order })
+        .catch(() => {})
       setReceivedLocal(true)
       setConfirmReceive(false)
       toast.success('Ozalit teslim alındı.')
@@ -1460,6 +1528,11 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           <SheetRow label="TESLİM EDEN KİŞİ" name="teslimEdenKisi" value={form.teslimEdenKisi ?? ''} onChange={handleChange} readOnly />
         </>
       )}
+      {/* The receipt half of the handover: whoever answered "Teslim Aldım" at
+          the gate. Shown only once someone has, like the two signatures below
+          it — the matbaa's own empty-row treatment above is for a box THEY are
+          about to fill, and nobody fills this one on the matbaa's behalf. */}
+      {form.teslimAlanKisi && <SheetRow label="TESLİM ALAN KİŞİ" value={form.teslimAlanKisi} readOnly />}
       {form.matbaaYetkilisi && <SheetRow label="MATBAA YETKİLİSİ" value={form.matbaaYetkilisi} readOnly />}
       {form.onaylayanKisi && <SheetRow label="ONAYLAYAN KİŞİ" value={form.onaylayanKisi} readOnly />}
     </>

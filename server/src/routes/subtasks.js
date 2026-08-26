@@ -509,8 +509,29 @@ export async function subtaskRoutes(fastify) {
         actorId: request.user.id,
         actorName: request.user.name,
       })
-      if (result.error === 'not_yours' && !isLeader) {
-        badRequest('Bu sayfayı yalnızca işaretleyen kişi geri alabilir.')
+      if (result.error === 'not_yours') {
+        // Non-leader: surface the ownership gate as a 400. Leader: setSubtaskPage
+        // returned not_yours because the page was owned by someone else, but the
+        // route's !isLeader bypass let execution fall through. Without this
+        // short-circuit we'd log a phantom "Sayfa N tamamlandı" history row for a
+        // transition that never actually happened — the page didn't change.
+        if (!isLeader) {
+          badRequest('Bu sayfayı yalnızca işaretleyen kişi geri alabilir.')
+        }
+        const currentSubs = await listProjectSubtasks(client, project.id)
+        const currentHistory = await listProjectHistory(client, project.id)
+        const currentAssignees = await loadProjectAssignees(client, project)
+        return {
+          page: result.updated ?? null,
+          subtask: result.subtask ?? null,
+          project: {
+            ...project,
+            assignees: currentAssignees,
+            assigned_name: currentAssignees.map((a) => a.name).join(', ') || project.assigned_name || '—',
+            subtasks: currentSubs,
+            history: currentHistory,
+          },
+        }
       }
       if (result.error === 'out_of_range') {
         badRequest(`Sayfa numarası 1 ile ${sub.total_pages} arasında olmalı.`)

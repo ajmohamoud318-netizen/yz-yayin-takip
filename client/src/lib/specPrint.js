@@ -53,6 +53,11 @@ export function buildFormKunye({ form, kind }) {
   if (form?.teslimTarihi || form?.teslimEdenKisi) {
     pairs.push(['TESLİM TARİHİ', form?.teslimTarihi ?? ''], ['TESLİM EDEN KİŞİ', form?.teslimEdenKisi ?? ''])
   }
+  // The other half of the handover: whoever answered "Teslim Aldım" on the
+  // receipt gate. Its own row rather than a pair with TESLİM EDEN KİŞİ — the
+  // two are stamped by different people at different moments, and printing an
+  // empty box next to a filled one reads as a form somebody forgot to finish.
+  if (form?.teslimAlanKisi) pairs.push(['TESLİM ALAN KİŞİ', form.teslimAlanKisi])
   if (form?.matbaaYetkilisi) pairs.push(['MATBAA YETKİLİSİ', form.matbaaYetkilisi])
   if (form?.onaylayanKisi) pairs.push(['ONAYLAYAN KİŞİ', form.onaylayanKisi])
   return pairs

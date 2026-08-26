@@ -180,6 +180,15 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
     try {
       const updated = await api.receiveDemo(project.id)
       updateOne(updated)
+      // The ack IS the sheet's TESLİM ALAN KİŞİ row — stamp it the same way
+      // the onay stamps ONAYLAYAN KİŞİ, so the demo form reopens showing who
+      // signed for the delivery. `project`, not `updated`: stampSpecSignature
+      // wants the pre-transition state (a receive doesn't bump the attempt,
+      // so both resolve to the same round either way).
+      const specVariant = specVariantForStage(project.stage)
+      if (specVariant) {
+        stampSpecSignature(specVariant, project, { teslimAlanKisi: user?.name ?? '' }).catch(() => {})
+      }
       setReceivedLocal(true)
       setConfirmReceive(false)
       toast.success('Demo teslim alındı.')

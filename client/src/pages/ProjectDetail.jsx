@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import axios from 'axios'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -46,6 +47,7 @@ import NewProjectDialog from '@/components/NewProjectDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import BaskiOnayFormDialog from '@/components/BaskiOnayFormDialog'
 import DemoFormDialog from '@/components/DemoFormDialog'
+import { stampSpecSignature } from '@/components/SpecFormDialog'
 import ProjectHistory from '@/components/ProjectHistory'
 import TalepSignDialog from '@/components/TalepSignDialog'
 import SiparisBaskiOnayFormDialog from '@/components/SiparisBaskiOnayFormDialog'
@@ -527,6 +529,12 @@ export default function ProjectDetail() {
     setReceiving(true)
     try {
       await api.receiveDemo(project.id)
+      // Who signed for the delivery is a row on the demo sheet (TESLİM ALAN
+      // KİŞİ), and this page is one of the two places the ack can happen —
+      // the other being ApprovalDialog, which stamps it the same way.
+      // Pre-refetch `project` on purpose: a receive never bumps the attempt,
+      // so this lands on the round that was just delivered.
+      stampSpecSignature('demo', project, { teslimAlanKisi: user?.name ?? '' }).catch(() => {})
       await refetch()
       toast.success('Demo teslim alındı.')
     } catch (err) {
@@ -542,6 +550,7 @@ export default function ProjectDetail() {
     setReceiving(true)
     try {
       await api.receiveOzalit(project.id)
+      stampSpecSignature('ozalit', project, { teslimAlanKisi: user?.name ?? '' }).catch(() => {})
       await refetch()
       toast.success('Ozalit teslim alındı.')
     } catch (err) {
@@ -966,17 +975,22 @@ export default function ProjectDetail() {
   // returned full project shape replaces state in one go — same contract as
   // PATCH /subtasks/:id uses for checkbox toggles.
   //
-  // Concurrent clicks on the same subtask are guarded by the activePage key:
-  // the PATCH on subtask_pages does its own row lock, but cancelling in-flight
-  // requests on the same chip stops the optimistic-then-server reconciliation
-  // from racing itself when a designer double-clicks.
+  // Concurrent clicks are guarded by per-chip AbortControllers, not a single
+  // in-flight flag. The previous `activePageRef` only blocked clicks on the
+  // same chip while its request was pending — a click on chip A, then B,
+  // then A again fired three concurrent PATCHes whose responses arrived in
+  // arbitrary order, and the slow one always won the final setProject merge.
+  // Now the newer click aborts the older one, so only the most recent PATCH
+  // per chip ever resolves. `activePage` stays for the UI disabled-state.
   const [activePage, setActivePage] = useState(null) // { subtaskId, pageIndex }
-  const activePageRef = useRef(null)
-  activePageRef.current = activePage
+  const inflightPagesRef = useRef(new Map()) // key -> AbortController
   async function handlePageClick(sub, pageIndex, currentStatus) {
     if (!canEditSubtask(sub)) return
     const key = `${sub.id}:${pageIndex}`
-    if (activePageRef.current?.key === key) return
+    // Cancel any in-flight request for the same chip before starting a new
+    // one — otherwise a rapid second click on the same chip lands a redundant
+    // PATCH that races with the first one.
+    inflightPagesRef.current.get(key)?.abort()
     // pending → done, done → pending (undo), rework → done (resolve the flag
     // and ship it). The dedicated "Revize" action below is the explicit
     // rework signal — keeping it off the main click path means a designer
@@ -984,29 +998,46 @@ export default function ProjectDetail() {
     const next = currentStatus === 'pending' ? 'done'
       : currentStatus === 'done' ? 'pending'
       : 'done'
+    const controller = new AbortController()
+    inflightPagesRef.current.set(key, controller)
     setActivePage({ key, status: next })
     try {
-      const { project: updated } = await api.setSubtaskPage(sub.id, pageIndex, next)
+      const { project: updated } = await api.setSubtaskPage(sub.id, pageIndex, next, { signal: controller.signal })
       if (updated) setProject((prev) => ({ ...prev, ...updated }))
     } catch (err) {
-      toast.error(err.message || 'Sayfa kaydedilemedi.')
+      // A cancel we triggered ourselves is not a user-facing failure.
+      if (err?.name !== 'CanceledError' && !axios.isCancel(err)) {
+        toast.error(err.message || 'Sayfa kaydedilemedi.')
+      }
     } finally {
-      setActivePage(null)
+      // Only clear if WE are still the active controller for this key — a
+      // newer click has already replaced us and will clear in its own finally.
+      if (inflightPagesRef.current.get(key) === controller) {
+        inflightPagesRef.current.delete(key)
+        setActivePage(null)
+      }
     }
   }
 
   async function handlePageRework(sub, pageIndex) {
     if (!canEditSubtask(sub)) return
     const key = `${sub.id}:${pageIndex}`
-    if (activePageRef.current?.key === key) return
+    inflightPagesRef.current.get(key)?.abort()
+    const controller = new AbortController()
+    inflightPagesRef.current.set(key, controller)
     setActivePage({ key, status: 'rework' })
     try {
-      const { project: updated } = await api.setSubtaskPage(sub.id, pageIndex, 'rework')
+      const { project: updated } = await api.setSubtaskPage(sub.id, pageIndex, 'rework', { signal: controller.signal })
       if (updated) setProject((prev) => ({ ...prev, ...updated }))
     } catch (err) {
-      toast.error(err.message || 'Revize kaydedilemedi.')
+      if (err?.name !== 'CanceledError' && !axios.isCancel(err)) {
+        toast.error(err.message || 'Revize kaydedilemedi.')
+      }
     } finally {
-      setActivePage(null)
+      if (inflightPagesRef.current.get(key) === controller) {
+        inflightPagesRef.current.delete(key)
+        setActivePage(null)
+      }
     }
   }
 

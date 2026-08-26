@@ -416,12 +416,11 @@ export async function setSubtaskPage(
         SET status = $3,
             done_by = CASE WHEN $3 = 'done' THEN $4 ELSE NULL END,
             done_at = CASE WHEN $3 = 'done' THEN NOW() ELSE NULL END,
-            done_by_name = CASE WHEN $3 = 'done' THEN $5 ELSE NULL END,
-            rework_count = rework_count + $6,
+            rework_count = rework_count + $5,
             updated_at = NOW()
       WHERE subtask_id = $1 AND page_index = $2
       RETURNING subtask_id, page_index, status, done_by, done_at, rework_count`,
-    [subtaskId, pageIndex, nextStatus, actorId ?? null, actorName ?? null, reworkBump],
+    [subtaskId, pageIndex, nextStatus, actorId ?? null, reworkBump],
   )
 
   // Sync the subtask-level counters (`pages_done`, `is_done`) so the project

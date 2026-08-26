@@ -121,6 +121,15 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (resp) => resp,
   (err) => {
+    // An AbortController-triggered cancel (the chip grid uses this to drop a
+    // stale PATCH when the user clicks again before the first answer lands)
+    // has no server-side meaning — it isn't an offline event, isn't a 401,
+    // and isn't a toast-worthy failure. Pass it through untouched so the
+    // caller's catch can branch on `err.name === 'CanceledError'` without
+    // first having to undo the wrapping below.
+    if (err?.name === 'CanceledError' || axios.isCancel(err)) {
+      return Promise.reject(err)
+    }
     const status = err?.response?.status
     // No `response` at all means the request never reached the API: timed out,
     // offline, radio still waking after a PWA relaunch, proxy down. Axios's own

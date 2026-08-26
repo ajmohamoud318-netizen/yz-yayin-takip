@@ -241,7 +241,6 @@ function MajorRow({
 }) {
   const { entry, meta, count, firstAt, lastAt } = row
   const Icon = meta.icon
-  const tone = TONES[meta.tone] ?? TONES.neutral
   const { title, detail } = rowText(entry, meta)
 
   const demoForm = hasDemoForm(entry)
@@ -261,47 +260,49 @@ function MajorRow({
       initial={reduce ? false : { opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 240, damping: 26, delay: reduce ? 0 : Math.min(index, 8) * 0.03 }}
-      className="relative flex gap-3 pb-4 last:pb-0"
+      className="relative flex gap-3.5 pb-5 pl-1 last:pb-0"
     >
       {!isLast && (
-        <span aria-hidden="true" className="absolute bottom-0 left-[11px] top-6 w-px bg-border" />
+        // Spine passes through the disc's vertical centre, so a row above and
+        // a row below read as one continuous timeline. top-5 lands the start at
+        // the disc's mid-line; bottom-0 lets the next disc's mid-line close it.
+        <span aria-hidden="true" className="absolute bottom-0 left-[20px] top-5 w-px bg-border" />
       )}
       <span
         className={cn(
-          'relative z-[1] mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full ring-4 ring-card',
-          tone.surface,
-          tone.icon,
+          'relative z-[1] mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-full bg-muted text-foreground/80 ring-1 ring-inset ring-border/80',
         )}
+        style={meta.tone === 'negative' ? { background: 'hsl(var(--destructive) / 0.12)', color: 'hsl(var(--destructive))' } : undefined}
       >
-        <Icon className="h-3 w-3" />
+        <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
       </span>
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 pt-0.5">
         <div className="flex items-baseline justify-between gap-3">
           <div className="flex min-w-0 items-baseline gap-1.5">
-            <p className="text-sm font-semibold leading-snug text-foreground">{title}</p>
+            <p className="truncate text-[15px] font-semibold leading-snug text-foreground">{title}</p>
             {count > 1 && <RepeatBadge count={count} />}
           </div>
           <time
             dateTime={entry.created_at}
-            className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground"
+            className="shrink-0 font-mono text-[12px] tabular-nums text-muted-foreground"
           >
             {timeSpan(firstAt, lastAt)}
           </time>
         </div>
 
-        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted-foreground">
+        <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[13px] leading-snug text-muted-foreground">
           {/* Older rows predate the LEFT JOIN on done_by and have no name. */}
-          <span>{entry.done_by_name ?? 'Bilinmeyen'}</span>
+          <span className="truncate">{entry.done_by_name ?? 'Bilinmeyen'}</span>
           {round && (
             <>
               <span className="opacity-40">·</span>
-              <span className="font-mono tabular-nums">{round}</span>
+              <span className="font-mono text-[12px] tabular-nums">{round}</span>
             </>
           )}
         </p>
 
-        {detail && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{detail}</p>}
+        {detail && <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground/90">{detail}</p>}
 
         {entry.reason && (
           <div className="mt-2 flex items-start gap-2 rounded-md border-l-2 border-destructive/40 bg-destructive/5 py-1.5 pl-2.5 pr-3">
@@ -311,7 +312,7 @@ function MajorRow({
         )}
 
         {(demoForm || ozalitForm) && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
             {demoForm && (
               <FormButton onClick={() => onOpenDemoForm?.(demoFormAttempt(entry), entry.demoAttemptAt, entry.demo_id)} icon={FileText}>
                 Demo Formu
@@ -348,51 +349,34 @@ function FoldedRun({ rows, total, reduce, isLast, defaultOpen = false, onOpenDem
   // Distinct tones present in the run, so the summary still signals whether
   // anything in there went backwards (amber) or completed (emerald).
   const tones = [...new Set(rows.map((r) => (TONES[r.meta.tone] ?? TONES.neutral).dot))]
-  // The summary surfaces the dominant semantic action — "tamamlandı" wins
-  // over other tones, so a reader who only ever opens the fold has the right
-  // word to scan for.
-  const summaryTone = pickSummaryTone(rows)
 
   return (
     <motion.li layout={!reduce} className="relative pb-4 last:pb-0">
       {!isLast && (
         <span aria-hidden="true" className="absolute bottom-0 left-[11px] top-6 w-px bg-border" />
       )}
-      {/* The summary is its own surface: the fold replaces N rows of noise
-          with a deliberate "here's a stack of small updates" affordance.
-          A flat text line made the summary look like an unfilled major row. */}
+      {/* Same one-line shape as any minor row — the fold is a regular line of
+          the timeline, not a separate surface. A reader scrolling the Geçmiş
+          treats it as another fact, not as a menu of an N-row list. */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className={cn(
-          'group/summary relative flex w-full items-center gap-3 rounded-lg border border-dashed border-border/70 bg-muted/30 px-3 py-2 text-left',
-          'transition-[background-color,border-color,box-shadow] duration-200 [transition-timing-function:var(--ease-out)]',
-          'hover:border-solid hover:border-border hover:bg-muted/60 hover:shadow-[0_1px_0_hsl(var(--border))]',
-        )}
+        className="group flex w-full items-center gap-3 text-left"
       >
-        <span
-          className={cn(
-            'relative z-[1] grid h-7 w-7 shrink-0 place-items-center rounded-full bg-card ring-1 ring-inset ring-border shadow-[0_1px_0_hsl(var(--border))]',
-          )}
-        >
-          <span className="flex items-center gap-[3px]">
-            {tones.slice(0, 3).map((dot, i) => (
-              <span
-                key={`${dot}-${i}`}
-                className={cn('h-1.5 w-1.5 rounded-full ring-1 ring-inset ring-card', dot)}
-              />
+        <span className="relative z-[1] grid h-6 w-6 shrink-0 place-items-center rounded-full bg-card ring-4 ring-card">
+          <span className="flex items-center gap-[2px]">
+            {tones.slice(0, 3).map((dot) => (
+              <span key={dot} className={cn('h-[5px] w-[5px] rounded-full', dot)} />
             ))}
           </span>
         </span>
-        <span className="flex min-w-0 flex-1 items-center gap-2 text-[12.5px] leading-snug text-foreground/85">
-          <span className="inline-flex h-5 items-center rounded-md bg-background px-1.5 font-mono text-[11px] font-semibold tabular-nums text-foreground/80 ring-1 ring-inset ring-border/70 shadow-[0_1px_0_hsl(var(--border))]">
-            {total}
-          </span>
-          <span className="truncate font-medium">{summaryLabel(rows, summaryTone)}</span>
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] text-muted-foreground transition-colors group-hover:text-foreground">
+          <span className="font-mono tabular-nums">{total}</span>
+          küçük güncelleme
           <ChevronDown
             className={cn(
-              'ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-300 [transition-timing-function:var(--ease-out)]',
+              'h-3.5 w-3.5 transition-transform duration-300 [transition-timing-function:var(--ease-out)]',
               open && 'rotate-180',
             )}
           />
@@ -406,9 +390,7 @@ function FoldedRun({ rows, total, reduce, isLast, defaultOpen = false, onOpenDem
             animate={reduce ? { opacity: 1 } : { height: 'auto', opacity: 1 }}
             exit={reduce ? { opacity: 0 } : { height: 0, opacity: 0 }}
             transition={{ duration: 0.24, ease: [0.23, 1, 0.32, 1] }}
-            // A nested panel inside a dashed fold: a quieter surface than
-            // the surrounding card, so the eye reads it as "drilldown".
-            className="mt-2 ml-2 space-y-0 rounded-md border-l border-dashed border-border/70 bg-background/40 pl-4 pr-2 py-1"
+            className="overflow-hidden pl-9"
           >
             {rows.map((row, i) => (
               <MinorRow
@@ -424,59 +406,6 @@ function FoldedRun({ rows, total, reduce, isLast, defaultOpen = false, onOpenDem
       </AnimatePresence>
     </motion.li>
   )
-}
-
-/**
- * Pick the dominant semantic tone of a folded run — completion beats
- * neutral beats negative. Used to label the fold's summary surface so the
- * headline ("11 küçük güncelleme" alone) becomes a sentence ("11 alt görev
- * güncellemesi" when every row was a subtask).
- */
-function pickSummaryTone(rows) {
-  let positive = 0
-  let neutral = 0
-  let other = 0
-  for (const r of rows) {
-    if (r.meta.tone === 'positive') positive += 1
-    else if (r.meta.tone === 'neutral' || r.meta.tone === 'pipeline') neutral += 1
-    else other += 1
-  }
-  if (positive > 0 && positive >= neutral && positive >= other) return 'positive'
-  if (neutral > 0 && neutral >= other) return 'neutral'
-  if (other > 0) return 'other'
-  return 'neutral'
-}
-
-function summaryLabel(rows, tone) {
-  const eventCounts = rows.reduce((acc, r) => {
-    const k = r.meta.group ?? 'other'
-    acc[k] = (acc[k] ?? 0) + r.count
-    return acc
-  }, {})
-  // Pick the group's surface label — group ordering matches HISTORY_FILTERS so
-  // the fold's headline reads like the chip row above it. The dominant tone
-  // adds a verb so a positive-heavy fold reads as "X alt görev tamamlandı"
-  // instead of "X alt görev güncellemesi".
-  const groupOrder = ['approval', 'subtask', 'stage', 'order']
-  for (const g of groupOrder) {
-    if (eventCounts[g] > 0) {
-      const noun = groupLabel(g)
-      if (tone === 'positive') return `${noun} tamamlandı`
-      if (tone === 'other') return `${noun}`
-      return `${noun}`
-    }
-  }
-  return 'küçük güncelleme'
-}
-
-function groupLabel(group) {
-  switch (group) {
-    case 'approval': return 'onay güncellemesi'
-    case 'subtask': return 'alt görev güncellemesi'
-    case 'stage': return 'aşama güncellemesi'
-    case 'order': return 'sipariş güncellemesi'
-    default: return 'küçük güncelleme'
-  }
 }
 
 /**

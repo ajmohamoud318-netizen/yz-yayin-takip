@@ -20,6 +20,7 @@ import api, { TYPE_LABELS } from '@/api'
 import { cn } from '@/lib/utils'
 import { getComponentsForProject, getComponentRows } from '@/data/productCatalog'
 import { printSpecSheets, buildFormSheet, buildFormKunye } from '@/lib/specPrint'
+import { liveTeslimat, withTeslimat } from '@/lib/teslimat'
 import {
   FormSheet,
   FormSheetBlock,
@@ -325,12 +326,18 @@ export default function Documents() {
     const ozalitIst = []
     const ozalitOnay = []
     // Prefer the server snapshot; fall back to this browser's localStorage.
-    const pickForm = (kind, pid) =>
-      serverForms[pid]?.[kind] ?? (kind === 'demo' ? loadDemoForm(pid) : loadOzalitForm(pid))
+    // The teslimat stamps are then resolved from the project row on top of
+    // whichever won — the snapshot is where they USED to live and it is not
+    // reliably where they ended up. See lib/teslimat.js.
+    const pickForm = (kind, project) => {
+      const saved = serverForms[project.id]?.[kind]
+        ?? (kind === 'demo' ? loadDemoForm(project.id) : loadOzalitForm(project.id))
+      return saved ? withTeslimat(saved, liveTeslimat({ project, kind })) : saved
+    }
 
     for (const p of projects) {
       if (DEMO_SENT_STAGES.has(p.stage)) {
-        const form = pickForm('demo', p.id)
+        const form = pickForm('demo', p)
         const attemptNo = (p.demo_attempt ?? 0) + 1
         const printerEntry = (p.history ?? []).find(
           (h) => h.from_stage === 'demo_teslim' && h.action === 'advance',
@@ -342,7 +349,7 @@ export default function Documents() {
       }
 
       if (p.type === 'TR' && OZALIT_SENT_STAGES.has(p.stage)) {
-        const form = pickForm('ozalit', p.id)
+        const form = pickForm('ozalit', p)
         const attemptNo = (p.ozalit_attempt ?? 0) + 1
         const printerEntry = (p.history ?? []).find(
           (h) => h.from_stage === 'ozalit_teslim' && h.action === 'advance',
