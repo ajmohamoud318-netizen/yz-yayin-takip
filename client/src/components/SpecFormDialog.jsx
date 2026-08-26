@@ -311,6 +311,22 @@ async function fetchServerSnapshotById(api, variant, demoId) {
   }
 }
 
+/**
+ * Move the row with `id` one place up (dir -1) or down (dir +1). Returns the
+ * list untouched when the row is already at that end, so the caller can wire
+ * the arrows without bounds-checking twice.
+ */
+function moveById(rows, id, dir) {
+  const list = rows ?? []
+  const from = list.findIndex((r) => r.id === id)
+  const to = from + dir
+  if (from < 0 || to < 0 || to >= list.length) return list
+  const next = [...list]
+  const [row] = next.splice(from, 1)
+  next.splice(to, 0, row)
+  return next
+}
+
 function saveForm(variant, id, data, customRows, selectedComponents) {
   localStorage.setItem(STORAGE_KEY(variant, id), JSON.stringify({
     ...data,
@@ -971,6 +987,11 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   function removeCustomRow(id) {
     setCustomRows((prev) => prev.filter((r) => r.id !== id))
   }
+  // Rows are added under İŞİN ADI and the order they are left in is the order
+  // they print in, so moving one is a real edit, not a view preference.
+  function moveCustomRow(id, dir) {
+    setCustomRows((prev) => moveById(prev, id, dir))
+  }
 
   // ── Per-component (parça) spec editing ──────────────────────────────────────
   // Each selected component carries its own auto-filled rows. Editing them here
@@ -997,6 +1018,11 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   function removeComponentRow(compId, rowId) {
     setSelectedComponents((prev) =>
       prev.map((c) => (c.id !== compId ? c : { ...c, rows: (c.rows ?? []).filter((r) => r.id !== rowId) })),
+    )
+  }
+  function moveComponentRow(compId, rowId, dir) {
+    setSelectedComponents((prev) =>
+      prev.map((c) => (c.id !== compId ? c : { ...c, rows: moveById(c.rows ?? [], rowId, dir) })),
     )
   }
   function handleChange(e) {
@@ -1453,12 +1479,33 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             icon={FileText}
           />
 
-          {/* Künye — same fields, same order as the printed sheet's. */}
+          {/* Künye — same fields, same order as the printed sheet's: the job
+              name, then the rows the user added, then the fixed ones. */}
           <FormSheetBlock className="bg-muted/10">
             {/* Only without parça blocks: with them, each block names its own
                 job and a single İŞİN ADI row would contradict them. */}
             {!showsComponentCards && (
-              <SheetRow label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly={systemRowReadOnly} />
+              <>
+                <SheetRow label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly={systemRowReadOnly} />
+                {/* The body of the sheet: what this job actually is, written
+                    directly under its name. The fixed rows below are stamps —
+                    who asked, when, who delivered — and belong at the foot of
+                    the form, so an added row is never buried among them. */}
+                {customRows.map((r, i) => (
+                  <SheetSpecRow
+                    key={r.id}
+                    label={r.label}
+                    value={r.value}
+                    onLabelChange={(v) => updateCustomRow(r.id, 'label', v)}
+                    onValueChange={(v) => updateCustomRow(r.id, 'value', v)}
+                    onRemove={() => removeCustomRow(r.id)}
+                    onMoveUp={customRows.length > 1 && i > 0 ? () => moveCustomRow(r.id, -1) : null}
+                    onMoveDown={customRows.length > 1 && i < customRows.length - 1 ? () => moveCustomRow(r.id, 1) : null}
+                    readOnly={readOnly}
+                  />
+                ))}
+                {!readOnly && <SheetAddRow onClick={addCustomRow} />}
+              </>
             )}
             {/* ADET — dedicated field on the Baskı Onay Formu, auto-filled
                 from a live sipariş order or the borrowed ozalit sheet (see the
@@ -1556,9 +1603,9 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
 
           {/* Selected parçalar, stacked as blocks of the same sheet — each one
               prints as its own page. Edits here flow back to Ürün Bilgileri on
-              save. With no catalog, or nothing selected, the sheet falls back
-              to plain user-added rows. */}
-          {showsComponentCards ? (
+              save. With no catalog, or nothing selected, there are no parça
+              blocks and the künye's own rows above are the whole sheet. */}
+          {showsComponentCards &&
             selectedComponents.map((c) => (
               <div key={c.id} className="border-b last:border-b-0">
                 <FormSheetBlockTitle>{c.component}</FormSheetBlockTitle>
@@ -1566,7 +1613,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                   {(c.rows ?? []).length === 0 && readOnly && (
                     <p className="py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
                   )}
-                  {(c.rows ?? []).map((r) => (
+                  {(c.rows ?? []).map((r, i) => (
                     <SheetSpecRow
                       key={r.id}
                       label={r.label}
@@ -1574,29 +1621,15 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                       onLabelChange={(v) => updateComponentRow(c.id, r.id, 'label', v)}
                       onValueChange={(v) => updateComponentRow(c.id, r.id, 'value', v)}
                       onRemove={() => removeComponentRow(c.id, r.id)}
+                      onMoveUp={(c.rows ?? []).length > 1 && i > 0 ? () => moveComponentRow(c.id, r.id, -1) : null}
+                      onMoveDown={(c.rows ?? []).length > 1 && i < (c.rows ?? []).length - 1 ? () => moveComponentRow(c.id, r.id, 1) : null}
                       readOnly={readOnly}
                     />
                   ))}
                   {!readOnly && <SheetAddRow onClick={() => addComponentRow(c.id)} />}
                 </FormSheetBlock>
               </div>
-            ))
-          ) : (
-            <FormSheetBlock>
-              {customRows.map((r) => (
-                <SheetSpecRow
-                  key={r.id}
-                  label={r.label}
-                  value={r.value}
-                  onLabelChange={(v) => updateCustomRow(r.id, 'label', v)}
-                  onValueChange={(v) => updateCustomRow(r.id, 'value', v)}
-                  onRemove={() => removeCustomRow(r.id)}
-                  readOnly={readOnly}
-                />
-              ))}
-              {!readOnly && <SheetAddRow onClick={addCustomRow} />}
-            </FormSheetBlock>
-          )}
+            ))}
 
           {showsComponentCards && !readOnly && (
             <p className="px-4 py-2 text-[10px] text-muted-foreground print:hidden">

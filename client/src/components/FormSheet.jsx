@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from 'react'
-import { Plus, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Plus, X } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
@@ -18,6 +18,14 @@ import { cn } from '@/lib/utils'
  * truncating: this app is used on phones first.
  */
 export const SHEET_ROW = 'grid grid-cols-[minmax(5.5rem,36%)_auto_1fr] items-start border-b last:border-b-0'
+/**
+ * The same row with a trailing column for the edit controls (move / remove).
+ * The first three tracks are identical, so the label column and the colon —
+ * and with them the rule down the value column — stay aligned with every
+ * plain row on the sheet; only the value cell gives up the width.
+ */
+const SHEET_ROW_TOOLS = 'grid grid-cols-[minmax(5.5rem,36%)_auto_1fr_auto] items-start border-b last:border-b-0'
+const SHEET_TOOL_BTN = 'inline-flex w-6 items-center justify-center rounded text-muted-foreground transition active:scale-90 disabled:pointer-events-none disabled:opacity-25'
 export const SHEET_LABEL = 'py-1.5 pr-2 text-[11px] font-semibold uppercase leading-snug tracking-wide text-muted-foreground'
 const SHEET_COLON = 'self-stretch pt-1.5 text-center text-xs font-bold text-muted-foreground'
 const SHEET_VALUE_CELL = 'min-w-0 self-stretch border-l pl-2'
@@ -140,13 +148,22 @@ export function SheetRow({ label, name, value, onChange, readOnly, required = fa
 }
 
 /**
- * A spec row whose LABEL is editable too — the parça rows, where a leader may
- * rename a field. Read-only collapses both halves to plain text, which is then
- * indistinguishable from a SheetRow.
+ * A spec row whose LABEL is editable too — the user-added rows and the parça
+ * rows, where a leader may rename a field. Read-only collapses both halves to
+ * plain text, which is then indistinguishable from a SheetRow.
+ *
+ * `onMoveUp` / `onMoveDown` reorder the row. Pass them whenever the row sits in
+ * a list of more than one — a row at an end passes null for the direction it
+ * cannot go, and that arrow renders disabled rather than disappearing, so the
+ * controls keep the same width on every row and the value column does not
+ * jitter as rows move. With neither handler (a lone row) the arrows are left
+ * out altogether and only the remove button takes space.
  */
-export function SheetSpecRow({ label, value, onLabelChange, onValueChange, onRemove, readOnly }) {
+export function SheetSpecRow({ label, value, onLabelChange, onValueChange, onRemove, onMoveUp, onMoveDown, readOnly }) {
+  const canReorder = !readOnly && (onMoveUp || onMoveDown)
+  const hasTools = !readOnly && (canReorder || onRemove)
   return (
-    <div className={SHEET_ROW}>
+    <div className={hasTools ? SHEET_ROW_TOOLS : SHEET_ROW}>
       {readOnly ? (
         <span className={SHEET_LABEL}>{label}</span>
       ) : (
@@ -159,7 +176,7 @@ export function SheetSpecRow({ label, value, onLabelChange, onValueChange, onRem
         />
       )}
       <span className={SHEET_COLON}>:</span>
-      <div className={cn(SHEET_VALUE_CELL, 'relative')}>
+      <div className={SHEET_VALUE_CELL}>
         {readOnly ? (
           <span className={SHEET_VALUE_TEXT}>{value || '—'}</span>
         ) : (
@@ -168,33 +185,69 @@ export function SheetSpecRow({ label, value, onLabelChange, onValueChange, onRem
             onChange={(e) => onValueChange?.(e.target.value)}
             placeholder="Değer"
             aria-label="Alan değeri"
-            className="pr-6"
           />
         )}
-        {!readOnly && onRemove && (
-          <button
-            type="button"
-            onClick={onRemove}
-            aria-label="Satırı silin"
-            className="absolute right-0 top-1.5 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive print:hidden"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        )}
       </div>
+      {/* Editing controls — they sit outside the value cell so they never
+          overlap the text, and off the sheet when it goes to paper. */}
+      {hasTools && (
+        <div className="flex items-start gap-0.5 pl-1 pt-1 print:hidden">
+          {canReorder && (
+            <div className="flex flex-col">
+              <button
+                type="button"
+                onClick={onMoveUp ?? undefined}
+                disabled={!onMoveUp}
+                aria-label="Satırı yukarı taşıyın"
+                className={cn(SHEET_TOOL_BTN, 'h-6 hover:text-foreground')}
+              >
+                <ChevronUp className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={onMoveDown ?? undefined}
+                disabled={!onMoveDown}
+                aria-label="Satırı aşağı taşıyın"
+                className={cn(SHEET_TOOL_BTN, 'h-6 hover:text-foreground')}
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+          {onRemove && (
+            <button
+              type="button"
+              onClick={onRemove}
+              aria-label="Satırı silin"
+              className={cn(SHEET_TOOL_BTN, canReorder ? 'h-12' : 'h-6', 'hover:text-destructive')}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
 
-/** "+ Satır Ekleyin" under a block's rows. */
-export function SheetAddRow({ onClick }) {
+/**
+ * "+ Satır Ekleyin" under a block's rows.
+ *
+ * Wrapped in its own row so it carries the sheet's rule when other rows follow
+ * it — on the künye it sits between the added rows and the fixed ones, and
+ * without the rule those two groups would run together. Last in a block it
+ * drops the rule, exactly like a row.
+ */
+export function SheetAddRow({ onClick, className }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="my-1 inline-flex items-center gap-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80 print:hidden"
-    >
-      <Plus className="h-3 w-3" /> Satır Ekleyin
-    </button>
+    <div className={cn('border-b last:border-b-0 print:hidden', className)}>
+      <button
+        type="button"
+        onClick={onClick}
+        className="my-1 inline-flex items-center gap-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
+      >
+        <Plus className="h-3 w-3" /> Satır Ekleyin
+      </button>
+    </div>
   )
 }

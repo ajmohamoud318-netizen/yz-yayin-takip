@@ -82,8 +82,8 @@ export function buildFormSheet({ component, form, kind, title, attemptLabel = ''
   }
 }
 
-/* One sheet: title block, künye grid (İŞİN ADI full width, then two fields per
-   row), and the spec table. */
+/* One sheet: title block, İŞİN ADI, the spec table, then the künye grid (two
+   fields per row) as the form's foot. */
 function formSection({ formTitle, title, attemptLabel, isinAdi, pairs, specRows }) {
   const today = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
   // The head names the job; İŞİN ADI below names the parça. On a single-parça
@@ -109,6 +109,10 @@ function formSection({ formTitle, title, attemptLabel, isinAdi, pairs, specRows 
       .join('')
     : '<tr><td class="v empty" colspan="4">—</td></tr>'
 
+  // İŞİN ADI, then the spec, then the künye. The spec is what the sheet is FOR,
+  // so it sits directly under the job name; the künye rows are stamps — who
+  // asked, when, who delivered and approved — and read as the form's foot. The
+  // on-screen sheet is ordered the same way, so paper and screen agree.
   return `<section class="sheet">
     <div class="form-head">
       <div class="form-title">${esc(formTitle || '')}</div>
@@ -117,10 +121,10 @@ function formSection({ formTitle, title, attemptLabel, isinAdi, pairs, specRows 
     </div>
     <table class="meta">
       <tr><td class="k">İŞİN ADI</td><td class="v" colspan="3">${esc(isinAdi || '')}</td></tr>
-      ${metaRows.join('')}
     </table>
     <div class="block-title">Baskı Özellikleri</div>
     <table class="spec">${specBody}</table>
+    <table class="meta">${metaRows.join('')}</table>
     <div class="date-line">Yazdırma tarihi: ${esc(today)}</div>
   </section>`
 }

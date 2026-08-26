@@ -115,6 +115,19 @@ export default function SiparisBaskiOnayFormDialog({
       i !== ci ? c : { ...c, rows: c.rows.filter((_, j) => j !== ri) }
     )))
   }
+  // Row order is the order the parça prints in, so it is worth being able to
+  // fix without deleting and retyping the row.
+  function moveRow(ci, ri, dir) {
+    setComponents((prev) => prev.map((c, i) => {
+      if (i !== ci) return c
+      const to = ri + dir
+      if (to < 0 || to >= c.rows.length) return c
+      const rows = [...c.rows]
+      const [row] = rows.splice(ri, 1)
+      rows.splice(to, 0, row)
+      return { ...c, rows }
+    }))
+  }
 
   function currentPayload() {
     return {
@@ -230,6 +243,8 @@ export default function SiparisBaskiOnayFormDialog({
                   onLabelChange={(v) => setRow(ci, ri, { label: v })}
                   onValueChange={(v) => setRow(ci, ri, { value: v })}
                   onRemove={() => removeRow(ci, ri)}
+                  onMoveUp={c.rows.length > 1 && ri > 0 ? () => moveRow(ci, ri, -1) : null}
+                  onMoveDown={c.rows.length > 1 && ri < c.rows.length - 1 ? () => moveRow(ci, ri, 1) : null}
                   readOnly={isReadOnly}
                 />
               ))}
