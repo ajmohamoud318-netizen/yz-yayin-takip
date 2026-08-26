@@ -123,7 +123,8 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={cn('max-w-2xl', DIALOG_MOBILE_SHEET)}>
-        <DialogHeader>
+        {/* Titled again by each sheet below — see SpecFormDialog. */}
+        <DialogHeader className="print:hidden">
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
             {isDemo ? 'Demo Üretim Formu' : 'Ozalit Üretim Formu'}

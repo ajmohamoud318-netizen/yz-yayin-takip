@@ -25,7 +25,7 @@ export const SHEET_ROW = 'grid grid-cols-[minmax(5.5rem,36%)_auto_1fr] items-sta
  * plain row on the sheet; only the value cell gives up the width.
  */
 const SHEET_ROW_TOOLS = 'grid grid-cols-[minmax(5.5rem,36%)_auto_1fr_auto] items-start border-b last:border-b-0'
-const SHEET_TOOL_BTN = 'inline-flex w-6 items-center justify-center rounded text-muted-foreground transition active:scale-90 disabled:pointer-events-none disabled:opacity-25'
+const SHEET_TOOL_BTN = 'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition active:scale-90 disabled:pointer-events-none disabled:opacity-25'
 export const SHEET_LABEL = 'py-1.5 pr-2 text-[11px] font-semibold uppercase leading-snug tracking-wide text-muted-foreground'
 const SHEET_COLON = 'self-stretch pt-1.5 text-center text-xs font-bold text-muted-foreground'
 const SHEET_VALUE_CELL = 'min-w-0 self-stretch border-l pl-2'
@@ -83,7 +83,8 @@ export function FormSheetHead({ title, subtitle, attemptLabel, icon: Icon }) {
       <h2 className="text-[12px] font-bold uppercase tracking-[0.18em] text-foreground">{title}</h2>
       {subtitle && (
         <p className="mt-1.5 flex items-start justify-center gap-1.5 text-[13px] font-semibold leading-snug text-foreground">
-          {Icon && <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+          {/* A glyph belongs to the app, not to the form the matbaa gets. */}
+          {Icon && <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground print:hidden" />}
           <span className="min-w-0 break-words">{subtitle}</span>
         </p>
       )}
@@ -188,18 +189,20 @@ export function SheetSpecRow({ label, value, onLabelChange, onValueChange, onRem
           />
         )}
       </div>
-      {/* Editing controls — they sit outside the value cell so they never
-          overlap the text, and off the sheet when it goes to paper. */}
+      {/* Editing controls — outside the value cell so they never overlap the
+          text, on one line so a row with them stands exactly as tall as a row
+          without: the sheet keeps one row rhythm and an added row does not
+          bloat to twice the height of the fixed ones. Off the sheet on paper. */}
       {hasTools && (
-        <div className="flex items-start gap-0.5 pl-1 pt-1 print:hidden">
+        <div className="flex items-start pl-1 pt-0.5 print:hidden">
           {canReorder && (
-            <div className="flex flex-col">
+            <>
               <button
                 type="button"
                 onClick={onMoveUp ?? undefined}
                 disabled={!onMoveUp}
                 aria-label="Satırı yukarı taşıyın"
-                className={cn(SHEET_TOOL_BTN, 'h-6 hover:text-foreground')}
+                className={cn(SHEET_TOOL_BTN, 'hover:text-foreground')}
               >
                 <ChevronUp className="h-3.5 w-3.5" />
               </button>
@@ -208,18 +211,18 @@ export function SheetSpecRow({ label, value, onLabelChange, onValueChange, onRem
                 onClick={onMoveDown ?? undefined}
                 disabled={!onMoveDown}
                 aria-label="Satırı aşağı taşıyın"
-                className={cn(SHEET_TOOL_BTN, 'h-6 hover:text-foreground')}
+                className={cn(SHEET_TOOL_BTN, 'hover:text-foreground')}
               >
                 <ChevronDown className="h-3.5 w-3.5" />
               </button>
-            </div>
+            </>
           )}
           {onRemove && (
             <button
               type="button"
               onClick={onRemove}
               aria-label="Satırı silin"
-              className={cn(SHEET_TOOL_BTN, canReorder ? 'h-12' : 'h-6', 'hover:text-destructive')}
+              className={cn(SHEET_TOOL_BTN, 'hover:text-destructive')}
             >
               <X className="h-3.5 w-3.5" />
             </button>

@@ -216,17 +216,6 @@ export default function SiparisBaskiOnayFormDialog({
     <FormSheet>
       <FormSheetHead title="Baskı Onay Formu" subtitle={bookTitle} icon={ShoppingCart} />
 
-      {/* Künye — the four fields the matbaa actually prints from. */}
-      <FormSheetBlock className="bg-muted/10">
-        <SheetRow label="ADET" name="adet" value={adet} onChange={(e) => setAdet(e.target.value)} readOnly={isReadOnly} required />
-        <SheetRow label="TARİH" name="tarih" value={tarih} onChange={(e) => setTarih(e.target.value)} readOnly={isReadOnly} required />
-        <SheetRow label="BASIM YERİ" name="basimYeri" value={basimYeri} onChange={(e) => setBasimYeri(e.target.value)} readOnly={isReadOnly} required />
-        <SheetRow label="HAZIRLAYAN" name="hazirlayan" value={hazirlayan} onChange={(e) => setHazirlayan(e.target.value)} readOnly={isReadOnly} required />
-        {/* Only once the approve actually stamped it — an unapproved sheet
-            must not read as already signed. */}
-        {onaylayan && <SheetRow label="ONAYLAYAN" value={onaylayan} readOnly />}
-      </FormSheetBlock>
-
       {/* One block per parça — each of these prints as its own sheet. */}
       {components.length === 0 ? (
         <p className="px-4 py-4 text-center text-xs text-muted-foreground">Bu ürün için bilgi yok.</p>
@@ -253,6 +242,20 @@ export default function SiparisBaskiOnayFormDialog({
           </div>
         ))
       )}
+
+      {/* Künye — the four fields the matbaa actually prints from, plus the
+          approval stamp. The form's foot, exactly where handlePrint() puts it
+          on paper (specPrint.js): the parça spec is what the sheet is FOR, and
+          the rows the form fills in about itself close it. */}
+      <FormSheetBlock className="bg-muted/10">
+        <SheetRow label="ADET" name="adet" value={adet} onChange={(e) => setAdet(e.target.value)} readOnly={isReadOnly} required />
+        <SheetRow label="TARİH" name="tarih" value={tarih} onChange={(e) => setTarih(e.target.value)} readOnly={isReadOnly} required />
+        <SheetRow label="BASIM YERİ" name="basimYeri" value={basimYeri} onChange={(e) => setBasimYeri(e.target.value)} readOnly={isReadOnly} required />
+        <SheetRow label="HAZIRLAYAN" name="hazirlayan" value={hazirlayan} onChange={(e) => setHazirlayan(e.target.value)} readOnly={isReadOnly} required />
+        {/* Only once the approve actually stamped it — an unapproved sheet
+            must not read as already signed. */}
+        {onaylayan && <SheetRow label="ONAYLAYAN" value={onaylayan} readOnly />}
+      </FormSheetBlock>
     </FormSheet>
   )
 
@@ -287,7 +290,8 @@ export default function SiparisBaskiOnayFormDialog({
   return (
     <Dialog open={open} onOpenChange={(v) => !busy && onOpenChange?.(v)}>
       <DialogContent className={cn('max-w-lg', DIALOG_MOBILE_SHEET)}>
-        <DialogHeader>
+        {/* Titled again by the sheet itself — see SpecFormDialog. */}
+        <DialogHeader className="print:hidden">
           <DialogTitle>Baskı Onay Formu</DialogTitle>
           <DialogDescription>
             {isReadOnly

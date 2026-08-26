@@ -1363,6 +1363,53 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // block names its own.
   const showsComponentCards = hasCatalog && selectedComponents.length > 0
 
+  /* The fixed rows — the ones the form always carries, whoever filled it in.
+     None of them is part of the spec: they are stamps the form writes about
+     itself (who asked, when, who delivered, who approved) plus the fields the
+     künye always names, so they close the sheet and never open it. Held in a
+     variable only to keep that foot out of the middle of the layout below. */
+  const fixedKunye = (
+    <FormSheetBlock className="bg-muted/10">
+      {/* ADET — dedicated field on the Baskı Onay Formu, auto-filled from a
+          live sipariş order or the borrowed ozalit sheet (see the load
+          effect); the leader can still correct it. */}
+      {variant.adetField && (
+        <SheetRow
+          label={variant.adetLabel}
+          name={variant.adetField}
+          value={form[variant.adetField] ?? ''}
+          onChange={handleChange}
+          readOnly={readOnly}
+          required
+        />
+      )}
+      {/* İSTEM rows are shown to every role — the matbaa needs to know who
+          requested the demo/ozalit and when, not just its own delivery stamp. */}
+      <SheetRow label={variant.dateLabel} name={variant.dateField} value={form[variant.dateField]} onChange={handleChange} readOnly={systemRowReadOnly} />
+      {/* BASIM YERİ — right before HAZIRLAYAN, per the feature ask. */}
+      {variant.locationField && (
+        <SheetRow
+          label={variant.locationLabel}
+          name={variant.locationField}
+          value={form[variant.locationField] ?? ''}
+          onChange={handleChange}
+          readOnly={readOnly}
+          required
+        />
+      )}
+      <SheetRow label={variant.personLabel} name={variant.personField} value={form[variant.personField]} onChange={handleChange} readOnly />
+      {/* Blank until handleAdvance stamps them at the moment of teslimat. */}
+      {(user?.role === 'printer' || form.teslimTarihi || form.teslimEdenKisi) && (
+        <>
+          <SheetRow label="TESLİM TARİHİ" name="teslimTarihi" value={form.teslimTarihi ?? ''} onChange={handleChange} readOnly={systemRowReadOnly} />
+          <SheetRow label="TESLİM EDEN KİŞİ" name="teslimEdenKisi" value={form.teslimEdenKisi ?? ''} onChange={handleChange} readOnly />
+        </>
+      )}
+      {form.matbaaYetkilisi && <SheetRow label="MATBAA YETKİLİSİ" value={form.matbaaYetkilisi} readOnly />}
+      {form.onaylayanKisi && <SheetRow label="ONAYLAYAN KİŞİ" value={form.onaylayanKisi} readOnly />}
+    </FormSheetBlock>
+  )
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -1372,7 +1419,9 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         // focus on the dialog itself instead.
         onOpenAutoFocus={(e) => e.preventDefault()}
         className={cn('max-w-2xl', DIALOG_MOBILE_SHEET)}>
-        <DialogHeader>
+        {/* The sheet below carries its own title block, so on paper this
+            would print the form's name twice. */}
+        <DialogHeader className="print:hidden">
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
             {variant.title}
@@ -1467,10 +1516,11 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         )}
 
         {/* The dialog IS the form — the same document openMultiPrint() puts
-            on paper, rendered live: title block, künye, then a block per
-            parça. Editing and read-only share the layout; only the fields
-            switch between input and plain text, so a sheet nobody can edit
-            reads as a document rather than a page of dead inputs. */}
+            on paper, rendered live: title block, the spec (added rows or a
+            block per parça), then the künye as the foot. Editing and read-only
+            share the layout; only the fields switch between input and plain
+            text, so a sheet nobody can edit reads as a document rather than a
+            page of dead inputs. */}
         <FormSheet>
           <FormSheetHead
             title={variant.title}
@@ -1479,18 +1529,23 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             icon={FileText}
           />
 
-          {/* Künye — same fields, same order as the printed sheet's: the job
-              name, then the rows the user added, then the fixed ones. */}
-          <FormSheetBlock className="bg-muted/10">
-            {/* Only without parça blocks: with them, each block names its own
-                job and a single İŞİN ADI row would contradict them. */}
-            {!showsComponentCards && (
-              <>
+          {/* İŞİN ADI, the spec, then the fixed rows — the same three parts,
+              in the same order, as the printed sheet and the Dökümanlar
+              preview. Split into real blocks rather than one long run: the
+              only thing separating the added rows from the fixed ones used to
+              be "+ Satır Ekleyin", which is hidden on paper and absent on a
+              read-only sheet, so exactly where the distinction matters most
+              the two groups ran together as one undifferentiated list. */}
+          {!showsComponentCards && (
+            <>
+              <FormSheetBlock className="bg-muted/10">
                 <SheetRow label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly={systemRowReadOnly} />
-                {/* The body of the sheet: what this job actually is, written
-                    directly under its name. The fixed rows below are stamps —
-                    who asked, when, who delivered — and belong at the foot of
-                    the form, so an added row is never buried among them. */}
+              </FormSheetBlock>
+              <FormSheetBlockTitle>Baskı Özellikleri</FormSheetBlockTitle>
+              <FormSheetBlock>
+                {customRows.length === 0 && readOnly && (
+                  <p className="py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
+                )}
                 {customRows.map((r, i) => (
                   <SheetSpecRow
                     key={r.id}
@@ -1505,47 +1560,9 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
                   />
                 ))}
                 {!readOnly && <SheetAddRow onClick={addCustomRow} />}
-              </>
-            )}
-            {/* ADET — dedicated field on the Baskı Onay Formu, auto-filled
-                from a live sipariş order or the borrowed ozalit sheet (see the
-                load effect); the leader can still correct it. */}
-            {variant.adetField && (
-              <SheetRow
-                label={variant.adetLabel}
-                name={variant.adetField}
-                value={form[variant.adetField] ?? ''}
-                onChange={handleChange}
-                readOnly={readOnly}
-                required
-              />
-            )}
-            {/* İSTEM rows are shown to every role — the matbaa needs to know
-                who requested the demo/ozalit and when, not just its own
-                delivery stamp. */}
-            <SheetRow label={variant.dateLabel} name={variant.dateField} value={form[variant.dateField]} onChange={handleChange} readOnly={systemRowReadOnly} />
-            {/* BASIM YERİ — right before HAZIRLAYAN, per the feature ask. */}
-            {variant.locationField && (
-              <SheetRow
-                label={variant.locationLabel}
-                name={variant.locationField}
-                value={form[variant.locationField] ?? ''}
-                onChange={handleChange}
-                readOnly={readOnly}
-                required
-              />
-            )}
-            <SheetRow label={variant.personLabel} name={variant.personField} value={form[variant.personField]} onChange={handleChange} readOnly />
-            {/* Blank until handleAdvance stamps them at the moment of teslimat. */}
-            {(user?.role === 'printer' || form.teslimTarihi || form.teslimEdenKisi) && (
-              <>
-                <SheetRow label="TESLİM TARİHİ" name="teslimTarihi" value={form.teslimTarihi ?? ''} onChange={handleChange} readOnly={systemRowReadOnly} />
-                <SheetRow label="TESLİM EDEN KİŞİ" name="teslimEdenKisi" value={form.teslimEdenKisi ?? ''} onChange={handleChange} readOnly />
-              </>
-            )}
-            {form.matbaaYetkilisi && <SheetRow label="MATBAA YETKİLİSİ" value={form.matbaaYetkilisi} readOnly />}
-            {form.onaylayanKisi && <SheetRow label="ONAYLAYAN KİŞİ" value={form.onaylayanKisi} readOnly />}
-          </FormSheetBlock>
+              </FormSheetBlock>
+            </>
+          )}
 
           {/* Per-component picker — only when the project has product info.
               Pure editing control: it never goes on paper. */}
@@ -1604,7 +1621,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           {/* Selected parçalar, stacked as blocks of the same sheet — each one
               prints as its own page. Edits here flow back to Ürün Bilgileri on
               save. With no catalog, or nothing selected, there are no parça
-              blocks and the künye's own rows above are the whole sheet. */}
+              blocks and the added rows above are the sheet's whole spec. */}
           {showsComponentCards &&
             selectedComponents.map((c) => (
               <div key={c.id} className="border-b last:border-b-0">
@@ -1636,6 +1653,11 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               Buradaki düzenlemeler Ürün Bilgileri'ne de kaydedilir.
             </p>
           )}
+
+          {/* The form's foot — the same spot on every sheet, whether the spec
+              above it came from parça blocks or from the added rows. A row the
+              form fills in itself never sits above the spec it belongs to. */}
+          {fixedKunye}
         </FormSheet>
 
         {/* Ozalit receipt gate — the approve below stays disabled until the
