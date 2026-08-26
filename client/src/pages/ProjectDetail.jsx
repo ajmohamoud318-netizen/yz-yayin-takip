@@ -54,6 +54,7 @@ import SiparisBaskiOnayFormDialog from '@/components/SiparisBaskiOnayFormDialog'
 import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import { cn, formatDateTr, initials } from '@/lib/utils'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
+import { userColor, colorTint } from '@/lib/userColor'
 import { isSubtaskDone, countsTowardProgress } from '@/domain/services/progress'
 import {
   canApproveOzalitNow, ozalitLeaderApproved,
@@ -207,7 +208,8 @@ function OrderProgressStepper({ order, sold, handoverPending, canAct, onAct }) {
  * or a row dropped by a leader's edit) are rendered as pending placeholders
  * so the chip count still matches `total_pages`.
  */
-function PageChipGrid({ subtask, canEdit, activePage, onPageClick, onPageRework }) {
+function PageChipGrid({ subtask, canEdit, flagged = false, activePage, user, onPageClick, onPageRework }) {
+  const [myPagesOnly, setMyPagesOnly] = useState(false)
   const total = Number(subtask.total_pages ?? 0)
   const pages = Array.isArray(subtask.pages) ? subtask.pages : []
   // Build a fully dense array so the chip count matches total_pages even if
@@ -216,12 +218,59 @@ function PageChipGrid({ subtask, canEdit, activePage, onPageClick, onPageRework 
   const cells = Array.from({ length: total }, (_, idx) => {
     const i = idx + 1
     const found = pages.find((p) => p.i === i)
-    return found ?? { i, status: 'pending', done_by_name: null, done_at: null, rework_count: 0 }
+    return found ?? {
+      i,
+      status: 'pending',
+      done_by_name: null,
+      done_at: null,
+      rework_count: 0,
+      assigned_to: null,
+      assigned_to_name: null,
+    }
   })
-  const doneCount = cells.filter((c) => c.status === 'done').length
-  const reworkCount = cells.filter((c) => c.status === 'rework').length
+  // The chip's "owner" is whoever should take credit for it visually. A
+  // done chip belongs to whoever shipped it (done_by); a pending/rework
+  // chip belongs to whoever is planned to do it (assigned_to). This is
+  // the same distinction the data model carries (migration 056) — the
+  // two can legitimately diverge when a leader reassigns mid-revision.
+  function ownerOf(p) {
+    return p.status === 'done' ? p.done_by : p.assigned_to
+  }
+  function ownerNameOf(p) {
+    return p.status === 'done' ? p.done_by_name : p.assigned_to_name
+  }
+  const visibleCells = myPagesOnly && user
+    ? cells.filter((c) => c.assigned_to === user.id || c.done_by === user.id)
+    : cells
+  const doneCount = visibleCells.filter((c) => c.status === 'done').length
+  const reworkCount = visibleCells.filter((c) => c.status === 'rework').length
+  const myCount = user
+    ? cells.filter((c) => c.assigned_to === user.id || c.done_by === user.id).length
+    : 0
+  // Distinct owners visible in the current view, used to render the
+  // color legend above the grid. Done by id (stable color) then resolved
+  // to the most-recent name we have for them.
+  const legend = (() => {
+    const seen = new Map() // id -> name
+    for (const c of visibleCells) {
+      const id = ownerOf(c)
+      if (!id) continue
+      const name = ownerNameOf(c)
+      if (!seen.has(id) || (seen.get(id) == null && name)) seen.set(id, name ?? null)
+    }
+    return [...seen.entries()].map(([id, name]) => ({ id, name, color: userColor(id) }))
+  })()
   return (
-    <div className="rounded-lg border bg-background px-3 py-2.5">
+    <div className={cn(
+      'rounded-lg border bg-background px-3 py-2.5 transition-colors',
+      flagged && 'border-amber-300 bg-amber-50/50 ring-1 ring-inset ring-amber-300/60',
+    )}>
+      {flagged && (
+        <div className="mb-2 flex items-center gap-1.5 rounded-md border border-amber-300/70 bg-amber-100/70 px-2 py-1 text-[11px] font-medium text-amber-800">
+          <AlertTriangle className="h-3 w-3 shrink-0" />
+          Demo revize edildi — sayfaları kontrol edin
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
         <span className="text-sm font-medium">{subtask.title}</span>
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -231,12 +280,56 @@ function PageChipGrid({ subtask, canEdit, activePage, onPageClick, onPageRework 
               {reworkCount} revize
             </span>
           )}
+          {user && myCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setMyPagesOnly((v) => !v)}
+              aria-pressed={myPagesOnly}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold transition',
+                myPagesOnly
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-primary',
+              )}
+            >
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: userColor(user.id) ?? '#888' }}
+              />
+              {myPagesOnly ? `Sadece benim (${myCount})` : `Benim sayfalarım (${myCount})`}
+            </button>
+          )}
         </div>
       </div>
+      {/* Owner legend — same colour as the chips so the team leader learns
+          "blue = Aylin" once and reads every chip grid the same way. Hidden
+          when the filter is on (the only owner visible is the viewer). */}
+      {!myPagesOnly && legend.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+          {legend.map(({ id, name, color }) => (
+            <span key={id} className="inline-flex items-center gap-1">
+              <span
+                className="h-2 w-2 rounded-full ring-1 ring-inset ring-border/40"
+                style={{ backgroundColor: color }}
+              />
+              {name ?? 'Bilinmeyen'}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="flex flex-wrap gap-1">
-        {cells.map((p) => {
+        {visibleCells.map((p) => {
           const key = `${subtask.id}:${p.i}`
           const isActive = activePage?.key === key
+          const ownerColor = userColor(ownerOf(p))
+          const ownerTint = colorTint(ownerColor)
+          const chipStyle = ownerColor
+            ? {
+                borderColor: ownerColor,
+                backgroundColor: p.status === 'pending' && ownerTint ? ownerTint : undefined,
+              }
+            : undefined
+          const ownerName = ownerNameOf(p)
           return (
             <div key={p.i} className="group relative">
               <button
@@ -248,17 +341,25 @@ function PageChipGrid({ subtask, canEdit, activePage, onPageClick, onPageRework 
                   p.status === 'done' && p.done_by_name
                     ? `${p.done_by_name}${p.done_at ? ` · ${formatDateTr(p.done_at)}` : ''}${p.rework_count > 0 ? ` · ${p.rework_count}× revize` : ''}`
                     : p.status === 'rework'
-                      ? `Revize bekliyor${p.done_by_name ? ` · ${p.done_by_name}` : ''}${p.rework_count > 0 ? ` · ${p.rework_count}× revize` : ''}`
-                      : 'Bekliyor'
+                      ? `Revize bekliyor${ownerName ? ` · ${ownerName}` : ''}${p.rework_count > 0 ? ` · ${p.rework_count}× revize` : ''}`
+                      : (ownerName ? `Atandı: ${ownerName}` : 'Bekliyor')
                 }
                 className={cn(
                   'h-7 w-9 rounded-md border text-[11px] font-semibold transition',
-                  p.status === 'pending' && 'border-border bg-muted/30 text-muted-foreground hover:border-primary/40',
-                  p.status === 'done' && 'border-emerald-300 bg-emerald-100 text-emerald-700 hover:border-emerald-400',
-                  p.status === 'rework' && 'border-amber-300 bg-amber-100 text-amber-700 hover:border-amber-400',
+                  // Status still drives the readable-text colour; the
+                  // owner's colour is the border + (for pending) background
+                  // tint. Done chips get the green ring the status already
+                  // had; the owner's border gives the chip its identity.
+                  p.status === 'pending' && !ownerColor && 'border-border bg-muted/30 text-muted-foreground hover:border-primary/40',
+                  p.status === 'pending' && ownerColor && 'text-foreground hover:brightness-95',
+                  p.status === 'done' && !ownerColor && 'border-emerald-300 bg-emerald-100 text-emerald-700 hover:border-emerald-400',
+                  p.status === 'done' && ownerColor && 'bg-emerald-100 text-emerald-800 hover:brightness-95',
+                  p.status === 'rework' && !ownerColor && 'border-amber-300 bg-amber-100 text-amber-700 hover:border-amber-400',
+                  p.status === 'rework' && ownerColor && 'bg-amber-100 text-amber-800 hover:brightness-95',
                   isActive && 'opacity-60',
                   !canEdit && 'cursor-default opacity-60',
                 )}
+                style={chipStyle}
               >
                 {p.i}
               </button>
@@ -1945,7 +2046,13 @@ export default function ProjectDetail() {
                             <div key={s.id} className="space-y-1.5">
                               <PageChipGrid
                                 subtask={s}
-                                canEdit={canEdit && !flagged}
+                                // Flagged subtasks stay editable so the designer
+                                // can mark individual pages for rework — the
+                                // previous `!flagged` made the whole grid read-
+                                // only right when the leader wanted it touched.
+                                canEdit={canEdit}
+                                flagged={flagged}
+                                user={user}
                                 activePage={activePage}
                                 onPageClick={(pageIndex, currentStatus) =>
                                   handlePageClick(s, pageIndex, currentStatus)

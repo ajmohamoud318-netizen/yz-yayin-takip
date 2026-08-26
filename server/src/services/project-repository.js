@@ -273,20 +273,30 @@ export async function getProjectForUpdate(client, id) {
 }
 
 /**
- * One subtask's worth of page rows (migration 055), keyed by subtask_id so a
- * single follow-up query can splice them onto the subtask list. Returned shape
- * is exactly what the SPA's chip grid expects — `{ i, status, done_by,
- * done_by_name, done_at, rework_count }` — already in page-index order.
- * Exported so the page-edit route can refetch a single subtask's pages after
- * a PATCH without re-running the full project subtask list.
+ * One subtask's worth of page rows (migration 055 + 056), keyed by subtask_id
+ * so a single follow-up query can splice them onto the subtask list. Returned
+ * shape is exactly what the SPA's chip grid expects — `{ i, status, done_by,
+ * done_by_name, done_at, rework_count, assigned_to, assigned_to_name,
+ * assigned_at }` — already in page-index order. Exported so the page-edit
+ * route can refetch a single subtask's pages after a PATCH without
+ * re-running the full project subtask list.
+ *
+ * `assigned_to` (migration 056) is resolved at read time via the same LEFT
+ * JOIN pattern `done_by` uses — the column itself stores the user id, and
+ * the name comes from `users.name`. The grid uses assigned_to for the
+ * chip's color (so every designer can see at a glance which pages are
+ * theirs) and done_by for the tooltip's "shipped by" line.
  */
 export async function loadSubtaskPages(client, subtaskIds) {
   if (!subtaskIds.length) return new Map()
   const { rows } = await client.query(
     `SELECT sp.subtask_id, sp.page_index, sp.status, sp.done_by, sp.done_at,
-            sp.rework_count, u.name AS done_by_name
+            sp.rework_count, sp.assigned_to, sp.assigned_at,
+            u.name AS done_by_name,
+            a.name AS assigned_to_name
        FROM subtask_pages sp
        LEFT JOIN users u ON u.id = sp.done_by
+       LEFT JOIN users a ON a.id = sp.assigned_to
       WHERE sp.subtask_id = ANY($1::text[])
       ORDER BY sp.subtask_id, sp.page_index`,
     [subtaskIds],
@@ -301,6 +311,9 @@ export async function loadSubtaskPages(client, subtaskIds) {
       done_by_name: r.done_by_name ?? null,
       done_at: r.done_at instanceof Date ? r.done_at.toISOString() : r.done_at,
       rework_count: r.rework_count,
+      assigned_to: r.assigned_to ?? null,
+      assigned_to_name: r.assigned_to_name ?? null,
+      assigned_at: r.assigned_at instanceof Date ? r.assigned_at.toISOString() : r.assigned_at,
     })
   }
   return bySubtask
@@ -373,19 +386,38 @@ export async function setSubtaskPage(
     `SELECT * FROM subtask_pages WHERE subtask_id = $1 AND page_index = $2 FOR UPDATE`,
     [subtaskId, pageIndex],
   )
-  const page = pageRows[0]
+  let page = pageRows[0]
   if (!page) {
     await client.query(
       `INSERT INTO subtask_pages (subtask_id, page_index, status) VALUES ($1, $2, 'pending')
          ON CONFLICT (subtask_id, page_index) DO NOTHING`,
       [subtaskId, pageIndex],
     )
+    // Re-read so the ownership checks below see the freshly-inserted row.
+    // Without this, `page` stays undefined and the `page && …` guards below
+    // silently let a cross-author click through against a brand-new row.
+    // Currently harmless — the inserted row is always `pending`, so the
+    // `status === 'done'` ownership check can't fire — but a future change
+    // to the default status would silently re-introduce the gap.
+    const { rows: reRows } = await client.query(
+      `SELECT * FROM subtask_pages WHERE subtask_id = $1 AND page_index = $2`,
+      [subtaskId, pageIndex],
+    )
+    if (reRows[0]) page = reRows[0]
   }
 
   // Compute the new state in one UPDATE. done_by / done_at are stamped on
   // the done transition and cleared when going back to pending (rework is
   // a separate state — it keeps done_by/done_at so the team leader can see
   // who last shipped the page before it bounced).
+  //
+  // Capture `prevStatus` BEFORE the UPDATE so the route can tell whether
+  // the click actually flipped state. A same-author redundant done click
+  // passes the not_yours gate (the original finisher IS allowed to re-done
+  // their own page), the UPDATE still runs and rewrites done_at, but the
+  // route uses prevStatus to decide whether to write a history row — a
+  // no-op should produce no timeline entry.
+  const prevStatus = page?.status ?? 'pending'
   let reworkBump = 0
   let nextStatus = status
   if (status === 'done') {
@@ -402,10 +434,19 @@ export async function setSubtaskPage(
     }
     nextStatus = 'pending'
   } else if (status === 'rework') {
-    // Rework is only meaningful from a done state — going from pending
-    // straight to rework would imply a page was "redone before it shipped",
-    // which is just a done page with extra steps. We accept it anyway and
-    // bump rework_count once so the row still tracks the leader's signal.
+    // Rework has the same ownership rule as `done`/`pending`: only the
+    // original finisher (or the team leader, via the route's !isLeader
+    // bypass) may flag a done page for rework. Without this check, any
+    // project assignee could rewrite another designer's done page by
+    // bouncing it through `rework → done`, which silently stole the
+    // `done_by` attribution in bug #6's original report.
+    //
+    // A pending page has no finisher yet, so this check is a no-op for
+    // that case — designers can still flag a never-finished page for
+    // rework, which the original code also allowed.
+    if (page && page.status === 'done' && page.done_by && page.done_by !== actorId) {
+      return { error: 'not_yours', page }
+    }
     reworkBump = 1
   } else {
     return { error: 'bad_status' }
@@ -456,7 +497,82 @@ export async function setSubtaskPage(
     [subtaskId, pagesDone, isDone],
   )
 
-  return { updated: updated[0], subtask: subUpdated[0], pagesDone, reworkCount }
+  return { updated: updated[0], subtask: subUpdated[0], pagesDone, reworkCount, prevStatus }
+}
+
+/**
+ * Assign (or un-assign) a single page on an "İç Sayfalar" subtask
+ * (migration 056). The leader-only verb that drives both pre-allocation
+ * ("split a 48-page book between Aylin and Rahşan before work starts")
+ * and mid-flight reassignment ("move pages 5, 8, 12 from Aylin to
+ * Rahşan after the demo bounced").
+ *
+ * Separate route from `setSubtaskPage` because the two operations are
+ * orthogonal — a leader can reassign a page without touching its status,
+ * and a designer can mark a page done without claiming it as their own.
+ * Bundling them into one route would force every call to specify both,
+ * which is wrong for the "just reassign" gesture.
+ *
+ * Returns the updated row + the resolved assignee name (joined live so
+ * the UI doesn't have to re-SELECT).
+ */
+export async function assignSubtaskPage(
+  client,
+  { subtaskId, pageIndex, assignedTo, actorId },
+) {
+  const { rows: subRows } = await client.query(
+    `SELECT id, project_id, kind, total_pages FROM subtasks WHERE id = $1 FOR UPDATE`,
+    [subtaskId],
+  )
+  const sub = subRows[0]
+  if (!sub) return { error: 'not_found' }
+  if (sub.kind !== 'pages') return { error: 'wrong_kind' }
+  const total = Number(sub.total_pages ?? 0)
+  if (!Number.isFinite(pageIndex) || pageIndex < 1 || pageIndex > total) {
+    return { error: 'out_of_range' }
+  }
+  // The page row may not exist yet (the leader is assigning pages before
+  // any designer has touched them). Create a fresh row on the fly — same
+  // re-seed-on-the-fly logic setSubtaskPage uses, just with assignment
+  // instead of status. ON CONFLICT keeps it safe if another transaction
+  // raced us to INSERT.
+  await client.query(
+    `INSERT INTO subtask_pages (subtask_id, page_index, status, assigned_to, assigned_at)
+     VALUES ($1, $2, 'pending', $3, CASE WHEN $3 IS NULL THEN NULL ELSE NOW() END)
+     ON CONFLICT (subtask_id, page_index) DO NOTHING`,
+    [subtaskId, pageIndex, assignedTo ?? null],
+  )
+  // If the row already existed (most common case), the INSERT was a no-op
+  // and we still need to UPDATE assigned_to + assigned_at. NULL means
+  // "un-assign" — clear both columns so the chip grid falls back to the
+  // grey "no owner" treatment.
+  const { rows: updated } = await client.query(
+    `UPDATE subtask_pages
+        SET assigned_to = $3,
+            assigned_at = CASE WHEN $3 IS NULL THEN NULL ELSE NOW() END,
+            updated_at = NOW()
+      WHERE subtask_id = $1 AND page_index = $2
+      RETURNING subtask_id, page_index, status, done_by, done_at, rework_count,
+                assigned_to, assigned_at`,
+    [subtaskId, pageIndex, assignedTo ?? null],
+  )
+  // Resolve the assignee name live so the response carries it without a
+  // second SELECT. Same LEFT JOIN shape as loadSubtaskPages.
+  let assignedToName = null
+  if (updated[0]?.assigned_to) {
+    const { rows: uRows } = await client.query(
+      `SELECT name FROM users WHERE id = $1`,
+      [updated[0].assigned_to],
+    )
+    assignedToName = uRows[0]?.name ?? null
+  }
+  return {
+    page: {
+      ...updated[0],
+      done_by_name: null,
+      assigned_to_name: assignedToName,
+    },
+  }
 }
 
 export async function listProjectSubtasks(client, projectId) {

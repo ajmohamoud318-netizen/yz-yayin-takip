@@ -36,6 +36,19 @@ export function createHttpSubtaskRepository() {
       )
       return { project: data.project, page: data.page }
     },
+    // migration 056 — assign (or un-assign) a page's owner. Leader-only by
+    // server contract: the route calls requireRole(team_leader) before
+    // touching the row, so a designer calling this gets a 403. Body is
+    // `{ assigned_to: <userId> | null }` — null un-assigns (the leader's
+    // "this page is nobody's until I say otherwise" gesture).
+    async assignSubtaskPage(subtaskId, pageIndex, assignedTo, { signal } = {}) {
+      const { data } = await httpClient.patch(
+        `/subtasks/${subtaskId}/pages/${pageIndex}/assign`,
+        { assigned_to: assignedTo },
+        signal ? { signal } : undefined,
+      )
+      return { project: data.project, page: data.page }
+    },
     async reviseSubtask(subtaskId) {
       const { data } = await httpClient.post(`/subtasks/${subtaskId}/revize`)
       return { project: data }

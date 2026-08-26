@@ -5,7 +5,7 @@ import {
   getProject, getProjectForUpdate, patchProject, logHistory,
   listProjectSubtasks, listProjectHistory, loadProjectAssignees,
   seedSubtaskPages, pruneSubtaskPages,
-  setSubtaskPage, loadSubtaskPages,
+  setSubtaskPage, assignSubtaskPage,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
@@ -516,7 +516,12 @@ export async function subtaskRoutes(fastify) {
         // short-circuit we'd log a phantom "Sayfa N tamamlandı" history row for a
         // transition that never actually happened — the page didn't change.
         if (!isLeader) {
-          badRequest('Bu sayfayı yalnızca işaretleyen kişi geri alabilir.')
+          // Bug #6 brought the rework branch into the same ownership gate as
+          // done/pending, so the error message has to use the right verb per
+          // transition — designers reading "geri alabilir" on a rework click
+          // would think they tried to undo when they actually tried to flag.
+          const verb = status === 'rework' ? 'revize edebilir' : 'geri alabilir'
+          badRequest(`Bu sayfayı yalnızca işaretleyen kişi ${verb}.`)
         }
         const currentSubs = await listProjectSubtasks(client, project.id)
         const currentHistory = await listProjectHistory(client, project.id)
@@ -542,6 +547,15 @@ export async function subtaskRoutes(fastify) {
       if (result.error === 'bad_status') {
         badRequest('Geçersiz sayfa durumu.')
       }
+      if (result.error === 'not_found') {
+        // Defensive: setSubtaskPage returns this when its own SELECT finds no
+        // subtask row. The route's pre-check at the top of withTx already
+        // would have notFound'd first, so this branch is unreachable today —
+        // but if anyone ever loosens the pre-check, a missing subtask would
+        // otherwise silently fall through to logHistory and return a phantom
+        // 200 with no actual change (same shape as bug #2 used to produce).
+        notFound('Alt görev bulunamadı.')
+      }
 
       // Same "return the full project shape" contract every other subtask
       // route keeps — the SPA merges it into state without a follow-up GET.
@@ -550,25 +564,131 @@ export async function subtaskRoutes(fastify) {
       const history = await listProjectHistory(client, project.id)
       const assigneesOut = await loadProjectAssignees(client, updProject)
       // Log the page-level event so the project timeline shows "Sayfa 5,
-      // tamamlandı" rather than just a silent subtask counter bump. Skipped
-      // when status didn't actually change (defensive — setSubtaskPage
-      // already refused no-op transitions on the not_yours path).
-      const labelMap = { done: 'tamamlandı', pending: 'tamamlanmadı', rework: 'revize edildi' }
-      await logHistory(
-        client,
-        {
-          project_id: project.id,
-          from_stage: project.stage,
-          to_stage: project.stage,
-          action: 'system',
-          event: status === 'rework' ? 'subtask_progress' : 'subtask_done',
-          note: `${sub.title}, sayfa ${pageIndex} ${labelMap[status]}`,
-        },
-        request.user,
-      )
+      // tamamlandı" rather than just a silent subtask counter bump. Three
+      // things have to line up for a row to be written:
+      //
+      //   1. The status actually changed (`prevStatus !== status`). A
+      //      same-author redundant done click passes the not_yours gate and
+      //      gets through, but it isn't an event — without this check every
+      //      double-click on a done chip produced an identical "tamamlandı"
+      //      row in the timeline.
+      //   2. The right event name for the new status. Pending used to log as
+      //      `subtask_done` (same icon as a fresh completion) — the
+      //      timeline's undo gesture should read as `subtask_undone`, the
+      //      way PATCH /subtasks/:id already distinguishes them.
+      //   3. The Turkish verb agrees with the new status.
+      const prevStatus = result.prevStatus
+      if (prevStatus !== status) {
+        const labelMap = { done: 'tamamlandı', pending: 'tamamlanmadı', rework: 'revize edildi' }
+        const eventName =
+          status === 'done' ? 'subtask_done'
+            : status === 'pending' ? 'subtask_undone'
+              : 'subtask_progress'
+        await logHistory(
+          client,
+          {
+            project_id: project.id,
+            from_stage: project.stage,
+            to_stage: project.stage,
+            action: 'system',
+            event: eventName,
+            note: `${sub.title}, sayfa ${pageIndex} ${labelMap[status]}`,
+          },
+          request.user,
+        )
+      }
       return {
         page: result.updated,
         subtask: result.subtask,
+        project: {
+          ...updProject,
+          assignees: assigneesOut,
+          assigned_name: assigneesOut.map((a) => a.name).join(', ') || updProject.assigned_name || '—',
+          subtasks: subtasksList,
+          history,
+        },
+      }
+    })
+    return result
+  })
+
+  /**
+   * PATCH /api/subtasks/:id/pages/:pageIndex/assign
+   *
+   * Migration 056 — assign or un-assign a single page's owner. The team
+   * leader calls this to pre-allocate pages ("Aylin does 1-24, Rahşan
+   * does 25-48") or to reassign mid-revision ("move 5, 8, 12 from Aylin
+   * to Rahşan because Aylin is stretched"). Body `assigned_to` is the
+   * designer id; null means "un-assign".
+   *
+   * Leader-only by design — only the team_leader role can name a page's
+   * owner. Designers can't reassign someone else's pages away because
+   * the chip grid already lets them claim work via done_by, and the two
+   * signals (assigned_to vs done_by) intentionally diverge: a designer
+   * who finishes a page reassigned to someone else gets done_by credit
+   * for the audit trail without claiming the planned owner slot.
+   *
+   * Returns the same full project shape as setSubtaskPage so the SPA's
+   * `setProject` can drop it straight into state.
+   */
+  fastify.patch('/subtasks/:id/pages/:pageIndex/assign', { schema: schemas.subtasksPageAssign }, async (request) => {
+    await attachUser(request)
+    // The chip grid has a leader-only assign UI, but the schema's
+    // assigned_to can also be null (un-assign), so role-gate here
+    // rather than relying on the schema to refuse designers.
+    requireRole(request, 'team_leader')
+    const subtaskId = request.params.id
+    const pageIndex = Number(request.params.pageIndex)
+    const { assigned_to } = request.body
+
+    const result = await withTx(async (client) => {
+      const { rows: subRows } = await client.query(
+        'SELECT id, project_id, title, kind, total_pages FROM subtasks WHERE id = $1 FOR UPDATE',
+        [subtaskId],
+      )
+      const sub = subRows[0]
+      if (!sub) notFound('Alt görev bulunamadı.')
+      if (sub.kind !== 'pages') badRequest('Bu alt görev "İç Sayfalar" türünde değil.')
+      const project = await getProjectForUpdate(client, sub.project_id)
+      if (!project) notFound('Proje bulunamadı.')
+      const result = await assignSubtaskPage(client, {
+        subtaskId,
+        pageIndex,
+        assignedTo: assigned_to,
+        actorId: request.user.id,
+      })
+      if (result.error === 'not_found') notFound('Alt görev bulunamadı.')
+      if (result.error === 'wrong_kind') badRequest('Bu alt görev "İç Sayfalar" türünde değil.')
+      if (result.error === 'out_of_range') {
+        badRequest(`Sayfa numarası 1 ile ${sub.total_pages} arasında olmalı.`)
+      }
+      // Same full-project-shape contract every other subtask route uses.
+      const updProject = await patchProject(client, project.id, {})
+      const subtasksList = await listProjectSubtasks(client, project.id)
+      const history = await listProjectHistory(client, project.id)
+      const assigneesOut = await loadProjectAssignees(client, updProject)
+      // Log the assignment so the project timeline shows "Sayfa 5,
+      // Aylin'e atandı" rather than just a silent column flip. Skipped
+      // when the assignment didn't actually change (un-assigning a
+      // already-unassigned page, or reassigning to the same designer).
+      const prevAssignee = result.page?.assigned_to ?? null
+      if (prevAssignee !== assigned_to) {
+        const verb = assigned_to ? `${result.page.assigned_to_name ?? '?'} tarafından atandı` : 'atama kaldırıldı'
+        await logHistory(
+          client,
+          {
+            project_id: project.id,
+            from_stage: project.stage,
+            to_stage: project.stage,
+            action: 'system',
+            event: 'subtask_progress',
+            note: `${sub.title}, sayfa ${pageIndex} ${verb}`,
+          },
+          request.user,
+        )
+      }
+      return {
+        page: result.page,
         project: {
           ...updProject,
           assignees: assigneesOut,

@@ -780,6 +780,24 @@ const subtasksPagePatch = {
   },
 }
 
+// migration 056 — assign (or un-assign) a single page's owner. The team
+// leader calls this to pre-allocate pages between designers ("Aylin does
+// 1-24, Rahşan does 25-48") or to reassign during a revision ("move 5, 8,
+// 12 to Rahşan because Aylin is stretched"). Body `assigned_to` is the
+// designer id, or null to un-assign. The route checks that the actor is
+// a team_leader before touching the row.
+const subtasksPageAssign = {
+  params: subtasksPagePatch.params,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['assigned_to'],
+    properties: {
+      assigned_to: { type: ['string', 'null'], minLength: 1, maxLength: 64 },
+    },
+  },
+}
+
 // A sipariş's own per-order copy of the checklist (order_subtasks) — same
 // fields as subtasksPatch, scoped by orderId+id instead of just id. See
 // server/db/migrations/039__order_subtasks.sql.
@@ -1127,6 +1145,7 @@ export const schemas = {
   subtasksUpdates,
   subtasksRevize,
   subtasksPagePatch,
+  subtasksPageAssign,
   projectsSubtasksPut,
   demosCreate,
   productInfoUpsert,

@@ -151,6 +151,12 @@ export function createApi() {
       subtaskRepo.setSubtaskStickers(subtaskId, stickersDone),
     setSubtaskPage: (subtaskId, pageIndex, status) =>
       subtaskRepo.setSubtaskPage(subtaskId, pageIndex, status),
+    // migration 056 — leader-side gesture for splitting pages between
+    // designers (pre-allocation) or moving a page to a different designer
+    // mid-revision. The chip grid's "atama" affordance is the caller;
+    // passing null un-assigns.
+    assignSubtaskPage: (subtaskId, pageIndex, assignedTo) =>
+      subtaskRepo.assignSubtaskPage(subtaskId, pageIndex, assignedTo),
     reviseSubtask: (subtaskId) => subtaskRepo.reviseSubtask(subtaskId),
     addSubtaskUpdate: (subtaskId, payload) => subtaskRepo.addSubtaskUpdate(subtaskId, payload),
     updateSubtask: (subtaskId, patch) => subtaskRepo.updateSubtask(subtaskId, patch),
