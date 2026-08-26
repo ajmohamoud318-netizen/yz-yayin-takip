@@ -1,0 +1,5 @@
+- Session persistence uses a single `AUTH_KEY` constant (`yz_auth_v1`) storing `{ token, user, expires_at }` JSON in `localStorage`, with all reads/wraps guarded by try/catch to tolerate storage errors.
+- Network failures other than 401/403 are treated as non-authoritative: the cached user is preserved and `sessionUnverified` is set so the next app resume triggers a retry instead of logging the user out.
+- Async operations expose a `loading` flag via the context and wrap API calls in try/finally blocks that clear loading state, keeping UI feedback consistent across login, loginAsUser, and logout.
+- UI-side preferences (remember-me checkbox and remembered email) are stored in dedicated, small localStorage keys (`yz_remember_pref`, `yz_remember_email`) separate from the auth session blob.
+- Pages use `react-router-dom`'s `Link` and `useNavigate` for navigation and rely on `useAuth().isAuthenticated` to guard routes rather than re-implementing auth checks locally.

@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: client/product_catalog
+title: Product Catalog & Ürün Bilgileri Pages
+scope:
+    - client/src/pages/Urunler.jsx
+    - client/src/pages/UrunBilgileri.jsx
+    - client/src/data/productCatalog.js
+source_files: []
+depends_on: []
+related_to: []

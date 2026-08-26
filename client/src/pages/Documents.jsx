@@ -23,7 +23,6 @@ import { printSpecSheets, buildFormSheet, buildFormKunye } from '@/lib/specPrint
 import {
   FormSheet,
   FormSheetBlock,
-  FormSheetBlockTitle,
   FormSheetHead,
   SheetRow,
 } from '@/components/FormSheet'
@@ -145,12 +144,10 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
                 icon={FileText}
               />
               {/* Job name, spec, then the künye stamps as the foot — the same
-                  order printDoc() puts on paper. */}
-              <FormSheetBlock className="bg-muted/10">
+                  order printDoc() puts on paper, and on one block so the sheet
+                  reads as a single document rather than stacked sections. */}
+              <FormSheetBlock className="bg-muted/10 border-b-0">
                 <SheetRow label="İŞİN ADI" value={c.component || project.title} readOnly />
-              </FormSheetBlock>
-              <FormSheetBlockTitle>Baskı Özellikleri</FormSheetBlockTitle>
-              <FormSheetBlock>
                 {(c.rows ?? []).length === 0 ? (
                   <p className="py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
                 ) : (
@@ -158,8 +155,6 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
                     <SheetRow key={r.id ?? i} label={r.label} value={r.value} readOnly />
                   ))
                 )}
-              </FormSheetBlock>
-              <FormSheetBlock className="bg-muted/10 border-b-0">
                 {buildFormKunye({ form, kind }).map(([label, val], i) => (
                   <SheetRow key={i} label={label} value={val} readOnly />
                 ))}

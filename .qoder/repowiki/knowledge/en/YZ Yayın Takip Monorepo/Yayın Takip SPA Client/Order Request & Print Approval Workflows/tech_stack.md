@@ -1,0 +1,1 @@
+React + React Router for pages; lucide-react icons; sonner for toast notifications; shadcn/ui primitives (`Card`, `Badge`, `Skeleton`, `Button`); HTTP via a shared `infrastructure/http/client.js` wrapper.

@@ -1,0 +1,1 @@
+Fastify route handlers for demo/ozalit form submissions and printer-to-sales handover workflow, plus an idempotent CLI seed script that bootstraps local development data.

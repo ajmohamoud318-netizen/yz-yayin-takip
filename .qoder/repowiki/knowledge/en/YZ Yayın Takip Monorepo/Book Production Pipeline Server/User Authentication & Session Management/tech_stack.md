@@ -1,0 +1,1 @@
+Fastify routes + middleware; PostgreSQL via pg pool; bcryptjs for password hashing; nanoid for opaque tokens; httpOnly session cookies configured through `config.session`; JSON schema validation via `../schemas/index.js`.

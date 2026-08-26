@@ -1,0 +1,1 @@
+React Context + Hooks; Web Push API (`PushManager`, Service Worker `postMessage`); IndexedDB handoff between service worker and SPA via `@/lib/push-target.js`; VAPID keys delivered as base64url strings and decoded to `Uint8Array` manually because browsers lack a built-in decoder.

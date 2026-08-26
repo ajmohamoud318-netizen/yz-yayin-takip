@@ -1,0 +1,1 @@
+Fastify routes with JSON schema validation via `../schemas/index.js`; PostgreSQL via a connection pool (`../db/pool.js`) using parameterized queries and explicit `SELECT … FOR UPDATE` locking; nanoid for handover ID generation; ESM dynamic `import()` for lazy loading seed fixtures.

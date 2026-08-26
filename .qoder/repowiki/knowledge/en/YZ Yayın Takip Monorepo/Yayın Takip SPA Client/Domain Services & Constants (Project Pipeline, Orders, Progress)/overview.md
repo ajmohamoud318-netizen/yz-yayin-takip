@@ -1,0 +1,1 @@
+Client-side domain layer that mirrors server business rules for the project pipeline, sipariş order workflow, subtask progress, and status styling so UIs can render and guard actions without calling the server.

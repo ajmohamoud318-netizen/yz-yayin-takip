@@ -1,0 +1,6 @@
+- Every mutating route wraps its write path in `withTx(async (client) => { ... })` so reads and writes share the same transactional client and avoid check-then-act races.
+- Concurrent-write safety is achieved by acquiring row-level locks with `SELECT … FOR UPDATE` on the project or order row inside the transaction before any state change.
+- Role-based access control is enforced at the top of each handler via `request.user.role !== '<role>'` followed by `forbidden(...)` from `../domain/errors`.
+- Business-rule violations surface as typed error helpers (`badRequest`, `notFound`, `forbidden`) from `../domain/errors` rather than raw HTTP status codes.
+- State transitions are recorded in the project timeline by calling `logHistory(client, { project_id, from_stage, to_stage, action: 'system', event, note }, request.user)` instead of ad-hoc inserts.
+- Seed scripts use `ON CONFLICT (id) DO NOTHING` on every INSERT so they can be re-run safely without failing on duplicate keys.

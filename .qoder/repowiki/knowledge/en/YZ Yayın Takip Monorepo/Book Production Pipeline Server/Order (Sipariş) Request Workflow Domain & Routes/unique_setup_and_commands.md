@@ -1,0 +1,1 @@
+No special build or setup steps beyond standard server startup; tests run via Vitest using the per-file `.test.js` files co-located under `server/src/domain/` (e.g. `order-transitions.test.js`, `pipeline.test.js`, `progress.test.js`).

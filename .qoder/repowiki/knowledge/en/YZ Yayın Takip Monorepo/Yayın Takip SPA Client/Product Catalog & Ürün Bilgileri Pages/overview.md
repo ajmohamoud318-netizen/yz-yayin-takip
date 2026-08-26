@@ -1,0 +1,1 @@
+React pages that display and edit the product catalog (Ürünler) and per-project spec sheets (Ürün Bilgileri), backed by a shared in-memory + localStorage cache of product components.

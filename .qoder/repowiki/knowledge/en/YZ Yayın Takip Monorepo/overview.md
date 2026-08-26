@@ -1,0 +1,1 @@
+npm workspaces monorepo that builds the Vite SPA client and Fastify API server into a single deployable stack with Docker Compose for development and a zero-dependency Node runtime for production.

@@ -1,0 +1,1 @@
+Fastify 5 with `@fastify/helmet`, `@fastify/cookie`, `@fastify/multipart`; PostgreSQL via `pg` with a custom connection pool; optional Redis-backed rate limiting via `ioredis` (lazy-loaded); web push notifications via `web-push` (VAPID); Node 20+ ESM package (`"type": "module"`).

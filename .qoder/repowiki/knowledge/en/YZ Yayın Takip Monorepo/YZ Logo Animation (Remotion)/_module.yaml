@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: yz_logo_animation
+title: YZ Logo Animation (Remotion)
+scope:
+    - yz-logo-animation/
+source_files: []
+depends_on: []
+related_to: []

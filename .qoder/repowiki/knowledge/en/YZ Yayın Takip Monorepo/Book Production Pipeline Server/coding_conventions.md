@@ -1,0 +1,5 @@
+- Each feature area exposes a dedicated route file under `server/src/routes/` paired with one or more service files under `server/src/services/`.
+- Business-state mutations go through pure transition functions in `src/domain/` rather than directly mutating rows from route handlers.
+- All persistence uses the shared PostgreSQL pool from `src/db/pool.js`, including transaction helpers for multi-step workflows.
+- Request payloads are validated against schemas declared in `src/schemas/index.js` before reaching route handlers.
+- Database evolution is tracked exclusively as numbered SQL migration files under `db/migrations/`.

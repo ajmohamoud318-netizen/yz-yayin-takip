@@ -1,0 +1,1 @@
+React/Vite single-page application that wires domain use-cases, HTTP repositories, and React pages into a shared API facade consumed by hooks and UI components.

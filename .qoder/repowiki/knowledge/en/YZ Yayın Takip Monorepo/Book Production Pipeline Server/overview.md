@@ -1,0 +1,1 @@
+Fastify-based backend that wires domain-specific route/service layers (orders, projects, demos/handovers, users/auth, notifications/push) over a shared PostgreSQL pool, migrations, and upload storage.

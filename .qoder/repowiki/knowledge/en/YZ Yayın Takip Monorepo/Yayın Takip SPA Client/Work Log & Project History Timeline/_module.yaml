@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: client/work_log_history
+title: Work Log & Project History Timeline
+scope:
+    - client/src/hooks/useWorkLog.js
+    - client/src/lib/work-log.js
+    - client/src/lib/project-history.js
+source_files: []
+depends_on: []
+related_to: []

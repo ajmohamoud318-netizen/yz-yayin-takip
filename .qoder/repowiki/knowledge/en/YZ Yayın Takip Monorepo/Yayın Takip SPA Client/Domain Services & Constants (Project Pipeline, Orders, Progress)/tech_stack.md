@@ -1,0 +1,1 @@
+Plain ES modules with JSDoc type annotations; no runtime framework — relies on `Set`/`Map` for membership checks and Tailwind utility class strings for status colors.

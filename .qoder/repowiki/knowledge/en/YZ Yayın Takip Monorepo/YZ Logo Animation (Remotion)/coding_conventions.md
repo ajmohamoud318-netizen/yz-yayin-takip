@@ -1,0 +1,4 @@
+- Each animation sub-component receives `frame` (and often `fps`) as props and derives its visual state via `interpolate(frame, [start, end], [from, to])` keyed by shared timing constants defined at the top of the file.
+- Staggered per-letter or per-element entrances are expressed by adding an index-based delay offset (e.g. `delay={BASE + i * STEP}`) to the same base easing function rather than duplicating logic.
+- Brand colors, easing curves, and frame timings are extracted into module-level constants (`C`, `T`, `BOUNCE`/`SMOOTH`/`GENTLE`, `EXPO_OUT`/`SOFT_IN`) instead of being inlined in JSX.
+- External media is loaded through Remotion's `staticFile('...')` helper referencing files under `public/`, keeping asset paths relative to the package root.

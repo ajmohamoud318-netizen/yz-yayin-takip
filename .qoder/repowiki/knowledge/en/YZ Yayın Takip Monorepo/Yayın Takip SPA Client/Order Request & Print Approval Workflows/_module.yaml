@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: client/orders_handovers
+title: Order Request & Print Approval Workflows
+scope:
+    - client/src/application/use-cases/orders/
+    - client/src/pages/SiparisListesi.jsx
+    - client/src/pages/SiparisOnay.jsx
+source_files: []
+depends_on: []
+related_to: []

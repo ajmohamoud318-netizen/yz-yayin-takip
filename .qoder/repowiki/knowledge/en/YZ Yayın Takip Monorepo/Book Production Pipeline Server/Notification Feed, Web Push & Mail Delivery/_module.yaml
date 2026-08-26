@@ -1,0 +1,14 @@
+schema_version: 1
+module_path: server/notifications_push_domain
+title: Notification Feed, Web Push & Mail Delivery
+scope:
+    - server/src/routes/notifications.js
+    - server/src/routes/push.js
+    - server/src/services/notifications.js
+    - server/src/services/notification-maintenance.js
+    - server/src/services/notification-delivery.test.js
+    - server/src/services/push.js
+    - server/src/services/mail.js
+source_files: []
+depends_on: []
+related_to: []

@@ -1,0 +1,6 @@
+- Reads resolve through a three-tier fallback chain — server cache first, then localStorage overrides, then bundled `PRODUCT_INFO` seed — ensuring synchronous access for `useMemo` bodies.
+- Writes always update the in-memory cache and localStorage mirror immediately and call `api.saveProductInfo` asynchronously, swallowing network errors so the UI stays responsive offline.
+- Cross-tab consistency is achieved by writing to `localStorage` under a fixed key and listening for the `storage` event to trigger a re-render tick rather than polling.
+- Role-based gating is derived from `canEditProductInfo(user)` and `canRequestOrder(project)` helpers from `@/api` instead of ad-hoc role checks scattered across handlers.
+- Orphan kayıt seeds (specs with no real project row) are identified by the `__seed` flag and treated differently from real projects in both listing and action availability.
+- Component field names use Turkish keys like `İŞİN ADI` and are matched case-insensitively via `toLocaleUpperCase('tr-TR')` to locate title rows consistently.

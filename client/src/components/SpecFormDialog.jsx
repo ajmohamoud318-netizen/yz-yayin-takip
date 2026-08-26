@@ -683,7 +683,14 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         loadSaved(variant, scopeId) ??
         (await fetchServerSnapshot(api, variant, project.id, null, orderId))
       if (cancelled) return
-      const data = current ?? stripStamps(carried)
+      // Plain viewer (mode='view' && !notifyOnSave) is a personal draft —
+      // localStorage is the source of truth so the user's edits show on
+      // reopen and the printer is unaffected. Compose / notify / approve
+      // still let the server's attempt-scoped snapshot win, because that IS
+      // the shared state those flows mutate.
+      const data = (mode === 'view' && !notifyOnSave)
+        ? (stripStamps(carried) ?? current)
+        : (current ?? stripStamps(carried))
       const fresh = emptyForm(variant, project, user)
       if (readOnly || variant.restoreSavedOnEdit || rejectContext || viewingSentSheet) {
         // Read-only viewers (printer, leader) — and the plain viewer of an
@@ -1330,10 +1337,22 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         // so the page that opened this dialog re-renders on it.
         if (orderScoped) onDone?.(updated)
         toast.success(`${variant.title} güncellendi, matbaa bilgilendirildi.`)
-      } else {
+      } else if (mode === 'view') {
+        // Plain viewer ("Demo Formu" / "Ozalit Formu" / "Baskı Onay Formu"
+        // buttons) edits are personal — localStorage only. Nothing is written
+        // to the snapshot server, so the printer keeps working from the
+        // originally sent sheet. To push a change to the printer, use the
+        // explicit "Gönderilen Demoyu Düzenleyin" / "Gönderilen Ozaliti
+        // Düzenleyin" button (notifyOnSave), which logs a history row and
+        // notifies the matbaa. Ürün Bilgileri catalog edits are skipped here
+        // for the same reason — they're shared data the printer reads from,
+        // and a personal draft shouldn't leak into them.
         saveForm(variant, scopeId, form, customRows, selectedComponents)
-        // Silent: this path has no dedicated history call, and /demos would
-        // otherwise log a generic "Demo formu gönderildi" row for a plain save.
+        toast.success('Taslak kaydedildi.')
+      } else {
+        // Compose / approve / etc.: existing silent save path (draft on
+        // server, no history row, no push).
+        saveForm(variant, scopeId, form, customRows, selectedComponents)
         await persistServerSnapshot(writeAttempt, form)
         await persistCatalogEdits()
         toast.success(variant.saveToast)
@@ -1363,13 +1382,13 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // block names its own.
   const showsComponentCards = hasCatalog && selectedComponents.length > 0
 
-  /* The fixed rows — the ones the form always carries, whoever filled it in.
-     None of them is part of the spec: they are stamps the form writes about
-     itself (who asked, when, who delivered, who approved) plus the fields the
-     künye always names, so they close the sheet and never open it. Held in a
-     variable only to keep that foot out of the middle of the layout below. */
-  const fixedKunye = (
-    <FormSheetBlock className="bg-muted/10">
+  /* The fixed rows — the ones the form always carries, whoever filled it in:
+     stamps the form writes about itself (who asked, when, who delivered, who
+     approved) plus the fields the künye always names. Rows, not a block: they
+     read as part of the same continuous sheet as everything above them, and
+     the caller decides where in it they land. */
+  const fixedKunyeRows = (
+    <>
       {/* ADET — dedicated field on the Baskı Onay Formu, auto-filled from a
           live sipariş order or the borrowed ozalit sheet (see the load
           effect); the leader can still correct it. */}
@@ -1407,7 +1426,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       )}
       {form.matbaaYetkilisi && <SheetRow label="MATBAA YETKİLİSİ" value={form.matbaaYetkilisi} readOnly />}
       {form.onaylayanKisi && <SheetRow label="ONAYLAYAN KİŞİ" value={form.onaylayanKisi} readOnly />}
-    </FormSheetBlock>
+    </>
   )
 
   return (
@@ -1529,39 +1548,29 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             icon={FileText}
           />
 
-          {/* İŞİN ADI, the spec, then the fixed rows — the same three parts,
-              in the same order, as the printed sheet and the Dökümanlar
-              preview. Split into real blocks rather than one long run: the
-              only thing separating the added rows from the fixed ones used to
-              be "+ Satır Ekleyin", which is hidden on paper and absent on a
-              read-only sheet, so exactly where the distinction matters most
-              the two groups ran together as one undifferentiated list. */}
+          {/* One continuous sheet: the job name, the rows the user added, then
+              the fixed rows as its foot — all on the same block so every rule
+              between them is the same hairline and the form reads as one
+              document, not as sections stacked on top of each other. */}
           {!showsComponentCards && (
-            <>
-              <FormSheetBlock className="bg-muted/10">
-                <SheetRow label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly={systemRowReadOnly} />
-              </FormSheetBlock>
-              <FormSheetBlockTitle>Baskı Özellikleri</FormSheetBlockTitle>
-              <FormSheetBlock>
-                {customRows.length === 0 && readOnly && (
-                  <p className="py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
-                )}
-                {customRows.map((r, i) => (
-                  <SheetSpecRow
-                    key={r.id}
-                    label={r.label}
-                    value={r.value}
-                    onLabelChange={(v) => updateCustomRow(r.id, 'label', v)}
-                    onValueChange={(v) => updateCustomRow(r.id, 'value', v)}
-                    onRemove={() => removeCustomRow(r.id)}
-                    onMoveUp={customRows.length > 1 && i > 0 ? () => moveCustomRow(r.id, -1) : null}
-                    onMoveDown={customRows.length > 1 && i < customRows.length - 1 ? () => moveCustomRow(r.id, 1) : null}
-                    readOnly={readOnly}
-                  />
-                ))}
-                {!readOnly && <SheetAddRow onClick={addCustomRow} />}
-              </FormSheetBlock>
-            </>
+            <FormSheetBlock className="bg-muted/10">
+              <SheetRow label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={handleChange} readOnly={systemRowReadOnly} />
+              {customRows.map((r, i) => (
+                <SheetSpecRow
+                  key={r.id}
+                  label={r.label}
+                  value={r.value}
+                  onLabelChange={(v) => updateCustomRow(r.id, 'label', v)}
+                  onValueChange={(v) => updateCustomRow(r.id, 'value', v)}
+                  onRemove={() => removeCustomRow(r.id)}
+                  onMoveUp={customRows.length > 1 && i > 0 ? () => moveCustomRow(r.id, -1) : null}
+                  onMoveDown={customRows.length > 1 && i < customRows.length - 1 ? () => moveCustomRow(r.id, 1) : null}
+                  readOnly={readOnly}
+                />
+              ))}
+              {!readOnly && <SheetAddRow onClick={addCustomRow} />}
+              {fixedKunyeRows}
+            </FormSheetBlock>
           )}
 
           {/* Per-component picker — only when the project has product info.
@@ -1654,10 +1663,14 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             </p>
           )}
 
-          {/* The form's foot — the same spot on every sheet, whether the spec
-              above it came from parça blocks or from the added rows. A row the
-              form fills in itself never sits above the spec it belongs to. */}
-          {fixedKunye}
+          {/* The form's foot. Without parça blocks these rows already close
+              the single block above — putting them in a block of their own
+              there would cut the sheet in two, which is the one thing this
+              form must not do. With parça blocks there is no such block to
+              close, so they get one here. */}
+          {showsComponentCards && (
+            <FormSheetBlock className="bg-muted/10">{fixedKunyeRows}</FormSheetBlock>
+          )}
         </FormSheet>
 
         {/* Ozalit receipt gate — the approve below stays disabled until the

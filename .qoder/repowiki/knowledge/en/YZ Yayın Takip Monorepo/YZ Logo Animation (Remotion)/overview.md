@@ -1,0 +1,1 @@
+Remotion-based video composition that renders a 4-second, 1920×1080 animated reveal of the Yükselen Zeka brand logo with SVG letter paths, shine sweep, and tagline.

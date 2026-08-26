@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: server/orders_domain
+title: Order (Sipariş) Request Workflow Domain & Routes
+scope:
+    - server/src/routes/orders.js
+    - server/src/services/
+    - server/src/domain/
+source_files: []
+depends_on: []
+related_to: []

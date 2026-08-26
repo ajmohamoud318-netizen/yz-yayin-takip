@@ -1,0 +1,1 @@
+Bootstraps the Fastify HTTP server, centralizes runtime configuration, exposes a shared PostgreSQL connection pool with transaction helpers, defines JSON schemas for all routes, and provides pluggable in-memory/Redis rate limiting plus Docker packaging.

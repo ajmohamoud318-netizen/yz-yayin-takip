@@ -1,0 +1,1 @@
+Implements the print-order request lifecycle — from sales creating an order through ozalit proof rounds, multi-party matbaa approval, and final print-spec sign-off — as Fastify routes backed by pure domain transition functions.

@@ -1,0 +1,1 @@
+Default deployment relies on same-origin proxying (`/api/*` → Fastify) via Vite dev proxy or `serve.cjs` reverse proxy; setting `VITE_API_BASE_URL` switches to cross-origin mode which requires the backend to be configured with `SESSION_COOKIE_SAMESITE=none` + `SESSION_COOKIE_SECURE=true` for cookies to flow.

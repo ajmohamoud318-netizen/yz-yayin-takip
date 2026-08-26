@@ -1,0 +1,6 @@
+- Business-rule functions are exported as pure, stateless functions that take `(user, project|order)` objects and return booleans or throw typed errors with a `.status = 400` property.
+- Each client-side rule is explicitly mirrored against the server implementation via inline comments citing the matching server file or migration number, keeping both sides in sync.
+- Constants are organized per domain concept (stages, orders, passes, labels, status-styles) and exposed as frozen objects or `Set`s rather than ad-hoc literals scattered across services.
+- Capability helpers follow a uniform naming scheme: `canX` / `isX` predicates for user/project eligibility and `assertX` guards that throw descriptive Turkish error messages with an HTTP status code.
+- Turkish user-facing labels are centralized in label maps (`STAGE_LABELS`, `ORDER_STEP_LABELS`, `PASS_KIND_LABEL`, `ROLE_LABELS`) instead of being hardcoded in components.
+- Tests are colocated next to their source files with the same filename plus a `.test.js` suffix.

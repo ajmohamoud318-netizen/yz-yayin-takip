@@ -1,0 +1,1 @@
+`docker-entrypoint.sh` boots the server and applies pending migrations before starting; seed scripts under `db/seed/` populate demo users and initial data for local development.

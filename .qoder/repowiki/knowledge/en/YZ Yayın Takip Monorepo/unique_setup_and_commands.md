@@ -1,0 +1,1 @@
+`npm run dev` starts the client workspace; `npm run server` starts the server workspace; `docker compose up --build` brings up postgres + server + client with auto-migration and seeding when `SEED_ON_BOOT=1`; `npm run build` produces `client/dist` consumed by the root `Dockerfile`.

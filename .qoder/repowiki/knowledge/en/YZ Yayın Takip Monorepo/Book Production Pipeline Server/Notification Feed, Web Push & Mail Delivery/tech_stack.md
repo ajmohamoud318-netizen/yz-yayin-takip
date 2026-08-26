@@ -1,0 +1,1 @@
+Fastify routes + raw PostgreSQL via `db/pool.js` (no ORM); `web-push` for Web Push with VAPID; `nodemailer` for SMTP with a JSON transport dev fallback; Postgres advisory locks for distributed job coordination; cursor-based pagination over `(created_at, id)` tuples.

@@ -1,0 +1,1 @@
+Before rendering, `hydrateProductInfo(realProjectIds)` must be called so the in-memory cache is primed from the server and any legacy localStorage overrides for real projects are backfilled; without it reads fall back to the browser-only seed and may surface stale or orphan entries.

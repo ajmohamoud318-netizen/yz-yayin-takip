@@ -1,0 +1,6 @@
+- Use-case factories return a curried function (`makeXxx() => (id, payload) => httpClient.patch(...)`) so each call site receives a bound handler and tests can inject mocks.
+- Request bodies are built by starting with a minimal object and conditionally attaching optional fields (`if (field !== undefined) body.field = field`) to respect the server's `additionalProperties:false` schema.
+- Server-enforced state-machine transitions are documented in JSDoc comments pointing to `server/src/domain/transitions.js`, keeping client code as a dumb HTTP adapter.
+- UI filters derive membership in a queue from shared domain helpers (`isOrderAssignedToDesigner`, `canApproveMatbaaOnayNow`, `orderOzalitFormMode`) instead of reimplementing workflow logic locally.
+- Local state updates after async mutations merge the returned row into existing items via `.map(r => r.id === updated.id ? {...r, ...updated} : r)` and then re-apply the same filter predicate to keep queues consistent.
+- Status display is centralized via lookup maps (`STATUS_BADGE`, `ORDER_STEP_LABELS`, `STEP_ORDER`) rather than inline strings, keeping badge colors and labels consistent across pages.

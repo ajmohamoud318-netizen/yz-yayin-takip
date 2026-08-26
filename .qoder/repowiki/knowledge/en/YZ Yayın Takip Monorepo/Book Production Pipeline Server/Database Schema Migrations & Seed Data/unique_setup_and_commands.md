@@ -1,0 +1,1 @@
+Migrations must be run against a PostgreSQL 13+ instance where the `postgres` role lacks superuser privileges (so `CREATE EXTENSION pgcrypto` is intentionally avoided); the seed data requires Node.js with bcryptjs to pre-hash the demo password `123456` before insertion.

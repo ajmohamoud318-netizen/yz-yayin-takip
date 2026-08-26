@@ -1145,18 +1145,23 @@ export default function ProjectDetail() {
 
               {!isDeleted && (
               <div className="flex flex-wrap items-center gap-2">
-                {/* Demo formu görüntüle — demo gönderildikten sonra. Also open to
-                    the assigned designer, not just the leader: demo's own
-                    isReadOnly already permits designer edits in mode='view'
-                    (migration 048 closed this button-visibility gap). */}
+                {/* Demo formu taslak olarak düzenle — kayıt yalnızca sizin
+                    tarayıcınızda saklanır, matbaaya gönderilmez. To push an edit
+                    to the printer, use "Gönderilen Demoyu Düzenleyin"
+                    (notifyOnSave) below, which logs a history row and notifies
+                    the matbaa. Also open to the assigned designer, not just
+                    the leader: demo's own isReadOnly already permits designer
+                    edits in mode='view' (migration 048 closed this button-
+                    visibility gap). */}
                 {(isLeader || (user?.role === 'designer' && isAssigned)) && ['demo_teslim', 'cin_demo_teslim', 'demo_onay', 'cin_demo_onay', 'ozalit_teslim', 'ozalit_onay', 'baskida', 'gumruk', 'satista'].includes(project.stage) && (
                   <Button
                     size="sm"
                     variant="outline"
+                    title="Yerel taslak — kayıt yalnızca sizin tarayıcınızda saklanır, matbaaya gönderilmez."
                     onClick={() => { setDemoFormMode('view'); setDemoFormAttempt(null); setDemoFormNotify(false); setDemoFormOpen(true) }}
                   >
                     <FileText className="h-4 w-4" />
-                    Demo Formu
+                    Demo Formu (Taslak)
                   </Button>
                 )}
                 {/* Ozalit formu görüntüle — now also while it's in flight with the
@@ -1285,13 +1290,13 @@ export default function ProjectDetail() {
                 {/* Once started, a cancel/edit is a request the matbaa must
                     accept or decline. */}
                 {canRequestDemoChange(user, project) && (
-                  <Button size="sm" variant="outline" onClick={() => setChangeRequestOpen('demo')}>
+                  <Button size="sm" variant="outline" className="border-amber-400 bg-amber-300 text-amber-950 hover:bg-amber-400 hover:text-amber-950" onClick={() => setChangeRequestOpen('demo')}>
                     <AlertTriangle className="h-4 w-4" />
                     Değişiklik İste
                   </Button>
                 )}
                 {canRequestOzalitChange(user, project) && (
-                  <Button size="sm" variant="outline" onClick={() => setChangeRequestOpen('ozalit')}>
+                  <Button size="sm" variant="outline" className="border-amber-400 bg-amber-300 text-amber-950 hover:bg-amber-400 hover:text-amber-950" onClick={() => setChangeRequestOpen('ozalit')}>
                     <AlertTriangle className="h-4 w-4" />
                     Değişiklik İste
                   </Button>

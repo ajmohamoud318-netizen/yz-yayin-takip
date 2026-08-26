@@ -1,0 +1,1 @@
+None — the module is consumed by importing `AuthProvider` and `useAuth` from `../hooks/useAuth.js` and rendering it near the app root; no build or test scripts are scoped here.

@@ -1,0 +1,6 @@
+- Runtime values are read exclusively through `src/config.js` using `intEnv`/`boolEnv` helpers with explicit defaults — no direct `process.env` reads in route or service code.
+- Every state-changing route declares its input shape as an AJV schema object in `src/schemas/index.js` with `additionalProperties: false` and `required` arrays, so validation fails fast with 400 before the handler runs.
+- Shared field shapes (e.g. `userId`, `projectId`, `password`, `stage`, `rejectTarget`, `subtaskInput`, `linksList`, `productComponents`) are extracted into top-level constants and reused across multiple route schemas instead of being duplicated.
+- Database mutations go through `withTx(fn)` from `db/pool.js`, which wraps BEGIN/COMMIT/ROLLBACK and supports `client.afterCommit(cb)` hooks for side effects that must not run inside the transaction.
+- External dependencies that are not always needed (e.g. `ioredis` for rate limiting, seed runner for boot-time seeding) are loaded via dynamic `import(...)` so they do not affect cold-start when disabled.
+- Containerized deployment runs the process as the unprivileged `node` user via `gosu` in `docker-entrypoint.sh`, with root only used transiently to prepare the avatar upload directory.

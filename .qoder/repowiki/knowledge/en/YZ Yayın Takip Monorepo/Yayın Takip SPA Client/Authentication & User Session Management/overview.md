@@ -1,0 +1,1 @@
+Provides React Context-based authentication with persistent sessions, login/logout flows, and forgot-password UI for the client application.

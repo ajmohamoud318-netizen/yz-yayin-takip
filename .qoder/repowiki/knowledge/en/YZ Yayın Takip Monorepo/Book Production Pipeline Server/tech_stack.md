@@ -1,0 +1,1 @@
+Node.js + Fastify HTTP server, PostgreSQL with SQL migrations, JSON Schema-based request validation, and filesystem-backed uploads (avatars, idea/meeting images).

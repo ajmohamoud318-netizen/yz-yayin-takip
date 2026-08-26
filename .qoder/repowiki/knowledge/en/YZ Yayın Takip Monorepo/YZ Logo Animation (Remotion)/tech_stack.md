@@ -1,0 +1,1 @@
+Remotion 4.x (`@remotion/cli`, `remotion`) with React 18; animations use Remotion's `spring` and `interpolate` APIs, CSS `clipPath` inset wipes, and inline SVG path data for per-letter stroke drawing.

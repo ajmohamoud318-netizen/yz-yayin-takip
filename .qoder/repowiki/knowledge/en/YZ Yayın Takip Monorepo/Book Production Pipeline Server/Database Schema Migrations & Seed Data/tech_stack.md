@@ -1,0 +1,1 @@
+Plain PostgreSQL DDL (no migration framework library); bcryptjs used to hash demo passwords; native `gen_random_uuid()` available without `pgcrypto` extension on PostgreSQL 13+.

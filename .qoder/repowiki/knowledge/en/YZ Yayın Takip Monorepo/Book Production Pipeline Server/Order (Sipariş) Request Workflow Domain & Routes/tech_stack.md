@@ -1,0 +1,1 @@
+Node.js ESM modules with Fastify routes, raw PostgreSQL queries via `pg` pool (`db/pool.js`), nanoid for order IDs, and Vitest tests colocated next to each domain file.

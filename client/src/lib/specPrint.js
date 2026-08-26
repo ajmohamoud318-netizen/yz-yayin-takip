@@ -111,8 +111,10 @@ function formSection({ formTitle, title, attemptLabel, isinAdi, pairs, specRows 
 
   // İŞİN ADI, then the spec, then the künye. The spec is what the sheet is FOR,
   // so it sits directly under the job name; the künye rows are stamps — who
-  // asked, when, who delivered and approved — and read as the form's foot. The
-  // on-screen sheet is ordered the same way, so paper and screen agree.
+  // asked, when, who delivered and approved — and read as the form's foot. One
+  // grid, not one per part: every rule between rows is the same weight, so the
+  // sheet is a single form rather than three tables stacked up. The on-screen
+  // sheet is built the same way, so paper and screen agree.
   return `<section class="sheet">
     <div class="form-head">
       <div class="form-title">${esc(formTitle || '')}</div>
@@ -121,10 +123,9 @@ function formSection({ formTitle, title, attemptLabel, isinAdi, pairs, specRows 
     </div>
     <table class="meta">
       <tr><td class="k">İŞİN ADI</td><td class="v" colspan="3">${esc(isinAdi || '')}</td></tr>
+      ${specBody}
+      ${metaRows.join('')}
     </table>
-    <div class="block-title">Baskı Özellikleri</div>
-    <table class="spec">${specBody}</table>
-    <table class="meta">${metaRows.join('')}</table>
     <div class="date-line">Yazdırma tarihi: ${esc(today)}</div>
   </section>`
 }
@@ -151,13 +152,11 @@ export function printSpecSheets(sheets, { docTitle = 'Form' } = {}) {
     .form-title{font-size:15pt;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
     .form-sub{margin-top:3px;font-size:10.5pt;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#222}
     .form-attempt{margin-top:2px;font-size:9pt;font-weight:700;letter-spacing:.06em;color:#555}
-    table.meta,table.spec{border:2px solid #000;border-top:0}
-    table.meta td,table.spec td{border:1px solid #000;padding:6px 8px;font-size:10.5pt;white-space:pre-wrap;vertical-align:top}
-    table.meta td.k,table.spec td.k{width:22%;background:#f1f1f1;font-weight:700;font-size:9pt;text-transform:uppercase;letter-spacing:.03em}
+    table.meta{border:2px solid #000;border-top:0}
+    table.meta td{border:1px solid #000;padding:6px 8px;font-size:10.5pt;white-space:pre-wrap;vertical-align:top}
+    table.meta td.k{width:22%;background:#f1f1f1;font-weight:700;font-size:9pt;text-transform:uppercase;letter-spacing:.03em}
     table.meta td.v{width:28%}
-    table.spec td.k{width:30%}
-    table.spec td.empty{color:#888;text-align:center}
-    .block-title{border:2px solid #000;border-top:0;background:#f1f1f1;padding:5px;text-align:center;font-size:9pt;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+    table.meta td.empty{color:#888;text-align:center}
 
     @media print{@page{size:A4;margin:0}}
   </style></head><body>${body}</body></html>`

@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: server/demos_handovers_domain
+title: Demos, Handovers & Dev Seed Scripts
+scope:
+    - server/src/routes/demos.js
+    - server/src/routes/handovers.js
+    - server/src/services/seed.js
+source_files: []
+depends_on: []
+related_to: []

@@ -1,0 +1,1 @@
+`npm run studio` launches the Remotion Studio preview server on `src/Root.jsx`; `npm run render YZLogoReveal out/yz-logo.mp4` renders the composition to an MP4 file under `out/`.

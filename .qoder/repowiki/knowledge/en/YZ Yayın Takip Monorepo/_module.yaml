@@ -1,0 +1,29 @@
+schema_version: 1
+module_path: ""
+title: YZ Yayın Takip Monorepo
+scope:
+    - package.json
+    - package-lock.json
+    - docker-compose.yml
+    - Dockerfile
+    - .gitignore
+    - __probe*.mjs
+    - __audit.mjs
+    - __dialogs.mjs
+    - __seedaudit.mjs
+    - serve.cjs
+    - .env.example
+    - BILDIRIM-MATRISI.pdf
+    - __probe.mjs
+    - __probe2.mjs
+    - __probe3.mjs
+    - __probe4.mjs
+    - __probe5.mjs
+    - __probe6.mjs
+    - __probe7.mjs
+    - __probe8.mjs
+    - logo.png
+    - yukselenzeka.svg
+source_files: []
+depends_on: []
+related_to: []

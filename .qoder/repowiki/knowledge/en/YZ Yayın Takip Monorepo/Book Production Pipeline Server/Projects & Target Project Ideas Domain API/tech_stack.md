@@ -1,0 +1,1 @@
+Node.js Fastify routes backed by raw PostgreSQL queries via a connection pool (`../db/pool.js`); project IDs use `nanoid` with `p-` prefixes; file uploads streamed in chunks with MIME sniffing against JPEG/PNG/WebP allowlists.

@@ -1,0 +1,1 @@
+Provides a server-backed, poll-driven notification feed and a Web Push subscription lifecycle (subscribe/unsubscribe/test) bridged to the service worker for background delivery and tap routing.

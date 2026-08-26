@@ -1,0 +1,1 @@
+The feature is disabled by default via `WORK_LOG_ENABLED = false` in `work-log.js`; flipping it to `true` re-enables sidebar entry, avatar dot, and API calls without any build step.

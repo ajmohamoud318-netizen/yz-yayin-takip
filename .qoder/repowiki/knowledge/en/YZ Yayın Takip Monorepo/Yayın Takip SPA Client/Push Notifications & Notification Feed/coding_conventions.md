@@ -1,0 +1,6 @@
+- Optimistic UI updates followed by fire-and-forget persistence: local state is mutated first and API calls are wrapped in try/catch with comments noting reconciliation on the next poll.
+- User-scoped effects keyed on `user?.id ?? null` with a `lastUserRef` to detect identity changes and reset all cached state when the signed-in user switches.
+- Platform capability is resolved through small pure helpers (`isIOS`, `isMobileDevice`, `isStandalone`) rather than inline feature checks, and results are memoised via refs to avoid repeated detection.
+- Cross-component state sharing uses a static `Set` of setState functions (`statusPeers`) so multiple hook mounts stay in sync without lifting state to a parent.
+- Race conditions during app resume are handled with a token-based cancellation pattern (`drainToken`) combined with a decaying retry schedule instead of fixed timers.
+- Service-worker-to-page communication goes through `navigator.serviceWorker.addEventListener('message', ...)` with strict shape/type guards on incoming data before acting.

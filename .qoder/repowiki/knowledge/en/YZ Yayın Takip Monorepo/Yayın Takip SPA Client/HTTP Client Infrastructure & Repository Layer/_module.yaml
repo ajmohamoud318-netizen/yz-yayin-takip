@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: client/http_infrastructure
+title: HTTP Client Infrastructure & Repository Layer
+scope:
+    - client/src/infrastructure/http/
+    - client/src/infrastructure/shared/
+source_files: []
+depends_on: []
+related_to: []

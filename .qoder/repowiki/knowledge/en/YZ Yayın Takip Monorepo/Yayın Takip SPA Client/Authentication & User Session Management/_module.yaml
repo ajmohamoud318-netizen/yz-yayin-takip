@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: client/auth_users
+title: Authentication & User Session Management
+scope:
+    - client/src/hooks/useAuth.js
+    - client/src/pages/Login.jsx
+    - client/src/pages/ForgotPassword.jsx
+source_files: []
+depends_on: []
+related_to: []

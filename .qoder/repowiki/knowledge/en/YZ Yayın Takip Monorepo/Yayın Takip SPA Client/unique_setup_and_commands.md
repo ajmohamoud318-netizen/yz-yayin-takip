@@ -1,0 +1,1 @@
+Development uses Vite's proxy to forward `/api/*` to the Fastify backend on localhost:4000; production relies on serve.cjs reverse proxy so the SPA and API are same-origin (required for httpOnly SameSite=Lax cookies). Setting `VITE_API_BASE_URL` is an escape hatch for cross-origin deployments but requires matching cookie configuration.

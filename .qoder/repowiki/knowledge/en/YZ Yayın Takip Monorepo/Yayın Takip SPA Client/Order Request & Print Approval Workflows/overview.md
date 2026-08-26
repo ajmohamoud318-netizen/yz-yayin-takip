@@ -1,0 +1,1 @@
+Client-side use cases and React pages for creating, advancing, rejecting, and approving sales order requests through the print pipeline (pending → görüldü → kontrol_edildi → tasarımçı onay → matbaa onay → onaylandi).

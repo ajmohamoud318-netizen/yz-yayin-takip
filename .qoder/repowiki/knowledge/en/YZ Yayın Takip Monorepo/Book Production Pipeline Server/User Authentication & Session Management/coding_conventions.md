@@ -1,0 +1,6 @@
+- Route handlers validate input with `schema: schemas.<name>` and protect sensitive endpoints with `preHandler: rateLimit({...})` using named key functions (e.g. `ip`, `email`, `token`) rather than ad-hoc throttling.
+- Authentication is performed by calling `await attachUser(request)` at the top of every protected handler, followed by `requireRole(request, 'team_leader')` for admin-scoped mutations.
+- Token-based flows (invitations, password resets) follow a uniform three-function shape — `create*`, `verify*`, `consume*` — each returning `{ id, token, expiresAt, url }` and throwing typed errors from `../domain/errors.js` (`notFound`, `gone`, `badRequest`, `unauthorized`).
+- All SQL queries go through `getPool().query(...)` with parameterized `$N` placeholders; string concatenation is avoided and column sets are built via reusable template fragments like `dailyStatusSelect('u')`.
+- Passwords are always hashed with `bcrypt.hashSync(password, 12)` before storage and verified with `bcrypt.compareSync`, never compared as plaintext.
+- Email sending is wrapped in try/catch or otherwise treated as best-effort so SMTP failures do not abort the primary user-facing operation; results include an `emailSent` / `emailError` flag returned to the caller.

@@ -1,0 +1,6 @@
+- Event / category taxonomies are declared as static arrays or maps at the top of the file (e.g. `WORK_LOG_KINDS`, `EVENTS`, `TONES`, `HISTORY_FILTERS`) so labels, icons, and colours stay in one source of truth instead of being duplicated across components.
+- Mutations follow an optimistic-update pattern: capture `const prev = entries`, apply the change immediately to state, then restore `prev` in the `catch` block if the server call fails.
+- After every mutation the hook recomputes derived state via `syncAuthStatus`, which derives `daily_status` from today's newest entry and pushes it into the auth context with `updateUser`.
+- Date handling uses local-time YYYY-MM-DD keys built with explicit month/day padding rather than `toISOString`, avoiding timezone rollover for users east of Greenwich.
+- Unknown or legacy values degrade gracefully to a safe fallback (e.g. `kindMeta` falls back to 'diger', `historyMeta` falls back to generic 'İlerletildi' with neutral tone) instead of throwing during render.
+- Human-facing strings are formatted through dedicated helpers (`formatMinutes`, `formatClock`, `formatDayLabel`, `dayLabel`) keyed on `tr-TR` locale, keeping Turkish phrasing out of JSX.

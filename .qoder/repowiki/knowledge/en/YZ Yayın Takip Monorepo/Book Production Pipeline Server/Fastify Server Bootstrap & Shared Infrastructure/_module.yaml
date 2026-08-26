@@ -1,0 +1,17 @@
+schema_version: 1
+module_path: server/shared_infrastructure
+title: Fastify Server Bootstrap & Shared Infrastructure
+scope:
+    - server/src/db/
+    - server/src/config.js
+    - server/src/index.js
+    - server/src/schemas/
+    - server/src/middleware/rate-limit.js
+    - server/.dockerignore
+    - server/Dockerfile
+    - server/docker-entrypoint.sh
+    - server/package.json
+    - server/package-lock.json
+source_files: []
+depends_on: []
+related_to: []

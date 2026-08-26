@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: server/users_auth_domain
+title: User Authentication & Session Management
+scope:
+    - server/src/routes/auth.js
+    - server/src/routes/users.js
+    - server/src/services/sessions.js
+    - server/src/services/password-resets.js
+    - server/src/services/invitations.js
+    - server/src/middleware/auth.js
+source_files: []
+depends_on: []
+related_to: []

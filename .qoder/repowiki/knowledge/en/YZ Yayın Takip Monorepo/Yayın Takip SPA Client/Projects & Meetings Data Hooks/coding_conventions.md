@@ -1,0 +1,5 @@
+- Hooks expose a `{ data, loading, busy, refetch, ...mutations }` shape, where `loading` tracks initial fetch and `busy` wraps individual mutations.
+- Mutations follow an optimistic-update pattern: update local state first, set `busy`, call the API, replace the optimistic entry with the server response, and restore the previous state on error.
+- API calls are made through a centralized `api` module rather than direct fetch calls, keeping HTTP endpoints out of the hooks.
+- User-driven actions guard against empty input by trimming strings and returning early or rejecting before any network call.
+- Permission checks are computed locally from `useAuth().user.role` and ownership fields (e.g. `created_by === user.id`) to hide UI controls while relying on the server as the real gate.

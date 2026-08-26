@@ -1,0 +1,1 @@
+React hooks that fetch and mutate projects, meetings, and meeting detail data, coordinating local state with a shared project store and the server API.

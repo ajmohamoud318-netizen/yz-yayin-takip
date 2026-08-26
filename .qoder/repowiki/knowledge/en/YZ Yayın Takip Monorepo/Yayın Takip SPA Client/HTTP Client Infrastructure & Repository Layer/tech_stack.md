@@ -1,0 +1,1 @@
+Axios HTTP client with request/response interceptors; token persisted in `localStorage` under key `yz_auth_v1` and sent as the `X-User-Id` header; Vite env variable `VITE_API_BASE_URL` used as an escape hatch for cross-origin backends while same-origin cookies remain preferred.

@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: server/projects_domain
+title: Projects & Target Project Ideas Domain API
+scope:
+    - server/src/routes/projects.js
+    - server/src/routes/target-project-ideas.js
+    - server/src/services/project-repository.js
+    - server/src/services/product-info-capture.js
+source_files: []
+depends_on: []
+related_to: []

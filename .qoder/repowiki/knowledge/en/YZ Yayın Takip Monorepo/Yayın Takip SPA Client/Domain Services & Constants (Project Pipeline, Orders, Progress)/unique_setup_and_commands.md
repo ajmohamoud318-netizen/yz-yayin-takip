@@ -1,0 +1,1 @@
+None beyond standard ESM imports; tests live alongside each source file (`*.test.js`) using the same import paths.

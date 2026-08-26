@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: server
+title: Book Production Pipeline Server
+scope:
+    - server/
+source_files: []
+depends_on: []
+related_to: []

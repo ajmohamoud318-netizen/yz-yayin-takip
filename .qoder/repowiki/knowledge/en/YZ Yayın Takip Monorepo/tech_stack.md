@@ -1,0 +1,1 @@
+Node.js 20 workspaces; Vite + React SPA in `client/`; Fastify + PostgreSQL in `server/`; Docker Compose for local dev (postgres:16-alpine); zero-dependency Node `http` server (`serve.cjs`) for production SPA hosting.

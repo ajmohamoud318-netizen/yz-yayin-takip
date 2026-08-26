@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: client/notifications_push
+title: Push Notifications & Notification Feed
+scope:
+    - client/src/hooks/useNotifications.jsx
+    - client/src/hooks/usePushNotifications.js
+    - client/src/components/PushBridge.jsx
+source_files: []
+depends_on: []
+related_to: []

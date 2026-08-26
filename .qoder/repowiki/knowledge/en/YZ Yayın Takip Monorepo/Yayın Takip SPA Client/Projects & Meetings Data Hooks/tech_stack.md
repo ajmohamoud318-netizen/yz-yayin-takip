@@ -1,0 +1,1 @@
+React custom hooks using `useState`, `useEffect`, `useCallback`, `useMemo`; Zustand-style shared store via `useProjectsStore`; image preprocessing via `@/lib/image` (`prepareIdeaImageFile`, `MAX_SOURCE_BYTES`).

@@ -1,0 +1,5 @@
+- Each repository is exported as a factory function (e.g. `createHttpAuthRepository`) returning an object of async methods rather than using classes or modules with side effects.
+- Repositories consume the shared `httpClient` from `../client.js` and never instantiate Axios themselves, centralizing timeout, credentials, and interceptors.
+- Domain-specific API endpoints are called as relative paths under `/api` (e.g. `/auth/login`, `/users/me/avatar`) relying on the client's `baseURL` instead of hard-coding full URLs.
+- Typed HTTP errors are thrown via helpers in `shared/errors.js` (`notFound`, `badRequest`, etc.) that attach a numeric `status` property so the response interceptor can forward them verbatim to the UI.
+- Network-only operations like avatar upload opt out of the global 20 s timeout by passing `{ timeout: 0 }` on the per-request config.

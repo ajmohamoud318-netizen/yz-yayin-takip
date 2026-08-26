@@ -1,0 +1,5 @@
+- Each migration file begins with a multi-line comment describing the business change, including which workflow step or status it affects and why.
+- Migration filenames use zero-padded numeric prefixes followed by double-underscore and a descriptive slug (e.g., `054__order_kontrol_step.sql`) to enforce strict ordering.
+- DDL is written to be idempotent — constraints and columns are altered via `DROP ... IF EXISTS` patterns so migrations can be safely re-run on seeded databases.
+- Seed fixtures derive deterministic IDs from human-readable slugs via `slugUuid()` rather than random values, keeping test and demo data stable across runs.
+- Role and status enums are enforced at the database level using `CHECK` constraints listing all allowed string literals.

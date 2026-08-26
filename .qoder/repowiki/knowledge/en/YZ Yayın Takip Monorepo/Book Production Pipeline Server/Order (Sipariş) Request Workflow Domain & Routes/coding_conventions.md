@@ -1,0 +1,6 @@
+- Every mutating route follows a fixed pattern: `withTx` wrapper → `SELECT * FROM order_requests WHERE id = $1 FOR UPDATE` → call a pure `compute*` helper → conditional `UPDATE` + `INSERT INTO order_history` → optional `logHistory` on the project → notification via `services/notifications.js`.
+- State mutations are delegated to pure functions in `domain/order-transitions.js` that accept `(order, actor, ctx)` and return a lightweight patch object plus a `{ step, note }` history entry, keeping SQL and business rules decoupled.
+- Idempotent actions (receive, start, approve) return `history: null` when no-op, allowing routes to skip persistence and notifications on duplicate clicks.
+- Role checks are enforced inside the compute helpers via `badRequest` throws rather than route-level guards, so the same rule applies regardless of which route invokes it.
+- Multi-party approval states (`matbaa_approvals` JSON array) are persisted as JSONB and rebuilt per click by appending the actor's `{id, role, name, at}` entry, with leader-first ordering enforced before designers may counter-sign.
+- Domain constants (`ORDER_STEPS`, `ORDER_STEP_OWNER`, `ORDER_STEP_NEXT`, `ORDER_REJECT_TARGETS`) are exported from `orders.js` and referenced by routes instead of hard-coded strings, centralizing the state-machine definition.

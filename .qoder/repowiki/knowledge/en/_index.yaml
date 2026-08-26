@@ -1,0 +1,259 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: en-US
+branch: main
+nodes_managed: true
+exported_at: "2026-08-26T09:42:10Z"
+modules:
+    "":
+        dir_name: YZ Yayın Takip Monorepo
+        title: YZ Yayın Takip Monorepo
+        scope:
+            - package.json
+            - package-lock.json
+            - docker-compose.yml
+            - Dockerfile
+            - .gitignore
+            - __probe*.mjs
+            - __audit.mjs
+            - __dialogs.mjs
+            - __seedaudit.mjs
+            - serve.cjs
+            - .env.example
+            - BILDIRIM-MATRISI.pdf
+            - __probe.mjs
+            - __probe2.mjs
+            - __probe3.mjs
+            - __probe4.mjs
+            - __probe5.mjs
+            - __probe6.mjs
+            - __probe7.mjs
+            - __probe8.mjs
+            - logo.png
+            - yukselenzeka.svg
+        source_files: []
+        children:
+            - client
+            - server
+            - yz_logo_animation
+        depends_on: []
+        related_to: []
+    client:
+        dir_name: Yayın Takip SPA Client
+        title: Yayın Takip SPA Client
+        scope:
+            - client/
+        source_files: []
+        children:
+            - client/auth_users
+            - client/domain_services
+            - client/http_infrastructure
+            - client/notifications_push
+            - client/orders_handovers
+            - client/product_catalog
+            - client/projects_meetings
+            - client/work_log_history
+        depends_on: []
+        related_to: []
+    client/auth_users:
+        dir_name: Authentication & User Session Management
+        title: Authentication & User Session Management
+        scope:
+            - client/src/hooks/useAuth.js
+            - client/src/pages/Login.jsx
+            - client/src/pages/ForgotPassword.jsx
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    client/domain_services:
+        dir_name: Domain Services & Constants (Project Pipeline, Orders, Progress)
+        title: Domain Services & Constants (Project Pipeline, Orders, Progress)
+        scope:
+            - client/src/domain/services/
+            - client/src/domain/constants/
+            - client/src/domain/index.js
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    client/http_infrastructure:
+        dir_name: HTTP Client Infrastructure & Repository Layer
+        title: HTTP Client Infrastructure & Repository Layer
+        scope:
+            - client/src/infrastructure/http/
+            - client/src/infrastructure/shared/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    client/notifications_push:
+        dir_name: Push Notifications & Notification Feed
+        title: Push Notifications & Notification Feed
+        scope:
+            - client/src/hooks/useNotifications.jsx
+            - client/src/hooks/usePushNotifications.js
+            - client/src/components/PushBridge.jsx
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    client/orders_handovers:
+        dir_name: Order Request & Print Approval Workflows
+        title: Order Request & Print Approval Workflows
+        scope:
+            - client/src/application/use-cases/orders/
+            - client/src/pages/SiparisListesi.jsx
+            - client/src/pages/SiparisOnay.jsx
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    client/product_catalog:
+        dir_name: Product Catalog & Ürün Bilgileri Pages
+        title: Product Catalog & Ürün Bilgileri Pages
+        scope:
+            - client/src/pages/Urunler.jsx
+            - client/src/pages/UrunBilgileri.jsx
+            - client/src/data/productCatalog.js
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    client/projects_meetings:
+        dir_name: Projects & Meetings Data Hooks
+        title: Projects & Meetings Data Hooks
+        scope:
+            - client/src/hooks/useProjects.js
+            - client/src/hooks/useMeetings.js
+            - client/src/hooks/useMeetingDetail.js
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    client/work_log_history:
+        dir_name: Work Log & Project History Timeline
+        title: Work Log & Project History Timeline
+        scope:
+            - client/src/hooks/useWorkLog.js
+            - client/src/lib/work-log.js
+            - client/src/lib/project-history.js
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    server:
+        dir_name: Book Production Pipeline Server
+        title: Book Production Pipeline Server
+        scope:
+            - server/
+        source_files: []
+        children:
+            - server/demos_handovers_domain
+            - server/notifications_push_domain
+            - server/orders_domain
+            - server/projects_domain
+            - server/shared_infrastructure
+            - server/uploads_and_migrations
+            - server/users_auth_domain
+        depends_on: []
+        related_to: []
+    server/demos_handovers_domain:
+        dir_name: Demos, Handovers & Dev Seed Scripts
+        title: Demos, Handovers & Dev Seed Scripts
+        scope:
+            - server/src/routes/demos.js
+            - server/src/routes/handovers.js
+            - server/src/services/seed.js
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    server/notifications_push_domain:
+        dir_name: Notification Feed, Web Push & Mail Delivery
+        title: Notification Feed, Web Push & Mail Delivery
+        scope:
+            - server/src/routes/notifications.js
+            - server/src/routes/push.js
+            - server/src/services/notifications.js
+            - server/src/services/notification-maintenance.js
+            - server/src/services/notification-delivery.test.js
+            - server/src/services/push.js
+            - server/src/services/mail.js
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    server/orders_domain:
+        dir_name: Order (Sipariş) Request Workflow Domain & Routes
+        title: Order (Sipariş) Request Workflow Domain & Routes
+        scope:
+            - server/src/routes/orders.js
+            - server/src/services/
+            - server/src/domain/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    server/projects_domain:
+        dir_name: Projects & Target Project Ideas Domain API
+        title: Projects & Target Project Ideas Domain API
+        scope:
+            - server/src/routes/projects.js
+            - server/src/routes/target-project-ideas.js
+            - server/src/services/project-repository.js
+            - server/src/services/product-info-capture.js
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    server/shared_infrastructure:
+        dir_name: Fastify Server Bootstrap & Shared Infrastructure
+        title: Fastify Server Bootstrap & Shared Infrastructure
+        scope:
+            - server/src/db/
+            - server/src/config.js
+            - server/src/index.js
+            - server/src/schemas/
+            - server/src/middleware/rate-limit.js
+            - server/.dockerignore
+            - server/Dockerfile
+            - server/docker-entrypoint.sh
+            - server/package.json
+            - server/package-lock.json
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    server/uploads_and_migrations:
+        dir_name: Database Schema Migrations & Seed Data
+        title: Database Schema Migrations & Seed Data
+        scope:
+            - server/db/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    server/users_auth_domain:
+        dir_name: User Authentication & Session Management
+        title: User Authentication & Session Management
+        scope:
+            - server/src/routes/auth.js
+            - server/src/routes/users.js
+            - server/src/services/sessions.js
+            - server/src/services/password-resets.js
+            - server/src/services/invitations.js
+            - server/src/middleware/auth.js
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    yz_logo_animation:
+        dir_name: YZ Logo Animation (Remotion)
+        title: YZ Logo Animation (Remotion)
+        scope:
+            - yz-logo-animation/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []

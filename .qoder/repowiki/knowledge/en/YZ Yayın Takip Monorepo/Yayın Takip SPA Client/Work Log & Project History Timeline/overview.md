@@ -1,0 +1,1 @@
+Client-side domain layer for the user's personal work log (Çalışma Defteri) and the project history timeline, providing data fetching, optimistic mutations, and shared metadata tables.

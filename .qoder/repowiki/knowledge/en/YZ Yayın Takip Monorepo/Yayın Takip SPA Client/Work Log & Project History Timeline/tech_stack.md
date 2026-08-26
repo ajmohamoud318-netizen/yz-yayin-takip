@@ -1,0 +1,1 @@
+React hooks (`useState`, `useCallback`, `useEffect`, `useMemo`, `useRef`) plus Tailwind utility classes for colours; icons sourced from `lucide-react`; Turkish locale formatting via `toLocaleDateString('tr-TR')`.

@@ -1,0 +1,6 @@
+- Route handlers call `attachUser(request)` first and scope every write to `request.user.id`, never trusting user-supplied IDs from the body.
+- All database writes are plain parameterised SQL strings via `getPool().query(...)` rather than an ORM, with multi-row inserts built by concatenating `$N`-indexed tuples.
+- External side effects (web push, mail) are wrapped in try/catch that log errors and return success/no-op instead of throwing, so transient failures never bubble to the caller.
+- Background jobs are guarded by both an in-process `running` latch and a Postgres advisory lock so they cannot overlap across processes or ticks.
+- Recipient resolution goes through role-based helpers like `activeUserIdsByRole(client, ...roles)` and `loadProjectAssignees`, never hard-coding user lists at emit sites.
+- Each notification event is emitted via a dedicated `notifyXxx` helper that builds `{ actorId, title, projectId, link, type, tone, body }` and delegates to `emit`, keeping fan-out rules co-located with the business event.

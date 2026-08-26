@@ -1,0 +1,1 @@
+Fastify routes and persistence services for the book production pipeline (projects, stage transitions, catalog delisting) and the target-project-ideas idea board with image/gallery uploads.

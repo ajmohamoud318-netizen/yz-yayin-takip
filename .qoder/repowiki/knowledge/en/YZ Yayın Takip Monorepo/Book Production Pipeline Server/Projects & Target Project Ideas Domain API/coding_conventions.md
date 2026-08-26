@@ -1,0 +1,6 @@
+- Every mutating route wraps its database work in `withTx(async (client) => {...})` and calls `getProjectForUpdate(client, id)` with `FOR UPDATE` to lock rows before applying transitions.
+- State mutations go through transition functions from `services/project-transitions.js` (e.g. `applyAdvance`, `applyApproval`, `applyDemoReceive`) which return `{ project: next, history }`, and only the fields present on `next` are patched back into the DB.
+- All user-triggered mutations call `attachUser(request)` followed by `requireRole(request, ...)` before any business logic, keeping authz as the first line of every handler.
+- History entries are recorded via the `logHistory(client, entry, request.user)` helper rather than direct inserts, ensuring `done_by`/`done_by_name` are always stamped from the logged-in actor.
+- Read paths hydrate derived names (assignee names, `done_by_name`, `demo_delivered_by_name`) via LEFT JOINs or scalar subqueries instead of relying on stale snapshot columns.
+- File uploads stream multipart chunks with an in-flight byte counter and reject oversized files via `badRequest` before any disk I/O, after verifying MIME type with `sniffImageMime`.

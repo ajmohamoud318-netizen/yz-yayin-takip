@@ -1,0 +1,5 @@
+- All backend calls go through the `api` facade exported from `src/api.js`; direct imports of repository modules are avoided in presentation code.
+- Each domain feature has its own folder under `application/use-cases` (e.g. orders, handovers) that composes one or more repositories to implement multi-step workflows.
+- Repositories follow a factory pattern (`createHttp*Repository`) returning methods that map directly to backend endpoints, keeping per-domain HTTP concerns isolated.
+- Domain constants and services live under `domain/` and are re-exported from `src/domain/index.js` so pages and hooks can reference shared enums (stages, statuses, labels) instead of literals.
+- React hooks encapsulate data fetching and mutations around a single repository call, while UI components remain stateless presenters over hook-provided state.

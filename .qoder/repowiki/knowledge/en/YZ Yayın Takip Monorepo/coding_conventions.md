@@ -1,0 +1,2 @@
+- Workspace scripts in the root `package.json` delegate all commands to children via `npm --workspace <name> run ...` rather than invoking binaries directly.
+- Environment configuration is read from process.env at both container boundaries — `docker-compose.yml` injects DATABASE_URL/CORS_ORIGINS into the server, while `VITE_API_BASE_URL` is baked into the SPA at build time.

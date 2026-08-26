@@ -1,0 +1,1 @@
+React + Vite frontend built on Tailwind CSS and shadcn/ui primitives; Axios as the shared HTTP client; Vitest for unit tests; service worker (`public/sw.js`) plus Web Push for background notifications.

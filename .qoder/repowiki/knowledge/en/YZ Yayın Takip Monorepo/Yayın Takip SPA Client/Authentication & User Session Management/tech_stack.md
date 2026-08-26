@@ -1,0 +1,1 @@
+React Context + Hooks for auth state; `framer-motion` for login-page transitions; `lucide-react` icons; `sonner` toast notifications; Tailwind CSS classes for styling; `react-router-dom` navigation.

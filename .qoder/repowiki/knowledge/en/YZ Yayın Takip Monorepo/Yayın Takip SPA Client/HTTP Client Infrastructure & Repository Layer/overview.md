@@ -1,0 +1,1 @@
+Provides a shared Axios client with auth interceptors, error handling, and per-domain HTTP repositories that implement the data-access layer for all backend APIs.

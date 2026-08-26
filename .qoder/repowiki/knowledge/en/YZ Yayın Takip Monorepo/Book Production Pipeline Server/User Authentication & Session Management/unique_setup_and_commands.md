@@ -1,0 +1,1 @@
+Dev-only `/auth/dev-login` endpoint is gated by `process.env.NODE_ENV !== 'production'` and bypasses password checks for seeded users without bcrypt hashes. Cookie security flags (`secure`, `sameSite`, `domain`, `maxAge`) are driven entirely by `config.session` so the same code works on `http://localhost` and HTTPS production.

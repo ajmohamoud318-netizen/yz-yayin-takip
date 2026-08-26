@@ -1,0 +1,1 @@
+`node src/services/seed.js` runs the idempotent dev seed against the configured database; it exits with code 1 on failure and closes the pool in `finally`. Seed fixture modules under `db/seed/` are intentionally not bundled into the runtime image — missing them produces a console warning rather than a crash.

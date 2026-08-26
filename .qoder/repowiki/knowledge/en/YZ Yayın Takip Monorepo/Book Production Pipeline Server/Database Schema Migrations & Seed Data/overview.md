@@ -1,0 +1,1 @@
+PostgreSQL schema migrations and deterministic seed data that define the application's relational model for users, projects, orders, demos, notifications, meetings, and related workflow entities.
