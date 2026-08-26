@@ -267,8 +267,11 @@ export default function SiparisBaskiOnayFormDialog({
       </Button>
       {!isReadOnly && (
         <div className="flex gap-2">
+          {/* Saves the sheet on the order and stops there — the approval is
+              the button beside it. Next to "Onaylayın", a bare "Kaydedin"
+              left which of the two signs off to guesswork. */}
           <Button type="button" variant="ghost" onClick={handleSave} disabled={busy}>
-            {saving ? 'Kaydediliyor…' : 'Kaydedin'}
+            {saving ? 'Kaydediliyor…' : 'Onaylamadan Kaydedin'}
           </Button>
           <Button type="button" onClick={handleApprove} disabled={busy}>
             {approving ? 'Onaylanıyor…' : 'Onaylayın'}

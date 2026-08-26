@@ -528,6 +528,26 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    * the one catalog both pipelines read and write.
    */
   const orderScoped = !!order
+  /* Which route a view-mode save takes — and therefore what the button may
+     promise. "Kaydedin" covered two outcomes that have nothing in common: a
+     correction the matbaa is told about and starts working from, and a note
+     that never leaves this browser. On a phone, where the opening button's
+     tooltip is unreachable, the footer was the only place left to say which
+     one you were about to do, and it said neither.
+
+     Non-null means the sheet goes to the matbaa (handleSave awaits it before
+     anything is written). The label reads from this same value, so the button
+     cannot say one thing and do the other. */
+  const notifyEdit = !notifyOnSave
+    ? null
+    // A sipariş's correction goes to its own route, which writes the snapshot
+    // inside the transaction that authorizes the edit — same contract, same
+    // reason, as the project's (migration 053).
+    : orderScoped ? (id, sheet) => api.notifyOrderOzalitEdit(id, sheet)
+      : variant.kind === 'demo' ? api.notifyDemoEdit
+        : variant.kind === 'ozalit' ? api.notifyOzalitEdit
+          // Baskı Onay has no such route: its view-mode save is always local.
+          : null
   // Snapshot + localStorage scope. Order ids and project ids never collide,
   // so one key space serves both.
   const scopeId = order?.id ?? project?.id
@@ -892,6 +912,16 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     return entries
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseline, customRows, selectedComponents, catalogComponents])
+
+  // True when the user opened this dialog via "Gönderilen Demoyu/Ozaliti
+  // Düzenleyin" and hasn't actually changed anything yet — once `baseline`
+  // finishes loading AND the live rows match it, the "Düzeltmeyi Matbaaya
+  // Gönderin" button stops being meaningful: there is nothing to send. The
+  // handleSave guard below is the real fix; this flag also disables the
+  // button and updates its label, so the user sees the affordance is a no-op
+  // instead of being told after the fact.
+  const noChangesToSend =
+    notifyEdit && changeSummary !== null && changeSummary.length === 0
 
   /* ── Ozalit "Teslim Alındı" gate ──────────────────────────────────────────
    * The ozalit approve is refused server-side until the physical proof has
@@ -1288,6 +1318,20 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     // Applies to the plain save too: a draft parked with a blank ADET /
     // BASIM YERİ is exactly what the next reader picks up and sends on.
     if (!requiredFilled()) return
+    // Guard the "Gönderilen Demoyu/Ozaliti Düzenleyin" path against an empty
+    // submit. Opening this dialog and pressing Kaydet without editing used to
+    // write a history row and notify the matbaa with nothing to review — every
+    // leader who double-clicked the menu item produced a phantom "Değişiklik
+    // Kabul Edildi"-shaped noise event. Once `baseline` has loaded, an empty
+    // changeSummary means the live sheet still matches what the matbaa has;
+    // closing here costs nothing. `changeSummary === null` (baseline still
+    // loading) is allowed through — the button stays enabled while the
+    // dialog opens — so a fast typist isn't blocked by an in-flight fetch.
+    if (notifyEdit && changeSummary && changeSummary.length === 0) {
+      toast.info('Değişiklik yapılmadı, matbaaya bildirim gönderilmedi.')
+      onOpenChange(false)
+      return
+    }
     // Unlike every other handler here (handleAdvance/handleApprove/
     // handlePrepareBaskiOnay), this one used to have no busy guard — a rapid
     // double-click fired handleSave twice before the first call's await
@@ -1295,15 +1339,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     // notifyDemoEdit call and its own Geçmiş row for what was one save.
     setBusy(true)
     try {
-      const notify = notifyOnSave && (
-        // A sipariş's correction goes to its own route, which writes the
-        // snapshot inside the transaction that authorizes the edit — same
-        // contract, same reason, as the project's (migration 053).
-        orderScoped ? (id, sheet) => api.notifyOrderOzalitEdit(id, sheet)
-          : variant.kind === 'demo' ? api.notifyDemoEdit
-            : variant.kind === 'ozalit' ? api.notifyOzalitEdit
-              : null
-      )
+      const notify = notifyEdit
       if (notify) {
         // Correcting an already-sent round. NOTHING is written until the
         // server has authorized it: the route inserts the snapshot inside
@@ -1829,7 +1865,24 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             </Button>
           )}
           {mode === 'view' && user?.role !== 'printer' && (!variant.saveRequiresEditable || !readOnly) && (
-            <Button disabled={busy || missingRequired.length > 0} onClick={handleSave}>{busy ? 'Kaydediliyor…' : 'Kaydedin'}</Button>
+            <Button
+              disabled={
+                busy
+                || missingRequired.length > 0
+                // Once the diff is known to be empty, the matbaa notification
+                // is meaningless; the handleSave guard catches the race where
+                // someone clicks before this state lands.
+                || noChangesToSend
+              }
+              onClick={handleSave}
+            >
+              {notifyEdit ? <Send className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+              {busy
+                ? (notifyEdit ? 'Gönderiliyor…' : 'Kaydediliyor…')
+                : noChangesToSend
+                  ? 'Değişiklik Yok'
+                  : (notifyEdit ? 'Düzeltmeyi Matbaaya Gönderin' : 'Taslağı Kaydedin')}
+            </Button>
           )}
           {mode === 'view' && onStartWork && (
             <Button variant="success" disabled={startingWork} onClick={onStartWork}>

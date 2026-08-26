@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -182,6 +182,99 @@ function OrderProgressStepper({ order, sold, handoverPending, canAct, onAct }) {
           </Button>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * migration 055 — per-page chip grid for the "İç Sayfalar" subtask.
+ *
+ * Each row of the project's alt görevler now renders this component instead
+ * of a single checkbox when kind === 'pages'. Three states per chip:
+ *
+ *   pending  → gray, click marks done (optimistic, PATCH /subtasks/:id/pages/N)
+ *   done     → green, click clears back to pending (undo), small ↻ marks rework
+ *   rework   → amber, click resolves back to done (the page shipped again)
+ *
+ * `rework_count` is rendered as a small badge on the chip — the team leader
+ * uses it to spot pages that bounced more than once without having to scrape
+ * stage_history. Auto-save keeps every click latency-free; no batched save
+ * button for chips (see API user's earlier decision).
+ *
+ * Pages that haven't been seeded yet (a project created before migration 055
+ * or a row dropped by a leader's edit) are rendered as pending placeholders
+ * so the chip count still matches `total_pages`.
+ */
+function PageChipGrid({ subtask, canEdit, activePage, onPageClick, onPageRework }) {
+  const total = Number(subtask.total_pages ?? 0)
+  const pages = Array.isArray(subtask.pages) ? subtask.pages : []
+  // Build a fully dense array so the chip count matches total_pages even if
+  // the seed step missed a row (defensive; seedSubtaskPages is idempotent but
+  // a brand-new request after the migration might race a refresh).
+  const cells = Array.from({ length: total }, (_, idx) => {
+    const i = idx + 1
+    const found = pages.find((p) => p.i === i)
+    return found ?? { i, status: 'pending', done_by_name: null, done_at: null, rework_count: 0 }
+  })
+  const doneCount = cells.filter((c) => c.status === 'done').length
+  const reworkCount = cells.filter((c) => c.status === 'rework').length
+  return (
+    <div className="rounded-lg border bg-background px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
+        <span className="text-sm font-medium">{subtask.title}</span>
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span>{doneCount} / {total} tamamlandı</span>
+          {reworkCount > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+              {reworkCount} revize
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {cells.map((p) => {
+          const key = `${subtask.id}:${p.i}`
+          const isActive = activePage?.key === key
+          return (
+            <div key={p.i} className="group relative">
+              <button
+                type="button"
+                onClick={() => onPageClick(p.i, p.status)}
+                disabled={!canEdit || isActive}
+                aria-pressed={p.status !== 'pending'}
+                title={
+                  p.status === 'done' && p.done_by_name
+                    ? `${p.done_by_name}${p.done_at ? ` · ${formatDateTr(p.done_at)}` : ''}${p.rework_count > 0 ? ` · ${p.rework_count}× revize` : ''}`
+                    : p.status === 'rework'
+                      ? `Revize bekliyor${p.done_by_name ? ` · ${p.done_by_name}` : ''}${p.rework_count > 0 ? ` · ${p.rework_count}× revize` : ''}`
+                      : 'Bekliyor'
+                }
+                className={cn(
+                  'h-7 w-9 rounded-md border text-[11px] font-semibold transition',
+                  p.status === 'pending' && 'border-border bg-muted/30 text-muted-foreground hover:border-primary/40',
+                  p.status === 'done' && 'border-emerald-300 bg-emerald-100 text-emerald-700 hover:border-emerald-400',
+                  p.status === 'rework' && 'border-amber-300 bg-amber-100 text-amber-700 hover:border-amber-400',
+                  isActive && 'opacity-60',
+                  !canEdit && 'cursor-default opacity-60',
+                )}
+              >
+                {p.i}
+              </button>
+              {canEdit && p.status === 'done' && !isActive && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onPageRework(p.i) }}
+                  title="Bu sayfayı revize et"
+                  aria-label={`Sayfa ${p.i} revize`}
+                  className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white opacity-0 shadow ring-2 ring-background transition group-hover:opacity-100 focus:opacity-100"
+                >
+                  ↻
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -865,6 +958,56 @@ export default function ProjectDetail() {
       const current = prev[sub.id] !== undefined ? prev[sub.id] : sub.is_done
       return { ...prev, [sub.id]: !current }
     })
+  }
+
+  // migration 055 — per-page auto-save on chip click. Optimistic update
+  // keeps the grid snappy: the local page flips immediately, then the PATCH
+  // resolves the rest of the project (pages_done/is_done/etc.) and the
+  // returned full project shape replaces state in one go — same contract as
+  // PATCH /subtasks/:id uses for checkbox toggles.
+  //
+  // Concurrent clicks on the same subtask are guarded by the activePage key:
+  // the PATCH on subtask_pages does its own row lock, but cancelling in-flight
+  // requests on the same chip stops the optimistic-then-server reconciliation
+  // from racing itself when a designer double-clicks.
+  const [activePage, setActivePage] = useState(null) // { subtaskId, pageIndex }
+  const activePageRef = useRef(null)
+  activePageRef.current = activePage
+  async function handlePageClick(sub, pageIndex, currentStatus) {
+    if (!canEditSubtask(sub)) return
+    const key = `${sub.id}:${pageIndex}`
+    if (activePageRef.current?.key === key) return
+    // pending → done, done → pending (undo), rework → done (resolve the flag
+    // and ship it). The dedicated "Revize" action below is the explicit
+    // rework signal — keeping it off the main click path means a designer
+    // who taps a finished chip by mistake gets an undo, not a rework flag.
+    const next = currentStatus === 'pending' ? 'done'
+      : currentStatus === 'done' ? 'pending'
+      : 'done'
+    setActivePage({ key, status: next })
+    try {
+      const { project: updated } = await api.setSubtaskPage(sub.id, pageIndex, next)
+      if (updated) setProject((prev) => ({ ...prev, ...updated }))
+    } catch (err) {
+      toast.error(err.message || 'Sayfa kaydedilemedi.')
+    } finally {
+      setActivePage(null)
+    }
+  }
+
+  async function handlePageRework(sub, pageIndex) {
+    if (!canEditSubtask(sub)) return
+    const key = `${sub.id}:${pageIndex}`
+    if (activePageRef.current?.key === key) return
+    setActivePage({ key, status: 'rework' })
+    try {
+      const { project: updated } = await api.setSubtaskPage(sub.id, pageIndex, 'rework')
+      if (updated) setProject((prev) => ({ ...prev, ...updated }))
+    } catch (err) {
+      toast.error(err.message || 'Revize kaydedilemedi.')
+    } finally {
+      setActivePage(null)
+    }
   }
 
   // Returns the effective checked state for a subtask — local pending
@@ -1709,6 +1852,29 @@ export default function ProjectDetail() {
                   <span className="text-xs text-muted-foreground">
                     {progressCountedSubtasks.filter((s) => subtaskChecked(s)).length} / {progressCountedSubtasks.length} tamamlandı
                   </span>
+                  {/* migration 055 — Pages subtasks can have individual pages
+                      flagged for rework. Summing them across every pages subtask
+                      gives the team leader a single "X revize" indicator next
+                      to the main counter, so a stuck page is visible without
+                      having to scroll into the chip grid. */}
+                  {(() => {
+                    const reworkTotal = subtasksSafe
+                      .filter((s) => s.kind === 'pages')
+                      .reduce(
+                        (sum, s) =>
+                          sum +
+                          (Array.isArray(s.pages)
+                            ? s.pages.filter((p) => p.status === 'rework').length
+                            : 0),
+                        0,
+                      )
+                    if (reworkTotal === 0) return null
+                    return (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                        {reworkTotal} revize
+                      </span>
+                    )
+                  })()}
                   {canEditSubtasks && hasSubtaskChanges && (
                     <Button size="sm" onClick={saveSubtaskChanges} disabled={saving}>
                       <Save className="h-4 w-4" />
@@ -1737,6 +1903,27 @@ export default function ProjectDetail() {
                         const canEdit = canEditSubtask(s)
                         const flagged = inRevision && s.needs_revize
                         const lockedDone = inRevision && !s.needs_revize && s.is_done
+
+                        // migration 055 — the "İç Sayfalar" subtask renders
+                        // its own chip grid instead of a single checkbox.
+                        // Pages split across multiple designers, and each
+                        // page is independently reworkable, so the same
+                        // row pattern as the other subtasks doesn't fit.
+                        if (s.kind === 'pages') {
+                          return (
+                            <div key={s.id} className="space-y-1.5">
+                              <PageChipGrid
+                                subtask={s}
+                                canEdit={canEdit && !flagged}
+                                activePage={activePage}
+                                onPageClick={(pageIndex, currentStatus) =>
+                                  handlePageClick(s, pageIndex, currentStatus)
+                                }
+                                onPageRework={(pageIndex) => handlePageRework(s, pageIndex)}
+                              />
+                            </div>
+                          )
+                        }
 
                         return (
                           <div key={s.id} className="space-y-1.5">

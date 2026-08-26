@@ -7,6 +7,7 @@ import {
   loadProjectAssignees,
   patchProject, deleteProject, insertProject, logHistory, insertDemoSnapshot,
   listDeletedProjects, restoreProject, setProjectCatalogHidden,
+  seedSubtaskPages, pruneSubtaskPages,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
@@ -135,6 +136,13 @@ export async function projectRoutes(fastify) {
           [project.id, s.title, s.kind ?? 'check', s.total_pages ?? null, s.total_stickers ?? null, subAssignee, index],
         )
         subRows.push(rows[0])
+        // migration 055 — seed one row per page right after the subtask row
+        // exists. Done in the same tx so a failure rolls back the subtask too,
+        // and the FK CASCADE on subtask_pages.subtask_id handles cleanup if
+        // the subtask is later deleted.
+        if (rows[0].kind === 'pages' && Number(rows[0].total_pages) > 0) {
+          await seedSubtaskPages(client, rows[0].id, rows[0].total_pages)
+        }
       }
       const progress = subtaskProgress(subRows)
       const updated = await patchProject(client, project.id, { progress })

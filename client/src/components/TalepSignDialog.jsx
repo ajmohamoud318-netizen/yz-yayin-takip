@@ -173,6 +173,11 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   const [changeNote, setChangeNote] = useState('')
   const originalRef = useRef('[]')
   const originalSubsRef = useRef('[]')
+  // Mirror of SpecFormDialog's `noChangesToSend`: when the dialog opens with
+  // the sipariş spec editable and the leader doesn't edit anything before
+  // clicking "Düzeltmeyi Matbaaya Gönderin", the button greys out so a
+  // notification can't go out with an empty diff to review.
+  const noCatalogChanges = JSON.stringify(comps) === originalRef.current
 
   useEffect(() => {
     if (open && order && canEditSpec) {
@@ -467,6 +472,19 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   // dedicated route, since this step's generic submit belongs to the
   // printer (the owner of tasarimci_onay), not the leader.
   async function handleSaveOzalitEdit() {
+    // Short-circuit when nothing was actually edited. `originalRef.current`
+    // is the JSON snapshot taken when the dialog opened; comparing the live
+    // `comps` against it is the same diff the main sign step uses (see
+    // `compsChanged` below), so a leader who opens this dialog, doesn't
+    // touch anything, and clicks "Düzeltmeyi Matbaaya Gönderin" no longer
+    // re-stamps product_info's updated_by and pushes a notification with
+    // nothing to review.
+    const compsChanged = JSON.stringify(comps) !== originalRef.current
+    if (!compsChanged) {
+      toast.info('Değişiklik yapılmadı, matbaaya bildirim gönderilmedi.')
+      onOpenChange(false)
+      return
+    }
     setOzalitBusy(true)
     try {
       // notifyOrderOzalitEdit runs computeOrderOzalitEdit, which refuses once
@@ -1039,8 +1057,11 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
                 </div>
               )}
 
+              {/* Stacks on a phone: the two buttons now name their actions in
+                  full, and side-by-side they left the sentence beside them
+                  squeezed into a two-word-wide column at 390px. */}
               {canCancelOrEditOzalit && (
-                <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/20 p-3">
+                <div className="flex flex-col gap-2 rounded-md border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs text-muted-foreground">
                     Matbaa henüz başlamadı — ürün bilgilerini yukarıdan düzenleyip kaydedebilir, veya talebi doğrudan iptal edebilirsiniz.
                   </p>
@@ -1052,8 +1073,22 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
                     >
                       İptal Edin
                     </Button>
-                    <Button type="button" size="sm" variant="outline" onClick={handleSaveOzalitEdit} disabled={ozalitBusy}>
-                      {ozalitBusy ? 'Kaydediliyor…' : 'Kaydedin'}
+                    {/* handleSaveOzalitEdit notifies the matbaa before it
+                        writes anything — the same action the spec form calls
+                        by this name, so it is called that here too. The button
+                        also short-circuits on a no-op open, so an unchanged
+                        catalog greys it out instead of letting a leader
+                        notify the matbaa with nothing to review. */}
+                    <Button
+                      type="button" size="sm" variant="outline"
+                      onClick={handleSaveOzalitEdit}
+                      disabled={ozalitBusy || noCatalogChanges}
+                    >
+                      {ozalitBusy
+                        ? 'Gönderiliyor…'
+                        : noCatalogChanges
+                          ? 'Değişiklik Yok'
+                          : 'Düzeltmeyi Matbaaya Gönderin'}
                     </Button>
                   </div>
                 </div>

@@ -149,6 +149,8 @@ export function createApi() {
     setSubtaskPages: (subtaskId, pagesDone) => subtaskRepo.setSubtaskPages(subtaskId, pagesDone),
     setSubtaskStickers: (subtaskId, stickersDone) =>
       subtaskRepo.setSubtaskStickers(subtaskId, stickersDone),
+    setSubtaskPage: (subtaskId, pageIndex, status) =>
+      subtaskRepo.setSubtaskPage(subtaskId, pageIndex, status),
     reviseSubtask: (subtaskId) => subtaskRepo.reviseSubtask(subtaskId),
     addSubtaskUpdate: (subtaskId, payload) => subtaskRepo.addSubtaskUpdate(subtaskId, payload),
     updateSubtask: (subtaskId, patch) => subtaskRepo.updateSubtask(subtaskId, patch),

@@ -755,6 +755,31 @@ const subtasksRevize = {
   },
 }
 
+// migration 055 — flip a single page's status inside an "İç Sayfalar" subtask.
+// path param `pageIndex` is the 1-based page number (matches the chip grid),
+// body `status` is one of pending/done/rework. Returns the same project shape
+// every other subtask route returns so the client can drop it straight into
+// state without a follow-up GET.
+const subtasksPagePatch = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id', 'pageIndex'],
+    properties: {
+      id: { type: 'string', minLength: 1, maxLength: 64 },
+      pageIndex: { type: 'integer', minimum: 1, maximum: 100000 },
+    },
+  },
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['status'],
+    properties: {
+      status: { type: 'string', enum: ['pending', 'done', 'rework'] },
+    },
+  },
+}
+
 // A sipariş's own per-order copy of the checklist (order_subtasks) — same
 // fields as subtasksPatch, scoped by orderId+id instead of just id. See
 // server/db/migrations/039__order_subtasks.sql.
@@ -1101,6 +1126,7 @@ export const schemas = {
   subtasksPatch,
   subtasksUpdates,
   subtasksRevize,
+  subtasksPagePatch,
   projectsSubtasksPut,
   demosCreate,
   productInfoUpsert,

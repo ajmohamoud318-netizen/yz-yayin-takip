@@ -348,31 +348,51 @@ function FoldedRun({ rows, total, reduce, isLast, defaultOpen = false, onOpenDem
   // Distinct tones present in the run, so the summary still signals whether
   // anything in there went backwards (amber) or completed (emerald).
   const tones = [...new Set(rows.map((r) => (TONES[r.meta.tone] ?? TONES.neutral).dot))]
+  // The summary surfaces the dominant semantic action — "tamamlandı" wins
+  // over other tones, so a reader who only ever opens the fold has the right
+  // word to scan for.
+  const summaryTone = pickSummaryTone(rows)
 
   return (
     <motion.li layout={!reduce} className="relative pb-4 last:pb-0">
       {!isLast && (
         <span aria-hidden="true" className="absolute bottom-0 left-[11px] top-6 w-px bg-border" />
       )}
+      {/* The summary is its own surface: the fold replaces N rows of noise
+          with a deliberate "here's a stack of small updates" affordance.
+          A flat text line made the summary look like an unfilled major row. */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="group flex w-full items-center gap-3 text-left"
+        className={cn(
+          'group/summary relative flex w-full items-center gap-3 rounded-lg border border-dashed border-border/70 bg-muted/30 px-3 py-2 text-left',
+          'transition-[background-color,border-color,box-shadow] duration-200 [transition-timing-function:var(--ease-out)]',
+          'hover:border-solid hover:border-border hover:bg-muted/60 hover:shadow-[0_1px_0_hsl(var(--border))]',
+        )}
       >
-        <span className="relative z-[1] grid h-6 w-6 shrink-0 place-items-center rounded-full bg-card ring-4 ring-card">
-          <span className="flex items-center gap-[2px]">
-            {tones.slice(0, 3).map((dot) => (
-              <span key={dot} className={cn('h-[5px] w-[5px] rounded-full', dot)} />
+        <span
+          className={cn(
+            'relative z-[1] grid h-7 w-7 shrink-0 place-items-center rounded-full bg-card ring-1 ring-inset ring-border shadow-[0_1px_0_hsl(var(--border))]',
+          )}
+        >
+          <span className="flex items-center gap-[3px]">
+            {tones.slice(0, 3).map((dot, i) => (
+              <span
+                key={`${dot}-${i}`}
+                className={cn('h-1.5 w-1.5 rounded-full ring-1 ring-inset ring-card', dot)}
+              />
             ))}
           </span>
         </span>
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] text-muted-foreground transition-colors group-hover:text-foreground">
-          <span className="font-mono tabular-nums">{total}</span>
-          küçük güncelleme
+        <span className="flex min-w-0 flex-1 items-center gap-2 text-[12.5px] leading-snug text-foreground/85">
+          <span className="inline-flex h-5 items-center rounded-md bg-background px-1.5 font-mono text-[11px] font-semibold tabular-nums text-foreground/80 ring-1 ring-inset ring-border/70 shadow-[0_1px_0_hsl(var(--border))]">
+            {total}
+          </span>
+          <span className="truncate font-medium">{summaryLabel(rows, summaryTone)}</span>
           <ChevronDown
             className={cn(
-              'h-3.5 w-3.5 transition-transform duration-300 [transition-timing-function:var(--ease-out)]',
+              'ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-300 [transition-timing-function:var(--ease-out)]',
               open && 'rotate-180',
             )}
           />
@@ -386,12 +406,15 @@ function FoldedRun({ rows, total, reduce, isLast, defaultOpen = false, onOpenDem
             animate={reduce ? { opacity: 1 } : { height: 'auto', opacity: 1 }}
             exit={reduce ? { opacity: 0 } : { height: 0, opacity: 0 }}
             transition={{ duration: 0.24, ease: [0.23, 1, 0.32, 1] }}
-            className="overflow-hidden pl-9"
+            // A nested panel inside a dashed fold: a quieter surface than
+            // the surrounding card, so the eye reads it as "drilldown".
+            className="mt-2 ml-2 space-y-0 rounded-md border-l border-dashed border-border/70 bg-background/40 pl-4 pr-2 py-1"
           >
-            {rows.map((row) => (
+            {rows.map((row, i) => (
               <MinorRow
                 key={row.id}
                 row={row}
+                isLast={i === rows.length - 1}
                 onOpenDemoForm={onOpenDemoForm}
                 onOpenOzalitForm={onOpenOzalitForm}
               />
@@ -404,6 +427,59 @@ function FoldedRun({ rows, total, reduce, isLast, defaultOpen = false, onOpenDem
 }
 
 /**
+ * Pick the dominant semantic tone of a folded run — completion beats
+ * neutral beats negative. Used to label the fold's summary surface so the
+ * headline ("11 küçük güncelleme" alone) becomes a sentence ("11 alt görev
+ * güncellemesi" when every row was a subtask).
+ */
+function pickSummaryTone(rows) {
+  let positive = 0
+  let neutral = 0
+  let other = 0
+  for (const r of rows) {
+    if (r.meta.tone === 'positive') positive += 1
+    else if (r.meta.tone === 'neutral' || r.meta.tone === 'pipeline') neutral += 1
+    else other += 1
+  }
+  if (positive > 0 && positive >= neutral && positive >= other) return 'positive'
+  if (neutral > 0 && neutral >= other) return 'neutral'
+  if (other > 0) return 'other'
+  return 'neutral'
+}
+
+function summaryLabel(rows, tone) {
+  const eventCounts = rows.reduce((acc, r) => {
+    const k = r.meta.group ?? 'other'
+    acc[k] = (acc[k] ?? 0) + r.count
+    return acc
+  }, {})
+  // Pick the group's surface label — group ordering matches HISTORY_FILTERS so
+  // the fold's headline reads like the chip row above it. The dominant tone
+  // adds a verb so a positive-heavy fold reads as "X alt görev tamamlandı"
+  // instead of "X alt görev güncellemesi".
+  const groupOrder = ['approval', 'subtask', 'stage', 'order']
+  for (const g of groupOrder) {
+    if (eventCounts[g] > 0) {
+      const noun = groupLabel(g)
+      if (tone === 'positive') return `${noun} tamamlandı`
+      if (tone === 'other') return `${noun}`
+      return `${noun}`
+    }
+  }
+  return 'küçük güncelleme'
+}
+
+function groupLabel(group) {
+  switch (group) {
+    case 'approval': return 'onay güncellemesi'
+    case 'subtask': return 'alt görev güncellemesi'
+    case 'stage': return 'aşama güncellemesi'
+    case 'order': return 'sipariş güncellemesi'
+    default: return 'küçük güncelleme'
+  }
+}
+
+/**
  * One bookkeeping row: a dot, a line of text, a time. Nothing more — except
  * for a "Formu Düzenleyin" edit, which otherwise leaves no way to see the
  * updated sheet: the matching "Demoya/Ozalit'e Gönderildi" major row above
@@ -413,9 +489,10 @@ function FoldedRun({ rows, total, reduce, isLast, defaultOpen = false, onOpenDem
  * entry.demoAttemptAt/ozalitAttemptAt + 1 — see the comment on `attemptNo` in
  * SpecFormDialog.jsx.
  */
-function MinorRow({ row, onOpenDemoForm, onOpenOzalitForm }) {
+function MinorRow({ row, isLast, onOpenDemoForm, onOpenOzalitForm }) {
   const { entry, entries, meta, count, firstAt, lastAt } = row
   const tone = TONES[meta.tone] ?? TONES.neutral
+  const Icon = meta.icon
   const { title, detail } = rowText(entry, meta, { dense: true })
   const isDemoEdit = entry.event === 'demo_form_edited'
   const isOzalitEdit = entry.event === 'ozalit_form_edited'
@@ -425,30 +502,66 @@ function MinorRow({ row, onOpenDemoForm, onOpenOzalitForm }) {
       ? onOpenDemoForm?.(demoFormAttempt(e), e.demoAttemptAt, e.demo_id)
       : onOpenOzalitForm?.(ozalitFormAttempt(e), e.ozalitAttemptAt, e.demo_id)
   return (
-    <li className="py-1 text-[12px]">
-      <div className="flex items-baseline gap-2">
-        <span className={cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', tone.dot)} />
+    <li className="group/row relative py-1.5 first:pt-1 last:pb-1">
+      {/* Spine that runs THROUGH this row — the parent <ul> starts above with
+          a half-circle cap, this row's icon sits on top, and a half-pixel
+          segment continues down to the next row. A single absolute line can't
+          know where the last dot sits, so the spine is drawn per row. */}
+      {!isLast && (
+        <span
+          aria-hidden="true"
+          className="absolute left-[7px] top-[18px] w-px bg-border/70 group-hover/row:bg-border"
+        />
+      )}
+      <div className="flex items-baseline gap-2.5">
+        <span
+          className={cn(
+            'mt-0.5 grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full bg-card ring-1 ring-inset',
+            tone.dot,
+            tone.dot === 'bg-foreground/70'
+              ? 'ring-foreground/15'
+              : tone.dot === 'bg-muted-foreground/50'
+                ? 'ring-muted-foreground/15'
+                : tone.dot === 'bg-destructive'
+                  ? 'ring-destructive/30'
+                  : tone.dot === 'bg-amber-500'
+                    ? 'ring-amber-500/25'
+                    : tone.dot === 'bg-violet-500'
+                      ? 'ring-violet-500/25'
+                      : 'ring-emerald-600/25',
+          )}
+        >
+          {/* Inner glyph — checks for the "completed" rows so the dot reads
+              as "done", not as a status waiting on the reader. Plain disc for
+              non-completion tones. */}
+          {(meta.tone === 'positive' && count === 1) ? (
+            <Icon className="h-2 w-2 text-white" strokeWidth={3.5} />
+          ) : null}
+        </span>
         {/* Clamped, not truncated: at 390px a heading like "Ürün Bilgileri
             Otomatik Kaydedildi" needs the second line more than the badge
             beside it needs the space. */}
-        <span className="line-clamp-2 min-w-0 flex-1 text-muted-foreground" title={entry.note || title}>
+        <span
+          className="line-clamp-2 min-w-0 flex-1 text-[12.5px] leading-snug text-foreground/85"
+          title={entry.note || title}
+        >
           {title}
         </span>
         {count > 1 && <RepeatBadge count={count} />}
         <time
           dateTime={entry.created_at}
-          className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/60"
+          className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/70"
         >
           {timeSpan(firstAt, lastAt)}
         </time>
       </div>
       {detail && (
-        <p className="mt-0.5 line-clamp-2 pl-3.5 text-[11px] leading-relaxed text-muted-foreground/80">
+        <p className="mt-0.5 line-clamp-2 pl-[26px] text-[11px] leading-relaxed text-muted-foreground/80">
           {detail}
         </p>
       )}
       {(isDemoEdit || isOzalitEdit) && (
-        <div className="mt-1 flex flex-wrap items-center gap-1 pl-3.5">
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-[26px]">
           {count === 1 ? (
             <FormButton onClick={() => openForm(entry)} icon={FileText}>
               {formLabel}
@@ -458,16 +571,22 @@ function MinorRow({ row, onOpenDemoForm, onOpenOzalitForm }) {
             // writes its own snapshot (migration 052), so the row that stands
             // for five of them offers five numbered links, oldest first.
             <>
-              <span className="text-[11px] text-muted-foreground/70">{formLabel}</span>
-              {entries.map((e, i) => (
-                <FormChip
-                  key={e.id ?? i}
-                  onClick={() => openForm(e)}
-                  title={`${formLabel}, ${formatClock(e.created_at)}`}
-                >
-                  {i + 1}
-                </FormChip>
-              ))}
+              <span className="text-[11px] font-medium text-muted-foreground/80">{formLabel}</span>
+              <span
+                aria-hidden="true"
+                className="flex items-center gap-1 rounded-md border border-border/70 bg-background px-1.5 py-0.5 shadow-[0_1px_0_hsl(var(--border))]"
+              >
+                {entries.map((e, i) => (
+                  <FormChip
+                    key={e.id ?? i}
+                    onClick={() => openForm(e)}
+                    title={`${formLabel}, ${formatClock(e.created_at)}`}
+                    active={i === entries.length - 1}
+                  >
+                    {i + 1}
+                  </FormChip>
+                ))}
+              </span>
             </>
           )}
         </div>
@@ -545,30 +664,32 @@ function FormButton({ onClick, icon: Icon, children }) {
       type="button"
       onClick={onClick}
       className={cn(
-        'inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5',
-        'text-[11px] font-medium text-muted-foreground',
-        'transition-[color,border-color,background-color,transform] duration-150 active:translate-y-px',
-        'hover:border-primary/50 hover:bg-primary/5 hover:text-primary',
+        'inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-background px-2 py-1',
+        'text-[11px] font-medium text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]',
+        'transition-[color,border-color,background-color,box-shadow,transform] duration-150 active:translate-y-px',
+        'hover:border-primary/40 hover:bg-primary/[0.04] hover:text-primary hover:shadow-none',
       )}
     >
-      <Icon className="h-2.5 w-2.5" />
+      <Icon className="h-3 w-3" />
       {children}
     </button>
   )
 }
 
 /** One version of a sheet on a merged row — the number, not another button. */
-function FormChip({ onClick, title, children }) {
+function FormChip({ onClick, title, children, active = false }) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
       className={cn(
-        'inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border bg-background px-1.5',
-        'font-mono text-[11px] tabular-nums text-muted-foreground',
-        'transition-[color,border-color,background-color,transform] duration-150 active:translate-y-px',
-        'hover:border-primary/50 hover:bg-primary/5 hover:text-primary',
+        'inline-flex h-6 min-w-6 select-none items-center justify-center rounded-md border bg-background px-1.5 font-mono text-[11px] font-medium tabular-nums',
+        'transition-[color,border-color,background-color,box-shadow,transform] duration-150 active:translate-y-px',
+        active
+          ? 'border-primary/40 text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.4)]'
+          : 'border-border/70 text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]',
+        'hover:border-primary/40 hover:bg-primary/[0.04] hover:text-primary hover:shadow-none',
       )}
     >
       {children}
@@ -577,7 +698,7 @@ function FormChip({ onClick, title, children }) {
 }
 
 /**
- * "×5" on a row that stands for five identical events. The count is the whole
+ * "×N" on a row that stands for N identical events. The count is the whole
  * point of merging them — without it the merge would be hiding history rather
  * than summarising it.
  */
@@ -585,9 +706,10 @@ function RepeatBadge({ count }) {
   return (
     <span
       title={`${count} kez`}
-      className="shrink-0 rounded-full bg-muted px-1.5 py-px font-mono text-[10px] tabular-nums text-muted-foreground"
+      className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-muted/80 px-1.5 py-px font-mono text-[10px] font-medium tabular-nums text-muted-foreground ring-1 ring-inset ring-border/60"
     >
-      ×{count}
+      <span className="text-[9px] text-muted-foreground/70">×</span>
+      {count}
     </span>
   )
 }

@@ -18,6 +18,17 @@ export function createHttpSubtaskRepository() {
       const { data } = await httpClient.patch(`/subtasks/${subtaskId}`, { stickers_done: stickersDone })
       return { project: data }
     },
+    // migration 055 — flip a single page's status on the "İç Sayfalar"
+    // subtask. The server recomputes pages_done / is_done on the parent
+    // subtask and returns the full project shape so the SPA's
+    // `setProject` can drop it in without a follow-up GET.
+    async setSubtaskPage(subtaskId, pageIndex, status) {
+      const { data } = await httpClient.patch(
+        `/subtasks/${subtaskId}/pages/${pageIndex}`,
+        { status },
+      )
+      return { project: data.project, page: data.page }
+    },
     async reviseSubtask(subtaskId) {
       const { data } = await httpClient.post(`/subtasks/${subtaskId}/revize`)
       return { project: data }

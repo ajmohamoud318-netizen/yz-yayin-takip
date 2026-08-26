@@ -272,6 +272,194 @@ export async function getProjectForUpdate(client, id) {
   return rows[0] ? rowToProject(rows[0]) : null
 }
 
+/**
+ * One subtask's worth of page rows (migration 055), keyed by subtask_id so a
+ * single follow-up query can splice them onto the subtask list. Returned shape
+ * is exactly what the SPA's chip grid expects — `{ i, status, done_by,
+ * done_by_name, done_at, rework_count }` — already in page-index order.
+ * Exported so the page-edit route can refetch a single subtask's pages after
+ * a PATCH without re-running the full project subtask list.
+ */
+export async function loadSubtaskPages(client, subtaskIds) {
+  if (!subtaskIds.length) return new Map()
+  const { rows } = await client.query(
+    `SELECT sp.subtask_id, sp.page_index, sp.status, sp.done_by, sp.done_at,
+            sp.rework_count, u.name AS done_by_name
+       FROM subtask_pages sp
+       LEFT JOIN users u ON u.id = sp.done_by
+      WHERE sp.subtask_id = ANY($1::text[])
+      ORDER BY sp.subtask_id, sp.page_index`,
+    [subtaskIds],
+  )
+  const bySubtask = new Map()
+  for (const r of rows) {
+    if (!bySubtask.has(r.subtask_id)) bySubtask.set(r.subtask_id, [])
+    bySubtask.get(r.subtask_id).push({
+      i: r.page_index,
+      status: r.status,
+      done_by: r.done_by ?? null,
+      done_by_name: r.done_by_name ?? null,
+      done_at: r.done_at instanceof Date ? r.done_at.toISOString() : r.done_at,
+      rework_count: r.rework_count,
+    })
+  }
+  return bySubtask
+}
+
+/**
+ * Seed page rows for a newly created `kind='pages'` subtask. Idempotent —
+ * uses ON CONFLICT DO NOTHING on (subtask_id, page_index), so calling it on
+ * an already-seeded subtask is a no-op. A subtask without total_pages (or
+ * with total_pages <= 0) gets no rows; the chip grid will render empty.
+ */
+export async function seedSubtaskPages(client, subtaskId, totalPages) {
+  const n = Number(totalPages)
+  if (!Number.isFinite(n) || n <= 0) return
+  // generate_series is faster than N parameterised INSERTs and keeps the
+  // statement plan-friendly. The conflict target matches the UNIQUE index.
+  await client.query(
+    `INSERT INTO subtask_pages (subtask_id, page_index, status)
+     SELECT $1, g, 'pending'
+       FROM generate_series(1, $2) AS g
+     ON CONFLICT (subtask_id, page_index) DO NOTHING`,
+    [subtaskId, n],
+  )
+}
+
+/**
+ * Trim a subtask's page rows down to `totalPages`. Rows past the new total
+ * are deleted; rows inside the new range are untouched (their done state
+ * survives a leader shrinking the book from 48 to 32 pages). Matches the
+ * existing `pages_done = LEAST(pages_done, ...)` guard on bulk subtask save.
+ */
+export async function pruneSubtaskPages(client, subtaskId, totalPages) {
+  await client.query(
+    `DELETE FROM subtask_pages WHERE subtask_id = $1 AND page_index > $2`,
+    [subtaskId, Number(totalPages) || 0],
+  )
+}
+
+/**
+ * Flip a single page's status. Validates the subtask is `kind='pages'` and
+ * the page_index is within range, then writes status + done_by/done_at +
+ * (for rework transitions) increments rework_count. Returns the updated row
+ * so the route can splice it into the next GET without a re-read.
+ *
+ * Ownership rule mirrors the project subtask PATCH route: any project
+ * assignee can mark a page done (designers split the work), but only the
+ * actor who marked it done (or the team leader) can clear it back to
+ * pending or mark it for rework. Kept on the hot path — every chip click
+ * hits it — so the body is a single UPDATE.
+ */
+export async function setSubtaskPage(
+  client,
+  { subtaskId, pageIndex, status, actorId, actorName },
+) {
+  const { rows: subRows } = await client.query(
+    `SELECT id, project_id, kind, total_pages FROM subtasks WHERE id = $1 FOR UPDATE`,
+    [subtaskId],
+  )
+  const sub = subRows[0]
+  if (!sub) return { error: 'not_found' }
+  if (sub.kind !== 'pages') return { error: 'wrong_kind' }
+  const total = Number(sub.total_pages ?? 0)
+  if (!Number.isFinite(pageIndex) || pageIndex < 1 || pageIndex > total) {
+    return { error: 'out_of_range' }
+  }
+  // The page row was seeded at subtask creation time, but if the row is
+  // missing (e.g. leader lowered total_pages then raised it back) recreate
+  // it on the fly so the click doesn't silently 404.
+  const { rows: pageRows } = await client.query(
+    `SELECT * FROM subtask_pages WHERE subtask_id = $1 AND page_index = $2 FOR UPDATE`,
+    [subtaskId, pageIndex],
+  )
+  const page = pageRows[0]
+  if (!page) {
+    await client.query(
+      `INSERT INTO subtask_pages (subtask_id, page_index, status) VALUES ($1, $2, 'pending')
+         ON CONFLICT (subtask_id, page_index) DO NOTHING`,
+      [subtaskId, pageIndex],
+    )
+  }
+
+  // Compute the new state in one UPDATE. done_by / done_at are stamped on
+  // the done transition and cleared when going back to pending (rework is
+  // a separate state — it keeps done_by/done_at so the team leader can see
+  // who last shipped the page before it bounced).
+  let reworkBump = 0
+  let nextStatus = status
+  if (status === 'done') {
+    // Allow any assignment to drive a pending/rework page to done, but
+    // refuse to overwrite someone else's done unless the caller is a team
+    // leader (the leader override keeps the UI honest without a per-row
+    // ownership column).
+    if (page && page.status === 'done' && page.done_by && page.done_by !== actorId) {
+      return { error: 'not_yours', page }
+    }
+  } else if (status === 'pending') {
+    if (page && page.status === 'done' && page.done_by && page.done_by !== actorId) {
+      return { error: 'not_yours', page }
+    }
+    nextStatus = 'pending'
+  } else if (status === 'rework') {
+    // Rework is only meaningful from a done state — going from pending
+    // straight to rework would imply a page was "redone before it shipped",
+    // which is just a done page with extra steps. We accept it anyway and
+    // bump rework_count once so the row still tracks the leader's signal.
+    reworkBump = 1
+  } else {
+    return { error: 'bad_status' }
+  }
+
+  const { rows: updated } = await client.query(
+    `UPDATE subtask_pages
+        SET status = $3,
+            done_by = CASE WHEN $3 = 'done' THEN $4 ELSE NULL END,
+            done_at = CASE WHEN $3 = 'done' THEN NOW() ELSE NULL END,
+            done_by_name = CASE WHEN $3 = 'done' THEN $5 ELSE NULL END,
+            rework_count = rework_count + $6,
+            updated_at = NOW()
+      WHERE subtask_id = $1 AND page_index = $2
+      RETURNING subtask_id, page_index, status, done_by, done_at, rework_count`,
+    [subtaskId, pageIndex, nextStatus, actorId ?? null, actorName ?? null, reworkBump],
+  )
+
+  // Sync the subtask-level counters (`pages_done`, `is_done`) so the project
+  // progress bar tracks the chip grid. Counts rework as "not done" for the
+  // purpose of `pages_done` — the leader wants to see "X/Y done" reflect
+  // pages that are genuinely finished, not pages that are mid-rework.
+  const { rows: countRows } = await client.query(
+    `SELECT
+       COUNT(*) FILTER (WHERE status = 'done')   AS done_count,
+       COUNT(*) FILTER (WHERE status = 'rework') AS rework_count,
+       COUNT(*)                                  AS total_count
+       FROM subtask_pages WHERE subtask_id = $1`,
+    [subtaskId],
+  )
+  const counts = countRows[0]
+  const pagesDone = Number(counts.done_count)
+  const reworkCount = Number(counts.rework_count)
+  const isDone = counts.total_count > 0 && pagesDone === Number(counts.total_count)
+  const { rows: subUpdated } = await client.query(
+    `UPDATE subtasks
+        SET pages_done = $2,
+            is_done = $3,
+            -- Mirror the existing PATCH /subtasks/:id convention: stamp
+            -- done_at on the transition into done, clear it when leaving.
+            done_at = CASE
+                        WHEN $3 AND NOT is_done THEN NOW()
+                        WHEN NOT $3 THEN NULL
+                        ELSE done_at
+                      END,
+            updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, project_id, is_done, pages_done`,
+    [subtaskId, pagesDone, isDone],
+  )
+
+  return { updated: updated[0], subtask: subUpdated[0], pagesDone, reworkCount }
+}
+
 export async function listProjectSubtasks(client, projectId) {
   // LEFT JOIN users so each row carries `assigned_name`. Without this the
   // ProjectDetail UI can show "Kapak → u-1bMgmt0PcKOpGdvC" (raw id) because
@@ -290,7 +478,16 @@ export async function listProjectSubtasks(client, projectId) {
        ORDER BY s.position, s.created_at`,
     [projectId],
   )
-  return rows
+  // migration 055 — splice the page grid onto every kind='pages' subtask so
+  // the chip list comes back in one round trip. Without this the SPA would
+  // have to fire one /subtasks/:id/pages GET per pages subtask on every load.
+  const pagesBySubtask = await loadSubtaskPages(
+    client,
+    rows.filter((s) => s.kind === 'pages').map((s) => s.id),
+  )
+  return rows.map((s) => (
+    s.kind === 'pages' ? { ...s, pages: pagesBySubtask.get(s.id) ?? [] } : s
+  ))
 }
 
 export async function listProjectHistory(client, projectId) {

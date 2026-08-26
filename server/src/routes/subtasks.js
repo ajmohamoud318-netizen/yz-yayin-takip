@@ -4,6 +4,8 @@ import { withTx } from '../db/pool.js'
 import {
   getProject, getProjectForUpdate, patchProject, logHistory,
   listProjectSubtasks, listProjectHistory, loadProjectAssignees,
+  seedSubtaskPages, pruneSubtaskPages,
+  setSubtaskPage, loadSubtaskPages,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
@@ -413,6 +415,19 @@ export async function subtaskRoutes(fastify) {
         [project.id, keptIds],
       )
 
+      // migration 055 — reconcile the per-page rows for every kind='pages'
+      // subtask in the saved list. Growing total_pages adds new pending rows;
+      // shrinking it drops rows past the new total (the chip grid only ever
+      // shows what's in scope). Same set of operations is done at create
+      // time on POST /projects — this branch catches the leader editing an
+      // existing list.
+      for (const row of finalRows) {
+        if (row.kind !== 'pages') continue
+        const total = Number(row.total_pages ?? 0)
+        if (total > 0) await seedSubtaskPages(client, row.id, total)
+        await pruneSubtaskPages(client, row.id, total)
+      }
+
       const inserted = finalRows
       const progress = progressFor(project, inserted)
       const updated = await patchProject(client, project.id, { progress })
@@ -435,6 +450,112 @@ export async function subtaskRoutes(fastify) {
         )
       }
       return { project: updated, subtasks: inserted, progress }
+    })
+    return result
+  })
+
+  /**
+   * PATCH /api/subtasks/:id/pages/:pageIndex
+   *
+   * Per-page state flip on the "İç Sayfalar" subtask (migration 055). Every
+   * chip click on the SPA grid hits this endpoint — it's intentionally the
+   * cheapest possible write: one UPDATE on `subtask_pages`, one counter
+   * UPDATE on `subtasks`, then a project progress recompute.
+   *
+   * Ownership mirrors the project subtask PATCH route: any project assignee
+   * can drive a page to `done` (pages are commonly split across designers);
+   * only the actor who marked a page done (or the team leader) can clear it
+   * back to `pending` or mark it for `rework`. The team leader override is
+   * what lets them resolve a stale "page marked done by someone who no
+   * longer works here" without a manual SQL fix.
+   */
+  fastify.patch('/subtasks/:id/pages/:pageIndex', { schema: schemas.subtasksPagePatch }, async (request) => {
+    await attachUser(request)
+    const subtaskId = request.params.id
+    const pageIndex = Number(request.params.pageIndex)
+    const { status } = request.body
+
+    const result = await withTx(async (client) => {
+      const { rows: subRows } = await client.query(
+        'SELECT id, project_id, title, kind, total_pages FROM subtasks WHERE id = $1 FOR UPDATE',
+        [subtaskId],
+      )
+      const sub = subRows[0]
+      if (!sub) notFound('Alt görev bulunamadı.')
+      if (sub.kind !== 'pages') badRequest('Bu alt görev "İç Sayfalar" türünde değil.')
+      // Same gate the existing PATCH /subtasks/:id uses: the project must
+      // not be in a frozen stage, and the actor must either be the team
+      // leader or an assigned designer. Assignees come from the same load
+      // helper every other route uses — `project.assigned_to` plus the
+      // per-subtask designers (see project-repository.loadProjectAssignees).
+      const project = await getProjectForUpdate(client, sub.project_id)
+      if (!project) notFound('Proje bulunamadı.')
+      const assigneeIds = new Set(
+        (await loadProjectAssignees(client, project)).map((a) => a.id),
+      )
+      const isLeader = request.user.role === 'team_leader'
+      const isAssignedDesigner =
+        request.user.role === 'designer' && assigneeIds.has(request.user.id)
+      if (!isLeader && !isAssignedDesigner) {
+        badRequest('Yalnızca ekip lideri veya atanmış tasarımcı sayfa işaretleyebilir.')
+      }
+
+      // The leader bypasses the "only the original finisher can rework a
+      // page" rule — see setSubtaskPage's docblock.
+      const result = await setSubtaskPage(client, {
+        subtaskId,
+        pageIndex,
+        status,
+        actorId: request.user.id,
+        actorName: request.user.name,
+      })
+      if (result.error === 'not_yours' && !isLeader) {
+        badRequest('Bu sayfayı yalnızca işaretleyen kişi geri alabilir.')
+      }
+      if (result.error === 'out_of_range') {
+        badRequest(`Sayfa numarası 1 ile ${sub.total_pages} arasında olmalı.`)
+      }
+      if (result.error === 'wrong_kind') {
+        badRequest('Bu alt görev "İç Sayfalar" türünde değil.')
+      }
+      if (result.error === 'bad_status') {
+        badRequest('Geçersiz sayfa durumu.')
+      }
+
+      // Same "return the full project shape" contract every other subtask
+      // route keeps — the SPA merges it into state without a follow-up GET.
+      const updProject = await patchProject(client, project.id, {})
+      const subtasksList = await listProjectSubtasks(client, project.id)
+      const history = await listProjectHistory(client, project.id)
+      const assigneesOut = await loadProjectAssignees(client, updProject)
+      // Log the page-level event so the project timeline shows "Sayfa 5,
+      // tamamlandı" rather than just a silent subtask counter bump. Skipped
+      // when status didn't actually change (defensive — setSubtaskPage
+      // already refused no-op transitions on the not_yours path).
+      const labelMap = { done: 'tamamlandı', pending: 'tamamlanmadı', rework: 'revize edildi' }
+      await logHistory(
+        client,
+        {
+          project_id: project.id,
+          from_stage: project.stage,
+          to_stage: project.stage,
+          action: 'system',
+          event: status === 'rework' ? 'subtask_progress' : 'subtask_done',
+          note: `${sub.title}, sayfa ${pageIndex} ${labelMap[status]}`,
+        },
+        request.user,
+      )
+      return {
+        page: result.updated,
+        subtask: result.subtask,
+        project: {
+          ...updProject,
+          assignees: assigneesOut,
+          assigned_name: assigneesOut.map((a) => a.name).join(', ') || updProject.assigned_name || '—',
+          subtasks: subtasksList,
+          history,
+        },
+      }
     })
     return result
   })
