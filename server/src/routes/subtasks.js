@@ -559,7 +559,21 @@ export async function subtaskRoutes(fastify) {
 
       // Same "return the full project shape" contract every other subtask
       // route keeps — the SPA merges it into state without a follow-up GET.
-      const updProject = await patchProject(client, project.id, {})
+      //
+      // Recompute project.progress from the just-updated subtask list. The
+      // subtasks the previous PATCH /subtasks/:id route did was the same
+      // query; doing it here makes a chip click update the header bar the
+      // same way a checkbox toggle does, so the designer sees the
+      // percentage move as they click through the grid. Without this the
+      // project.progress field never changes for İç Sayfalar subtasks
+      // — the value got stuck the day the project was created, and the
+      // "10/48 tamamlandı" chip-grid header was the only signal designers
+      // had that work was actually happening.
+      const { rows: projectSubs } = await client.query(
+        'SELECT * FROM subtasks WHERE project_id = $1', [project.id],
+      )
+      const progress = progressFor(project, projectSubs)
+      const updProject = await patchProject(client, project.id, { progress })
       const subtasksList = await listProjectSubtasks(client, project.id)
       const history = await listProjectHistory(client, project.id)
       const assigneesOut = await loadProjectAssignees(client, updProject)
