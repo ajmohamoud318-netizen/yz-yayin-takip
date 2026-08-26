@@ -760,6 +760,16 @@ const subtasksRevize = {
 // body `status` is one of pending/done/rework. Returns the same project shape
 // every other subtask route returns so the client can drop it straight into
 // state without a follow-up GET.
+//
+// `pageIndex` is declared as a string-with-pattern, NOT a JSON integer —
+// Fastify hands path params to handlers as strings (URL segments are always
+// strings), and Fastify v5's ajv defaults to `coerceTypes: 'array'`, which
+// only coerces when the schema type is an array of types. A bare
+// `type: 'integer'` against `"2"` rejects with FST_ERR_VALIDATION before
+// the handler ever runs, which is what designers were hitting after a
+// leader rejected an "İç Sayfalar" subtask and tried to mark pages done.
+// The regex pins 1–100000 (the same range the old `integer` covered);
+// `Number()` in the handler turns the validated string back into a number.
 const subtasksPagePatch = {
   params: {
     type: 'object',
@@ -767,7 +777,7 @@ const subtasksPagePatch = {
     required: ['id', 'pageIndex'],
     properties: {
       id: { type: 'string', minLength: 1, maxLength: 64 },
-      pageIndex: { type: 'integer', minimum: 1, maximum: 100000 },
+      pageIndex: { type: 'string', pattern: '^[1-9][0-9]*$', minLength: 1, maxLength: 6 },
     },
   },
   body: {
