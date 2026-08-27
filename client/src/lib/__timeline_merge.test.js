@@ -106,7 +106,7 @@ describe('buildTimeline — consecutive repeats', () => {
    * The reported regression: a day spent entirely in a demo negotiation —
    * matbaa starts, leader asks for a change, matbaa accepts one and declines
    * the next — was every-row-'minor', so the run swallowed all of it and the
-   * whole day rendered as one grey line reading "22 küçük güncelleme".
+   * whole day rendered as one grey summary line.
    */
   it('never folds a whole day of demo negotiation behind one summary', () => {
     const days = buildTimeline([
@@ -178,8 +178,8 @@ describe('historyMeta — demo/ozalit round lifecycle', () => {
 
   /**
    * Weight and tone have to agree. A row painted 'negative' or 'pending' is
-   * by definition something the reader has to act on, and calling it a küçük
-   * güncelleme in the same breath is the contradiction this locks shut.
+   * by definition something the reader has to act on, and folding it behind
+   * a neutral summary is the contradiction this locks shut.
    */
   it('gives the negotiation the weight its tone already claimed', () => {
     for (const event of [

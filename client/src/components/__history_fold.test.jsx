@@ -1,9 +1,9 @@
-// Regression test for "22 küçük güncelleme" swallowing an entire day.
+// Regression test for a fold swallowing an entire day.
 //
 // ProjectHistory folds a run of 3+ consecutive 'minor' rows behind one
 // summary node. On a day whose every event was minor there was no major row
 // to break the run, so the fold became the day: the panel rendered a single
-// grey line reading "N küçük güncelleme" and nothing else.
+// grey summary line for the whole day and nothing else.
 //
 // lib/project-history.js fixes the classification (a demo negotiation is not
 // bookkeeping — see __timeline_merge.test.js). This test locks the structural

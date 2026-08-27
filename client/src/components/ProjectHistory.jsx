@@ -9,6 +9,7 @@ import {
   TONES,
   buildTimeline,
   filterCounts,
+  foldBreakdown,
   demoFormAttempt,
   hasDemoForm,
   hasOzalitForm,
@@ -331,24 +332,25 @@ function MajorRow({
 }
 
 /**
- * A run of 3+ consecutive bookkeeping rows, folded into one node. Reads as a
- * single fact ("6 alt görev güncellemesi") until you ask for the detail —
- * which is how a reader treats it anyway.
+ * A run of 3+ consecutive bookkeeping rows, folded into one node. The summary
+ * line lists the bucket each row belongs to — "4 alt görev, 2 form düzenleme"
+ * — so the reader sees what kind of activity is hidden before opening the
+ * fold. A single-kind fold reads as just "4 alt görev".
  *
  * `defaultOpen` is the guard against the failure this fold can cause rather
  * than cure: if every event on a day is 'minor', the run absorbs all of them
- * and the day renders as ONE grey line reading "22 küçük güncelleme" — the
- * reader is told a number and nothing else. The weights in
- * lib/project-history.js are the first line of defence (a demo negotiation is
- * not bookkeeping); this is the structural one, so no future minor-only mix
- * can swallow a day again. Still collapsible — the affordance stays, only its
- * initial state changes.
+ * and the day renders as ONE summary line and nothing else. The weights in
+ * lib/project-history.js are the first line of defence (a demo negotiation
+ * is not bookkeeping); this is the structural one, so no future minor-only
+ * mix can swallow a day again. Still collapsible — the affordance stays,
+ * only its initial state changes.
  */
 function FoldedRun({ rows, total, reduce, isLast, defaultOpen = false, onOpenDemoForm, onOpenOzalitForm }) {
   const [open, setOpen] = useState(defaultOpen)
   // Distinct tones present in the run, so the summary still signals whether
   // anything in there went backwards (amber) or completed (emerald).
   const tones = [...new Set(rows.map((r) => (TONES[r.meta.tone] ?? TONES.neutral).dot))]
+  const breakdown = foldBreakdown(rows)
 
   return (
     <motion.li layout={!reduce} className="relative pb-4 last:pb-0">
@@ -362,6 +364,11 @@ function FoldedRun({ rows, total, reduce, isLast, defaultOpen = false, onOpenDem
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        aria-label={
+          breakdown.length === 0
+            ? `${total} yardımcı işlem, ${open ? 'daralt' : 'genişlet'}`
+            : breakdown.map((b) => `${b.count} ${b.label}`).join(', ')
+        }
         className="group flex w-full items-center gap-3 text-left"
       >
         <span className="relative z-[1] grid h-6 w-6 shrink-0 place-items-center rounded-full bg-card ring-4 ring-card">
@@ -371,12 +378,11 @@ function FoldedRun({ rows, total, reduce, isLast, defaultOpen = false, onOpenDem
             ))}
           </span>
         </span>
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] text-muted-foreground transition-colors group-hover:text-foreground">
-          <span className="font-mono tabular-nums">{total}</span>
-          küçük güncelleme
+        <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-[12px] text-muted-foreground transition-colors group-hover:text-foreground">
+          <FoldSummary breakdown={breakdown} total={total} />
           <ChevronDown
             className={cn(
-              'h-3.5 w-3.5 transition-transform duration-300 [transition-timing-function:var(--ease-out)]',
+              'ml-auto h-3.5 w-3.5 shrink-0 transition-transform duration-300 [transition-timing-function:var(--ease-out)]',
               open && 'rotate-180',
             )}
           />
@@ -623,6 +629,41 @@ function FormChip({ onClick, title, children, active = false }) {
     >
       {children}
     </button>
+  )
+}
+
+/**
+ * The fold summary line. The label changes with the shape of what's inside:
+ *   - no recognised bucket   → "5 yardımcı işlem" (fallback for legacy rows)
+ *   - one kind of activity   → "4 alt görev"
+ *   - multiple kinds         → "4 alt görev, 2 form düzenleme"
+ * The breakdown already adds up to `total`, so the multi-kind line has no
+ * "N olay" prefix — adding one would make the reader count twice.
+ *
+ * Numbers get the mono treatment so they read as a count at a glance; labels
+ * stay in the prose font because they're words the reader scans, not values
+ * to be parsed. A long breakdown is clamped to a single line; the reader can
+ * always expand the fold to see every row.
+ */
+function FoldSummary({ breakdown, total }) {
+  if (breakdown.length === 0) {
+    return (
+      <>
+        <span className="font-mono tabular-nums">{total}</span>
+        <span>yardımcı işlem</span>
+      </>
+    )
+  }
+  return (
+    <span className="flex min-w-0 items-baseline gap-x-1.5 truncate">
+      {breakdown.map((b, i) => (
+        <span key={b.label} className="inline-flex items-baseline gap-1">
+          {i > 0 && <span className="opacity-50">,</span>}
+          <span className="font-mono tabular-nums">{b.count}</span>
+          <span>{b.label}</span>
+        </span>
+      ))}
+    </span>
   )
 }
 

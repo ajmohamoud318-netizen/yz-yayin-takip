@@ -157,8 +157,8 @@ const EVENTS = {
   // picking the job up, and it is the anchor every change request that
   // follows hangs off. As 'minor' it also left a whole day of demo
   // negotiation with no major row to break the run, so buildDays folded the
-  // entire day into one "N küçük güncelleme" line — a rejected change is not
-  // a küçük güncelleme.
+  // entire day behind one summary line — a rejected change is not the kind
+  // of thing a fold is allowed to swallow.
   // noteMode 'echo': the note under these is a fixed server string that only
   // restates the heading, and rows written before the label was reworded carry
   // the older 'Matbaa demoya başladı' phrasing — neither says anything the
@@ -176,8 +176,8 @@ const EVENTS = {
   //   requested — carries the typed reason ("sayfa sayısı yanlış girildi").
   //               Dense-folded, that reason shrank to a grey second line.
   //   declined  — the change did NOT happen and the designer has to know.
-  //               A row whose tone is 'negative' can never be a küçük
-  //               güncelleme; the two contradicted each other.
+  //               A row whose tone is 'negative' cannot be folded behind a
+  //               neutral summary; the two contradicted each other.
   //   accepted  — stays 'minor'. It is the "evet" half of a pair whose
   //               question is already a major row above it. A lone accepted
   //               row still unfolds back to full width (see buildDays), so
@@ -471,6 +471,55 @@ export function filterCounts(entries) {
   const counts = { all: entries.length, stage: 0, approval: 0, subtask: 0, order: 0 }
   for (const h of entries) counts[historyMeta(h).group] += 1
   return counts
+}
+
+/**
+ * Buckets the fold-summary breakdown reads from. A fold can hold rows from
+ * many `event` types at once; instead of telling the reader "N küçük
+ * güncelleme" and forcing a click to find out what happened, the summary
+ * shows the count per bucket — "4 alt görev, 2 form düzenleme" — so the
+ * activity is legible before the fold is opened.
+ *
+ * Each bucket maps an event name to the noun the summary uses. The noun is
+ * already plural-safe in Turkish ("1 alt görev" and "5 alt görev" read the
+ * same), so no suffix dance is needed.
+ */
+const FOLD_BUCKETS = [
+  { events: ['subtask_done', 'subtask_undone', 'subtask_revize', 'subtask_progress', 'subtask_note', 'subtask_list_update'], label: 'alt görev' },
+  { events: ['demo_form_edited', 'ozalit_form_edited'], label: 'form düzenleme' },
+  { events: ['demo_change_accepted', 'ozalit_change_accepted'], label: 'kabul' },
+  { events: ['product_info_auto'], label: 'ürün bilgisi' },
+  { events: ['project_edit'], label: 'proje düzenleme' },
+  { events: ['stage_rename'], label: 'aşama adı' },
+]
+
+function bucketOf(event) {
+  if (!event) return null
+  for (const bucket of FOLD_BUCKETS) {
+    if (bucket.events.includes(event)) return bucket
+  }
+  return null
+}
+
+/**
+ * Count rows per bucket, in display order. Returns `[{ count, label }, …]`
+ * with every bucket that has at least one row. Order matches FOLD_BUCKETS
+ * so a fold of "alt görev + form düzenleme" reads as the activity the
+ * project spent its time on first, then the next.
+ */
+export function foldBreakdown(rows) {
+  const counts = new Map()
+  for (const row of rows) {
+    const bucket = bucketOf(row.meta.event)
+    if (!bucket) continue
+    counts.set(bucket, (counts.get(bucket) ?? 0) + row.count)
+  }
+  const out = []
+  for (const bucket of FOLD_BUCKETS) {
+    const count = counts.get(bucket)
+    if (count) out.push({ count, label: bucket.label })
+  }
+  return out
 }
 
 /**
