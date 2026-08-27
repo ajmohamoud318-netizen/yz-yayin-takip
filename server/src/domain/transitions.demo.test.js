@@ -22,6 +22,12 @@ function demoProject(overrides = {}) {
     demo_attempt: 5, ozalit_attempt: 0,
     reject_target: null, ozalit_requested: false,
     demo_held: false,
+    // demo_received mirrors the live pipeline: every demo that's reached the
+    // onay stage has been delivered, and a leader can only reject (or approve)
+    // it once they've taken delivery — computeRejection now enforces this same
+    // gate the approval flow has had since migration 035. Tests that need to
+    // exercise the rejection path opt out via `demoReceived: false`.
+    demo_received: true,
     assignees: [{ id: 'u-d', name: 'Aylin' }],
     subtasks: [{ id: 's1', kind: 'check', is_done: true }],
     ...overrides,
@@ -156,5 +162,39 @@ describe('demo re-send gating (demo_held)', () => {
     assert.equal(next.stage, 'demo_teslim')       // new round goes to the matbaa
     assert.equal(next.demo_attempt, 6)            // this IS a new demo — bump
     assert.equal(next.demo_held, false)           // hold cleared
+  })
+})
+
+// Mirrors the demo-approval receipt gate: rejecting an un-received demo is
+// the same logical mistake the client UI used to expose (Demoyu Reddedin
+// before Demoyu Teslim Alın). computeRejection has to refuse it the same way
+// computeApproval does, otherwise an old cached client or a hand-crafted
+// API call could still bypass the UI guard.
+describe('reject "Teslim Alındı" gate', () => {
+  it('blocks reject until the demo is marked received', () => {
+    assert.throws(
+      () => computeRejection(
+        demoProject({ demo_received: false }), 'tasarım değişsin', ['s1'], 'designer', ctx,
+      ),
+      /Teslim Alındı/,
+    )
+  })
+
+  it('blocks reject-to-matbaa for cin_demo_onay too (same demo_received flag)', () => {
+    const cinCtx = { actorName: leader.name, actor: leader }
+    assert.throws(
+      () => computeRejection(
+        demoProject({ stage: 'cin_demo_onay', demo_received: false }),
+        'matbaa yeniden bassın', [], 'matbaa', cinCtx,
+      ),
+      /Teslim Alındı/,
+    )
+  })
+
+  it('proceeds once received', () => {
+    const { project: next } = computeRejection(
+      demoProject({ demo_received: true }), 'tasarım değişsin', ['s1'], 'designer', ctx,
+    )
+    assert.equal(next.stage, 'tasarim')
   })
 })

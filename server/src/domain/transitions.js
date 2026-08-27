@@ -1517,6 +1517,23 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
     badRequest('Reddi yalnızca ekip lideri yapabilir.')
   }
 
+  // Receipt gate: mirror the demo/ozalit approval rule — you can't reject a
+  // proof you haven't acknowledged receiving yet. Approve already enforces
+  // this on the same stages; reject used to skip it, which let a leader
+  // bounce a demo/ozalit they hadn't taken delivery of (visible in the
+  // Onaylar queue: the "Demoyu Reddedin" button used to render next to
+  // "Demoyu Teslim Alın"). Wipe *_received* alongside the leg-reset below
+  // so a fresh round starts with the receipt field unset, same as approve.
+  if (project.stage === 'ozalit_onay' && !project.ozalit_received) {
+    badRequest('Önce ozalit "Teslim Alındı" olarak işaretlenmelidir.')
+  }
+  if (
+    (project.stage === 'demo_onay' || project.stage === 'cin_demo_onay') &&
+    !project.demo_received
+  ) {
+    badRequest('Önce demo "Teslim Alındı" olarak işaretlenmelidir.')
+  }
+
   const isOzalit = project.stage === 'ozalit_onay'
   const nowIso = new Date().toISOString()
 

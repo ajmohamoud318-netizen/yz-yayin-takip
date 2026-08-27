@@ -6,6 +6,61 @@ export function cn(...inputs) {
   return twMerge(clsx(inputs))
 }
 
+/**
+ * Compact Turkish relative-time, e.g. "2sa", "3g", "2hf", "4ay", "2yıl".
+ * Direction-aware: past events read "... önce", future "... sonra". Sub-minute
+ * intervals collapse to "şimdi". Returns "—" for missing/invalid input.
+ *
+ * Used by the year-plan bar popover for "Son aktivite" and "Kalan" cells —
+ * the bar is dense, the popover is wide; long relative phrases would crowd
+ * the stat row, so we keep the unit short and let the cell label carry the
+ * direction ("Son aktivite" → past, "Kalan" → future).
+ */
+export function formatRelativeTr(iso, now = new Date()) {
+  if (!iso) return '—'
+  const then = new Date(iso)
+  if (Number.isNaN(then.getTime())) return '—'
+  const diffMs = then - now
+  const abs = Math.abs(diffMs)
+  if (abs < 60_000) return 'şimdi'
+  const minute = 60_000
+  const hour = 60 * minute
+  const day = 24 * hour
+  const week = 7 * day
+  const month = 30 * day
+  const year = 365 * day
+  let value, unit
+  if (abs < hour) { value = Math.round(abs / minute); unit = 'dk' }
+  else if (abs < day) { value = Math.round(abs / hour); unit = 'sa' }
+  else if (abs < week) { value = Math.round(abs / day); unit = 'g' }
+  else if (abs < month) { value = Math.round(abs / week); unit = 'hf' }
+  else if (abs < year) { value = Math.round(abs / month); unit = 'ay' }
+  else { value = Math.round(abs / year); unit = 'yıl' }
+  return diffMs < 0 ? `${value}${unit} önce` : `${value}${unit} sonra`
+}
+
+/**
+ * Days remaining until the END of the project's target_month. Returns:
+ *   - null when there's no target_month
+ *   - 0 when today is past the end of the target month
+ *   - positive integer otherwise
+ *
+ * The popover formats the result with "g" suffix (matches the mockup's
+ * "28g" cell); a null/0 result is rendered as "—" so the cell never
+ * shows misleading urgency on completed/late projects.
+ */
+export function daysUntilTargetEnd(targetMonth, now = new Date()) {
+  if (!targetMonth) return null
+  const d = new Date(targetMonth)
+  if (Number.isNaN(d.getTime())) return null
+  // last day of the target month (day 0 of the next month = last of this)
+  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+  // normalize both to midnight so the day count is calendar-based
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const diffDays = Math.ceil((end - startOfToday) / (24 * 60 * 60 * 1000))
+  return diffDays > 0 ? diffDays : 0
+}
+
 /** Format an ISO date as `15 Haziran 2026` (tr-TR). */
 export function formatDateTr(iso, opts = {}) {
   if (!iso) return '—'

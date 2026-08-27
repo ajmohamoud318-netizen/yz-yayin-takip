@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react'
 
 import { useProjects } from '@/hooks/useProjects'
@@ -21,14 +21,31 @@ import { cn, formatTargetDate } from '@/lib/utils'
 
 const GROUP_LABELS = { all: 'Tümü', yeni_proje: 'Yeni Proje', devam_eden: 'Devam Eden' }
 
+// Status keys the Dashboard cards link to (matches Dashboard.jsx LEGEND_KEYS
+// order). Anything else in the URL falls through and shows all rows.
+const VALID_STATUS_KEYS = new Set(['orange', 'purple', 'green', 'blue', 'teal', 'pink', 'yellow'])
+
 export default function AllProjects() {
   const { projects, allProjects, loading } = useProjects()
   const openOrders = useOpenOrdersByProject()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [groupFilter, setGroupFilter] = useState('all')
   const [sort, setSort] = useState({ key: 'created_at', dir: 'desc' })
+  // Status filter — driven by Dashboard summary card clicks (?status=yellow).
+  // Unknown / missing values collapse to "no filter", not "show nothing".
+  const statusFilter = (() => {
+    const v = searchParams.get('status')
+    return VALID_STATUS_KEYS.has(v) ? v : null
+  })()
+
+  function clearStatusFilter() {
+    const next = new URLSearchParams(searchParams)
+    next.delete('status')
+    setSearchParams(next, { replace: true })
+  }
 
   // Legacy (Kayıtlı ürünler / backlist) projects are filtered out of the
   // main pipeline list on purpose (see useProjectsStore) to keep ~90 dormant
@@ -44,6 +61,7 @@ export default function AllProjects() {
     let list = visibleProjects.filter((p) => {
       if (typeFilter !== 'all' && p.type !== typeFilter) return false
       if (groupFilter !== 'all' && groupKeyForProject(p) !== groupFilter) return false
+      if (statusFilter && statusKeyForProject(p) !== statusFilter) return false
       if (!q) return true
       return (
         p.title.toLowerCase().includes(q) ||
@@ -69,7 +87,7 @@ export default function AllProjects() {
       return 0
     })
     return list
-  }, [visibleProjects, query, typeFilter, groupFilter, sort])
+  }, [visibleProjects, query, typeFilter, groupFilter, statusFilter, sort])
 
   function toggleSort(key) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))
@@ -83,6 +101,30 @@ export default function AllProjects() {
             <h1 className="text-2xl font-semibold tracking-tight">Tüm Projeler</h1>
           </div>
         </header>
+
+        {/* Active status-filter banner — set by a Dashboard summary card click
+            (?status=yellow, etc.). The chip is removable: clicking × drops
+            the param and re-shows everything. Without this, a user landing
+            from the dashboard sees a partial list with no explanation. */}
+        {statusFilter && (
+          <div
+            role="status"
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2 text-sm"
+          >
+            <span className="text-muted-foreground">Filtre:</span>
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-background px-2 py-0.5 text-xs font-semibold ring-1 ring-border">
+              <span className={cn('h-2 w-2 rounded-full', STATUS_META[statusFilter]?.dot)} />
+              {STATUS_META[statusFilter]?.label}
+            </span>
+            <button
+              type="button"
+              onClick={clearStatusFilter}
+              className="ml-auto text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              Filtreyi kaldır
+            </button>
+          </div>
+        )}
 
         <Card>
           <CardContent className="flex flex-wrap items-center justify-between gap-3 p-3">

@@ -444,8 +444,12 @@ export default function Approvals({ tab = 'demo' }) {
                     )}
                     {/* Only a team leader who hasn't approved yet can reject —
                         approving commits them, so Reddet disappears afterward.
-                        Baskı Onayı has no reject flow: edit the form itself. */}
-                    {isLeader && !alreadyApproved && sub !== 'baski-onay' && (
+                        Baskı Onayı has no reject flow: edit the form itself.
+                        Receipt gate: a leader shouldn't be able to reject a demo/
+                        ozalit proof they haven't acknowledged receiving yet —
+                        the primary button leads with "Teslim Alın" in that case,
+                        so the matching Reddet has to wait too. */}
+                    {isLeader && !alreadyApproved && sub !== 'baski-onay' && !receiptFirst && (
                       <Button
                         size="sm"
                         variant="destructive"

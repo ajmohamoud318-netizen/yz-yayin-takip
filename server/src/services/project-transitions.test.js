@@ -31,6 +31,11 @@ function makeProject(overrides = {}) {
     last_reject_reason: null, last_reject_type: null, reject_target: null,
     history: [], assignees: [{ id: designer.id, name: designer.name }],
     subtasks: [], ozalit_requested: false,
+    // Default-on receipt: matches the live pipeline state and lets the
+    // rejection adapter tests reach the bumping logic without first taking
+    // delivery. applyRejection's own receipt-gate test opts out via
+    // `demoReceived: false`.
+    demo_received: true,
     ...overrides,
   }
 }
@@ -72,6 +77,34 @@ describe('applyRejection (server adapter)', () => {
     )
     assert.equal(project.stage, 'tasarim')
     assert.equal(project.demo_attempt, 3)
+  })
+
+  // Defence-in-depth: even if some other client or API caller skipped the
+  // UI gate, the server still refuses to reject a demo/ozalit proof the
+  // leader hasn't acknowledged receiving. Mirrors the demo/ozalit approval
+  // gates added in migration 035.
+  it('refuses to reject a demo that has not been received', () => {
+    assert.throws(
+      () => applyRejection(
+        makeProject({ stage: 'demo_onay', demo_received: false }),
+        { user: leader, stage: 'demo_onay', reason: 'yanlış demo' },
+      ),
+      /Teslim Alındı/,
+    )
+  })
+
+  it('refuses to reject an ozalit that has not been received', () => {
+    assert.throws(
+      () => applyRejection(
+        makeProject({
+          stage: 'ozalit_onay',
+          demo_received: false,
+          ozalit_received: false,
+        }),
+        { user: leader, stage: 'ozalit_onay', reason: 'yanlış ozalit' },
+      ),
+      /Teslim Alındı/,
+    )
   })
 })
 

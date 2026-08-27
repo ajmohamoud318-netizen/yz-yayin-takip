@@ -8,8 +8,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import OrderBadge from '@/components/OrderBadge'
-import { STAGE_LABELS, STATUS_META, TYPE_LABELS, statusKeyForProject, ORDER_STEP_LABELS } from '@/api'
-import { cn, initials } from '@/lib/utils'
+import YearPlanBarPopover from '@/components/YearPlanBarPopover'
+import { STATUS_META, statusKeyForProject } from '@/api'
+import { cn } from '@/lib/utils'
 
 const TR_MONTHS_SHORT = [
   'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
@@ -22,12 +23,6 @@ const LEGEND_KEYS = ['orange', 'purple', 'green', 'blue', 'teal', 'pink', 'yello
 
 // Estimated lead time (months) used to draw a bar that ends at target_month.
 const LEAD_MONTHS = { TR: 3, CIN: 4 }
-
-// Yellow (Satışta) is too light for white text.
-function barText(key) {
-  // Yellow (Satışta) and peach (Üretimde) are too light for white text.
-  return key === 'yellow' || key === 'pink' ? 'text-[#5A3017]' : 'text-white'
-}
 
 export default function YearPlan() {
   const { projects, allProjects, loading } = useProjects()
@@ -202,8 +197,6 @@ export default function YearPlan() {
                 {/* Rows */}
                 <div className="relative z-10">
                   {bars.map(({ p, start, end }, rowIdx) => {
-                    const key = statusKeyForProject(p)
-                    const meta = STATUS_META[key]
                     const leftPct = (start / 12) * 100
                     const widthPct = ((end - start + 1) / 12) * 100
                     const order = openOrders.get(p.id)
@@ -223,57 +216,17 @@ export default function YearPlan() {
                               <div key={m} className="flex-1 border-l border-border/40" />
                             ))}
                           </div>
-                          {/* bar — draws in via clip-path (left → right), no width animation */}
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/projects/${p.id}`)}
-                            title={`${p.title} · ${STAGE_LABELS[p.stage]} · ${TYPE_LABELS[p.type]} · ${p.assigned_name} · %${p.progress}${order ? ` · Baskı: ${ORDER_STEP_LABELS[order.status] ?? order.status}` : ''}`}
-                            style={{
-                              left: `calc(${leftPct}% + 4px)`,
-                              width: `calc(${widthPct}% - 8px)`,
-                              animationDelay: `${staggerIdx * 50 + 80}ms`, /* bar starts after row fades in */
-                            }}
-                            className={cn(
-                              'yp-bar-draw group absolute top-1/2 flex h-9 -translate-y-1/2 flex-col justify-center overflow-hidden rounded-md px-1.5 shadow-sm',
-                              // No transform on hover — keep the bar exactly where it sits.
-                              // The hover affordance is shadow + brightness, both cheap to render.
-                              'transition-[box-shadow,filter] duration-200 ease-out hover:shadow-md hover:brightness-105',
-                              'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
-                              'motion-reduce:transition-none',
-                              meta.dot,
-                              barText(key),
-                            )}
-                          >
-                            <div className="flex items-center gap-1.5 pb-1">
-                              <span
-                                className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full bg-white/25 text-[9px] font-semibold ring-1 ring-white/40"
-                                title={p.assigned_name}
-                              >
-                                {initials(p.assignees?.[0]?.name ?? p.assigned_name)}
-                              </span>
-                              <span className="truncate text-[11px] font-semibold leading-none">
-                                {p.title}
-                              </span>
-                              <OrderBadge order={order} className="h-3 w-3 shrink-0 opacity-90" />
-                              <span className="ml-auto shrink-0 text-[10px] font-semibold tabular-nums opacity-90">
-                                %{p.progress}
-                              </span>
-                            </div>
-                            {/* progress bar — animates width via the same clip-path technique.
-                                Without the wrapper, the bar's own width would jump. */}
-                            <div className="absolute inset-x-1.5 bottom-1 h-1 overflow-hidden rounded-full bg-black/20">
-                              <div
-                                className={cn(
-                                  'h-full rounded-full yp-bar-draw',
-                                  key === 'yellow' || key === 'pink' ? 'bg-[#5A3017]' : 'bg-white',
-                                )}
-                                style={{
-                                  width: `${p.progress}%`,
-                                  animationDelay: `${staggerIdx * 50 + 280}ms`, /* progress bar fills AFTER the bar shape draws */
-                                }}
-                              />
-                            </div>
-                          </button>
+                          {/* bar — wrapped in <YearPlanBarPopover> for a rich
+                              hover popover (status badge, full title, assignee
+                              stack, İlerleme/Kalan/Son aktivite, "Projeyi aç"
+                              CTA). The bar itself is the PopoverTrigger. */}
+                          <YearPlanBarPopover
+                            project={p}
+                            order={order}
+                            leftPct={leftPct}
+                            widthPct={widthPct}
+                            animationDelay={staggerIdx * 50 + 80}
+                          />
                         </div>
                       </div>
                     )

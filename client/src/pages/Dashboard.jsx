@@ -1,17 +1,14 @@
 import { useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, CalendarOff } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { ChevronLeft, ChevronRight, CalendarOff, RefreshCw } from 'lucide-react'
 import { useProjects } from '../hooks/useProjects.js'
-import {
-  STAGE_LABELS,
-  STATUS_STYLES,
-  TYPE_LABELS,
-  statusKeyForProject,
-} from '../api.js'
+import { useOpenOrdersByProject } from '../hooks/useOpenOrders.js'
+import { STATUS_STYLES, statusKeyForProject } from '../api.js'
 import { Card, CardContent } from '../components/ui/card.jsx'
 import { Skeleton } from '../components/ui/skeleton.jsx'
 import { Button } from '../components/ui/button.jsx'
-import { cn, initials, formatNumber } from '../lib/utils.js'
+import YearPlanBarPopover from '../components/YearPlanBarPopover.jsx'
+import { cn, formatNumber } from '../lib/utils.js'
 
 // The seven status color keys, in legend order.
 // Order = pipeline order (Yeni → Devam → Demo → Özalit → Üretime Hazır → Üretimde → Satışta)
@@ -27,6 +24,7 @@ const LEAD_MONTHS = { TR: 3, CIN: 4 }
 
 export default function Dashboard() {
   const { projects, loading, error, refetch } = useProjects()
+  const openOrders = useOpenOrdersByProject()
   const navigate = useNavigate()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
@@ -129,7 +127,13 @@ export default function Dashboard() {
             otherwise the cards flash "0" for ~100–400 ms on every hard
             refresh, which reads as "your data is empty" until numbers pop
             in. */}
-        <div className="stagger-children grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 xl:grid-cols-8 2xl:gap-4">
+        <div className={cn(
+                  'stagger-children grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 xl:grid-cols-8 2xl:gap-4',
+                  // On a cold-load error, the cards still render but the counts can't
+                  // be trusted — dim them so the user reads "stale data" rather than
+                  // "0 projects". The amber banner below explains why.
+                  error && 'opacity-60',
+                )}>
           {loading ? (
             <>
               <Skeleton className="h-[46px] rounded-lg sm:h-[78px]" />
@@ -139,9 +143,19 @@ export default function Dashboard() {
             </>
           ) : (
             <>
-              <SummaryCard label="Toplam Proje" value={counts.total} colorKey="total" />
+              {/* Toplam → /projects (no filter). The other 7 cards link to
+                  /projects?status=<key> so AllProjects filters the list down
+                  to that pipeline bucket. The status filter banner on that
+                  page is removable. */}
+              <SummaryCardLink label="Toplam Proje" value={counts.total} colorKey="total" to="/projects" />
               {LEGEND_KEYS.map((k) => (
-                <SummaryCard key={k} label={STATUS_STYLES[k].label} value={counts[k]} colorKey={k} />
+                <SummaryCardLink
+                  key={k}
+                  label={STATUS_STYLES[k].label}
+                  value={counts[k]}
+                  colorKey={k}
+                  to={`/projects?status=${k}`}
+                />
               ))}
             </>
           )}
@@ -179,16 +193,20 @@ export default function Dashboard() {
                   Bu yıl
                 </Button>
               )}
+              {/* Yenileyin as a tiny ghost icon button — no label, sits in
+                  the stepper cluster so it doesn't look like a separate
+                  chrome control. Title tooltip explains what it does. */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={refetch}
+                aria-label="Listeyi yenileyin"
+                title="Listeyi yenileyin"
+                className="ml-1 h-9 w-9 text-muted-foreground hover:text-foreground"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
             </div>
-            <button
-              onClick={refetch}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm hover:bg-accent"
-            >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6" />
-              </svg>
-              Yenileyin
-            </button>
           </div>
         </div>
 
@@ -198,42 +216,49 @@ export default function Dashboard() {
             were already loaded. Demote the error to an inline banner when
             we have data, keep the full-screen error card only as the cold-
             load fallback. */}
-        {error && bars.length === 0 && !loading ? (
-          <ErrorState message={error} onRetry={refetch} />
-        ) : (
-          <>
-            {error && bars.length > 0 && (
-              <div
-                role="status"
-                className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
-              >
-                <span>
-                  Listenin son güncellemesi başarısız oldu, eski veriler gösteriliyor.
-                  {error && /\b(x-user-id header is required|oturum geçersiz)\b/i.test(error) && (
-                    <> Oturum sona ermiş olabilir; <button
-                      type="button"
-                      onClick={() => window.location.assign('/login?next=' + encodeURIComponent(window.location.pathname + window.location.search))}
-                      className="underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-100"
-                    >tekrar giriş yap</button>.</>
-                  )}
-                </span>
-                <button
+        {/* Chart area: amber banner for any error, then skeleton/empty/chart/error.
+            The cards above stay visible (just dimmed on cold-load error)
+            so the dashboard never collapses to a single red card. */}
+        {error && (
+          <div
+            role="status"
+            className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+          >
+            <span>
+              {/* Different copy for cold-load vs warm-failure: a warm error
+                  carries forward existing data, a cold error doesn't. */}
+              {bars.length > 0 || projects.length > 0
+                ? 'Listenin son güncellemesi başarısız oldu, eski veriler gösteriliyor.'
+                : 'Veriler yüklenemedi. Tekrar denemek için aşağıdaki butonu kullanın.'}
+              {/\b(x-user-id header is required|oturum geçersiz)\b/i.test(error) && (
+                <> Oturum sona ermiş olabilir; <button
                   type="button"
-                  onClick={refetch}
-                  className="rounded-md border border-amber-300 bg-white px-2 py-1 font-medium hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/40 dark:hover:bg-amber-900/60"
-                >
-                  Yenileyin
-                </button>
-              </div>
-            )}
-            {loading ? (
-              <Skeleton className="h-[420px] w-full rounded-xl" />
-            ) : bars.length === 0 ? (
-              <div className="rounded-xl border border-dashed bg-card p-12 text-center">
-                <p className="text-sm font-medium text-foreground">{year} için planlanmış proje yok.</p>
-                <p className="mt-1 text-xs text-muted-foreground">Başka bir yıl seçin veya proje hedef ayı belirleyin.</p>
-              </div>
-            ) : (
+                  onClick={() => window.location.assign('/login?next=' + encodeURIComponent(window.location.pathname + window.location.search))}
+                  className="underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-100"
+                >tekrar giriş yap</button>.</>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={refetch}
+              className="rounded-md border border-amber-300 bg-white px-2 py-1 font-medium hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/40 dark:hover:bg-amber-900/60"
+            >
+              Yenileyin
+            </button>
+          </div>
+        )}
+        {loading ? (
+          <Skeleton className="h-[420px] w-full rounded-xl" />
+        ) : error && bars.length === 0 && projects.length === 0 ? (
+          // Cold-load error AND nothing to show: a full ErrorState is the
+          // most readable fallback. The cards above are dimmed to flag this.
+          <ErrorState message={error} onRetry={refetch} />
+        ) : bars.length === 0 ? (
+          <div className="rounded-xl border border-dashed bg-card p-12 text-center">
+            <p className="text-sm font-medium text-foreground">{year} için planlanmış proje yok.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Başka bir yıl seçin veya proje hedef ayı belirleyin.</p>
+          </div>
+        ) : (
               <Card className="overflow-hidden shadow-sm ring-1 ring-border/60">
             <div ref={scrollRef} className="scrollbar-thin overflow-x-auto">
               <div className="relative min-w-[900px] bg-card">
@@ -272,10 +297,9 @@ export default function Dashboard() {
                 {/* Rows */}
                 <div className="relative z-10">
                   {bars.map(({ p, start, end }) => {
-                    const key = statusKeyForProject(p)
-                    const meta = STATUS_STYLES[key]
                     const leftPct = (start / 12) * 100
                     const widthPct = ((end - start + 1) / 12) * 100
+                    const order = openOrders.get(p.id)
                     return (
                       <div
                         key={p.id}
@@ -288,43 +312,17 @@ export default function Dashboard() {
                               <div key={m} className="flex-1 border-l border-border/35" />
                             ))}
                           </div>
-                          {/* bar */}
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/projects/${p.id}`)}
-                            title={`${p.title} · ${STAGE_LABELS[p.stage]} · ${TYPE_LABELS[p.type]} · ${p.assigned_name} · %${p.progress}`}
-                            style={{ left: `calc(${leftPct}% + 6px)`, width: `calc(${widthPct}% - 12px)` }}
-                            className={cn(
-                              'group absolute top-1/2 flex h-12 -translate-y-1/2 flex-col justify-center overflow-hidden rounded-md px-3 shadow-sm ring-1 ring-black/5',
-                              'transition-[transform,box-shadow,filter] duration-150 ease-out hover:-translate-y-[54%] hover:shadow-lg hover:brightness-105',
-                              'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
-                              'motion-reduce:transition-none',
-                              meta.barFill,
-                              'text-white',
-                            )}
-                          >
-                            <div className="flex min-w-0 items-center gap-2 pb-1.5">
-                              <span
-                                className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white/25 text-[10px] font-semibold ring-1 ring-white/40"
-                                title={p.assigned_name}
-                              >
-                                {initials(p.assignees?.[0]?.name ?? p.assigned_name)}
-                              </span>
-                              <span className="min-w-0 flex-1 truncate text-left text-xs font-semibold leading-none">
-                                {p.title}
-                              </span>
-                              <span className="shrink-0 rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
-                                %{p.progress}
-                              </span>
-                            </div>
-                            {/* progress bar */}
-                            <div className="absolute inset-x-3 bottom-1.5 h-1 overflow-hidden rounded-full bg-black/20">
-                              <div
-                                className="h-full rounded-full bg-white/95"
-                                style={{ width: `${p.progress}%` }}
-                              />
-                            </div>
-                          </button>
+                          {/* bar — wrapped in <YearPlanBarPopover> for the
+                              rich hover popover. The comfortable variant
+                              matches the Dashboard's existing 48px bar. */}
+                          <YearPlanBarPopover
+                            variant="comfortable"
+                            project={p}
+                            order={order}
+                            leftPct={leftPct}
+                            widthPct={widthPct}
+                            animationDelay={0}
+                          />
                         </div>
                       </div>
                     )
@@ -333,8 +331,6 @@ export default function Dashboard() {
               </div>
             </div>
           </Card>
-            )}
-          </>
         )}
 
         {!loading && !error && undated.length > 0 && (
@@ -370,22 +366,35 @@ export default function Dashboard() {
 
 /* ----------------------------- bits ------------------------------- */
 
-function SummaryCard({ label, value, colorKey }) {
+/**
+ * Wrapper that turns a SummaryCard into a click-through tile. Uses a
+ * `<Link>` (not `<a onClick>`) so middle-click / right-click → "Open in
+ * new tab" / "Copy link" works — every other KPI card in the app (Kanban,
+ * YearPlan bars) uses the same primitive.
+ */
+function SummaryCardLink({ label, value, colorKey, to }) {
+  return (
+    <Link
+      to={to}
+      className="block rounded-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    >
+      <SummaryCard label={label} value={value} colorKey={colorKey} interactive />
+    </Link>
+  )
+}
+
+function SummaryCard({ label, value, colorKey, interactive = false }) {
   const isTotal = colorKey === 'total'
   const meta = isTotal ? null : STATUS_STYLES[colorKey]
   return (
     <div
       className={cn(
-        // On phones these 8 tiles are the entire first screen — stacked
-        // label-over-number they ran 78px each, 348px of counters before the
-        // plan even starts. Below sm the label and the number share one
-        // baseline row (46px), which halves the block without dropping any
-        // of the counts. The stacked KPI card returns at sm+.
         'relative overflow-hidden rounded-lg border px-3 py-2 sm:block sm:p-4',
         'flex items-baseline justify-between gap-2',
         isTotal
           ? 'bg-foreground border-foreground'
           : cn(meta?.surface, meta?.border),
+        interactive && 'transition-transform hover:-translate-y-0.5 hover:shadow-md',
       )}
     >
       <p className={cn('truncate text-xs font-medium opacity-80', isTotal ? 'text-background' : meta?.onSurface)}>

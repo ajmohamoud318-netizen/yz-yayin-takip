@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable, useSensor, useSensors,
-} from '@dnd-kit/core'
-import { toast } from 'sonner'
-import {
-  Inbox, ShoppingCart, Search, ChevronDown, GripVertical, AlertTriangle,
-  ArrowRight, ChevronRight, X,
+  Inbox, ShoppingCart, Search, ChevronDown, AlertTriangle,
+  ChevronRight, X,
 } from 'lucide-react'
 
 import { useProjects } from '@/hooks/useProjects'
-import { useAuth } from '@/hooks/useAuth'
 import FilterChip from '@/components/FilterChip'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -19,7 +14,7 @@ import { Progress } from '@/components/ui/progress'
 import AssigneeAvatars from '@/components/AssigneeAvatars'
 import api, {
   STAGE_LABELS, STAGE_PIPELINE, TYPE_LABELS, ORDER_STEPS, ORDER_STEP_LABELS,
-  statusKeyForProject, STATUS_STYLES, getNextStage, getPipeline,
+  statusKeyForProject, STATUS_STYLES,
 } from '@/api'
 import { cn, formatNumber, formatTargetDate } from '@/lib/utils'
 
@@ -48,33 +43,6 @@ const EMPTY_MESSAGES = {
   cin_demo_onay: 'Çin onay bekleyen yok',
   cin_baski_onay: 'Çin baskı onayı bekleyen yok',
   gumruk: 'Gümrükte proje yok',
-}
-
-// ── Quick-advance eligibility (client-side mirror of ProjectDetail's
-//    computeProjectActions, simplified for the stages that have a single
-//    "advance" transition with no approval/receipt gates). ─────────────────
-function canQuickAdvance(user, project) {
-  if (!user || !project) return false
-  const { role } = user
-  const { stage, type } = project
-  if (role === 'team_leader') {
-    if (stage === 'tasarim') return true
-    if (stage === 'cin_demo_teslim') return true
-    if (stage === 'baskida' && type === 'CIN') return true
-  }
-  // Printer: demo_teslim / ozalit_teslim are "Teslim Edin" — they go through
-  // a delivery form, so the Kanban only shows a hint, not a one-click advance.
-  return false
-}
-
-function quickAdvanceLabel(project) {
-  switch (project.stage) {
-    case 'tasarim':
-      return project.last_reject_type === 'ozalit' ? "Ozalit'e Gönderin" : "Demo'ya Gönderin"
-    case 'cin_demo_teslim': return 'Demo İsteyin'
-    case 'baskida': return 'Gümrüğe Gönderin'
-    default: return 'İlerletin'
-  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -106,11 +74,11 @@ function sortProjects(list, sortKey) {
 /**
  * Kanban-style board: one column per pipeline stage.
  * Each column is a vertical stack of project cards; click a card to open detail.
- * Drag a card to the next column to quick-advance it.
+ * Project progression (which column a card lives in) is driven entirely by
+ * the server's `stage` value — the board is a read-only snapshot.
  */
 export default function Kanban() {
-  const { projects, loading, refetch } = useProjects()
-  const { user } = useAuth()
+  const { projects, loading } = useProjects()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -120,7 +88,6 @@ export default function Kanban() {
   const assigneeFilter = searchParams.get('assignee') || ''
   const [sort, setSort] = useState('default')
   const [collapsed, setCollapsed] = useState(new Set())
-  const [advancingId, setAdvancingId] = useState(null)
 
   // ── Orders with periodic refresh (20 s) ────────────────────────────────
   const [orders, setOrders] = useState([])
@@ -202,51 +169,6 @@ export default function Kanban() {
       return next
     })
   }, [])
-
-  // ── Quick advance (API call) ───────────────────────────────────────────
-  const handleAdvance = useCallback(async (project, e) => {
-    e?.stopPropagation()
-    const next = getNextStage(project)
-    if (!next) {
-      toast.error('Bu proje son aşamada.')
-      return
-    }
-    setAdvancingId(project.id)
-    try {
-      await api.advanceProject(project.id)
-      await refetch()
-      toast.success(`Proje "${STAGE_LABELS[next]}" aşamasına ilerletildi.`)
-    } catch (err) {
-      toast.error(err.message || 'Proje ilerletilemedi.')
-    } finally {
-      setAdvancingId(null)
-    }
-  }, [refetch])
-
-  // ── Drag-and-drop ──────────────────────────────────────────────────────
-  const [dragProject, setDragProject] = useState(null)
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
-
-  const handleDragEnd = useCallback(async ({ active, over }) => {
-    setDragProject(null)
-    if (!over || !active.data.current?.project) return
-    const project = active.data.current.project
-    const targetStage = over.id
-    if (targetStage === project.stage) return
-    const pl = getPipeline(project.type)
-    const curIdx = pl.indexOf(project.stage)
-    if (curIdx < 0 || pl[curIdx + 1] !== targetStage) return
-    setAdvancingId(project.id)
-    try {
-      await api.advanceProject(project.id)
-      await refetch()
-      toast.success(`Proje "${STAGE_LABELS[targetStage]}" aşamasına ilerletildi.`)
-    } catch (err) {
-      toast.error(err.message || 'Proje ilerletilemedi.')
-    } finally {
-      setAdvancingId(null)
-    }
-  }, [refetch])
 
   // ── Keyboard navigation (arrow keys between cards) ─────────────────────
   const boardRef = useRef(null)
@@ -354,35 +276,25 @@ export default function Kanban() {
               {pipeline.map((s) => <Skeleton key={s} className="h-64 w-72 shrink-0 rounded-xl sm:w-64" />)}
             </div>
           ) : (
-            <DndContext sensors={sensors} onDragStart={({ active }) => setDragProject(active.data.current?.project ?? null)} onDragEnd={handleDragEnd}>
-              <div ref={boardRef} className="scrollbar-thin -mx-3 flex gap-3 overflow-x-auto px-3 pb-2 sm:-mx-4 sm:px-4" onKeyDown={handleBoardKeyDown}>
-                {pipeline.map((stage, i) => {
-                  const items = grouped[stage] ?? []
-                  const isCollapsed = collapsed.has(stage) && items.length === 0
-                  return (
-                    <KanbanColumn
-                      key={stage}
-                      stage={stage}
-                      stageKey={stage}
-                      label={STAGE_LABELS[stage]}
-                      color={COLUMN_PASTELS[i % COLUMN_PASTELS.length]}
-                      items={items}
-                      isCollapsed={isCollapsed}
-                      onToggleCollapse={() => toggleCollapsed(stage)}
-                      overdueCount={items.filter((p) => isOverdue(p.target_month)).length}
-                      renderItem={(p) => <ProjectCard project={p} user={user} advancing={advancingId === p.id} onAdvance={handleAdvance} onOpen={(proj) => navigate(`/projects/${proj.id}`)} />}
-                    />
-                  )
-                })}
-              </div>
-              <DragOverlay>
-                {dragProject ? (
-                  <div className="w-64 rotate-2 opacity-90">
-                    <ProjectCard project={dragProject} user={user} advancing={false} onAdvance={() => {}} isOverlay />
-                  </div>
-                ) : null}
-              </DragOverlay>
-            </DndContext>
+            <div ref={boardRef} className="scrollbar-thin -mx-3 flex gap-3 overflow-x-auto px-3 pb-2 sm:-mx-4 sm:px-4" onKeyDown={handleBoardKeyDown}>
+              {pipeline.map((stage, i) => {
+                const items = grouped[stage] ?? []
+                const isCollapsed = collapsed.has(stage) && items.length === 0
+                return (
+                  <KanbanColumn
+                    key={stage}
+                    stage={stage}
+                    label={STAGE_LABELS[stage]}
+                    color={COLUMN_PASTELS[i % COLUMN_PASTELS.length]}
+                    items={items}
+                    isCollapsed={isCollapsed}
+                    onToggleCollapse={() => toggleCollapsed(stage)}
+                    overdueCount={items.filter((p) => isOverdue(p.target_month)).length}
+                    renderItem={(p) => <ProjectCard project={p} onOpen={(proj) => navigate(`/projects/${proj.id}`)} />}
+                  />
+                )
+              })}
+            </div>
           )}
         </section>
 
@@ -417,11 +329,9 @@ export default function Kanban() {
 
 // ── Column ─────────────────────────────────────────────────────────────────
 function KanbanColumn({
-  stage, stageKey, label, color, items, isCollapsed, onToggleCollapse,
+  stage, label, color, items, isCollapsed, onToggleCollapse,
   overdueCount, renderItem, emptyIcon: EmptyIcon = Inbox,
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: stageKey || stage, data: { stage: stageKey || stage } })
-
   if (isCollapsed) {
     return (
       <button
@@ -439,11 +349,7 @@ function KanbanColumn({
 
   return (
     <section
-      ref={setNodeRef}
-      className={cn(
-        'flex w-72 2xl:w-80 shrink-0 flex-col overflow-hidden rounded-xl border bg-muted/30 transition-[border-color,box-shadow] duration-200',
-        isOver && 'ring-2 ring-primary/30 border-primary/30',
-      )}
+      className="flex w-72 2xl:w-80 shrink-0 flex-col overflow-hidden rounded-xl border bg-muted/30"
       style={{ borderTop: `3px solid ${color}` }}
     >
       <header className="flex items-center justify-between border-b px-3 py-2.5" style={{ backgroundColor: color }}>
@@ -478,114 +384,71 @@ function KanbanColumn({
   )
 }
 
-// ── Project Card (rich, draggable) ─────────────────────────────────────────
-function ProjectCard({ project: p, user, advancing, onAdvance, onOpen, isOverlay }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `project-${p.id}`,
-    data: { project: p },
-  })
+// ── Project Card (read-only snapshot of a project's current stage) ────────
+function ProjectCard({ project: p, onOpen }) {
   const statusKey = statusKeyForProject(p)
   const statusStyle = STATUS_STYLES[statusKey]
   const overdue = isOverdue(p.target_month)
-  const canAdvance = canQuickAdvance(user, p)
 
   return (
-    <div ref={setNodeRef} className={cn(isDragging && 'opacity-30')}>
-      <Card
-        data-kanban-card=""
-        role="button"
-        tabIndex={0}
-        aria-label="detayları aç"
-        className={cn(
-          'relative cursor-pointer transition-[transform,box-shadow,border-color] duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none motion-reduce:hover:translate-y-0',
-          overdue && 'border-red-300 dark:border-red-800',
-          isOverlay && 'shadow-lg',
-        )}
-        onClick={() => !isOverlay && onOpen?.(p)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); !isOverlay && onOpen?.(p) }
-        }}
-      >
-        <CardContent className="space-y-2 p-3">
+    <Card
+      data-kanban-card=""
+      role="button"
+      tabIndex={0}
+      aria-label="detayları aç"
+      className={cn(
+        'relative cursor-pointer transition-[transform,box-shadow,border-color] duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none motion-reduce:hover:translate-y-0',
+        overdue && 'border-red-300 dark:border-red-800',
+      )}
+      onClick={() => onOpen?.(p)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen?.(p) }
+      }}
+    >
+      <CardContent className="space-y-2 p-3">
+        <div className="min-w-0 flex-1 space-y-2">
+          {/* Status dot + title + type */}
           <div className="flex items-start gap-1.5">
-            {/* Drag handle */}
-            {!isOverlay && (
-              <button
-                type="button"
-                className="mt-0.5 cursor-grab shrink-0 touch-none text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
-                {...listeners}
-                {...attributes}
-                onPointerDown={(e) => e.stopPropagation()}
-                tabIndex={-1}
-                aria-label="Sürükle"
-              >
-                <GripVertical className="h-3.5 w-3.5" />
-              </button>
-            )}
-            <div className="min-w-0 flex-1 space-y-2">
-              {/* Status dot + title + type */}
-              <div className="flex items-start gap-1.5">
-                <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', statusStyle.dot)} title={statusStyle.label} />
-                <p className="line-clamp-2 min-w-0 flex-1 text-sm font-semibold leading-tight">{p.title}</p>
-                <Badge variant="outline" className="shrink-0 text-[10px]">{TYPE_LABELS[p.type]}</Badge>
-              </div>
-
-              {/* Progress bar */}
-              <div className="flex items-center gap-2">
-                <Progress value={p.progress} className="h-1.5 flex-1" indicatorClassName={statusStyle.bar} />
-                <span className="font-mono text-[10px] tabular-nums text-muted-foreground">{p.progress}%</span>
-              </div>
-
-              {/* Target month + attempt badges */}
-              <div className="flex items-center gap-1.5 text-[11px]">
-                {p.target_month && (
-                  <span className={cn('flex items-center gap-0.5', overdue ? 'font-medium text-red-600' : 'text-muted-foreground')}>
-                    {overdue && <AlertTriangle className="h-3 w-3" />}
-                    {formatTargetDate(p.target_month)}
-                  </span>
-                )}
-                {p.demo_attempt > 0 && (
-                  <span className="rounded bg-purple-100 px-1 text-[9px] font-medium text-purple-700">D{p.demo_attempt + 1}</span>
-                )}
-                {p.ozalit_attempt > 0 && (
-                  <span className="rounded bg-blue-100 px-1 text-[9px] font-medium text-blue-700">Ö{p.ozalit_attempt + 1}</span>
-                )}
-              </div>
-
-              {/* Assignee */}
-              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                <AssigneeAvatars assignees={p.assignees} size="h-5 w-5" text="text-[9px]" />
-                <span className="truncate">{p.assigned_name}</span>
-              </div>
-
-              {/* Quick advance button */}
-              {canAdvance && !isOverlay && (
-                <button
-                  type="button"
-                  disabled={advancing}
-                  onClick={(e) => onAdvance(p, e)}
-                  className="mt-0.5 flex w-full items-center justify-center gap-1 rounded-md border border-primary/20 bg-primary/5 px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
-                >
-                  {advancing ? (
-                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                  ) : (
-                    <>
-                      <ArrowRight className="h-3 w-3" />
-                      {quickAdvanceLabel(p)}
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
+            <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', statusStyle.dot)} title={statusStyle.label} />
+            <p className="line-clamp-2 min-w-0 flex-1 text-sm font-semibold leading-tight">{p.title}</p>
+            <Badge variant="outline" className="shrink-0 text-[10px]">{TYPE_LABELS[p.type]}</Badge>
           </div>
-        </CardContent>
 
-        {/* Overdue top border */}
-        {overdue && (
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] rounded-t-xl bg-red-500" />
-        )}
-      </Card>
-    </div>
+          {/* Progress bar */}
+          <div className="flex items-center gap-2">
+            <Progress value={p.progress} className="h-1.5 flex-1" indicatorClassName={statusStyle.bar} />
+            <span className="font-mono text-[10px] tabular-nums text-muted-foreground">{p.progress}%</span>
+          </div>
+
+          {/* Target month + attempt badges */}
+          <div className="flex items-center gap-1.5 text-[11px]">
+            {p.target_month && (
+              <span className={cn('flex items-center gap-0.5', overdue ? 'font-medium text-red-600' : 'text-muted-foreground')}>
+                {overdue && <AlertTriangle className="h-3 w-3" />}
+                {formatTargetDate(p.target_month)}
+              </span>
+            )}
+            {p.demo_attempt > 0 && (
+              <span className="rounded bg-purple-100 px-1 text-[9px] font-medium text-purple-700">D{p.demo_attempt + 1}</span>
+            )}
+            {p.ozalit_attempt > 0 && (
+              <span className="rounded bg-blue-100 px-1 text-[9px] font-medium text-blue-700">Ö{p.ozalit_attempt + 1}</span>
+            )}
+          </div>
+
+          {/* Assignee */}
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <AssigneeAvatars assignees={p.assignees} size="h-5 w-5" text="text-[9px]" />
+            <span className="truncate">{p.assigned_name}</span>
+          </div>
+        </div>
+      </CardContent>
+
+      {/* Overdue top border */}
+      {overdue && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px] rounded-t-xl bg-red-500" />
+      )}
+    </Card>
   )
 }
 

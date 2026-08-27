@@ -18,8 +18,6 @@ import {
   MoreVertical,
   Settings,
   Files,
-  Boxes,
-  Flame,
   ClipboardPlus,
   ClipboardCheck,
   ClipboardList,
@@ -37,13 +35,11 @@ import {
   Trash2,
   EyeOff,
 } from 'lucide-react'
-import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
 import { useProjects } from '@/hooks/useProjects'
 import RouteFallback from '@/components/RouteFallback'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import UserAvatar from '@/components/UserAvatar.jsx'
 import {
   DropdownMenu,
@@ -54,19 +50,59 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import api, { ROLE_LABELS, STATUS_META, statusKeyForProject, canRequestHandover, ozalitLeaderApproved } from '@/api'
-import { cn, initials } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import NewProjectDialog from '@/components/NewProjectDialog'
 import WorkLogPill from '@/components/WorkLogPill'
 import { WORK_LOG_ENABLED } from '@/lib/work-log.js'
 import PushToggle from '@/components/PushToggle.jsx'
 import SetupSheet from '@/components/SetupSheet.jsx'
+import ThemeToggle from '@/components/ThemeToggle.jsx'
+import CommandPalette from '@/components/CommandPalette.jsx'
 import { useNotifications } from '@/hooks/useNotifications'
 import { isOrderAssignedToDesigner, ORDER_LEADER_ACTION_STEPS } from '@/domain/constants/orders'
 
 const COLLAPSE_KEY = 'yz-sidebar-collapsed'
 const YZ_LOGO_WHITE = '/yz_whitelogo.svg'
 const YZ_LOGO_BLACK = '/yz_blacklogo.svg'
+
+// Global ⌘K / Ctrl+K listener that pops the command palette. Bound once at
+// module scope (rather than in AppShell's useEffect) because there's exactly
+// one chrome in the app, the handler never needs to update, and we want it
+// to fire even when no page has mounted yet — e.g. on the Login screen
+// transition into the shell. The handler ignores keystrokes while the user
+// is already typing in another input/textarea/contentEditable, so a real
+// "Cmd+K inside a textarea" still pastes / cuts as the OS expects.
+function useCommandPaletteHotkey(open) {
+  useEffect(() => {
+    function isTypingTarget(el) {
+      if (!el) return false
+      const tag = el.tagName
+      return (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        el.isContentEditable
+      )
+    }
+    function onKey(e) {
+      const k = e.key?.toLowerCase()
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && k === 'k') {
+        if (isTypingTarget(e.target)) return
+        e.preventDefault()
+        open((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+}
 
 /**
  * Layout used by every authenticated page. The sidebar can collapse to an
@@ -90,7 +126,9 @@ export default function AppShell() {
     }
   })
   const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
   const location = useLocation()
+  useCommandPaletteHotkey(setPaletteOpen)
 
   function toggleCollapsed() {
     setCollapsed((c) => {
@@ -215,7 +253,10 @@ export default function AppShell() {
       {/* Desktop sidebar — wider on huge screens so the rail doesn't feel cramped */}
       <aside
         className={cn(
-          'sticky top-0 hidden h-screen shrink-0 flex-col border-r bg-background transition-[width] duration-200 ease-out lg:flex print:hidden',
+          // `md:` (not `lg:`) closes the 768–1023 px dead zone where the
+          // sidebar was hidden but the topbar menu button (also `lg:hidden`)
+          // was hidden too — leaving the user with zero nav on tablets.
+          'sticky top-0 hidden h-screen shrink-0 flex-col border-r bg-background transition-[width] duration-200 ease-out md:flex print:hidden',
           collapsed
             ? 'w-[4.25rem]'
             : 'w-64 2xl:w-72 3xl:w-80',
@@ -276,41 +317,33 @@ export default function AppShell() {
             <Button
               variant="ghost"
               size="icon"
-              className="lg:hidden"
+              // Same `md:` swap as the desktop sidebar: keep the drawer
+              // trigger visible on the tablet range so users always have
+              // exactly one of {sidebar, drawer} open.
+              className="md:hidden"
               onClick={() => setOpen(true)}
               aria-label="Menüyü açın"
             >
               <Menu className="h-5 w-5" />
             </Button>
+            {/* Greeting + page breadcrumb. The greeting is the warm tone, the
+                breadcrumb is the navigation anchor — keeping them next to each
+                other in one flex row reads as one "you-are-here" signal. */}
             <span className="hidden text-base sm:block">
               Merhaba, <strong>{user?.name?.split(' ')[0]}</strong>!
             </span>
+            <span className="hidden text-sm text-muted-foreground sm:inline">·</span>
+            <Breadcrumb pathname={location.pathname} />
           </div>
 
           {/* Center — search */}
           <div className="flex flex-1 justify-center px-2">
-            <TopbarSearch />
+            <TopbarSearch onOpen={() => setPaletteOpen(true)} />
           </div>
 
           {/* Right — actions */}
           <div className="flex shrink-0 items-center gap-2">
-            {user?.role === 'team_leader' && (
-              <Button size="sm" onClick={() => setNewProjectOpen(true)} className="hidden sm:inline-flex">
-                <Plus className="h-4 w-4" />
-                Yeni Proje
-              </Button>
-            )}
-            {user?.role === 'team_leader' && (
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={() => setNewProjectOpen(true)}
-                className="sm:hidden"
-                aria-label="Yeni proje"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            )}
+            <RolePrimaryCta role={user?.role} onNewProject={() => setNewProjectOpen(true)} />
             <NotificationBell />
             <UserMenu user={user} onLogout={handleLogout} />
           </div>
@@ -343,6 +376,11 @@ export default function AppShell() {
       {/* Install + notification opt-in, offered on open instead of hidden in
           the bell dropdown. Self-hiding once both are done — see SetupSheet. */}
       <SetupSheet />
+
+      {/* ⌘K command palette — filters in-memory projects and offers quick
+          nav. Mounted last so its dialog portal sits above every other
+          overlay (SetupSheet, NewProjectDialog, bell dropdown). */}
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
     </div>
   )
 }
@@ -400,7 +438,14 @@ function Sidebar({ collapsed, groups, pinned, counts, user, onLogout, onNavigate
         )}
 
         {!collapsed && showOverview && (
-          <div className="px-3 pt-4">
+          // Sticky to the bottom of the scroll container so the goal widget
+          // stays in view no matter how tall the nav above it gets. The
+          // shadow + border-top only render when the section above is
+          // actually scrolling under it (via `data-stuck` toggled by a tiny
+          // IntersectionObserver in a follow-up — for now the shadow is
+          // always on so the visual separation is reliable regardless of
+          // scroll position).
+          <div className="sticky bottom-0 mt-4 border-t border-border bg-background px-3 pb-2 pt-3 shadow-[0_-4px_8px_-4px_rgba(0,0,0,0.06)]">
             <PeriodWidget satista={counts.satista} total={counts.total} />
           </div>
         )}
@@ -444,40 +489,21 @@ function SidebarBrand({ collapsed, onToggleCollapsed }) {
   )
 }
 
-function TopbarSearch() {
+function TopbarSearch({ onOpen }) {
   return (
     <button
       type="button"
-      onClick={() => toast.message('Arama yakında eklenecek.')}
+      onClick={onOpen}
       className="flex w-full max-w-sm items-center gap-2 rounded-full border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-input hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <Search className="h-4 w-4 shrink-0" />
       <span className="flex-1 text-left">Ara…</span>
-    </button>
-  )
-}
-
-function SearchButton({ collapsed }) {
-  if (collapsed) {
-    return (
-      <button
-        type="button"
-        onClick={() => toast.message('Arama yakında eklenecek.')}
-        aria-label="Hızlı arayın"
-        className="flex h-9 w-full items-center justify-center rounded-lg border bg-muted/40 text-muted-foreground transition-colors hover:border-input hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <Search className="h-5 w-5" />
-      </button>
-    )
-  }
-  return (
-    <button
-      type="button"
-      onClick={() => toast.message('Arama yakında eklenecek.')}
-      className="flex w-full items-center gap-2 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-input hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-    >
-      <Search className="h-5 w-5" />
-      <span className="flex-1 text-left">Hızlı ara…</span>
+      {/* Keyboard hint chip — shows ⌘K on macOS, Ctrl K elsewhere. The hint
+          is part of the affordance, not a tooltip: it teaches the shortcut
+          while signalling this is a real command palette, not a search box. */}
+      <kbd className="hidden rounded border bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline">
+        {typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl'}K
+      </kbd>
     </button>
   )
 }
@@ -520,35 +546,44 @@ function SidebarNavItem({ item, collapsed, onNavigate }) {
   if (collapsed) {
     if (soon) {
       return (
-        <div
-          aria-label={label}
-          className="relative flex h-9 w-full items-center justify-center rounded-md text-muted-foreground/60"
-        >
-          <Icon className="h-5 w-5" />
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div
+              aria-label={label}
+              className="relative flex h-9 w-full items-center justify-center rounded-md text-muted-foreground/60"
+            >
+              <Icon className="h-5 w-5" />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="right">{label}</TooltipContent>
+        </Tooltip>
       )
     }
 
     return (
-      <NavLink
-        to={item.to}
-        end={item.end}
-        onClick={onNavigate}
-        aria-label={label}
-        title={label}
-        className={({ isActive }) =>
-          cn(
-            'relative flex h-9 w-full items-center justify-center rounded-md transition-colors',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            isActive
-              ? 'bg-primary/10 text-primary'
-              : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-            highlight && !isActive && 'nav-pulse-glow nav-bounce text-foreground',
-          )
-        }
-      >
-        <Icon className="h-5 w-5" />
-      </NavLink>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <NavLink
+            to={item.to}
+            end={item.end}
+            onClick={onNavigate}
+            aria-label={label}
+            className={({ isActive }) =>
+              cn(
+                'relative flex h-9 w-full items-center justify-center rounded-md transition-colors',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                isActive
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                highlight && !isActive && 'nav-pulse-glow nav-bounce text-foreground',
+              )
+            }
+          >
+            <Icon className="h-5 w-5" />
+          </NavLink>
+        </TooltipTrigger>
+        <TooltipContent side="right">{label}</TooltipContent>
+      </Tooltip>
     )
   }
 
@@ -597,23 +632,30 @@ function PeriodWidget({ satista, total }) {
   const deadline = new Intl.DateTimeFormat('tr-TR', { month: 'long', year: 'numeric' }).format(
     new Date(now.getFullYear(), now.getMonth() + 1, 0),
   )
+  // Click-through to the pipeline filtered to "Satışta" so the bar reads as
+  // an actionable KPI rather than a static label.
+  const navigate = useNavigate()
   return (
-    <div className="rounded-lg border border-primary/15 bg-primary/5 p-3">
+    <button
+      type="button"
+      onClick={() => navigate('/kanban?stage=satista')}
+      className="group block w-full rounded-lg border border-primary/15 bg-primary/5 p-3 text-left transition-colors hover:border-primary/30 hover:bg-primary/[0.07] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
       <div className="flex items-center justify-between">
         <div className="text-[10px] font-semibold uppercase tracking-wider text-primary">Bu Dönem</div>
-        <div className="font-mono text-[10px] font-medium tabular-nums text-primary">{pct}%</div>
+        <div className="font-mono text-[10px] font-medium tabular-nums text-primary transition-transform group-hover:translate-x-0.5">{pct}%</div>
       </div>
       <div className="mt-1.5 text-xs font-medium text-foreground">Hedef: projeleri satışa çıkar</div>
       <div className="mt-2 h-1 overflow-hidden rounded-full bg-background">
         <div
-          className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+          className="h-full rounded-full bg-primary transition-[width,filter] duration-500 ease-out group-hover:brightness-110"
           style={{ width: `${pct}%` }}
         />
       </div>
       <div className="mt-1.5 text-[10px] text-muted-foreground">
         {satista} / {total} satışta · {deadline} sonu
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -653,6 +695,58 @@ function SidebarFooter({ user, onLogout, collapsed }) {
         </Button>
       </div>
     </div>
+  )
+}
+
+/* ----------------------------- role primary CTA ----------------------------- */
+
+/**
+ * Each role's natural "create" action. Leader still gets the dialog (project
+ * creation is multi-step), the other roles get a one-tap navigate to the
+ * page where their primary work originates — keeps the topbar balanced
+ * across personas without growing the chrome.
+ *
+ *   leader  → Yeni Proje (opens NewProjectDialog)
+ *   satis   → Yeni Talep  → /siparis-talebi (sales-request page)
+ *   printer → Yeni Teslim → /teslim-talepleri (handover requests)
+ *   designer→ Yeni Demo   → /demo (demo submissions queue)
+ *
+ * sm+ shows the labelled button; below sm collapses to an icon-only
+ * round-corner button so the topbar still fits on a 360 px viewport.
+ */
+function RolePrimaryCta({ role, onNewProject }) {
+  const navigate = useNavigate()
+  if (role === 'team_leader') {
+    return (
+      <>
+        <Button size="sm" onClick={onNewProject} className="hidden sm:inline-flex">
+          <Plus className="h-4 w-4" />
+          Yeni Proje
+        </Button>
+        <Button size="icon" variant="outline" onClick={onNewProject} className="sm:hidden" aria-label="Yeni proje">
+          <Plus className="h-4 w-4" />
+        </Button>
+      </>
+    )
+  }
+  const map = {
+    satis:    { to: '/siparis-talebi',    label: 'Yeni Talep',  icon: ClipboardPlus,  short: 'Talep' },
+    printer:  { to: '/teslim-talepleri',  label: 'Yeni Teslim', icon: Truck,          short: 'Teslim' },
+    designer: { to: '/demo',              label: 'Yeni Demo',   icon: ClipboardCheck,  short: 'Demo' },
+  }
+  const cta = map[role]
+  if (!cta) return null
+  const Icon = cta.icon
+  return (
+    <>
+      <Button size="sm" onClick={() => navigate(cta.to)} className="hidden sm:inline-flex">
+        <Icon className="h-4 w-4" />
+        {cta.label}
+      </Button>
+      <Button size="icon" variant="outline" onClick={() => navigate(cta.to)} className="sm:hidden" aria-label={cta.label}>
+        <Icon className="h-4 w-4" />
+      </Button>
+    </>
   )
 }
 
@@ -819,7 +913,10 @@ function NotificationBell() {
             <p className="text-xs text-muted-foreground">Henüz bildirim yok</p>
           </div>
         ) : (
-          <div className="scrollbar-thin max-h-80 overflow-y-auto py-1">
+          // 28rem (~448 px) instead of the old 20rem (320 px) so a full screen
+          // of unread items doesn't shove the "Tümünü okundu say" / PushToggle
+          // actions off-screen. Scrolling still kicks in once you exceed it.
+          <div className="scrollbar-thin max-h-[28rem] overflow-y-auto py-1">
             {items.map((n) => (
               <button
                 key={n.id}
@@ -834,7 +931,7 @@ function NotificationBell() {
                 <span className="min-w-0 flex-1">
                   <span className={cn('block truncate text-sm', n.is_read ? 'font-normal text-foreground' : 'font-semibold text-foreground')}>{n.title}</span>
                   <span className="block text-xs text-muted-foreground">{n.body}</span>
-                  <span className="mt-0.5 block text-[10px] text-muted-foreground/70">{relativeTime(n.created_at)}</span>
+                  <span className="mt-0.5 block text-[10px] font-medium text-muted-foreground/80 tabular-nums">{relativeTime(n.created_at)}</span>
                 </span>
                 {!n.is_read && (
                   <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-rose-500" />
@@ -872,6 +969,12 @@ function UserMenu({ user, onLogout }) {
             <span className="text-xs text-muted-foreground">{user?.email}</span>
           </div>
         </DropdownMenuLabel>
+        {/* Theme switcher — the app supports dark mode (the brand row swaps
+            YZ logos for light/dark variants), but until now the only way to
+            switch was via OS settings. A segmented control inside the avatar
+            menu keeps the affordance in-app and matches every other modern
+            product. */}
+        <ThemeToggle />
         <DropdownMenuSeparator />
         {user?.role === 'team_leader' && (
           <DropdownMenuItem asChild>
@@ -1053,23 +1156,11 @@ function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, designerO
     ...(WORK_LOG_ENABLED ? [{ type: 'worklog', label: 'Çalışma Defteri' }] : []),
   ].filter((i) => !i.roles || i.roles.includes(role))
 
-  // ── Grup 4: Acil işler (kişiye göre) ─────────────────────────
-  const urgentItems = [
-    {
-      label: 'Acil İşler',
-      icon: Flame,
-      soon: true,
-      badge: counts.urgent,
-      badgeTone: 'amber',
-      highlight: counts.urgent > 0,
-    },
-  ]
-
   const groups = [{ id: 'main', label: null, items: mainItems }]
   if (approvalItems.length > 0) groups.push({ id: 'approvals', label: role === 'satis' ? null : 'Onaylar', items: approvalItems })
   if (resourceItems.length > 0) groups.push({ id: 'resources', label: null, items: resourceItems })
-  // Matbaa's sidebar stays a work queue — "Acil İşler" tracks demo/özalit
-  // re-send pressure, which is the leader's and the designers' problem.
-  if (role !== 'satis' && role !== 'printer') groups.push({ id: 'urgent', label: null, items: urgentItems })
+  // No "Acil İşler" group — demo/özalit re-send pressure is already reflected
+  // in the per-project "Acil" chips in the pinned list and in the badge of
+  // the nav item the work actually lives under.
   return groups
 }

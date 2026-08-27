@@ -5,9 +5,15 @@ import App from './App.jsx'
 import { AuthProvider } from './hooks/useAuth.js'
 import { ProjectsProvider } from './hooks/useProjectsStore.jsx'
 import { NotificationsProvider } from './hooks/useNotifications.jsx'
+import { applyStoredTheme } from './hooks/useTheme.js'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { initPwaInstall } from './hooks/usePwaInstall.js'
 import './index.css'
+
+// Apply the stored theme before React mounts so the very first paint
+// already matches the user's preference — no light-flash on cold load when
+// the user has chosen dark, and no FOUC when the OS preference is dark.
+applyStoredTheme()
 
 /**
  * Recover from a stale chunk reference after a deploy.

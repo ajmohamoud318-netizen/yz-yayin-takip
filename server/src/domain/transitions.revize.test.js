@@ -20,6 +20,10 @@ function projectWith(subtasks) {
     id: 'p-1', type: 'TR', stage: 'demo_onay',
     demo_attempt: 0, ozalit_attempt: 0,
     reject_target: null, ozalit_requested: false,
+    // See transitions.demo.test.js — computeRejection requires the demo to
+    // be marked received before it can be rejected, mirroring the approval
+    // gate. Tests that don't care set it true; receipt-gate tests opt out.
+    demo_received: true,
     subtasks,
   }
 }

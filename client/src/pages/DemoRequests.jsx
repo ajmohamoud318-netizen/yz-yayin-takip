@@ -231,6 +231,18 @@ export default function DemoRequests() {
                     const canAct =
                       user?.role === 'team_leader' &&
                       (p.stage === 'demo_onay' || p.stage === 'ozalit_onay' || p.stage === 'cin_demo_onay')
+                    // Same receipt gate as Approvals.jsx + ProjectDetail: a
+                    // leader can't sign off on a demo/ozalit they haven't
+                    // physically received yet, and that gate applies to the
+                    // destructive side too — Reddet disappears while the
+                    // "Teslim Alın" step is still owed, so both buttons wait
+                    // for the same precondition.
+                    const receiptFirst =
+                      (p.stage === 'demo_onay' || p.stage === 'cin_demo_onay')
+                        ? p.demo_received !== true
+                        : p.stage === 'ozalit_onay'
+                          ? p.ozalit_received !== true
+                          : false
                     return (
                       <div key={p.id} className="rounded-xl border bg-card shadow-sm">
                         <button
@@ -269,24 +281,34 @@ export default function DemoRequests() {
                             )}
                             {canAct && (
                               <>
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  className="flex-1"
-                                  onClick={() => setApprovalDialog({ project: p, mode: 'reject' })}
-                                >
-                                  <ThumbsDown className="h-4 w-4" />
-                                  Reddedin
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="success"
-                                  className="flex-1"
-                                  onClick={() => setApprovalDialog({ project: p, mode: 'approve' })}
-                                >
-                                  <ThumbsUp className="h-4 w-4" />
-                                  Onaylayın
-                                </Button>
+                                {/* Same receipt gate on both sides — neither
+                                    Onaylayın nor Reddet before "Teslim Alındı".
+                                    Mirrors Approvals.jsx + ProjectDetail's
+                                    availableActions() so the demo list,
+                                    approval queue, and detail page all enforce
+                                    the same rule. */}
+                                {!receiptFirst && (
+                                  <Button
+                                    size="sm"
+                                    variant="success"
+                                    className="flex-1"
+                                    onClick={() => setApprovalDialog({ project: p, mode: 'approve' })}
+                                  >
+                                    <ThumbsUp className="h-4 w-4" />
+                                    Onaylayın
+                                  </Button>
+                                )}
+                                {!receiptFirst && (
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    className="flex-1"
+                                    onClick={() => setApprovalDialog({ project: p, mode: 'reject' })}
+                                  >
+                                    <ThumbsDown className="h-4 w-4" />
+                                    Reddedin
+                                  </Button>
+                                )}
                               </>
                             )}
                           </div>
