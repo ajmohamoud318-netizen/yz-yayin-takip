@@ -791,7 +791,7 @@ function NotificationBell() {
             unseen > 0 && !menuOpen && 'bell-pulse',
           )}
         >
-          <BellRing className="h-7 w-7" />
+          <BellRing className="h-9 w-9" />
           {unseen > 0 && (
             <span className="absolute right-0.5 top-0.5 grid h-5 min-w-[1.25rem] place-items-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold leading-none text-white ring-2 ring-background">
               {unseen > 9 ? '9+' : unseen}
