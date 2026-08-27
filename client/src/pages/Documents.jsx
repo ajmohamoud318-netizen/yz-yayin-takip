@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FileText, Printer, CheckCircle2, Clock, Inbox, Eye, X } from 'lucide-react'
+import { FileText, Printer, CheckCircle2, Clock, Inbox, Eye, Search, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useProjects } from '@/hooks/useProjects'
@@ -179,94 +179,82 @@ function DocumentPreviewDialog({ open, onOpenChange, project, form, attemptNo, d
 }
 
 /* ------------------------------------------------------------------ */
-/*  Document card                                                       */
+/*  Table helpers                                                       */
 /* ------------------------------------------------------------------ */
 
-function DocumentCard({ project, form, attemptNo, docType, approved, printerName, onView }) {
-  const navigate = useNavigate()
-
-  function handlePrint() {
-    printDoc({ project, form, attemptNo, kind: docType === 'demo' ? 'demo' : 'ozalit', printerName })
+// Short DD.MM.YY rendering of an ISO (YYYY-MM-DD…) or European (DD.MM.YYYY)
+// date so the table column is one monospaced line. Anything we don't
+// recognise is returned untouched — never silently mangled.
+function shortDate(raw) {
+  if (!raw) return ''
+  let y, m, d
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    ;[y, m, d] = raw.slice(0, 10).split('-')
+  } else if (/^\d{1,2}\.\d{1,2}\.\d{2,4}/.test(raw)) {
+    const parts = raw.split('.')
+    d = parts[0]
+    m = parts[1]
+    y = parts[2]?.length === 2 ? `20${parts[2]}` : parts[2]
+  } else {
+    return raw
   }
+  const yy = (y ?? '').slice(-2)
+  return `${String(d).padStart(2, '0')}.${String(m).padStart(2, '0')}.${yy}`
+}
 
-  const requestDate = docType === 'demo' ? form?.demoIstemTarihi : form?.ozalitIstemTarihi
-  const requester = docType === 'demo' ? form?.demoIsteyenKisi : form?.ozalitIsteyenKisi
-  const docLabel = docType === 'demo' ? 'Demo' : 'Ozalit'
-
+// Compact segmented control — used twice above the table for the kind
+// (Tümü/Demo/Ozalit) and status (Hepsi/İstenen/Onaylanan) filters. Each
+// option can carry an optional mono count badge.
+function SegmentedGroup({ value, onChange, options }) {
   return (
-    <Card>
-      <CardContent className="space-y-3 p-4">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <p className="line-clamp-2 text-sm font-semibold sm:line-clamp-1">{project.title}</p>
-            </div>
-            <p className="mt-0.5 pl-6 text-xs text-muted-foreground">
-              {requester || project.assigned_name}
-              {requestDate ? ` · ${requestDate}` : ''}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <div className="flex items-center gap-1">
-              <Badge variant="outline" className="text-[10px]">{TYPE_LABELS[project.type]}</Badge>
-              <Badge variant="secondary" className="text-[10px]">
-                {attemptNo}. {docLabel}
-              </Badge>
-            </div>
-            {approved && (
-              <Badge className="bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20 text-[10px]">
-                <CheckCircle2 className="mr-1 h-3 w-3" />
-                Onaylı
-              </Badge>
+    <div role="tablist" className="inline-flex items-center gap-1 rounded-xl border bg-card p-1">
+      {options.map((opt) => {
+        const active = opt.value === value
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              active
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground',
             )}
-          </div>
-        </div>
-
-        {/* Summary rows */}
-        {form && (
-          <div className="space-y-0.5 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            {form.adet && (
-              <div><span className="font-medium text-foreground">Adet:</span> {form.adet}</div>
-            )}
-            {form.ebat && (
-              <div><span className="font-medium text-foreground">Ebat:</span> {form.ebat}</div>
-            )}
-            {form.basimYeri && (
-              <div><span className="font-medium text-foreground">Basım Yeri:</span> {form.basimYeri}</div>
-            )}
-            {form.onaylayanKisi && (
-              <div><span className="font-medium text-foreground">Onaylayan:</span> {form.onaylayanKisi}</div>
-            )}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="default"
-            className="flex-1"
-            onClick={onView}
           >
-            <Eye className="h-4 w-4" />
-            Görüntüleyin
-          </Button>
-          <Button size="sm" variant="outline" onClick={handlePrint}>
-            <Printer className="h-4 w-4" />
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => navigate(`/projects/${project.id}`)}
-            title="Projeye git"
-          >
-            Proje
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+            {opt.label}
+            {typeof opt.count === 'number' && (
+              <span
+                className={cn(
+                  'rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums',
+                  active ? 'bg-primary-foreground/15 text-primary-foreground' : 'bg-muted text-muted-foreground',
+                )}
+              >
+                {opt.count}
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// One square icon button for the row's Eylemler column. Width stays
+// predictable so the right edge of every row lines up.
+function RowAction({ label, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition active:scale-90 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {children}
+    </button>
   )
 }
 
@@ -291,9 +279,15 @@ function EmptyState({ text }) {
 
 export default function Documents() {
   const { projects, loading } = useProjects()
-  const [docType, setDocType] = useState('demo')
-  const [subTab, setSubTab] = useState('istenen')
-  const [viewEntry, setViewEntry] = useState(null) // { project, form, attemptNo, docType, printerName }
+  const navigate = useNavigate()
+  // 'all' | 'demo' | 'ozalit' — collapses the old Demolar/Ozalitler tabs into
+  // one switch on the filter strip; 'all' shows both kinds in a single table.
+  const [docType, setDocType] = useState('all')
+  // 'all' | 'istenen' | 'onaylanan' — replaces the old İstenen/Onaylanan
+  // sub-tabs. 'all' is the default so a first-time visitor sees everything.
+  const [status, setStatus] = useState('all')
+  const [search, setSearch] = useState('')
+  const [viewEntry, setViewEntry] = useState(null)
   // Server-side form snapshots keyed { [projectId]: { demo, ozalit } }. These
   // are the source of truth (any user/browser sees them); localStorage is only
   // an offline fallback for the browser that filled the form.
@@ -320,11 +314,10 @@ export default function Documents() {
     return () => { cancelled = true }
   }, [])
 
-  const { demoIstenen, demoOnaylanan, ozalitIstenen, ozalitOnaylanan } = useMemo(() => {
-    const demoIst = []
-    const demoOnay = []
-    const ozalitIst = []
-    const ozalitOnay = []
+  // One unified list of every document (demo OR ozalit) the page can show —
+  // the filter strip only narrows it. Per-entry approved/attempt/kind/etc. are
+  // computed once so the filter passes can be pure predicates.
+  const allEntries = useMemo(() => {
     // Prefer the server snapshot; fall back to this browser's localStorage.
     // The teslimat stamps are then resolved from the project row on top of
     // whichever won — the snapshot is where they USED to live and it is not
@@ -334,154 +327,252 @@ export default function Documents() {
         ?? (kind === 'demo' ? loadDemoForm(project.id) : loadOzalitForm(project.id))
       return saved ? withTeslimat(saved, liveTeslimat({ project, kind })) : saved
     }
-
+    const out = []
     for (const p of projects) {
       if (DEMO_SENT_STAGES.has(p.stage)) {
         const form = pickForm('demo', p)
-        const attemptNo = (p.demo_attempt ?? 0) + 1
         const printerEntry = (p.history ?? []).find(
           (h) => h.from_stage === 'demo_teslim' && h.action === 'advance',
         )
-        const printerName = printerEntry?.done_by_name ?? ''
-        const entry = { project: p, form, attemptNo, printerName }
-        demoIst.push(entry)
-        if (isDemoApproved(p)) demoOnay.push(entry)
+        out.push({
+          id: `${p.id}::demo`,
+          project: p,
+          kind: 'demo',
+          attemptNo: (p.demo_attempt ?? 0) + 1,
+          form,
+          printerName: printerEntry?.done_by_name ?? '',
+          approved: isDemoApproved(p),
+        })
       }
-
       if (p.type === 'TR' && OZALIT_SENT_STAGES.has(p.stage)) {
         const form = pickForm('ozalit', p)
-        const attemptNo = (p.ozalit_attempt ?? 0) + 1
         const printerEntry = (p.history ?? []).find(
           (h) => h.from_stage === 'ozalit_teslim' && h.action === 'advance',
         )
-        const printerName = printerEntry?.done_by_name ?? ''
-        const entry = { project: p, form, attemptNo, printerName }
-        ozalitIst.push(entry)
-        if (OZALIT_APPROVED_STAGES.has(p.stage)) ozalitOnay.push(entry)
+        out.push({
+          id: `${p.id}::ozalit`,
+          project: p,
+          kind: 'ozalit',
+          attemptNo: (p.ozalit_attempt ?? 0) + 1,
+          form,
+          printerName: printerEntry?.done_by_name ?? '',
+          approved: OZALIT_APPROVED_STAGES.has(p.stage),
+        })
       }
     }
-
-    return {
-      demoIstenen: demoIst,
-      demoOnaylanan: demoOnay,
-      ozalitIstenen: ozalitIst,
-      ozalitOnaylanan: ozalitOnay,
-    }
+    return out
   }, [projects, serverForms])
 
-  const isDemo = docType === 'demo'
-  const items = isDemo
-    ? subTab === 'istenen' ? demoIstenen : demoOnaylanan
-    : subTab === 'istenen' ? ozalitIstenen : ozalitOnaylanan
+  // Apply the kind filter first so the status chip counts reflect what the
+  // user is actually narrowing by (e.g. “İstenen: 7” after picking Demo means
+  // 7 waiting demos, not 7 of everything).
+  const kindFiltered = useMemo(
+    () => docType === 'all' ? allEntries : allEntries.filter((e) => e.kind === docType),
+    [allEntries, docType],
+  )
 
-  const emptyText = isDemo
-    ? subTab === 'istenen' ? 'Henüz gönderilen demo yok.' : 'Henüz onaylanan demo yok.'
-    : subTab === 'istenen' ? 'Henüz gönderilen ozalit yok.' : 'Henüz onaylanan ozalit yok.'
+  const counts = useMemo(() => ({
+    all: allEntries.length,
+    demo: allEntries.filter((e) => e.kind === 'demo').length,
+    ozalit: allEntries.filter((e) => e.kind === 'ozalit').length,
+    istenen: kindFiltered.filter((e) => !e.approved).length,
+    onaylanan: kindFiltered.filter((e) => e.approved).length,
+  }), [allEntries, kindFiltered])
 
-  const demoCounts = {
-    istenen: demoIstenen.length,
-    onaylanan: demoOnaylanan.length,
+  // Final filter pass: status (waiting vs approved) + free-text search on the
+  // project title. Sorted by attempt# desc (newest rounds first), then by
+  // project title for stable ordering inside an attempt.
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return kindFiltered
+      .filter((e) => {
+        if (status === 'istenen' && e.approved) return false
+        if (status === 'onaylanan' && !e.approved) return false
+        if (q && !e.project.title.toLowerCase().includes(q)) return false
+        return true
+      })
+      .sort((a, b) => {
+        if (b.attemptNo !== a.attemptNo) return b.attemptNo - a.attemptNo
+        return a.project.title.localeCompare(b.project.title, 'tr-TR')
+      })
+  }, [kindFiltered, status, search])
+
+  function handlePrint(entry) {
+    printDoc({
+      project: entry.project,
+      form: entry.form,
+      attemptNo: entry.attemptNo,
+      kind: entry.kind,
+      printerName: entry.printerName,
+    })
   }
-  const ozalitCounts = {
-    istenen: ozalitIstenen.length,
-    onaylanan: ozalitOnaylanan.length,
-  }
-  const counts = isDemo ? demoCounts : ozalitCounts
+
+  const totalBelge = counts.all
 
   return (
-    <div className="space-y-5">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Dökümanlar</h1>
+    <div className="mx-auto max-w-5xl 2xl:max-w-screen-xl space-y-6">
+      {/* Header — same vocabulary as Baskı Reçeteleri: eyebrow tag, dashed
+          divider, mono total in the corner so the page weight matches the
+          rest of the app. */}
+      <header className="flex flex-col gap-5 border-b border-dashed pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <div className="mb-2 inline-flex items-center gap-2">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+            <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Matbaa Takip</span>
+          </div>
+          <h1 className="text-3xl tracking-tight md:text-4xl">Dökümanlar</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Tüm demo ve ozalit üretim formları, tek tabloda.</p>
+        </div>
+        {!loading && (
+          <div className="shrink-0">
+            <div className="font-mono text-3xl font-semibold tabular-nums leading-none text-primary">{totalBelge}</div>
+            <div className="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground">belge</div>
+          </div>
+        )}
       </header>
 
-      {/* Primary tabs: Demolar | Ozalitler */}
-      <div className="flex gap-0 border-b">
-        {[
-          { key: 'demo', label: 'Demolar', count: demoCounts.istenen },
-          { key: 'ozalit', label: 'Ozalitler', count: ozalitCounts.istenen },
-        ].map(({ key, label, count }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setDocType(key)}
-            className={cn(
-              'flex items-center gap-2 border-b-2 px-5 py-2.5 text-sm font-medium transition-colors -mb-px',
-              docType === key
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {label}
-            {count > 0 && (
-              <span
-                className={cn(
-                  'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-                  docType === key ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
-                )}
-              >
-                {count}
-              </span>
-            )}
-          </button>
-        ))}
+      {/* Filter strip — one row on desktop, wraps on smaller widths. Two
+          segmented controls share the same vocabulary; search sits at the
+          end. Counts on the kind group are absolute; counts on the status
+          group react to whichever kind is currently selected. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SegmentedGroup
+          value={docType}
+          onChange={setDocType}
+          options={[
+            { value: 'all', label: 'Tümü', count: counts.all },
+            { value: 'demo', label: 'Demo', count: counts.demo },
+            { value: 'ozalit', label: 'Ozalit', count: counts.ozalit },
+          ]}
+        />
+        <SegmentedGroup
+          value={status}
+          onChange={setStatus}
+          options={[
+            { value: 'all', label: 'Hepsi' },
+            { value: 'istenen', label: 'İstenen', count: counts.istenen },
+            { value: 'onaylanan', label: 'Onaylanan', count: counts.onaylanan },
+          ]}
+        />
+        <div className="relative min-w-[180px] flex-1 sm:ml-auto sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Proje arayın…"
+            className="w-full rounded-xl border bg-card py-1.5 pl-9 pr-3 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-ring/40"
+          />
+        </div>
       </div>
 
-      {/* Secondary tabs: İstenen | Onaylanan */}
-      <div className="flex gap-2">
-        {[
-          { key: 'istenen', label: 'İstenen', icon: Clock },
-          { key: 'onaylanan', label: 'Onaylanan', icon: CheckCircle2 },
-        ].map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setSubTab(key)}
-            className={cn(
-              'flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors',
-              subTab === key
-                ? 'border-primary bg-primary/5 text-primary'
-                : 'border-transparent bg-muted text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <Icon className="h-3.5 w-3.5" />
-            {label}
-            {counts[key] > 0 && (
-              <span
-                className={cn(
-                  'rounded-full px-1.5 text-[10px] font-semibold',
-                  subTab === key ? 'bg-primary/15 text-primary' : 'bg-background text-muted-foreground',
-                )}
-              >
-                {counts[key]}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Document grid */}
+      {/* Table — sticky header, horizontal scroll on narrow widths. Each row
+          carries a 1.5px status edge (green = onaylı, amber = bekliyor), a
+          clickable project title that opens the existing preview dialog, and
+          three icon buttons for view / print / open project. */}
       {loading ? (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-36" />
+        <div className="space-y-2" role="status" aria-label="Dökümanlar yükleniyor">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-14 rounded-2xl" />
           ))}
         </div>
-      ) : items.length === 0 ? (
-        <EmptyState text={emptyText} />
+      ) : filtered.length === 0 ? (
+        <EmptyState text="Bu filtreyle eşleşen döküman yok." />
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {items.map((entry) => (
-            <DocumentCard
-              key={entry.project.id}
-              project={entry.project}
-              form={entry.form}
-              attemptNo={entry.attemptNo}
-              docType={docType}
-              approved={subTab === 'onaylanan'}
-              printerName={entry.printerName}
-              onView={() => setViewEntry({ ...entry, docType })}
-            />
-          ))}
+        <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] text-sm">
+              <thead>
+                <tr className="border-b bg-muted/30 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th aria-hidden className="w-1.5 p-0" />
+                  <th className="px-4 py-2.5">Proje</th>
+                  <th className="px-3 py-2.5">Tür</th>
+                  <th className="px-3 py-2.5 text-center">#</th>
+                  <th className="px-3 py-2.5">Tarih</th>
+                  <th className="px-3 py-2.5">İsteyen</th>
+                  <th className="px-3 py-2.5">Matbaa</th>
+                  <th className="px-3 py-2.5">Durum</th>
+                  <th className="px-3 py-2.5 text-right">Eylemler</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((entry) => {
+                  const isDemo = entry.kind === 'demo'
+                  const requestDate = isDemo ? entry.form?.demoIstemTarihi : entry.form?.ozalitIstemTarihi
+                  const requester = isDemo ? entry.form?.demoIsteyenKisi : entry.form?.ozalitIsteyenKisi
+                  return (
+                    <tr
+                      key={entry.id}
+                      className="group border-b transition-colors last:border-b-0 hover:bg-muted/30"
+                    >
+                      {/* Status edge — green for approved, amber for waiting;
+                          the hover state deepens it so the row feels alive. */}
+                      <td
+                        aria-hidden
+                        className={cn(
+                          'p-0',
+                          entry.approved ? 'bg-emerald-500' : 'bg-amber-400/70 group-hover:bg-amber-500',
+                        )}
+                      />
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => setViewEntry(entry)}
+                          className="flex min-w-0 items-center gap-2 text-left transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+                        >
+                          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <span className="truncate font-semibold text-foreground">{entry.project.title}</span>
+                        </button>
+                      </td>
+                      <td className="px-3 py-3">
+                        <Badge variant="outline" className="font-mono text-[10px]">{TYPE_LABELS[entry.project.type]}</Badge>
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <span className="inline-flex items-center rounded-md bg-secondary px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-secondary-foreground">
+                          {entry.attemptNo}.{isDemo ? 'D' : 'O'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 font-mono text-[12px] tabular-nums text-muted-foreground">
+                        {shortDate(requestDate) || '—'}
+                      </td>
+                      <td className="px-3 py-3 text-muted-foreground">
+                        <span className="line-clamp-1">{requester || entry.project.assigned_name || '—'}</span>
+                      </td>
+                      <td className="px-3 py-3 text-muted-foreground">
+                        <span className="line-clamp-1">{entry.printerName || '—'}</span>
+                      </td>
+                      <td className="px-3 py-3">
+                        {entry.approved ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-600/20">
+                            <CheckCircle2 className="h-3 w-3" />
+                            Onaylı
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-600/20">
+                            <Clock className="h-3 w-3" />
+                            Bekliyor
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <RowAction label="Görüntüleyin" onClick={() => setViewEntry(entry)}>
+                            <Eye className="h-4 w-4" />
+                          </RowAction>
+                          <RowAction label="Yazdırın" onClick={() => handlePrint(entry)}>
+                            <Printer className="h-4 w-4" />
+                          </RowAction>
+                          <RowAction label="Projeye gidin" onClick={() => navigate(`/projects/${entry.project.id}`)}>
+                            <ExternalLink className="h-4 w-4" />
+                          </RowAction>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -491,7 +582,7 @@ export default function Documents() {
         project={viewEntry?.project}
         form={viewEntry?.form}
         attemptNo={viewEntry?.attemptNo}
-        docType={viewEntry?.docType}
+        docType={viewEntry?.kind === 'demo' ? 'demo' : 'ozalit'}
         printerName={viewEntry?.printerName ?? ''}
       />
     </div>
