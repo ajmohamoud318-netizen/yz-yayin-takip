@@ -538,7 +538,7 @@ export async function assignSubtaskPage(
   // raced us to INSERT.
   await client.query(
     `INSERT INTO subtask_pages (subtask_id, page_index, status, assigned_to, assigned_at)
-     VALUES ($1, $2, 'pending', $3, CASE WHEN $3 IS NULL THEN NULL ELSE NOW() END)
+     VALUES ($1, $2, 'pending', $3::text, CASE WHEN $3::text IS NULL THEN NULL ELSE NOW() END)
      ON CONFLICT (subtask_id, page_index) DO NOTHING`,
     [subtaskId, pageIndex, assignedTo ?? null],
   )
@@ -548,8 +548,8 @@ export async function assignSubtaskPage(
   // grey "no owner" treatment.
   const { rows: updated } = await client.query(
     `UPDATE subtask_pages
-        SET assigned_to = $3,
-            assigned_at = CASE WHEN $3 IS NULL THEN NULL ELSE NOW() END,
+        SET assigned_to = $3::text,
+            assigned_at = CASE WHEN $3::text IS NULL THEN NULL ELSE NOW() END,
             updated_at = NOW()
       WHERE subtask_id = $1 AND page_index = $2
       RETURNING subtask_id, page_index, status, done_by, done_at, rework_count,

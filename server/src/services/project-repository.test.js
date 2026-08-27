@@ -10,7 +10,7 @@
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { loadProjectAssignees } from './project-repository.js'
+import { loadProjectAssignees, assignSubtaskPage } from './project-repository.js'
 
 // Minimal in-memory pg client: each query() is matched on the WHERE clause
 // fragment so the same client can serve both the primary lookup and the
@@ -280,5 +280,63 @@ describe('project row queries', () => {
       'COALESCE( (SELECT u.name FROM users u WHERE u.id = projects.demo_delivered_by), '
         + 'projects.demo_delivered_by_name ) AS demo_delivered_by_name',
     )
+  })
+})
+
+// Regression test for the `could not determine data type of parameter $3`
+// 500 that surfaced once the route actually hit PostgreSQL.
+//
+// assignSubtaskPage uses the same `$3` parameter in three places: an INSERT
+// value, a CASE WHEN comparator, and an UPDATE assignment. pg's query
+// planner can't infer the type when the same parameter appears in a
+// CASE comparison to NULL and a bare column assignment, and the resulting
+// error code is `42P08` from parse_param.c. Casting the parameter to
+// `::text` explicitly (in every reference) keeps the planner happy.
+//
+// Without the cast, the route looks fine in the schema-validation test
+// (that one uses a Fastify in-memory client and never parses SQL) but
+// 500s in production the first time the leader clicks the assign popover.
+describe('assignSubtaskPage — parameter type cast', () => {
+  const src = readFileSync(
+    fileURLToPath(new URL('./project-repository.js', import.meta.url)),
+    'utf8',
+  )
+
+  it('casts $3 to text in the INSERT, the UPDATE, and the CASE branches', () => {
+    const fn = src.match(/export async function assignSubtaskPage\([\s\S]*?\n\}/)
+    assert.ok(fn, 'assignSubtaskPage not found in source')
+    const body = fn[0]
+    // Every reference to the assigned_to parameter has to be ::text — three
+    // uses in the body (INSERT value, CASE NULL check, UPDATE assignment).
+    // Two bare `$3` references would trip the parser; with the cast, the
+    // parameter is unambiguous and pg accepts the plan.
+    assert.equal(
+      (body.match(/\$3::text/g) ?? []).length,
+      4,
+      'expected four $3::text casts in assignSubtaskPage (INSERT x2, CASE x2)',
+    )
+    assert.ok(
+      !body.match(/\$3(?![:\d])/),
+      'assignSubtaskPage still has a bare $3 reference — pg will throw 42P08',
+    )
+  })
+
+  it('returns { error: "out_of_range" } without throwing on bad pageIndex', async () => {
+    // Belt-and-braces check: when the route's downstream check rejects the
+    // pageIndex, assignSubtaskPage must propagate the error code, not crash.
+    // The fake client only answers the initial SELECT; we never reach the
+    // INSERT/UPDATE because pageIndex=999 is > total_pages=2.
+    const client = {
+      async query(sql, params) {
+        if (/FROM subtasks WHERE id = \$1/.test(sql)) {
+          return { rows: [{ id: params[0], project_id: 'p-1', kind: 'pages', total_pages: 2 }] }
+        }
+        return { rows: [] }
+      },
+    }
+    const result = await assignSubtaskPage(client, {
+      subtaskId: 's-1', pageIndex: 999, assignedTo: 'u-aylin', actorId: 'u-leader',
+    })
+    assert.deepEqual(result, { error: 'out_of_range' })
   })
 })
