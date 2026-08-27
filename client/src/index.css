@@ -7,7 +7,7 @@
 /* ------------------------------------------------------------------ */
 /*  Professional internal-tool theme — neutral slate base, rose as the */
 /*  brand accent (primary actions + focus only). shadcn tokens as HSL  */
-/*  CSS variables, with a full dark variant under `.dark`.             */
+/*  CSS variables. Light-only.                                          */
 /* ------------------------------------------------------------------ */
 @layer base {
   :root {
@@ -48,37 +48,6 @@
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);     /* strong ease-out for entering UI  */
     --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1); /* on-screen movement / morphs      */
     --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);  /* iOS-like drawer / sheet curve    */
-  }
-
-  .dark {
-    --background: 30 8% 9%;            /* warm near-black canvas      */
-    --foreground: 40 18% 92%;          /* warm off-white text         */
-
-    --card: 30 7% 12%;                 /* slightly raised warm panel  */
-    --card-foreground: 40 18% 92%;
-    --popover: 30 7% 12%;
-    --popover-foreground: 40 18% 92%;
-
-    --primary: 345 65% 55%;            /* rose lifted for dark bg     */
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 30 6% 18%;            /* warm charcoal               */
-    --secondary-foreground: 40 18% 92%;
-
-    --muted: 30 6% 18%;
-    --muted-foreground: 36 10% 64%;    /* warm gray — AA on dark      */
-
-    --accent: 30 6% 22%;
-    --accent-foreground: 40 18% 92%;
-
-    --destructive: 0 63% 55%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 30 6% 22%;
-    --input: 30 6% 24%;
-    --ring: 345 65% 55%;
-
-    --sidebar: 30 7% 11%;
   }
 }
 

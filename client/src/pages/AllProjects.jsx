@@ -8,6 +8,7 @@ import FilterChip from '@/components/FilterChip'
 import { Card, CardContent } from '@/components/ui/card'
 import AssigneeAvatars from '@/components/AssigneeAvatars'
 import OrderBadge from '@/components/OrderBadge'
+import ProjectHoverCard from '@/components/ProjectHoverCard'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -191,11 +192,23 @@ export default function AllProjects() {
                   }}
                 >
                   <CardContent className="space-y-2 p-3.5">
-                    <div className="flex items-start gap-2">
-                      <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', meta.dot)} />
-                      <p className="text-sm font-semibold leading-snug">{p.title}</p>
-                      <OrderBadge order={openOrders.get(p.id)} className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-                    </div>
+                    {/* Hover card gives stylus/tablet the same rich
+                        affordance as the desktop title cell. Touch-only
+                        phones don't fire hover, so they fall through to
+                        the <Card> onClick (tap → navigate) unchanged. */}
+                    <ProjectHoverCard
+                      project={p}
+                      order={openOrders.get(p.id)}
+                      side="top"
+                      align="start"
+                      sideOffset={6}
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', meta.dot)} />
+                        <p className="text-sm font-semibold leading-snug">{p.title}</p>
+                        <OrderBadge order={openOrders.get(p.id)} className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                      </div>
+                    </ProjectHoverCard>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span className="truncate">{TYPE_LABELS[p.type]} · {STAGE_LABELS[p.stage]}</span>
                       <span className="ml-auto shrink-0">
@@ -243,11 +256,26 @@ export default function AllProjects() {
                         className="cursor-pointer border-b border-border/60 transition-colors last:border-0 hover:bg-muted/40 focus:outline-none focus-visible:bg-muted/60"
                       >
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2.5">
-                            <span className={cn('h-2 w-2 shrink-0 rounded-full', meta.dot)} />
-                            <span className="font-medium text-foreground">{p.title}</span>
-                            <OrderBadge order={openOrders.get(p.id)} />
-                          </div>
+                          {/* Title cell is the hover trigger for the rich
+                              popover (status badge / full title / assignees /
+                              İlerleme / Kalan / Son aktivite / "Projeyi aç").
+                              Side='right' so the popover anchors to the row
+                              instead of colliding with the table's right
+                              edge. Click still bubbles up to the <tr> onClick
+                              and navigates. */}
+                          <ProjectHoverCard
+                            project={p}
+                            order={openOrders.get(p.id)}
+                            side="right"
+                            align="start"
+                            sideOffset={8}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <span className={cn('h-2 w-2 shrink-0 rounded-full', meta.dot)} />
+                              <span className="font-medium text-foreground">{p.title}</span>
+                              <OrderBadge order={openOrders.get(p.id)} />
+                            </div>
+                          </ProjectHoverCard>
                         </td>
                         <td className="px-4 py-3">
                           <span className="inline-flex items-center rounded-md bg-secondary px-1.5 py-0.5 text-[11px] font-semibold text-secondary-foreground">

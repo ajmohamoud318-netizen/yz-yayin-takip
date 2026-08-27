@@ -72,7 +72,7 @@ export const TONES = {
   },
   positive: {
     dot: 'bg-emerald-600',
-    icon: 'text-emerald-700 dark:text-emerald-400',
+    icon: 'text-emerald-700',
     surface: 'bg-emerald-600/10',
   },
   // The only filled disc in the table. A rejection is what people open this
@@ -84,12 +84,12 @@ export const TONES = {
   },
   pending: {
     dot: 'bg-amber-500',
-    icon: 'text-amber-700 dark:text-amber-400',
+    icon: 'text-amber-700',
     surface: 'bg-amber-500/10',
   },
   order: {
     dot: 'bg-violet-500',
-    icon: 'text-violet-700 dark:text-violet-400',
+    icon: 'text-violet-700',
     surface: 'bg-violet-500/10',
   },
   neutral: {

@@ -7,7 +7,7 @@ import { STATUS_STYLES, statusKeyForProject } from '../api.js'
 import { Card, CardContent } from '../components/ui/card.jsx'
 import { Skeleton } from '../components/ui/skeleton.jsx'
 import { Button } from '../components/ui/button.jsx'
-import YearPlanBarPopover from '../components/YearPlanBarPopover.jsx'
+import YearPlanBar from '../components/YearPlanBar.jsx'
 import { cn, formatNumber } from '../lib/utils.js'
 
 // The seven status color keys, in legend order.
@@ -222,7 +222,7 @@ export default function Dashboard() {
         {error && (
           <div
             role="status"
-            className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+            className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
           >
             <span>
               {/* Different copy for cold-load vs warm-failure: a warm error
@@ -234,14 +234,14 @@ export default function Dashboard() {
                 <> Oturum sona ermiş olabilir; <button
                   type="button"
                   onClick={() => window.location.assign('/login?next=' + encodeURIComponent(window.location.pathname + window.location.search))}
-                  className="underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-100"
+                  className="underline underline-offset-2 hover:text-amber-900"
                 >tekrar giriş yap</button>.</>
               )}
             </span>
             <button
               type="button"
               onClick={refetch}
-              className="rounded-md border border-amber-300 bg-white px-2 py-1 font-medium hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/40 dark:hover:bg-amber-900/60"
+              className="rounded-md border border-amber-300 bg-white px-2 py-1 font-medium hover:bg-amber-100"
             >
               Yenileyin
             </button>
@@ -312,16 +312,17 @@ export default function Dashboard() {
                               <div key={m} className="flex-1 border-l border-border/35" />
                             ))}
                           </div>
-                          {/* bar — wrapped in <YearPlanBarPopover> for the
-                              rich hover popover. The comfortable variant
-                              matches the Dashboard's existing 48px bar. */}
-                          <YearPlanBarPopover
+                          {/* bar — the rich hover popover lives on Tüm Projeler rows
+                              now (ProjectHoverCard); the bar stays a plain
+                              styled chip that navigates on click. */}
+                          <YearPlanBar
                             variant="comfortable"
                             project={p}
                             order={order}
                             leftPct={leftPct}
                             widthPct={widthPct}
                             animationDelay={0}
+                            onClick={() => navigate(`/projects/${p.id}`)}
                           />
                         </div>
                       </div>
@@ -414,8 +415,8 @@ function SummaryCard({ label, value, colorKey, interactive = false }) {
 
 function ErrorState({ message, onRetry }) {
   return (
-    <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center dark:border-red-900 dark:bg-red-950/40">
-      <p className="text-sm font-medium text-red-700 dark:text-red-300">{message}</p>
+    <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+      <p className="text-sm font-medium text-red-700">{message}</p>
       <button
         onClick={onRetry}
         className="mt-3 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-700"

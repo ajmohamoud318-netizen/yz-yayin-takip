@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import OrderBadge from '@/components/OrderBadge'
-import YearPlanBarPopover from '@/components/YearPlanBarPopover'
+import YearPlanBar from '@/components/YearPlanBar'
 import { STATUS_META, statusKeyForProject } from '@/api'
 import { cn } from '@/lib/utils'
 
@@ -216,16 +216,16 @@ export default function YearPlan() {
                               <div key={m} className="flex-1 border-l border-border/40" />
                             ))}
                           </div>
-                          {/* bar — wrapped in <YearPlanBarPopover> for a rich
-                              hover popover (status badge, full title, assignee
-                              stack, İlerleme/Kalan/Son aktivite, "Projeyi aç"
-                              CTA). The bar itself is the PopoverTrigger. */}
-                          <YearPlanBarPopover
+                          {/* bar — hover popover lives on Tüm Projeler rows now
+                              (ProjectHoverCard), so the bar stays a plain styled
+                              chip that navigates on click. */}
+                          <YearPlanBar
                             project={p}
                             order={order}
                             leftPct={leftPct}
                             widthPct={widthPct}
                             animationDelay={staggerIdx * 50 + 80}
+                            onClick={() => navigate(`/projects/${p.id}`)}
                           />
                         </div>
                       </div>

@@ -32,8 +32,8 @@ export const WORK_LOG_KINDS = [
     placeholder: 'Hangi proje ve ne yaptınız?',
     dot: 'bg-violet-500',
     rule: 'bg-violet-500/40',
-    chip: 'bg-violet-500/10 text-violet-700 ring-violet-500/20 dark:text-violet-300',
-    active: 'bg-violet-500/15 text-violet-700 ring-violet-500/40 dark:text-violet-200',
+    chip: 'bg-violet-500/10 text-violet-700 ring-violet-500/20',
+    active: 'bg-violet-500/15 text-violet-700 ring-violet-500/40',
   },
   {
     value: 'toplanti',
@@ -43,8 +43,8 @@ export const WORK_LOG_KINDS = [
     placeholder: 'Kiminle, ne konuşuldu?',
     dot: 'bg-sky-500',
     rule: 'bg-sky-500/40',
-    chip: 'bg-sky-500/10 text-sky-700 ring-sky-500/20 dark:text-sky-300',
-    active: 'bg-sky-500/15 text-sky-700 ring-sky-500/40 dark:text-sky-200',
+    chip: 'bg-sky-500/10 text-sky-700 ring-sky-500/20',
+    active: 'bg-sky-500/15 text-sky-700 ring-sky-500/40',
   },
   {
     value: 'idari',
@@ -54,8 +54,8 @@ export const WORK_LOG_KINDS = [
     placeholder: 'Hangi idari iş?',
     dot: 'bg-amber-500',
     rule: 'bg-amber-500/40',
-    chip: 'bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300',
-    active: 'bg-amber-500/15 text-amber-700 ring-amber-500/40 dark:text-amber-200',
+    chip: 'bg-amber-500/10 text-amber-700 ring-amber-500/20',
+    active: 'bg-amber-500/15 text-amber-700 ring-amber-500/40',
   },
   {
     value: 'egitim',
@@ -65,8 +65,8 @@ export const WORK_LOG_KINDS = [
     placeholder: 'Ne öğrendiniz / ne anlattınız?',
     dot: 'bg-teal-600',
     rule: 'bg-teal-600/40',
-    chip: 'bg-teal-600/10 text-teal-700 ring-teal-600/20 dark:text-teal-300',
-    active: 'bg-teal-600/15 text-teal-700 ring-teal-600/40 dark:text-teal-200',
+    chip: 'bg-teal-600/10 text-teal-700 ring-teal-600/20',
+    active: 'bg-teal-600/15 text-teal-700 ring-teal-600/40',
   },
   {
     value: 'diger',

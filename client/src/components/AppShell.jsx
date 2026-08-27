@@ -63,13 +63,11 @@ import WorkLogPill from '@/components/WorkLogPill'
 import { WORK_LOG_ENABLED } from '@/lib/work-log.js'
 import PushToggle from '@/components/PushToggle.jsx'
 import SetupSheet from '@/components/SetupSheet.jsx'
-import ThemeToggle from '@/components/ThemeToggle.jsx'
 import CommandPalette from '@/components/CommandPalette.jsx'
 import { useNotifications } from '@/hooks/useNotifications'
 import { isOrderAssignedToDesigner, ORDER_LEADER_ACTION_STEPS } from '@/domain/constants/orders'
 
 const COLLAPSE_KEY = 'yz-sidebar-collapsed'
-const YZ_LOGO_WHITE = '/yz_whitelogo.svg'
 const YZ_LOGO_BLACK = '/yz_blacklogo.svg'
 
 // Global ⌘K / Ctrl+K listener that pops the command palette. Bound once at
@@ -470,8 +468,7 @@ function SidebarBrand({ collapsed, onToggleCollapsed }) {
           aria-label="Ana sayfa"
           className="flex h-8 min-w-0 items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <img src={YZ_LOGO_BLACK} alt="Yükselen Zeka" className="block h-7 w-auto max-w-full object-contain dark:hidden" />
-          <img src={YZ_LOGO_WHITE} alt="Yükselen Zeka" className="hidden h-7 w-auto max-w-full object-contain dark:block" />
+          <img src={YZ_LOGO_BLACK} alt="Yükselen Zeka" className="block h-7 w-auto max-w-full object-contain" />
         </Link>
       )}
       <button
@@ -970,12 +967,6 @@ function UserMenu({ user, onLogout }) {
             <span className="text-xs text-muted-foreground">{user?.email}</span>
           </div>
         </DropdownMenuLabel>
-        {/* Theme switcher — the app supports dark mode (the brand row swaps
-            YZ logos for light/dark variants), but until now the only way to
-            switch was via OS settings. A segmented control inside the avatar
-            menu keeps the affordance in-app and matches every other modern
-            product. */}
-        <ThemeToggle />
         <DropdownMenuSeparator />
         {user?.role === 'team_leader' && (
           <DropdownMenuItem asChild>

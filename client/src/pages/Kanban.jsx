@@ -398,7 +398,7 @@ function ProjectCard({ project: p, onOpen }) {
       aria-label="detayları aç"
       className={cn(
         'relative cursor-pointer transition-[transform,box-shadow,border-color] duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none motion-reduce:hover:translate-y-0',
-        overdue && 'border-red-300 dark:border-red-800',
+        overdue && 'border-red-300',
       )}
       onClick={() => onOpen?.(p)}
       onKeyDown={(e) => {
