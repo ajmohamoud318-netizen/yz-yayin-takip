@@ -15,6 +15,7 @@ import {
   BadgeCheck,
   Target,
   Briefcase,
+  Boxes,
   MoreVertical,
   Settings,
   Files,
