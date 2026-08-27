@@ -739,3 +739,141 @@ describe('PUT /projects/:id/subtasks — orphan-designer guard', () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// POST /api/subtasks/:id/pages/bulk-assign — distribute mode targets the
+// project's actual assignees, not the global active designer roster.
+//
+// Background: the leader's "Tüm tasarımcılara dağıt" popover shows the
+// designers who are actually working on this project (project primary UNION
+// per-subtask assignees). If the distribute used the global active roster
+// the round-robin could include designers who aren't even on the project —
+// they'd suddenly get pages with no prior context, and the leader
+// couldn't see that designer in the popover. The distribute must use the
+// same set the popover shows, and the SQL contract is: WHERE
+// role='designer' AND is_active=true AND (id = project primary OR
+// assigned_to some subtask on this project).
+describe('POST /api/subtasks/:id/pages/bulk-assign — distribute targets project assignees', () => {
+  it('filters the rotation to designers actively on this project', () => {
+    // Anchor on the WHERE clause of the distribute query and assert it
+    // scopes the rotation to "is_active=true AND role=designer AND
+    // (project primary OR subtask owner)". A regression to the global
+    // roster would have a bare `role='designer' AND is_active=true`
+    // without the project-scope subqueries.
+    assert.match(
+      subtasksRouteSrc,
+      /SELECT DISTINCT u\.id, u\.name\s+FROM users u\s+WHERE u\.is_active = true\s+AND u\.role = 'designer'/,
+      'distribute query should filter to role=designer AND is_active=true',
+    )
+    // Project primary check: the rotation must include the project
+    // primary when they're a designer. Without this, designers who are
+    // only the primary (and not on any subtask) get silently dropped
+    // from the rotation.
+    assert.match(
+      subtasksRouteSrc,
+      /u\.id = \(SELECT assigned_to FROM projects WHERE id = \$2\)/,
+      'distribute must include the project primary in the rotation',
+    )
+    // Subtask owner check: the rotation must include every designer
+    // assigned to any subtask on this project. Without this, the
+    // distribute ignores designers who only appear on other subtasks
+    // (Kapak, Kutu) — exactly the "active in the project" set.
+    assert.match(
+      subtasksRouteSrc,
+      /EXISTS \(\s*SELECT 1 FROM subtasks s\s+WHERE s\.project_id = \$2\s+AND s\.assigned_to = u\.id\s*\)/,
+      'distribute must include designers assigned to any subtask on the project',
+    )
+  })
+
+  it('refuses with 400 when the project has no active assignees', () => {
+    // A project with no designers at all (or all inactive) can't be
+    // distributed to. The error message names the project, not the
+    // designer list, because the leader can't act on it.
+    assert.match(
+      subtasksRouteSrc,
+      /badRequest\('Bu projede atanmış aktif tasarımcı yok\.'\)/,
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PATCH /api/subtasks/:id/pages/:pageIndex — any project assignee can
+// mark a pending or rework page done, regardless of who the leader
+// assigned the page to.
+//
+// The per-page `assigned_to` is a planning signal (drives the chip
+// colour, the "Benim sayfalarım" filter, the legend) but is NOT a
+// permission gate. If the leader assigns page 47 to Aylin, Cem (also a
+// project assignee) can still mark page 47 done — Cem's click
+// updates `done_by = cem` and `done_at = NOW()`, so the chip flips
+// from Aylin's planned colour to Cem's "shipped it" colour. That's the
+// right behaviour: the leader's plan was a hint, and the audit trail
+// still credits whoever actually did the work.
+//
+// The one place per-page ownership DOES gate is re-marking an
+// already-done page (the `not_yours` check). That stays — the
+// designer who finished the work is the one who can undo or rework it
+// (the leader has the override). Without that, Cem could "fix" Aylin's
+// work without ever telling Aylin, and the audit trail would say
+// Aylin shipped something Cem actually undid — bug #6 territory.
+describe('PATCH /api/subtasks/:id/pages/:pageIndex — per-page assignment is not a permission gate', () => {
+  // Read the project-repository.js source for the SQL-contract assertion.
+  // The assignSubtaskPage — parameter type cast describe block above
+  // also reads this file as `src`, but describe-block-scoped consts don't
+  // leak across blocks.
+  const repoSrc = readFileSync(
+    fileURLToPath(new URL('./project-repository.js', import.meta.url)),
+    'utf8',
+  )
+
+  it('the route gates on project membership, NOT on per-page assigned_to', () => {
+    // Anchor on the route's isAssignedDesigner check. It compares the
+    // requester against `assigneeIds` (the union of project primary and
+    // per-subtask owners), NOT against the per-page assigned_to. A
+    // regression that added a per-page check would break the
+    // "Cem can do Aylin's assigned page" rule.
+    assert.match(
+      subtasksRouteSrc,
+      /assigneeIds\.has\(request\.user\.id\)/,
+      'route should check project membership via assigneeIds, not per-page assigned_to',
+    )
+    // And the isAssignedDesigner check should require the user to be
+    // a designer (not just any role) so non-designer roles can't sneak
+    // in via a different membership list.
+    assert.match(
+      subtasksRouteSrc,
+      /request\.user\.role === 'designer' && assigneeIds\.has\(request\.user\.id\)/,
+      'isAssignedDesigner must require the designer role',
+    )
+  })
+
+  it('setSubtaskPage allows status=done on a pending or rework page without an ownership check', () => {
+    // Pull the not-yours check. The first arm of the OR (`page.status
+    // === 'pending'` etc.) is what the test cares about: the helper
+    // doesn't compare `page.assigned_to` to the actor, only
+    // `page.done_by`. A page in pending/rework has no done_by yet, so
+    // any project assignee who reaches the helper can flip it to done.
+    //
+    // Pull the body of the done-status branch and assert it only checks
+    // `page.status` and `page.done_by`, not `page.assigned_to`.
+    const fn = repoSrc.match(/export async function setSubtaskPage\([\s\S]*?\n\}/)
+    assert.ok(fn, 'setSubtaskPage not found in source')
+    const body = fn[0]
+    assert.match(
+      body,
+      /if \(page && page\.status === 'done' && page\.done_by && page\.done_by !== actorId\)/,
+      'not_yours should fire on done-by-someone-else, not on assigned_to mismatch',
+    )
+    // Negative assertion: assigned_to must not appear in the not_yours
+    // check. A regression that added `page.assigned_to !== actorId`
+    // here would silently lock pages to their planned owner.
+    const notYoursMatch = body.match(
+      /if \(page && page\.status === 'done' && page\.done_by && page\.done_by !== actorId\)\s*\{[\s\S]*?\n\s+\}/,
+    )
+    assert.ok(notYoursMatch, 'expected to find the not_yours check block')
+    assert.ok(
+      !notYoursMatch[0].includes('assigned_to'),
+      'not_yours check must NOT reference assigned_to — only done_by',
+    )
+  })
+})

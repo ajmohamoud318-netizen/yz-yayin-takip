@@ -626,6 +626,7 @@ function ApprovalRow({
             awaitingLeader={awaitingLeader}
             heldDemo={heldDemo}
             receiptFirst={receiptFirst}
+            canApprove={canApprove}
             ekranBusy={ekranBusy}
             onApprove={onApprove}
             onReject={onReject}
@@ -675,7 +676,7 @@ function StatusChip({ tone, children }) {
 function Actions({
   sub, p, user, isLeader, isDesigner, isPrinter,
   isAssignedDesigner, alreadyApproved, awaitingLeader, heldDemo, receiptFirst,
-  ekranBusy,
+  canApprove, ekranBusy,
   onApprove, onReject, onAdvance, onStartWork,
   onEkranRequest, onEkranApprove, onEkranReject,
   onNavigate,

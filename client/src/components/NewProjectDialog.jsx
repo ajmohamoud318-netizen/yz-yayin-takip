@@ -72,6 +72,13 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
   const [assignedIds, setAssignedIds] = useState([])
   const [pageCount, setPageCount] = useState(32)
   const [stickerCount, setStickerCount] = useState(1)
+  // İç Sayfalar auto-assign gesture: lets the team leader decide who gets
+  // every page of the new (or freshly edited) pages subtask in one click.
+  // Empty = no bulk-assign on save; '<designerId>' = overwrite every page
+  // onto that designer; 'distribute' = round-robin across the project's
+  // active assignees. Applied once on save via api.bulkAssignSubtaskPages
+  // and reset back to '' — pages persist, the dropdown doesn't.
+  const [pagesBulkAssign, setPagesBulkAssign] = useState('')
   const [subtasks, setSubtasks] = useState(emptySubtasks)
   // Per-subtask designer assignment: { [subtaskKey]: userId | '' }
   const [subtaskAssignees, setSubtaskAssignees] = useState(emptySubtaskAssignees)
@@ -166,6 +173,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
     setCustomDraft('')
     setPageCount(32)
     setStickerCount(1)
+    setPagesBulkAssign('')
   }
 
   function addCustomSubtask() {
@@ -276,19 +284,49 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         subtaskAssignees: { ...subtaskAssignees, ...customAssignees },
         target_month: targetDate || defaultTargetDate(),
       }
+      let saved
       if (isEdit) {
-        const updated = await api.updateProject(project.id, payload)
-        updateOne(updated)
+        saved = await api.updateProject(project.id, payload)
+        updateOne(saved)
         toast.success('Proje güncellendi.')
-        onUpdated?.(updated)
+        onUpdated?.(saved)
       } else {
-        const created = await api.createProject(payload)
-        addOne(created)
+        saved = await api.createProject(payload)
+        addOne(saved)
         toast.success('Proje oluşturuldu.')
-        onCreated?.(created)
+        onCreated?.(saved)
         reset()
       }
       onOpenChange(false)
+      // Auto-assign gesture fires once after the project is saved. Held in
+      // state (`pagesBulkAssign`) until the save settles, then handed to the
+      // bulk-assign route using the İç Sayfalar subtask id from the freshly
+      // saved project shape. Runs *after* onOpenChange so the dialog can
+      // disappear while the request lands — the project store already has
+      // the saved shape, and the bulk-assign call returns the same shape
+      // again with `assigned_to` filled in for every page, so we drop the
+      // returned `project` straight into the store to refresh any open
+      // subscribers. A failed bulk-assign is non-fatal: the project is
+      // already saved, so we surface the error and let the leader retry
+      // from the chip grid rather than blocking the close.
+      if (pagesBulkAssign) {
+        const pagesSubtask = (saved.subtasks ?? []).find((s) => s.kind === 'pages')
+        if (pagesSubtask) {
+          try {
+            const bulkOpts = pagesBulkAssign === 'distribute'
+              ? { distribute: true }
+              : { assignedTo: pagesBulkAssign }
+            const bulkResult = await api.bulkAssignSubtaskPages(pagesSubtask.id, bulkOpts)
+            if (bulkResult?.project) {
+              if (isEdit) updateOne(bulkResult.project)
+              else addOne(bulkResult.project)
+            }
+          } catch (err) {
+            toast.error(`Otomatik atama yapılamadı: ${err.message || 'bilinmeyen hata'}`)
+          }
+        }
+        setPagesBulkAssign('')
+      }
     } catch (err) {
       toast.error(err.message || 'İşlem tamamlanamadı.')
     } finally {
@@ -455,34 +493,85 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                     </div>
 
                     {isChecked && s.key === 'sayfalar' && (
-                      <div className="ml-7 mb-1 flex flex-wrap items-center gap-3 rounded-md border bg-background/60 px-3 py-2">
-                        <Label htmlFor="np-pages" className="text-sm">
-                          Toplam iç sayfa
-                        </Label>
-                        <Input
-                          id="np-pages"
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={pageCount}
-                          onChange={(e) => setPageCount(clampPositiveInt(e.target.value))}
-                          onBlur={(e) => setPageCount(clampPositiveInt(e.target.value))}
-                          onKeyDown={(e) => {
-                            // Block "-" / "e" / "+" and a leading "0" so the field
-                            // can never land on 0 via keystroke, paste, or arrow keys.
-                            if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') {
-                              e.preventDefault()
-                              return
-                            }
-                            if (e.key === '0' && (e.currentTarget.value === '' || e.currentTarget.value === '0')) {
-                              e.preventDefault()
-                            }
-                          }}
-                          className="h-9 w-28"
-                        />
-                        <span className="text-xs text-muted-foreground">
-                          Tasarımcı bittikçe sayfa ekleyip ilerlemeyi günceller.
-                        </span>
+                      <div className="ml-7 mb-1 space-y-2">
+                        <div className="flex flex-wrap items-center gap-3 rounded-md border bg-background/60 px-3 py-2">
+                          <Label htmlFor="np-pages" className="text-sm">
+                            Toplam iç sayfa
+                          </Label>
+                          <Input
+                            id="np-pages"
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={pageCount}
+                            onChange={(e) => setPageCount(clampPositiveInt(e.target.value))}
+                            onBlur={(e) => setPageCount(clampPositiveInt(e.target.value))}
+                            onKeyDown={(e) => {
+                              // Block "-" / "e" / "+" and a leading "0" so the field
+                              // can never land on 0 via keystroke, paste, or arrow keys.
+                              if (e.key === '-' || e.key === 'e' || e.key === 'E' || e.key === '+') {
+                                e.preventDefault()
+                                return
+                              }
+                              if (e.key === '0' && (e.currentTarget.value === '' || e.currentTarget.value === '0')) {
+                                e.preventDefault()
+                              }
+                            }}
+                            className="h-9 w-28"
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            Tasarımcı bittikçe sayfa ekleyip ilerlemeyi günceller.
+                          </span>
+                        </div>
+                        {/* Bulk-assign gesture for the İç Sayfalar subtask. The
+                            leader can pre-decide ownership of every page on the
+                            new (or just-edited) subtask here, instead of clicking
+                            through 200 per-page popovers after the project lands.
+                            Empty = no change; a designer id = every page onto that
+                            designer; 'distribute' = round-robin across the active
+                            project roster. The dropdown is gated on the subtask
+                            being checked (otherwise there's no subtask to assign
+                            into) and on at least one assigned designer existing
+                            (otherwise there's noone to assign to). */}
+                        <div className="flex flex-wrap items-center gap-3 rounded-md border bg-background/60 px-3 py-2">
+                          <Label htmlFor="np-pages-bulk" className="text-sm">
+                            Otomatik atama
+                          </Label>
+                          <Select
+                            value={pagesBulkAssign}
+                            onValueChange={setPagesBulkAssign}
+                            disabled={assignedIds.length === 0}
+                          >
+                            <SelectTrigger
+                              id="np-pages-bulk"
+                              className={cn(
+                                'h-9 w-56',
+                                assignedIds.length === 0 && 'opacity-50',
+                              )}
+                              aria-disabled={assignedIds.length === 0}
+                            >
+                              <SelectValue placeholder="Atama yok" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">Atama yok</SelectItem>
+                              {designers
+                                .filter((d) => assignedIds.includes(d.id))
+                                .map((d) => (
+                                  <SelectItem key={d.id} value={d.id}>
+                                    {d.name}
+                                  </SelectItem>
+                                ))}
+                              {assignedIds.length > 1 && (
+                                <SelectItem value="distribute">
+                                  Tüm tasarımcılara dağıt
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                          <span className="text-xs text-muted-foreground">
+                            Kaydedince her sayfa seçilen tasarımcıya atanır.
+                          </span>
+                        </div>
                       </div>
                     )}
 

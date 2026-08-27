@@ -954,19 +954,34 @@ export async function subtaskRoutes(fastify) {
 
       // Build the per-page owner array. For single-designer mode every
       // entry is the same id; for distribute mode we round-robin across
-      // the active designer roster sorted by name so the assignment is
-      // stable across requests (no "page 47 went to Aylin today and
-      // Rahşan tomorrow" jitter).
+      // the designers actively working on THIS project — same set the
+      // leader sees in the popover. Using the global active designer
+      // roster would hand pages to designers who aren't even on the
+      // project, which would surprise the leader and dump random work
+      // on the recipient with no prior context. The query returns the
+      // project primary UNION all distinct per-subtask assignees on
+      // this project, filtered to role=designer AND is_active=true.
       let perPageOwners
       let summaryLabel
       if (distribute) {
         const { rows: designers } = await client.query(
-          `SELECT id, name FROM users
-            WHERE role = 'designer' AND is_active = true
-            ORDER BY name`,
+          `SELECT DISTINCT u.id, u.name
+             FROM users u
+            WHERE u.is_active = true
+              AND u.role = 'designer'
+              AND (
+                u.id = (SELECT assigned_to FROM projects WHERE id = $2)
+                OR EXISTS (
+                  SELECT 1 FROM subtasks s
+                   WHERE s.project_id = $2
+                     AND s.assigned_to = u.id
+                )
+              )
+            ORDER BY u.name`,
+          [subtaskId, project.id],
         )
         if (designers.length === 0) {
-          badRequest('Aktif tasarımcı bulunamadı.')
+          badRequest('Bu projede atanmış aktif tasarımcı yok.')
         }
         perPageOwners = Array.from(
           { length: totalPages },

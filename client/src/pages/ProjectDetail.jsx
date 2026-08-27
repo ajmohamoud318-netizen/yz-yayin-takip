@@ -960,28 +960,6 @@ export default function ProjectDetail() {
   }
 
   /**
-   * Leader bulk-assigns every page in an İç Sayfalar subtask. Two modes:
-   *   • `opts.assignedTo` — put every page on this designer. Replaces
-   *     200 per-chip popovers with one click.
-   *   • `opts.distribute: true` — round-robin across the active designer
-   *     roster, server-side.
-   * No optimistic update — the server returns the full project shape
-   * (chips, owners, progress) and we just merge it. The "Toplu Ata"
-   * button is leader-only, so the canEdit guard below is the natural
-   * defense; the role check on the server is the authoritative one.
-   */
-  async function handleBulkAssign(sub, opts) {
-    if (!isLeader) return
-    try {
-      const { project: updated } = await api.bulkAssignSubtaskPages(sub.id, opts)
-      if (updated) setProject((prev) => ({ ...prev, ...updated }))
-      toast.success('Sayfalar toplu atandı.')
-    } catch (err) {
-      toast.error(err.message || 'Toplu atama tamamlanamadı.')
-    }
-  }
-
-  /**
    * Leader reassigns a single page to a different designer — or clears the
    * assignment entirely (`assignedTo === null`). Mirrors handlePageClick /
    * handlePageRework: abort any in-flight request for the same chip, set
@@ -1981,12 +1959,11 @@ export default function ProjectDetail() {
                                 onAssign={(pageIndex, assignedTo) =>
                                   handlePageAssign(s, pageIndex, assignedTo)
                                 }
-                                // Bulk-assign: leader-only "Toplu Ata" trigger in
-                                // the header. Replaces 200 per-chip popovers with
-                                // one click — pick a designer to put every page on
-                                // them, or pick "Tüm tasarımcılara dağıt" to
-                                // round-robin across the active roster.
-                                onBulkAssign={(opts) => handleBulkAssign(s, opts)}
+                                // Project-scoped designer list for the chip popover
+                                // and (formerly) the distribute rotation. Sourced
+                                // from `project.assignees` (computed by
+                                // loadProjectAssignees server-side: project
+                                // primary UNION per-subtask assignees).
                               />
                             </div>
                           )
