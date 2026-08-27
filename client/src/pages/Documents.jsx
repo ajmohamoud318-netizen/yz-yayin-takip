@@ -487,9 +487,7 @@ export default function Documents() {
                   <th aria-hidden className="w-1.5 p-0" />
                   <th className="px-4 py-2.5">Proje</th>
                   <th className="px-3 py-2.5">Tür</th>
-                  <th className="px-3 py-2.5 text-center">#</th>
                   <th className="px-3 py-2.5">Tarih</th>
-                  <th className="px-3 py-2.5">İsteyen</th>
                   <th className="px-3 py-2.5">Matbaa</th>
                   <th className="px-3 py-2.5">Durum</th>
                   <th className="px-3 py-2.5 text-right">Eylemler</th>
@@ -499,7 +497,6 @@ export default function Documents() {
                 {filtered.map((entry) => {
                   const isDemo = entry.kind === 'demo'
                   const requestDate = isDemo ? entry.form?.demoIstemTarihi : entry.form?.ozalitIstemTarihi
-                  const requester = isDemo ? entry.form?.demoIsteyenKisi : entry.form?.ozalitIsteyenKisi
                   return (
                     <tr
                       key={entry.id}
@@ -527,16 +524,8 @@ export default function Documents() {
                       <td className="px-3 py-3">
                         <Badge variant="outline" className="font-mono text-[10px]">{TYPE_LABELS[entry.project.type]}</Badge>
                       </td>
-                      <td className="px-3 py-3 text-center">
-                        <span className="inline-flex items-center rounded-md bg-secondary px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-secondary-foreground">
-                          {entry.attemptNo}.{isDemo ? 'D' : 'O'}
-                        </span>
-                      </td>
                       <td className="px-3 py-3 font-mono text-[12px] tabular-nums text-muted-foreground">
                         {shortDate(requestDate) || '—'}
-                      </td>
-                      <td className="px-3 py-3 text-muted-foreground">
-                        <span className="line-clamp-1">{requester || entry.project.assigned_name || '—'}</span>
                       </td>
                       <td className="px-3 py-3 text-muted-foreground">
                         <span className="line-clamp-1">{entry.printerName || '—'}</span>
