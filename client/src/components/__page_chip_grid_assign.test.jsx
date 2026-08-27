@@ -226,4 +226,97 @@ describe('PageChipGrid — assign round trip', () => {
     await act(async () => { root.unmount() })
     host.remove()
   })
+
+  it('does NOT render the assign popover trigger on done pages (no silent reassign)', async () => {
+    // A done page carries `done_by` (the finisher) and the chip's colour
+    // is driven by that, NOT by `assigned_to`. Letting a leader click
+    // "Ata" on a done page would PATCH `assigned_to` in the DB without
+    // moving the chip, and would push the page into the new designer's
+    // "Benim sayfalarım" filter even though they didn't ship it. The
+    // fix collapses the leader view of a done page to the same plain
+    // read-only dot a non-leader sees; the proper way to change credit
+    // is the rework flow.
+    const liveSubtask = {
+      ...buildSubtask(),
+      pages: [
+        // Page 1 shipped by Aylin, still assigned to her. Even with the
+        // assignees matching, a done page must not show the popover.
+        { i: 1, status: 'done', done_by: 'u-aylin', done_by_name: 'Aylin', done_at: '2026-08-26T10:00:00Z', rework_count: 0, assigned_to: 'u-aylin', assigned_to_name: 'Aylin' },
+        // Page 2 shipped by Aylin, reassigned to Büşra by a leader. The
+        // chip colour stays Aylin's (because done_by drives it), and
+        // the leader must not be able to push a different owner onto
+        // this row through the popover.
+        { i: 2, status: 'done', done_by: 'u-aylin', done_by_name: 'Aylin', done_at: '2026-08-26T11:00:00Z', rework_count: 0, assigned_to: 'u-busra', assigned_to_name: 'Büşra' },
+      ],
+    }
+    const onAssign = vi.fn()
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    const Harness = makeHarness({
+      getSubtask: () => liveSubtask,
+      designers: DESIGNERS,
+      isLeader: true,
+      onAssign,
+    })
+    act(() => root.render(<Harness />))
+
+    // The popover trigger testid must be absent on done pages for both
+    // chip states (assigned_to matches the finisher, assigned_to differs).
+    expect(
+      host.querySelector('[data-testid="page-assign-trigger-sub-1-1"]'),
+      'page 1 (done, assignees match) should not expose a popover trigger',
+    ).toBeNull()
+    expect(
+      host.querySelector('[data-testid="page-assign-trigger-sub-1-2"]'),
+      'page 2 (done, assignees differ) should not expose a popover trigger',
+    ).toBeNull()
+
+    // The chip's colour stays driven by done_by on done pages — page 2
+    // has a different assigned_to but the same done_by as page 1, so
+    // the two chips must share a border colour. (This is the existing
+    // ownerOf rule, not a new assertion — it's here to make the test
+    // self-explanatory about why reassigning would be a silent change.)
+    const chips = [...host.querySelectorAll('button[aria-pressed]')]
+      .filter((b) => /^\d+$/.test(b.textContent.trim()))
+    expect(chips[0].style.borderColor).toBe(chips[1].style.borderColor)
+
+    await act(async () => { root.unmount() })
+    host.remove()
+  })
+
+  it('renders the assign popover trigger on pending and rework pages', async () => {
+    // Belt-and-braces: the new gate on done pages must NOT regress the
+    // pending/rework case. Both statuses still expose the trigger so
+    // the leader can re-plan the work.
+    const liveSubtask = {
+      ...buildSubtask(),
+      pages: [
+        { i: 1, status: 'pending', done_by: null, done_by_name: null, done_at: null, rework_count: 0, assigned_to: null, assigned_to_name: null },
+        { i: 2, status: 'rework', done_by: 'u-aylin', done_by_name: 'Aylin', done_at: '2026-08-25T10:00:00Z', rework_count: 1, assigned_to: 'u-busra', assigned_to_name: 'Büşra' },
+      ],
+    }
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    const Harness = makeHarness({
+      getSubtask: () => liveSubtask,
+      designers: DESIGNERS,
+      isLeader: true,
+      onAssign: () => {},
+    })
+    act(() => root.render(<Harness />))
+
+    expect(
+      host.querySelector('[data-testid="page-assign-trigger-sub-1-1"]'),
+      'pending page must still expose the popover trigger',
+    ).not.toBeNull()
+    expect(
+      host.querySelector('[data-testid="page-assign-trigger-sub-1-2"]'),
+      'rework page must still expose the popover trigger (work in progress)',
+    ).not.toBeNull()
+
+    await act(async () => { root.unmount() })
+    host.remove()
+  })
 })

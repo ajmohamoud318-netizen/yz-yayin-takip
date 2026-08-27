@@ -808,6 +808,39 @@ const subtasksPageAssign = {
   },
 }
 
+// Bulk-assign all pages of an "İç Sayfalar" subtask. Two modes:
+//   • `assigned_to: <userId>` — every page in the subtask goes to that
+//     one designer. The leader is saying "this whole book is Rahşan's
+//     now." Fastest way to pre-allocate when the leader doesn't want to
+//     distribute.
+//   • `distribute: true` — pages are assigned to the active designer
+//     roster in round-robin order (page 1 → designer A, page 2 →
+//     designer B, page N → designer (N mod len)). The leader is
+//     saying "split this whole book across the team."
+//
+// Exactly one of the two must be set; the schema enforces it with
+// `oneOf` so a request that accidentally sends both is rejected with
+// a 400 before the route runs. Unassign (clear all assignments) is
+// deliberately NOT supported here — the per-page endpoint already
+// handles unassign one page at a time, and a bulk-unassign would be
+// one click away from wiping 200 chips' ownership, which is too easy
+// to misfire.
+const subtasksPagesBulkAssign = {
+  params: subtasksPagePatch.params,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      assigned_to: { type: 'string', minLength: 1, maxLength: 64 },
+      distribute: { type: 'boolean' },
+    },
+    oneOf: [
+      { required: ['assigned_to'] },
+      { required: ['distribute'] },
+    ],
+  },
+}
+
 // A sipariş's own per-order copy of the checklist (order_subtasks) — same
 // fields as subtasksPatch, scoped by orderId+id instead of just id. See
 // server/db/migrations/039__order_subtasks.sql.
@@ -841,6 +874,18 @@ const projectsSubtasksPut = {
     additionalProperties: false,
     required: ['subtasks'],
     properties: {
+      // The SPA's full intent for who should be on the project. Optional
+      // here so callers that only want to touch subtask titles / totals
+      // (no assignee changes) don't have to re-send it. When present,
+      // the route runs the orphan-designer check: every id except the
+      // first (which becomes the project primary) must be assigned to
+      // at least one subtask in this same payload, otherwise the save
+      // would leave a designer "in the project" but on no work.
+      assignees: {
+        type: 'array',
+        maxItems: 8,
+        items: { type: 'string', minLength: 1, maxLength: 64 },
+      },
       subtasks: {
         type: 'array',
         maxItems: 64,
@@ -1156,6 +1201,7 @@ export const schemas = {
   subtasksRevize,
   subtasksPagePatch,
   subtasksPageAssign,
+  subtasksPagesBulkAssign,
   projectsSubtasksPut,
   demosCreate,
   productInfoUpsert,

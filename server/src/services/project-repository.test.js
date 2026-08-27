@@ -556,3 +556,186 @@ describe('PUT /projects/:id/subtasks — designer work state is preserved', () =
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// PUT /projects/:id/subtasks — source-level contract for "reopen done
+// work on reassign."
+//
+// When the team leader changes the `assigned_to` of an alt görev whose
+// `is_done` is currently true, the work is reopened so the new owner
+// has to redo it. Without this branch, the leader's reassignment of a
+// completed Kapak (or a completed İç Sayfalar) would silently strand
+// the credit with the old finisher while the new designer is on the
+// hook for delivery they never had a chance to do.
+//
+// Locked-in contracts (all on the route source, because the reopen
+// logic is route-internal and the SQL is best read directly):
+//   • kind='check' reopen — `is_done = false, done_at = NULL` on the
+//     subtask row.
+//   • kind='pages' reopen — `status = 'rework'` on every done page
+//     with `rework_count` incremented, AND `is_done` recomputed
+//     (otherwise the parent flag would lie and progressFor would
+//     count a fully-reworked subtask as "done").
+//   • The detection uses the previous snapshot (previous.assigned_to
+//     !== new.assigned_to AND previous.is_done === true) so a save
+//     that only renames or re-totals doesn't accidentally reopen.
+//   • The describeSubtaskListChange timeline bit for a reassign of
+//     a done subtask says "atama değişti, yeniden yapılacak" so the
+//     team can see why a finished alt görev is back in the queue.
+
+describe('PUT /projects/:id/subtasks — reopen on reassign of done work', () => {
+  it('reopens a kind=check alt görev that was is_done=true', () => {
+    // Pull the check-kind reopen block. Anchored on the unique UPDATE
+    // that writes is_done = false, done_at = NULL with no $params in
+    // sight (the values are literals, not bound parameters) — the
+    // kind='check' branch never needs to know which row, just that the
+    // SET clause flips both columns.
+    const re = /UPDATE subtasks\s+SET is_done = false,\s*done_at = NULL/
+    assert.ok(
+      re.test(subtasksRouteSrc),
+      'expected a kind=check reopen UPDATE in the bulk-reconcile route',
+    )
+  })
+
+  it('flips done pages to rework on kind=pages reopen, with rework_count++', () => {
+    // The pages-kind reopen must (1) touch only the rows that are
+    // currently 'done' (the WHERE guard) and (2) increment rework_count
+    // so the team can see how many times a page has bounced, and
+    // (3) NOT touch done_by / done_at — the audit trail of who last
+    // shipped the page stays.
+    assert.match(
+      subtasksRouteSrc,
+      /UPDATE subtask_pages\s+SET status = 'rework',\s*rework_count = rework_count \+ 1/,
+      'pages-kind reopen should set status=rework and bump rework_count',
+    )
+    // The WHERE clause must filter to status='done' so a page already
+    // in 'pending' or 'rework' isn't double-counted.
+    assert.match(
+      subtasksRouteSrc,
+      /status = 'rework'[\s\S]{0,200}WHERE subtask_id = \$1\s+AND status = 'done'/,
+      'pages-kind reopen WHERE must scope to status=done rows',
+    )
+  })
+
+  it('recomputes is_done + pages_done after the pages-kind reopen', () => {
+    // After flipping 50 done pages to rework, the subtask's is_done
+    // flag is stale (still true from before) and pages_done is stale
+    // (still 50, but zero pages are actually 'done' now). Without this
+    // recompute, progressFor would count the subtask as done and the
+    // project progress bar would lie.
+    assert.match(
+      subtasksRouteSrc,
+      /pages_done = COALESCE\(\(\s*SELECT COUNT\(\*\)::int\s+FROM subtask_pages/,
+      'pages_done should be recomputed from the chip-grid state',
+    )
+    assert.match(
+      subtasksRouteSrc,
+      /is_done = COALESCE\(\(\s*SELECT \(COUNT\(\*\) FILTER \(WHERE status = 'done'\)\s*=\s*COUNT\(\*\)\)/,
+      'is_done should be recomputed from the chip-grid state too',
+    )
+  })
+
+  it('detects the reopen only when the assignee actually changed AND is_done was true', () => {
+    // The branch gates on `prev.assigned_to !== row.assigned_to` AND
+    // `prev.is_done === true`. Both must hold — a save that only
+    // renames a subtask, or one where the leader didn't touch the
+    // assignee on a not-done subtask, must not trigger a reopen.
+    assert.match(
+      subtasksRouteSrc,
+      /if \(prev\.assigned_to === row\.assigned_to\) continue\s+\/\/ assignee didn't move/,
+      'reopen should short-circuit when assigned_to did not change',
+    )
+    assert.match(
+      subtasksRouteSrc,
+      /if \(!prev\.is_done\) continue\s+\/\/ wasn't done, no work to reopen/,
+      'reopen should short-circuit when the previous row was not is_done',
+    )
+  })
+
+  it('describeSubtaskListChange flags a reopen as "atama değişti, yeniden yapılacak"', () => {
+    // The timeline bit is the only place the team sees WHY a finished
+    // alt görev is suddenly back in the queue. A plain "atama değişti"
+    // would leave everyone guessing. Pull the function source and
+    // assert the conditional bit is present.
+    const fnMatch = subtasksRouteSrc.match(
+      /export function describeSubtaskListChange\([\s\S]*?\n\}/,
+    )
+    assert.ok(fnMatch, 'describeSubtaskListChange not found in source')
+    const body = fnMatch[0]
+    assert.match(
+      body,
+      /old\.is_done\s*&&\s*!s\.is_done/,
+      'describeSubtaskListChange must detect the done→not-done transition',
+    )
+    assert.match(
+      body,
+      /atama değişti, yeniden yapılacak/,
+      'describeSubtaskListChange must emit a dedicated "yeniden yapılacak" bit on reopen',
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PUT /projects/:id/subtasks — orphan-designer guard.
+//
+// The leader's chip-grid assignee picker lets them add a designer to the
+// project without explicitly dropping them onto a subtask. Without a
+// guard, the save would leave that designer in `projects.assignees` (via
+// the PATCH that sets the primary from assignees[0]) but on no subtask
+// — invisible to the chip grid, no work queued for them, notifications
+// still going out as if they were an active contributor. The guard runs
+// at the top of the PUT route (before the withTx block) so the
+// transaction is aborted on failure.
+//
+// Contract:
+//   • `assignees` in the body is OPTIONAL — callers that only edit
+//     subtask titles / totals don't have to re-send it.
+//   • When present, the first id is the project primary; every other
+//     id must be on at least one subtask in the same payload.
+//   • Subtasks with assigned_to=null fall back to the project primary
+//     in the route's write path, so a subtask with no assigned_to does
+//     NOT cover any extra designer — the only designer it covers is
+//     the primary.
+describe('PUT /projects/:id/subtasks — orphan-designer guard', () => {
+  it('reads assignees off the body and runs the loop', () => {
+    // The guard must (1) pull declaredAssignees from request.body
+    // and (2) iterate over every id, skipping the primary and
+    // accepting any id present in the subtask-assignee set. We assert
+    // the loop body is wired so a future refactor that strips the
+    // guard can't quietly regress the behaviour.
+    assert.match(
+      subtasksRouteSrc,
+      /declaredAssignees = Array\.isArray\(request\.body\.assignees\)/,
+      'guard must pull declaredAssignees from request.body.assignees',
+    )
+    assert.match(
+      subtasksRouteSrc,
+      /for \(const id of declaredAssignees\)/,
+      'guard must iterate every id in declaredAssignees',
+    )
+  })
+
+  it('skips the first id (the project primary) and any id that is in a subtask', () => {
+    // The two `continue` branches are the only legal ways out of the
+    // loop without raising a 400. Anything else means the guard is
+    // short-circuiting a legitimate case.
+    const guardMatch = subtasksRouteSrc.match(
+      /for \(const id of declaredAssignees\)\s*\{[\s\S]*?\n\s{6}\}/,
+    )
+    assert.ok(guardMatch, 'orphan-guard for-loop not found in source')
+    const body = guardMatch[0]
+    assert.match(body, /if \(id === primaryAssignee\) continue/)
+    assert.match(body, /if \(subAssigneeIds\.has\(id\)\) continue/)
+  })
+
+  it('rejects orphan designers with a 400 mentioning the missing id', () => {
+    // The error message has to (1) name the offending designer so the
+    // leader can fix it without hunting through the picker, and
+    // (2) explain the rule so a future change to the project policy
+    // is at least locatable in the message.
+    assert.match(
+      subtasksRouteSrc,
+      /badRequest\([\s\S]*?Listeye eklediğiniz her tasarımcı en az bir alt göreve atanmalı\./,
+    )
+  })
+})

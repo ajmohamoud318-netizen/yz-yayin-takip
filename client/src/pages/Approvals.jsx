@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
-import { ThumbsUp, ThumbsDown, Inbox, Send, ShoppingCart, CheckCircle2, PackageCheck } from 'lucide-react'
+import {
+  ThumbsUp, ThumbsDown, Inbox, Send, ShoppingCart, CheckCircle2, PackageCheck,
+  ClipboardCheck, Hourglass, Eye, ArrowRight,
+} from 'lucide-react'
 
-import api, { ORDER_STEP_LABELS } from '@/api'
+import api from '@/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useProjects } from '@/hooks/useProjects'
 import { Card, CardContent } from '@/components/ui/card'
@@ -24,11 +27,11 @@ import {
   canRequestEkranDemo, canRespondEkranDemo, canRespondDemoChange, canRespondOzalitChange,
   canMarkDemoStarted, canMarkOzalitStarted,
 } from '@/domain'
-import { formatTargetDate, formatNumber } from '@/lib/utils'
+import { cn, formatTargetDate, formatNumber } from '@/lib/utils'
 
 /**
- * Approval queue — demo/ozalit tabs for the design pipeline, plus a sipariş
- * tab for the printer (matbaa) showing orders that need their sign-off.
+ * Approval queue — demo/ozalit/baskı-onay tabs for the design pipeline, plus
+ * a sipariş tab for the printer (matbaa) showing orders that need sign-off.
  */
 export default function Approvals({ tab = 'demo' }) {
   const { user } = useAuth()
@@ -207,25 +210,25 @@ export default function Approvals({ tab = 'demo' }) {
   if (tab === 'siparis' && isPrinter) {
     return (
       <>
-        <div className="space-y-5">
-          <header>
-            <h1 className="text-2xl font-semibold tracking-tight">Baskı Teslimi</h1>
-          </header>
+        <div className="mx-auto max-w-4xl space-y-6">
+          <PageHeader
+            icon={ClipboardCheck}
+            title="Baskı Teslimi"
+            subtitle="Tasarımcının onayladığı siparişleri matbaa olarak imzalayın."
+          />
 
           {ordersLoading ? (
-            <div className="space-y-3">
-              {[0, 1].map((i) => <Skeleton key={i} className="h-24" />)}
+            <div className="space-y-2.5">
+              {[0, 1].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
             </div>
           ) : orders.length === 0 ? (
-            <Card>
-              <CardContent className="grid place-items-center gap-2 p-10 text-center">
-                <ShoppingCart className="h-8 w-8 text-muted-foreground" />
-                <p className="text-sm font-medium">Onay bekleyen baskı yok.</p>
-                <p className="text-xs text-muted-foreground">Tasarımcı onayladığında burada görünecek.</p>
-              </CardContent>
-            </Card>
+            <EmptyState
+              icon={ShoppingCart}
+              title="Onay bekleyen baskı yok."
+              hint="Tasarımcı onayladığında burada görünecek."
+            />
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {orders.map((order) => (
                 <SiparisOrderCard
                   key={order.id}
@@ -251,279 +254,99 @@ export default function Approvals({ tab = 'demo' }) {
   function renderQueue(queue, sub) {
     if (loading) {
       return (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {[0, 1].map((i) => (
-            <Skeleton key={i} className="h-32" />
+        <div className="space-y-2.5">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-20 rounded-xl" />
           ))}
         </div>
       )
     }
     if (queue.length === 0) {
       return (
-        <Card>
-          <CardContent className="grid place-items-center gap-2 p-10 text-center">
-            <Inbox className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm font-medium">Şu an bekleyen iş yok.</p>
-            <p className="text-xs text-muted-foreground">Yeni bir teslim geldiğinde burada görünecek.</p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={Inbox}
+          title="Şu an bekleyen iş yok."
+          hint="Yeni bir teslim geldiğinde burada görünecek."
+        />
       )
     }
     return (
-      <div className="stagger-children grid grid-cols-1 gap-3 md:grid-cols-2">
-        {queue.map((p) => {
-          const isAssignedDesigner = (p.assignees ?? []).some((a) => a.id === user?.id)
-          const alreadyApproved = sub === 'ozalit' && (p.ozalit_approvals ?? []).some((a) => a.id === user?.id)
-          const canApprove = sub === 'demo' ? isLeader : (isLeader || isAssignedDesigner)
-          // Ozalit is leader-first: an assigned designer's Onayla only opens
-          // once a team leader has signed off (the server refuses it before
-          // that). The card stays in their queue so they can watch it move.
-          const awaitingLeader =
-            sub === 'ozalit' && isDesigner && !alreadyApproved && !ozalitLeaderApproved(p)
-          const heldDemo = sub === 'demo' && p.demo_held === true
-          // Demo/ozalit both gate their sign-off behind a "Teslim Alındı" —
-          // when that's still owed the button is a receipt step, not an
-          // approval, so it loses the green/thumbs-up treatment too.
-          const receiptFirst = awaitsReceipt(sub, p)
-          return (
-          <Card
+      <div className="stagger-children space-y-2.5">
+        {queue.map((p) => (
+          <ApprovalRow
             key={p.id}
-            className="cursor-pointer transition-colors hover:bg-muted/40"
-            onClick={() => navigate(`/projects/${p.id}`)}
-          >
-            <CardContent className="space-y-3 p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="line-clamp-2 text-sm font-semibold sm:line-clamp-1">{p.title}</p>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {p.assigned_name} · {formatTargetDate(p.target_month)}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <Badge variant="outline">{TYPE_LABELS[p.type]}</Badge>
-                </div>
-              </div>
-              <div className="rounded-md border bg-muted/30 p-2.5 text-xs">
-                <span className="font-medium">Aşama:</span> {STAGE_LABELS[p.stage]}
-              </div>
-              {/* Action row — stacks below sm on mobile, row on tablet+.
-                  stopPropagation keeps action clicks from also triggering the
-                  card's own navigate-to-detail handler. */}
-              <div
-                className="flex flex-col gap-2 sm:flex-row sm:items-center"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {isPrinter ? (
-                  <>
-                    {/* Teslim Et stays hidden until the matbaa has pressed
-                        İşlemi Başlat — same rule as the detail page
-                        (canMarkDemoStarted/canMarkOzalitStarted) — and while a
-                        change request is pending, since the server refuses
-                        delivery until the matbaa accepts/declines it
-                        (computeDemoTeslimAdvance/computeOzalitTeslimAdvance).
-                        The accept/decline buttons only live on the detail
-                        page, so send them there instead of failing a submit. */}
-                    {(sub === 'demo' ? canRespondDemoChange(user, p) : canRespondOzalitChange(user, p)) ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full sm:flex-1"
-                        onClick={() => navigate(`/projects/${p.id}`)}
-                      >
-                        <Send className="h-4 w-4" />
-                        Değişiklik talebini yanıtlayın
-                      </Button>
-                    ) : (sub === 'demo' ? p.demo_started : p.ozalit_started) ? (
-                      <Button
-                        size="sm"
-                        className="w-full sm:flex-1"
-                        onClick={() => {
-                          if (sub === 'demo') setDemoForm({ project: p, mode: 'advance' })
-                          else setOzalitForm({ project: p, mode: 'advance' })
-                        }}
-                      >
-                        <Send className="h-4 w-4" />
-                        {sub === 'demo' ? "Demo'yu Teslim Edin" : 'Ozaliti Teslim Edin'}
-                      </Button>
-                    ) : (sub === 'demo' ? canMarkDemoStarted(user, p) : canMarkOzalitStarted(user, p)) ? (
-                      <Button
-                        size="sm"
-                        className="w-full sm:flex-1"
-                        onClick={() => setStartConfirm({ project: p, sub })}
-                      >
-                        <CheckCircle2 className="h-4 w-4" />
-                        İşlemi Başlatın
-                      </Button>
-                    ) : null}
-                    <Button size="sm" variant="ghost" className="w-full sm:flex-1" onClick={() => navigate(`/projects/${p.id}`)}>
-                      Detay
-                    </Button>
-                  </>
-                ) : heldDemo && isLeader ? (
-                  // A held demo only reaches this queue once progress hits
-                  // 100% (see filterQueue) — there's always something
-                  // actionable here: either respond to a pending Ekran Demo
-                  // Onayı request, or offer to start one (canRequestEkranDemo
-                  // covers the rest: stage/hold/progress already hold).
-                  canRespondEkranDemo(user, p) ? (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        className="flex-1"
-                        onClick={() => setEkranDemoRejectFor(p)}
-                        disabled={ekranBusyId === p.id}
-                      >
-                        <ThumbsDown className="h-4 w-4" />
-                        Reddet
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="success"
-                        className="flex-1"
-                        onClick={() => handleEkranDemoApprove(p)}
-                        disabled={ekranBusyId === p.id}
-                      >
-                        <ThumbsUp className="h-4 w-4" />
-                        Ekran Demoyu Onaylayın
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => handleEkranDemoRequest(p)}
-                        disabled={ekranBusyId === p.id}
-                      >
-                        <Send className="h-4 w-4" />
-                        Ekran Demo Onayı İsteyin
-                      </Button>
-                      <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={() => navigate(`/projects/${p.id}`)}>
-                        Detay
-                      </Button>
-                    </>
-                  )
-                ) : (
-                  <>
-                    {alreadyApproved ? (
-                      // This user already signed off — waiting on the others.
-                      <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800 sm:flex-1">
-                        <ThumbsUp className="h-3.5 w-3.5" />
-                        Onayınız kaydedildi, diğer onaylar bekleniyor
-                      </span>
-                    ) : awaitingLeader ? (
-                      // Designer, leader hasn't approved yet — not their turn.
-                      <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 sm:flex-1">
-                        Ekip lideri onayı bekleniyor, sonra sizin onayınız
-                      </span>
-                    ) : canApprove ? (
-                      <Button
-                        size="sm"
-                        variant={receiptFirst ? 'default' : 'success'}
-                        className="w-full sm:flex-1"
-                        onClick={() => {
-                          if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
-                          else if (sub === 'baski-onay') setBaskiOnayForm({ project: p, mode: 'approve' })
-                          else setDialog({ project: p, mode: 'approve' })
-                        }}
-                      >
-                        {receiptFirst ? <PackageCheck className="h-4 w-4" /> : <ThumbsUp className="h-4 w-4" />}
-                        {/* The card's button just opens the dialog, but the
-                            label names the step the dialog will actually ask
-                            for: taking delivery first (demo_received /
-                            ozalit_received), or — for dual-approval baskı
-                            onayı (migration 045) — Hazırla vs Onayla, decided
-                            the same way the dialog does (baski_onay_prepared). */}
-                        {primaryActionLabel(sub, p)}
-                      </Button>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/30 px-2 py-1 text-xs font-medium text-muted-foreground sm:flex-1">
-                        Onay bekleniyor
-                      </span>
-                    )}
-                    {/* Only a team leader who hasn't approved yet can reject —
-                        approving commits them, so Reddet disappears afterward.
-                        Baskı Onayı has no reject flow: edit the form itself.
-                        Receipt gate: a leader shouldn't be able to reject a demo/
-                        ozalit proof they haven't acknowledged receiving yet —
-                        the primary button leads with "Teslim Alın" in that case,
-                        so the matching Reddet has to wait too. */}
-                    {isLeader && !alreadyApproved && sub !== 'baski-onay' && !receiptFirst && (
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        className="w-full sm:flex-1"
-                        onClick={() => setDialog({ project: p, mode: 'reject' })}
-                      >
-                        <ThumbsDown className="h-4 w-4" />
-                        {sub === 'ozalit' ? 'Ozaliti Reddedin' : 'Demoyu Reddedin'}
-                      </Button>
-                    )}
-                    <Button size="sm" variant="ghost" className="w-full sm:w-auto" onClick={() => navigate(`/projects/${p.id}`)}>
-                      Detay
-                    </Button>
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-          )
-        })}
+            project={p}
+            sub={sub}
+            user={user}
+            isLeader={isLeader}
+            isDesigner={isDesigner}
+            isPrinter={isPrinter}
+            ekranBusy={ekranBusyId === p.id}
+            onApprove={() => {
+              if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
+              else if (sub === 'baski-onay') setBaskiOnayForm({ project: p, mode: 'approve' })
+              else setDialog({ project: p, mode: 'approve' })
+            }}
+            onReject={() => setDialog({ project: p, mode: 'reject' })}
+            onAdvance={() => {
+              if (sub === 'demo') setDemoForm({ project: p, mode: 'advance' })
+              else setOzalitForm({ project: p, mode: 'advance' })
+            }}
+            onStartWork={() => setStartConfirm({ project: p, sub })}
+            onEkranRequest={() => handleEkranDemoRequest(p)}
+            onEkranApprove={() => handleEkranDemoApprove(p)}
+            onEkranReject={() => setEkranDemoRejectFor(p)}
+            onNavigate={() => navigate(`/projects/${p.id}`)}
+          />
+        ))}
       </div>
     )
   }
 
   return (
     <>
-      <div className="space-y-5">
-        <header>
-          <h1 className="text-2xl font-semibold tracking-tight">{isPrinter ? 'Matbaa Teslimleri' : 'Onaylar'}</h1>
-        </header>
+      <div className="mx-auto max-w-5xl 2xl:max-w-6xl space-y-6 2xl:space-y-8">
+        <PageHeader
+          icon={ClipboardCheck}
+          title={isPrinter ? 'Matbaa Teslimleri' : 'Onaylar'}
+          subtitle={
+            isPrinter
+              ? 'Demo ve ozalit teslim adımlarını yönetin.'
+              : 'Demo, ozalit ve baskı onaylarını tek yerden yönetin.'
+          }
+        />
 
         <Tabs value={activeTab} onValueChange={(v) => navigate(`/approvals/${v}`)}>
           <TabsList>
             {/* Designers only approve ozalit — no demo tab for them. */}
             {!isDesigner && (
-              <TabsTrigger value="demo" className="gap-1.5">
+              <TabsTrigger value="demo">
                 Demo Onayı
-                {demoQueue.length > 0 && (
-                  <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">
-                    {demoQueue.length}
-                  </Badge>
-                )}
+                {demoQueue.length > 0 && <CountBadge count={demoQueue.length} />}
               </TabsTrigger>
             )}
-            <TabsTrigger value="ozalit" className="gap-1.5">
+            <TabsTrigger value="ozalit">
               Ozalit Onayı
-              {ozalitQueue.length > 0 && (
-                <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">
-                  {ozalitQueue.length}
-                </Badge>
-              )}
+              {ozalitQueue.length > 0 && <CountBadge count={ozalitQueue.length} />}
             </TabsTrigger>
             {/* Baskı Onayı: team_leader only — the final sign-off after ozalit. */}
             {isLeader && (
-              <TabsTrigger value="baski-onay" className="gap-1.5">
+              <TabsTrigger value="baski-onay">
                 Baskı Onayı
-                {baskiOnayQueue.length > 0 && (
-                  <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">
-                    {baskiOnayQueue.length}
-                  </Badge>
-                )}
+                {baskiOnayQueue.length > 0 && <CountBadge count={baskiOnayQueue.length} />}
               </TabsTrigger>
             )}
           </TabsList>
           {!isDesigner && (
-            <TabsContent value="demo" className="mt-4">
+            <TabsContent value="demo" className="mt-5">
               {renderQueue(demoQueue, 'demo')}
             </TabsContent>
           )}
-          <TabsContent value="ozalit" className="mt-4">
+          <TabsContent value="ozalit" className="mt-5">
             {renderQueue(ozalitQueue, 'ozalit')}
           </TabsContent>
           {isLeader && (
-            <TabsContent value="baski-onay" className="mt-4">
+            <TabsContent value="baski-onay" className="mt-5">
               {renderQueue(baskiOnayQueue, 'baski-onay')}
             </TabsContent>
           )}
@@ -579,11 +402,13 @@ export default function Approvals({ tab = 'demo' }) {
   )
 }
 
+/* ───────────────────────── shared bits ───────────────────────── */
+
 /**
  * Is the physical proof still un-received? Both the demo dialog
  * (ApprovalDialog) and the ozalit form (SpecFormDialog) refuse to sign off
- * until it's been marked "Teslim Alındı", so the card's button leads with
- * that step instead of an "Onaylayın" that can't be honoured yet.
+ * until it's been marked "Teslim Alındı", so the row leads with that step
+ * instead of an "Onaylayın" that can't be honoured yet.
  */
 function awaitsReceipt(sub, p) {
   if (sub === 'demo') return p.demo_received !== true
@@ -592,17 +417,393 @@ function awaitsReceipt(sub, p) {
 }
 
 /**
- * The action the row actually owes, spelled out. Every queue card used to
- * read "Onaylayın"/"Reddedin" regardless of what the dialog would ask for
- * next — taking delivery, preparing the baskı onay form, or the sign-off
- * itself — so the label now names the step and the queue reads as a to-do
- * list. Mirrors ProjectDetail's approveActionLabel plus the receipt gates.
+ * The action the row actually owes, spelled out. Every queue row used to read
+ * "Onaylayın"/"Reddedin" regardless of what the dialog would ask for next —
+ * taking delivery, preparing the baskı onay form, or the sign-off itself — so
+ * the label now names the step and the queue reads as a to-do list. Mirrors
+ * ProjectDetail's approveActionLabel plus the receipt gates.
  */
 function primaryActionLabel(sub, p) {
   if (sub === 'baski-onay') return p.baski_onay_prepared ? 'Baskı Onayı Verin' : 'Baskı Onayı Hazırlayın'
   if (sub === 'ozalit') return awaitsReceipt(sub, p) ? 'Ozaliti Teslim Alın' : 'Ozaliti Onaylayın'
   return awaitsReceipt(sub, p) ? 'Demoyu Teslim Alın' : 'Demoyu Onaylayın'
 }
+
+/**
+ * Compact icon-disc header — colour codes the row at a glance so the user
+ * reads the queue as "what does this one need from me" rather than scanning
+ * button labels. Kept narrow (40px) so the meta column keeps its room.
+ */
+function StateDisc({ tone, Icon }) {
+  return (
+    <span
+      className={cn(
+        'grid h-10 w-10 shrink-0 place-items-center rounded-full ring-1 ring-inset',
+        tone,
+      )}
+    >
+      <Icon className="h-4.5 w-4.5" strokeWidth={2} />
+    </span>
+  )
+}
+
+function CountBadge({ count }) {
+  return (
+    <span className="ml-1.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-primary/10 px-1.5 text-[11px] font-semibold text-primary">
+      {count}
+    </span>
+  )
+}
+
+function EmptyState({ icon: Icon, title, hint }) {
+  return (
+    <Card>
+      <CardContent className="grid place-items-center gap-1.5 p-12 text-center">
+        <Icon className="h-8 w-8 text-muted-foreground/40" strokeWidth={1.75} />
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      </CardContent>
+    </Card>
+  )
+}
+
+function PageHeader({ icon: Icon, title, subtitle }) {
+  return (
+    <header>
+      <div className="flex items-center gap-3">
+        <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary">
+          <Icon className="h-5 w-5" />
+        </span>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+          {subtitle && (
+            <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
+          )}
+        </div>
+      </div>
+    </header>
+  )
+}
+
+/**
+ * Status chip pair — type badge + stage badge. Compact pill pair so the meta
+ * line reads cleanly even on phone widths.
+ */
+function ProjectMeta({ project }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="inline-flex items-center rounded-md bg-secondary px-1.5 py-0.5 text-[11px] font-semibold text-secondary-foreground">
+        {TYPE_LABELS[project.type]}
+      </span>
+      <span className="text-[11px] font-medium text-muted-foreground">
+        {STAGE_LABELS[project.stage]}
+      </span>
+    </div>
+  )
+}
+
+/* ───────────────────────── queue row ───────────────────────── */
+
+/**
+ * Single approval row. Disc + meta + actions. The disc tone does the visual
+ * heavy lifting (receipt-pending amber, awaiting-leader gray, already-signed
+ * emerald) so the action area only needs to spell out the next step.
+ *
+ * `stopPropagation` on the action cluster keeps button clicks from also
+ * firing the row's navigate-to-detail handler.
+ */
+function ApprovalRow({
+  project: p,
+  sub,
+  user,
+  isLeader,
+  isDesigner,
+  isPrinter,
+  ekranBusy,
+  onApprove, onReject, onAdvance, onStartWork,
+  onEkranRequest, onEkranApprove, onEkranReject,
+  onNavigate,
+}) {
+  const isAssignedDesigner = (p.assignees ?? []).some((a) => a.id === user?.id)
+  const alreadyApproved = sub === 'ozalit' && (p.ozalit_approvals ?? []).some((a) => a.id === user?.id)
+  const canApprove = sub === 'demo' ? isLeader : (isLeader || isAssignedDesigner)
+  // Ozalit is leader-first: an assigned designer's Onayla only opens once a
+  // team leader has signed off. The row stays in their queue so they can
+  // watch it move.
+  const awaitingLeader =
+    sub === 'ozalit' && isDesigner && !alreadyApproved && !ozalitLeaderApproved(p)
+  const heldDemo = sub === 'demo' && p.demo_held === true
+  // Demo/ozalit both gate their sign-off behind a "Teslim Alındı" — when
+  // that's still owed the action is a receipt step, not an approval.
+  const receiptFirst = awaitsReceipt(sub, p)
+
+  // Build the state for the disc + status chip + primary action.
+  let state
+  if (isPrinter) {
+    const awaitingChange = (sub === 'demo' ? canRespondDemoChange(user, p) : canRespondOzalitChange(user, p))
+    const started = sub === 'demo' ? p.demo_started : p.ozalit_started
+    if (awaitingChange) state = { tone: 'bg-amber-50 text-amber-700 ring-amber-200', Icon: Send, status: 'Değişiklik talebi yanıtlanmadı' }
+    else if (started) state = { tone: 'bg-primary/10 text-primary ring-primary/20', Icon: Send, status: 'Matbaada · teslime hazır' }
+    else if (sub === 'demo' ? canMarkDemoStarted(user, p) : canMarkOzalitStarted(user, p)) state = { tone: 'bg-amber-50 text-amber-700 ring-amber-200', Icon: Hourglass, status: 'Matbaa çalışması başlamadı' }
+    else state = { tone: 'bg-muted text-muted-foreground ring-border', Icon: Inbox, status: 'Beklemede' }
+  } else if (heldDemo && isLeader) {
+    if (canRespondEkranDemo(user, p)) state = { tone: 'bg-violet-50 text-violet-700 ring-violet-200', Icon: Send, status: 'Ekran demo onayı istendi' }
+    else state = { tone: 'bg-violet-50 text-violet-700 ring-violet-200', Icon: Hourglass, status: 'Ekran demo onayı bekleniyor' }
+  } else if (receiptFirst) {
+    state = { tone: 'bg-amber-50 text-amber-700 ring-amber-200', Icon: PackageCheck, status: 'Teslim alınmadı' }
+  } else if (alreadyApproved) {
+    state = { tone: 'bg-emerald-50 text-emerald-700 ring-emerald-200', Icon: ThumbsUp, status: 'Onayınız kaydedildi' }
+  } else if (awaitingLeader) {
+    state = { tone: 'bg-muted text-muted-foreground ring-border', Icon: Hourglass, status: 'Ekip lideri onayı bekleniyor' }
+  } else if (canApprove) {
+    state = { tone: 'bg-primary/10 text-primary ring-primary/20', Icon: ArrowRight, status: 'Onayınız bekleniyor' }
+  } else {
+    state = { tone: 'bg-muted text-muted-foreground ring-border', Icon: Hourglass, status: 'Onay sırası' }
+  }
+
+  // Border accent matches the disc tone so the row reads as a unified state
+  // strip rather than a generic card.
+  const borderAccent = {
+    'bg-amber-50 text-amber-700 ring-amber-200': 'before:bg-amber-400',
+    'bg-emerald-50 text-emerald-700 ring-emerald-200': 'before:bg-emerald-500',
+    'bg-primary/10 text-primary ring-primary/20': 'before:bg-primary',
+    'bg-violet-50 text-violet-700 ring-violet-200': 'before:bg-violet-500',
+    'bg-muted text-muted-foreground ring-border': 'before:bg-border',
+  }[state.tone]
+
+  return (
+    <Card
+      className={cn(
+        'relative cursor-pointer overflow-hidden transition-colors hover:bg-muted/30',
+        borderAccent && 'before:absolute before:inset-y-0 before:left-0 before:w-1',
+        borderAccent,
+      )}
+      onClick={onNavigate}
+    >
+      <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-4">
+        <StateDisc tone={state.tone} Icon={state.Icon} />
+
+        {/* Title + meta — flex-1 keeps the action area flush-right on sm+,
+            stacked below on phones. */}
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground sm:line-clamp-1">
+            {p.title}
+          </p>
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <span className="truncate">{p.assigned_name}</span>
+            <span aria-hidden className="h-0.5 w-0.5 rounded-full bg-muted-foreground/40" />
+            <span>{formatTargetDate(p.target_month)}</span>
+            <span aria-hidden className="h-0.5 w-0.5 rounded-full bg-muted-foreground/40" />
+            <ProjectMeta project={p} />
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <StatusChip tone={state.tone}>{state.status}</StatusChip>
+            {receiptFirst && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+                <PackageCheck className="h-3 w-3" />
+                Teslim alınmadı
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Action area — full-width on mobile (stacks below meta), inline on
+            sm+. stopPropagation keeps button clicks from bubbling to the row
+            onClick (which would also navigate to detail). */}
+        <div
+          className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Actions
+            sub={sub}
+            p={p}
+            user={user}
+            isLeader={isLeader}
+            isDesigner={isDesigner}
+            isPrinter={isPrinter}
+            isAssignedDesigner={isAssignedDesigner}
+            alreadyApproved={alreadyApproved}
+            awaitingLeader={awaitingLeader}
+            heldDemo={heldDemo}
+            receiptFirst={receiptFirst}
+            ekranBusy={ekranBusy}
+            onApprove={onApprove}
+            onReject={onReject}
+            onAdvance={onAdvance}
+            onStartWork={onStartWork}
+            onEkranRequest={onEkranRequest}
+            onEkranApprove={onEkranApprove}
+            onEkranReject={onEkranReject}
+            onNavigate={onNavigate}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="w-full gap-1.5 text-muted-foreground sm:w-auto"
+            onClick={onNavigate}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Detay
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * State-matching chip that mirrors the disc tone (same color, ring, label)
+ * so users see the same status on both sides of the row.
+ */
+function StatusChip({ tone, children }) {
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset',
+      tone,
+    )}>
+      {children}
+    </span>
+  )
+}
+
+/**
+ * Action cluster — all the role/queue/state permutations collapse here so
+ * the row JSX above stays a single linear layout. Each branch mirrors a
+ * rule from the old inline renderQueue; see that block's comments for the
+ * why behind each gate.
+ */
+function Actions({
+  sub, p, user, isLeader, isDesigner, isPrinter,
+  isAssignedDesigner, alreadyApproved, awaitingLeader, heldDemo, receiptFirst,
+  ekranBusy,
+  onApprove, onReject, onAdvance, onStartWork,
+  onEkranRequest, onEkranApprove, onEkranReject,
+  onNavigate,
+}) {
+  // Printer (matbaa) — change request → teslim et → işlemi başlatın ladder.
+  if (isPrinter) {
+    const awaitingChange = (sub === 'demo' ? canRespondDemoChange(user, p) : canRespondOzalitChange(user, p))
+    const started = sub === 'demo' ? p.demo_started : p.ozalit_started
+    if (awaitingChange) {
+      return (
+        <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={onNavigate}>
+          <Send className="h-4 w-4" />
+          Değişiklik talebini yanıtlayın
+        </Button>
+      )
+    }
+    if (started) {
+      return (
+        <Button size="sm" className="w-full sm:w-auto" onClick={onAdvance}>
+          <Send className="h-4 w-4" />
+          {sub === 'demo' ? "Demo'yu Teslim Edin" : 'Ozaliti Teslim Edin'}
+        </Button>
+      )
+    }
+    if (sub === 'demo' ? canMarkDemoStarted(user, p) : canMarkOzalitStarted(user, p)) {
+      return (
+        <Button size="sm" className="w-full sm:w-auto" onClick={onStartWork}>
+          <CheckCircle2 className="h-4 w-4" />
+          İşlemi Başlatın
+        </Button>
+      )
+    }
+    return null
+  }
+
+  // Held demo: either respond to an ekran demo request, or request one.
+  if (heldDemo && isLeader) {
+    if (canRespondEkranDemo(user, p)) {
+      return (
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            size="sm"
+            variant="destructive"
+            className="w-full sm:w-auto"
+            onClick={onEkranReject}
+            disabled={ekranBusy}
+          >
+            <ThumbsDown className="h-4 w-4" />
+            Reddet
+          </Button>
+          <Button
+            size="sm"
+            variant="success"
+            className="w-full sm:w-auto"
+            onClick={onEkranApprove}
+            disabled={ekranBusy}
+          >
+            <ThumbsUp className="h-4 w-4" />
+            Ekran Demoyu Onaylayın
+          </Button>
+        </div>
+      )
+    }
+    return (
+      <Button size="sm" className="w-full sm:w-auto" onClick={onEkranRequest} disabled={ekranBusy}>
+        <Send className="h-4 w-4" />
+        Ekran Demo Onayı İsteyin
+      </Button>
+    )
+  }
+
+  // Standard approval lane.
+  const primary = (() => {
+    if (alreadyApproved) {
+      return (
+        <Button size="sm" variant="ghost" className="w-full justify-start gap-1.5 text-emerald-700 sm:w-auto" disabled>
+          <ThumbsUp className="h-4 w-4" />
+          Onayınız kaydedildi
+        </Button>
+      )
+    }
+    if (awaitingLeader) {
+      return (
+        <Button size="sm" variant="ghost" className="w-full justify-start gap-1.5 text-muted-foreground sm:w-auto" disabled>
+          <Hourglass className="h-4 w-4" />
+          Ekip lideri onayı bekleniyor
+        </Button>
+      )
+    }
+    if (canApprove) {
+      return (
+        <Button size="sm" variant={receiptFirst ? 'default' : 'success'} className="w-full sm:w-auto" onClick={onApprove}>
+          {receiptFirst ? <PackageCheck className="h-4 w-4" /> : <ThumbsUp className="h-4 w-4" />}
+          {primaryActionLabel(sub, p)}
+        </Button>
+      )
+    }
+    return (
+      <Button size="sm" variant="ghost" className="w-full justify-start gap-1.5 text-muted-foreground sm:w-auto" disabled>
+        <Hourglass className="h-4 w-4" />
+        Onay bekleniyor
+      </Button>
+    )
+  })()
+
+  // Only a team leader who hasn't approved yet can reject — approving
+  // commits them, so Reddet disappears afterward. Baskı Onayı has no reject
+  // flow: edit the form itself. Receipt gate: a leader shouldn't be able to
+  // reject a demo/ozalit proof they haven't acknowledged receiving yet — the
+  // primary button leads with "Teslim Alın" in that case, so the matching
+  // Reddet has to wait too.
+  const reject =
+    isLeader && !alreadyApproved && sub !== 'baski-onay' && !receiptFirst ? (
+      <Button size="sm" variant="destructive" className="w-full sm:w-auto" onClick={onReject}>
+        <ThumbsDown className="h-4 w-4" />
+        {sub === 'ozalit' ? 'Ozaliti Reddedin' : 'Demoyu Reddedin'}
+      </Button>
+    ) : null
+
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row">
+      {primary}
+      {reject}
+    </div>
+  )
+}
+
+/* ───────────────────────── sipariş card ───────────────────────── */
 
 function normalizeItems(items, quantity) {
   if (!Array.isArray(items) || items.length === 0) return []

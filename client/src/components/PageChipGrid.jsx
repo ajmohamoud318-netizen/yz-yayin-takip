@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertTriangle, Check, UserPlus, X } from 'lucide-react'
+import { AlertTriangle, Check, Shuffle, UserPlus, Users, X } from 'lucide-react'
 
 import {
   Popover, PopoverClose, PopoverContent, PopoverTrigger,
@@ -47,6 +47,7 @@ export default function PageChipGrid({
   onPageClick,
   onPageRework,
   onAssign,
+  onBulkAssign,
 }) {
   const [myPagesOnly, setMyPagesOnly] = useState(false)
   const total = Number(subtask.total_pages ?? 0)
@@ -142,6 +143,20 @@ export default function PageChipGrid({
               />
               {myPagesOnly ? `Sadece benim (${myCount})` : `Benim sayfalarım (${myCount})`}
             </button>
+          )}
+          {/* Bulk-assign affordance for the leader. Sits next to the
+              personal filter so the chip-grid header keeps a single
+              action row, and is only rendered when the parent wired
+              up `onBulkAssign` — designers don't see it because their
+              pages change goes through the per-chip click instead. */}
+          {isLeader && onBulkAssign && (
+            <BulkAssignTrigger
+              subtaskId={subtask.id}
+              subtaskTitle={subtask.title}
+              designers={assignableDesigners}
+              totalPages={total}
+              onBulkAssign={onBulkAssign}
+            />
           )}
         </div>
       </div>
@@ -263,6 +278,18 @@ function PageChip({
         ownerColor={ownerColor}
         isAssigned={isAssigned}
         assignInFlight={isAssignInFlight}
+        // The popover is intentionally hidden on done pages. Reassigning a
+        // page that's already shipped changes `assigned_to` in the DB but
+        // doesn't move the chip's colour (the grid uses `done_by` for done
+        // pages), so the leader gets a silent data change with no visible
+        // feedback — and pushes the page into the new designer's
+        // "Benim sayfalarım" filter even though that designer didn't ship
+        // it. To change who gets credit for a done page, the leader has
+        // to go through the rework flow (the ↻ button on hover) and have
+        // the new designer re-do the page — which leaves a real history
+        // trail and updates `done_by` the honest way.
+        isDone={cell.status === 'done'}
+        doneByName={cell.done_by_name ?? null}
         subtaskId={subtaskId}
         subtaskTitle={subtaskTitle}
         pageIndex={cell.i}
@@ -298,12 +325,24 @@ function PageChip({
  * The non-leader render path is a plain <span> — no click handler, no
  * popover wiring — so a designer viewing the page sees the same chip
  * footprint, with no spurious "Ata" button hint.
+ *
+ * `isDone` collapses the leader view of a finished page to the same
+ * read-only dot a non-leader sees. Reassigning a shipped page is a
+ * silent data change (the chip colour is driven by `done_by`, not
+ * `assigned_to`), so the leader gets no visual feedback and ends up
+ * pushing the page into the new designer's queue even though that
+ * designer didn't ship it. The proper way to change credit is the
+ * rework flow — click the ↻, have the new designer re-do the page,
+ * `done_by` updates through the normal path and the timeline records
+ * both names.
  */
 function OwnerPip({
   isLeader,
   ownerColor,
   isAssigned,
   assignInFlight,
+  isDone = false,
+  doneByName = null,
   subtaskId,
   subtaskTitle,
   pageIndex,
@@ -312,14 +351,19 @@ function OwnerPip({
   designers,
   onAssign,
 }) {
+  // Status-aware tooltip on the dot itself. For done pages the colour is
+  // driven by `done_by` (the finisher), so a title that says "Atandı: X"
+  // would mismatch the colour and mislead the viewer — the page isn't
+  // "assigned to" anyone anymore, it was "completed by" someone. Keeping
+  // the dot's hover text in lock-step with the dot's colour is what makes
+  // the chip self-explanatory.
+  const dotTitle = isDone
+    ? (doneByName ? `${doneByName} tarafından tamamlandı` : 'Tamamlandı')
+    : (currentAssigneeName ? `Atandı: ${currentAssigneeName}` : 'Atanmamış')
   const dot = (
     <span
       aria-hidden="true"
-      title={
-        currentAssigneeName
-          ? `Atandı: ${currentAssigneeName}`
-          : 'Atanmamış'
-      }
+      title={dotTitle}
       className={cn(
         'flex h-4 w-4 items-center justify-center rounded-full shadow ring-2 ring-background',
         ownerColor ? '' : 'bg-muted-foreground/30 text-background-foreground',
@@ -330,7 +374,10 @@ function OwnerPip({
       {ownerColor ? null : <UserPlus className="h-2.5 w-2.5" />}
     </span>
   )
-  if (!isLeader) return (
+  // Three paths: non-leader always gets the plain dot; leader on a
+  // non-done page gets the popover trigger; leader on a done page gets
+  // the same plain dot the non-leader sees (no silent data change).
+  if (!isLeader || isDone) return (
     <span className="pointer-events-none absolute -left-1.5 -top-1.5">
       {dot}
     </span>
@@ -542,5 +589,99 @@ function AssigneeRow({ designer, isCurrent, pageIndex, onAssign }) {
         </button>
       </PopoverClose>
     </li>
+  )
+}
+/* ------------------------------------------------------------------ */
+/*  BulkAssignTrigger — leader-only "Toplu Ata" button                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Leader-only trigger for the new POST /subtasks/:id/pages/bulk-assign
+ * route. Two gestures, one button:
+ *   • Pick one designer from the list → every page in the İç Sayfalar
+ *     subtask goes to that designer. Replaces 200 per-chip popovers
+ *     with one click.
+ *   • Tap "Tüm tasarımcılara dağıt" → pages are split across the active
+ *     designer roster in round-robin order (page 1 → A, page 2 → B, …).
+ *
+ * The single-designer mode accepts the first id the leader picks, then
+ * closes; the distribute mode is a single click with no further input.
+ * In both cases the parent (ProjectDetail) fires the API call and
+ * merges the returned full project shape into state.
+ */
+function BulkAssignTrigger({ subtaskTitle, designers, totalPages, onBulkAssign }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Tüm sayfaları toplu ata"
+          data-testid="page-bulk-assign-trigger"
+          className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-semibold text-muted-foreground transition hover:border-primary/40 hover:text-primary focus-visible:border-primary focus-visible:text-primary"
+        >
+          <Users className="h-3 w-3" />
+          Toplu Ata
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        side="bottom"
+        sideOffset={6}
+        className="flex w-72 flex-col overflow-hidden p-0"
+      >
+        <header className="border-b px-3 py-2">
+          <p className="label-eyebrow">{subtaskTitle}</p>
+          <h4 className="mt-0.5 text-sm leading-tight">
+            <span className="font-mono tabular-nums">{totalPages}</span>
+            <span className="ml-1 text-muted-foreground">sayfayı toplu ata</span>
+          </h4>
+        </header>
+        <div className="scrollbar-thin max-h-64 overflow-y-auto py-1">
+          <p className="px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+            Tek tasarımcıya ata
+          </p>
+          {designers.length === 0 ? (
+            <p className="px-3 py-3 text-center text-[11px] italic text-muted-foreground">
+              Aktif tasarımcı yok.
+            </p>
+          ) : (
+            <ul>
+              {designers.map((d) => (
+                <li key={d.id} className="px-1.5">
+                  <PopoverClose asChild>
+                    <button
+                      type="button"
+                      onClick={() => onBulkAssign({ assignedTo: d.id })}
+                      data-testid={`page-bulk-assign-pick-${d.id}`}
+                      className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[13px] transition hover:bg-muted focus-visible:bg-muted"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: userColor(d.id) }}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{d.name ?? 'İsimsiz'}</span>
+                    </button>
+                  </PopoverClose>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="border-t">
+          <PopoverClose asChild>
+            <button
+              type="button"
+              onClick={() => onBulkAssign({ distribute: true })}
+              data-testid="page-bulk-assign-distribute"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold text-foreground transition hover:bg-muted focus-visible:bg-muted"
+            >
+              <Shuffle className="h-3.5 w-3.5" />
+              <span>Tüm tasarımcılara dağıt</span>
+            </button>
+          </PopoverClose>
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }

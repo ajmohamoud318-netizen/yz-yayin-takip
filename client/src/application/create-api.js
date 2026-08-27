@@ -157,6 +157,12 @@ export function createApi() {
     // passing null un-assigns.
     assignSubtaskPage: (subtaskId, pageIndex, assignedTo) =>
       subtaskRepo.assignSubtaskPage(subtaskId, pageIndex, assignedTo),
+    // Bulk-assign every page in an İç Sayfalar subtask. Two gestures:
+    // pass `{ assignedTo }` for a single-designer overwrite, or
+    // `{ distribute: true }` to round-robin across the active roster.
+    // Replaces 200 per-chip popovers with one click.
+    bulkAssignSubtaskPages: (subtaskId, opts) =>
+      subtaskRepo.bulkAssignSubtaskPages(subtaskId, opts),
     reviseSubtask: (subtaskId) => subtaskRepo.reviseSubtask(subtaskId),
     addSubtaskUpdate: (subtaskId, payload) => subtaskRepo.addSubtaskUpdate(subtaskId, payload),
     updateSubtask: (subtaskId, patch) => subtaskRepo.updateSubtask(subtaskId, patch),

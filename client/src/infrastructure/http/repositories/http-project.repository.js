@@ -180,6 +180,14 @@ export function createHttpProjectRepository(userRepo) {
           assigned_to: s.assigned_to ?? null,
         }))
         const putRes = await httpClient.put(`/projects/${id}/subtasks`, {
+          // Mirror the leader's full assignee list so the route can run
+          // its orphan-designer check. Without this the leader could
+          // add a designer via the chip-grid picker and forget to drop
+          // them onto a subtask, leaving someone in the project's
+          // assignees but on no work.
+          assignees: Array.isArray(flat.assignees)
+            ? flat.assignees.map((a) => a.id)
+            : undefined,
           subtasks,
         })
         cache.set(id, putRes.data.project ?? putRes.data)

@@ -49,6 +49,21 @@ export function createHttpSubtaskRepository() {
       )
       return { project: data.project, page: data.page }
     },
+    // Bulk-assign all pages of an İç Sayfalar subtask. The body is
+    // either `{ assigned_to: <userId> }` to put every page on one
+    // designer, or `{ distribute: true }` to round-robin across the
+    // active designer roster. The server returns the same full
+    // project shape as the per-page endpoint, so the SPA can drop it
+    // straight into state without a follow-up GET.
+    async bulkAssignSubtaskPages(subtaskId, { assignedTo, distribute } = {}, { signal } = {}) {
+      const body = distribute ? { distribute: true } : { assigned_to: assignedTo }
+      const { data } = await httpClient.post(
+        `/subtasks/${subtaskId}/pages/bulk-assign`,
+        body,
+        signal ? { signal } : undefined,
+      )
+      return { project: data.project }
+    },
     async reviseSubtask(subtaskId) {
       const { data } = await httpClient.post(`/subtasks/${subtaskId}/revize`)
       return { project: data }

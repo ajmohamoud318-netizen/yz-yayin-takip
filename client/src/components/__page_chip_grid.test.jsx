@@ -145,7 +145,12 @@ describe('PageChipGrid — owner pip + assign affordance', () => {
     await unmount({ root, host })
   })
 
-  it('renders an assign trigger per chip for team leaders', async () => {
+  it('renders an assign trigger per non-done chip for team leaders', async () => {
+    // The trigger is gated on `status !== 'done'` — reassigning a
+    // shipped page silently changes `assigned_to` without moving the
+    // chip's colour, which is a footgun for the leader. So out of the
+    // three pages in the fixture (1 done, 2 pending, 3 pending), only
+    // the two pending ones expose a popover trigger.
     const { root, host } = render({
       subtask: buildSubtask(),
       canEdit: true,
@@ -157,7 +162,7 @@ describe('PageChipGrid — owner pip + assign affordance', () => {
       onAssign: vi.fn(),
     })
     const triggers = host.querySelectorAll('[data-testid^="page-assign-trigger-"]')
-    expect(triggers).toHaveLength(3)
+    expect(triggers).toHaveLength(2)
     await unmount({ root, host })
   })
 })
@@ -179,14 +184,17 @@ describe('PageChipGrid — leader assign popover', () => {
       onAssign: vi.fn(),
     })
     // No popover yet.
-    expect(host.querySelector('[data-testid="page-assign-popover-1"]')).toBeNull()
-    const trigger = host.querySelector('[data-testid="page-assign-trigger-sub-1-1"]')
+    expect(host.querySelector('[data-testid="page-assign-popover-2"]')).toBeNull()
+    // Page 1 is done and intentionally has no popover trigger (gated by
+    // the "no silent reassign" fix). Click page 2's trigger instead —
+    // it's the first chip in the grid that exposes a popover.
+    const trigger = host.querySelector('[data-testid="page-assign-trigger-sub-1-2"]')
     await fireClick(trigger)
     // Radix renders into a Portal — query document.body for the panel.
-    const panel = document.body.querySelector('[data-testid="page-assign-popover-1"]')
+    const panel = document.body.querySelector('[data-testid="page-assign-popover-2"]')
     expect(panel).not.toBeNull()
     expect(panel.textContent).toContain('İç Sayfalar')
-    expect(panel.textContent).toContain('Sayfa 1')
+    expect(panel.textContent).toContain('Sayfa 2')
     await unmount({ root, host })
   })
 
