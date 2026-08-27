@@ -10,7 +10,7 @@
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { loadProjectAssignees, assignSubtaskPage } from './project-repository.js'
+import { loadProjectAssignees, assignSubtaskPage, resyncSubtaskPageAssignments } from './project-repository.js'
 
 // Minimal in-memory pg client: each query() is matched on the WHERE clause
 // fragment so the same client can serve both the primary lookup and the
@@ -338,5 +338,102 @@ describe('assignSubtaskPage — parameter type cast', () => {
       subtaskId: 's-1', pageIndex: 999, assignedTo: 'u-aylin', actorId: 'u-leader',
     })
     assert.deepEqual(result, { error: 'out_of_range' })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// `resyncSubtaskPageAssignments` — bulk re-stamp `assigned_to` for the
+// per-page grid when the team leader reassigns a `kind='pages'` subtask
+// mid-flight. The whole point of this helper is to keep the chip-grid
+// owner pip in sync with the subtask-level owner; without it, every
+// pending chip stayed on the original designer's colour forever after a
+// single reassignment.
+//
+// We test the SQL contract the route relies on:
+//   • `IS DISTINCT FROM` guard — no UPDATE issued for the same value
+//   • `status <> 'done'` — done rows are never touched (audit trail)
+//   • `CASE WHEN ... THEN NULL ELSE NOW()` — assigned_at mirrors the
+//     assignSubtaskPage convention
+//   • `$2::text` cast — prevents the 42P08 ambiguity regression assignSubtaskPage
+//     already locks in (cheap to assert here too; same nullable TEXT column).
+function makeSweepClient() {
+  const calls = []
+  return {
+    calls,
+    async query(sql, params) {
+      calls.push({ sql: sql.trim().replace(/\s+/g, ' '), params })
+      return { rows: [] }
+    },
+  }
+}
+
+describe('resyncSubtaskPageAssignments', () => {
+  it('issues an UPDATE filtered to the given subtask and the new owner', async () => {
+    const client = makeSweepClient()
+    await resyncSubtaskPageAssignments(client, 's-1', 'u-rahsan')
+    assert.equal(client.calls.length, 1)
+    const { sql, params } = client.calls[0]
+    assert.match(sql, /UPDATE subtask_pages/)
+    assert.match(sql, /WHERE subtask_id = \$1/)
+    assert.match(sql, /status <> 'done'/)
+    assert.match(sql, /assigned_to IS DISTINCT FROM \$2::text/)
+    assert.deepEqual(params, ['s-1', 'u-rahsan'])
+  })
+
+  it('casts the new value to text so pg can plan the query', async () => {
+    // Same nullability trap assignSubtaskPage tests for: a bare $2 in
+    // SET assigned_to = $2 plus WHERE assigned_to IS DISTINCT FROM $2 plus
+    // CASE WHEN $2::text IS NULL lets pg throw 42P08 because the
+    // parameter appears in three type contexts. The implementation casts
+    // every reference to $2::text — the SET, the WHERE guard, and the
+    // CASE used to clear `assigned_at` when the new owner is null.
+    const client = makeSweepClient()
+    await resyncSubtaskPageAssignments(client, 's-1', 'u-rahsan')
+    const body = client.calls[0].sql
+    const textCasts = (body.match(/\$2::text/g) ?? []).length
+    assert.equal(
+      textCasts, 3,
+      `expected three $2::text casts in resyncSubtaskPageAssignments (SET + WHERE + CASE), got ${textCasts}`,
+    )
+    assert.ok(
+      !body.match(/\$2(?![:\d])/),
+      'resyncSubtaskPageAssignments still has a bare $2 reference — pg will throw 42P08',
+    )
+  })
+
+  it('stamps assigned_at to NOW() when an owner is provided, NULL when clearing', async () => {
+    // Two calls in sequence: one to set a new owner, one to clear it. The
+    // CASE expression must produce a timestamp on the first and NULL on
+    // the second so the chip-grid tooltip's "X tarafından atandı" stays
+    // honest.
+    const client = makeSweepClient()
+    await resyncSubtaskPageAssignments(client, 's-1', 'u-rahsan')
+    await resyncSubtaskPageAssignments(client, 's-1', null)
+    assert.match(
+      client.calls[0].sql,
+      /assigned_at = CASE WHEN \$2::text IS NULL THEN NULL ELSE NOW\(\) END/,
+    )
+    assert.match(
+      client.calls[1].sql,
+      /assigned_at = CASE WHEN \$2::text IS NULL THEN NULL ELSE NOW\(\) END/,
+    )
+    // And the second call's params carry the null the route layer is
+    // expected to pass when the leader clears the subtask's assignment.
+    assert.deepEqual(client.calls[1].params, ['s-1', null])
+  })
+
+  it('treats the IS DISTINCT FROM guard as the second line of defence against no-op writes', async () => {
+    // The route layer already short-circuits with
+    // `previousAssignedTo !== row.assigned_to` before calling this helper,
+    // but the SQL guard is what protects against future callers (a
+    // refactor that loses the JS check, a bulk import that passes the
+    // existing value, …) silently re-stamping 200 rows on a no-op save.
+    // The presence of the guard in the SQL is the contract we depend on.
+    const client = makeSweepClient()
+    await resyncSubtaskPageAssignments(client, 's-1', 'u-rahsan')
+    assert.match(
+      client.calls[0].sql,
+      /AND assigned_to IS DISTINCT FROM \$2::text/,
+    )
   })
 })

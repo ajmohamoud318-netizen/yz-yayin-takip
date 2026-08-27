@@ -140,8 +140,14 @@ export async function projectRoutes(fastify) {
         // exists. Done in the same tx so a failure rolls back the subtask too,
         // and the FK CASCADE on subtask_pages.subtask_id handles cleanup if
         // the subtask is later deleted.
+        //
+        // We also stamp `subAssignee` into the new rows so the chip grid's
+        // owner pip + colour legend light up from the first paint instead of
+        // every pending chip looking orphaned. The route PUT
+        // /projects/:id/subtasks does the mid-flight equivalent via
+        // resyncSubtaskPageAssignments when the leader edits the list later.
         if (rows[0].kind === 'pages' && Number(rows[0].total_pages) > 0) {
-          await seedSubtaskPages(client, rows[0].id, rows[0].total_pages)
+          await seedSubtaskPages(client, rows[0].id, rows[0].total_pages, subAssignee)
         }
       }
       const progress = subtaskProgress(subRows)

@@ -5,6 +5,7 @@ import {
   getProject, getProjectForUpdate, patchProject, logHistory,
   listProjectSubtasks, listProjectHistory, loadProjectAssignees,
   seedSubtaskPages, pruneSubtaskPages,
+  resyncSubtaskPageAssignments,
   setSubtaskPage, assignSubtaskPage,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
@@ -421,11 +422,36 @@ export async function subtaskRoutes(fastify) {
       // shows what's in scope). Same set of operations is done at create
       // time on POST /projects — this branch catches the leader editing an
       // existing list.
+      //
+      // Snapshot the previous `assigned_to` for every subtask that survived
+      // the save so the sweep below can tell "leader just reassigned" from
+      // "leader only renamed / re-totalled / no-op'd".
+      const previousAssignedToById = new Map(previous.map((p) => [p.id, p.assigned_to]))
       for (const row of finalRows) {
         if (row.kind !== 'pages') continue
         const total = Number(row.total_pages ?? 0)
-        if (total > 0) await seedSubtaskPages(client, row.id, total)
+        if (total > 0) {
+          // New rows added when total_pages grows pick up the just-saved
+          // subtask owner — same default-stamping rule POST /projects uses,
+          // so a 12 → 16 page change doesn't leave the 4 new chips looking
+          // orphaned when the subtask is owned by a real designer.
+          await seedSubtaskPages(client, row.id, total, row.assigned_to)
+        }
         await pruneSubtaskPages(client, row.id, total)
+        // If the team leader reassigned this `kind='pages'` subtask to a
+        // different designer (or cleared the assignment entirely) on this
+        // save, propagate the change to the per-page grid. The sweep:
+        //   • updates `assigned_to` + `assigned_at` on every non-done row
+        //   • leaves `done` rows alone — `done_by` is the audit trail for
+        //     who actually shipped the page, and overwriting the planned
+        //     owner of a finished page would visually re-attribute work.
+        //   • is a no-op when the value didn't actually change, both via
+        //     the comparison here and the SQL `IS DISTINCT FROM` guard
+        //     inside resyncSubtaskPageAssignments.
+        const previousAssignedTo = previousAssignedToById.get(row.id) ?? null
+        if (previousAssignedTo !== row.assigned_to) {
+          await resyncSubtaskPageAssignments(client, row.id, row.assigned_to)
+        }
       }
 
       const inserted = finalRows

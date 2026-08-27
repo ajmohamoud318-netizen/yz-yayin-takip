@@ -324,18 +324,32 @@ export async function loadSubtaskPages(client, subtaskIds) {
  * uses ON CONFLICT DO NOTHING on (subtask_id, page_index), so calling it on
  * an already-seeded subtask is a no-op. A subtask without total_pages (or
  * with total_pages <= 0) gets no rows; the chip grid will render empty.
+ *
+ * `defaultAssignedTo` is stamped on the INSERT path only — new rows pick up
+ * the planned owner, existing rows keep whatever they had. Passing a non-null
+ * value here is how POST /projects and PUT /projects/:id/subtasks propagate
+ * the subtask-level `assigned_to` down to the per-page grid at create/edit
+ * time, so the chip grid's "owner pip" renders the right color from the
+ * first paint instead of every pending chip looking orphaned.
+ *
+ * `assigned_at` mirrors the convention in assignSubtaskPage: NOW() when an
+ * owner is being stamped, NULL when no owner — so the chip-grid tooltip can
+ * surface "X tarafından atandı" only when there's actually a name attached.
+ * `$3::text` is cast explicitly because `assigned_to` is a nullable TEXT
+ * column; without the cast pg can refuse the plan with 42P08 the same way it
+ * does in assignSubtaskPage.
  */
-export async function seedSubtaskPages(client, subtaskId, totalPages) {
+export async function seedSubtaskPages(client, subtaskId, totalPages, defaultAssignedTo = null) {
   const n = Number(totalPages)
   if (!Number.isFinite(n) || n <= 0) return
   // generate_series is faster than N parameterised INSERTs and keeps the
   // statement plan-friendly. The conflict target matches the UNIQUE index.
   await client.query(
-    `INSERT INTO subtask_pages (subtask_id, page_index, status)
-     SELECT $1, g, 'pending'
+    `INSERT INTO subtask_pages (subtask_id, page_index, status, assigned_to, assigned_at)
+     SELECT $1, g, 'pending', $3::text, CASE WHEN $3::text IS NULL THEN NULL ELSE NOW() END
        FROM generate_series(1, $2) AS g
      ON CONFLICT (subtask_id, page_index) DO NOTHING`,
-    [subtaskId, n],
+    [subtaskId, n, defaultAssignedTo ?? null],
   )
 }
 
@@ -573,6 +587,43 @@ export async function assignSubtaskPage(
       assigned_to_name: assignedToName,
     },
   }
+}
+
+/**
+ * Bulk re-stamp `assigned_to` for every non-done page in a subtask. Called
+ * by the subtask-list edit route when the team leader changes a
+ * `kind='pages'` subtask's `assigned_to` mid-flight ("Aylin was on this, now
+ * Rahşan is"), so the chip grid's owner pip + colour legend stay in sync
+ * with the subtask-level owner instead of stranding every pending chip on
+ * the original designer's colour.
+ *
+ * Done rows are deliberately skipped: `done_by` is the audit trail for who
+ * actually shipped the page, and overwriting the planned owner of a page
+ * that's already shipped would visually re-attribute work that was done by
+ * someone else. The two signals (`assigned_to` = planned, `done_by` =
+ * shipped) intentionally diverge on a mid-flight reassignment, exactly the
+ * split migration 056 documents.
+ *
+ * The `IS DISTINCT FROM` guard makes the UPDATE a no-op when the planned
+ * owner didn't actually change — the route layer already short-circuits
+ * before calling us, but the SQL guard is the second line of defence so a
+ * stray call (e.g. on a rename-only save) can't quietly re-stamp 200 rows.
+ *
+ * `$2::text` is cast for the same reason as assignSubtaskPage: nullable
+ * TEXT column, the planner needs the type to be unambiguous even though
+ * here the parameter only appears in one assignment.
+ */
+export async function resyncSubtaskPageAssignments(client, subtaskId, newAssignedTo) {
+  await client.query(
+    `UPDATE subtask_pages
+        SET assigned_to = $2::text,
+            assigned_at = CASE WHEN $2::text IS NULL THEN NULL ELSE NOW() END,
+            updated_at = NOW()
+      WHERE subtask_id = $1
+        AND status <> 'done'
+        AND assigned_to IS DISTINCT FROM $2::text`,
+    [subtaskId, newAssignedTo ?? null],
+  )
 }
 
 export async function listProjectSubtasks(client, projectId) {
