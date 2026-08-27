@@ -45,3 +45,34 @@ export function colorTint(hex, alpha = 0.14) {
   const b = parseInt(hex.slice(5, 7), 16)
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
+
+/**
+ * Resolve a designer id into a tiny descriptor the chip-grid popover needs:
+ *   { name, color, colorTint }
+ *
+ * `designers` is the in-memory roster from `api.listUsers()` — `{ id, name,
+ * role, is_active, avatar_url, avatar_updated_at }` per row. We look up by id
+ * so the popover can render the designer's name + colored ring without a
+ * second round trip, and so the avatar ring colour matches the chip border
+ * the assignment will produce (`userColor(id)` is the same function either
+ * side, by construction).
+ *
+ * Returns null for an unknown id — the popover treats that as "this is who
+ * the chip currently points at but they're not in the active roster any
+ * more" and renders the row as muted without crashing the picker.
+ */
+export function designerColor(designerId, designers = []) {
+  if (!designerId) return null
+  const d = designers.find((x) => x.id === designerId)
+  if (!d) return null
+  const color = userColor(designerId)
+  return {
+    id: designerId,
+    name: d.name ?? null,
+    role: d.role ?? 'designer',
+    avatar_url: d.avatar_url ?? null,
+    avatar_updated_at: d.avatar_updated_at ?? null,
+    color,
+    colorTint: colorTint(color),
+  }
+}

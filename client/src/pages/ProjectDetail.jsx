@@ -54,7 +54,7 @@ import SiparisBaskiOnayFormDialog from '@/components/SiparisBaskiOnayFormDialog'
 import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import { cn, formatDateTr, initials } from '@/lib/utils'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
-import { userColor, colorTint } from '@/lib/userColor'
+import PageChipGrid from '@/components/PageChipGrid'
 import { isSubtaskDone, countsTowardProgress } from '@/domain/services/progress'
 import {
   canApproveOzalitNow, ozalitLeaderApproved,
@@ -189,199 +189,6 @@ function OrderProgressStepper({ order, sold, handoverPending, canAct, onAct }) {
   )
 }
 
-/**
- * migration 055 — per-page chip grid for the "İç Sayfalar" subtask.
- *
- * Each row of the project's alt görevler now renders this component instead
- * of a single checkbox when kind === 'pages'. Three states per chip:
- *
- *   pending  → gray, click marks done (optimistic, PATCH /subtasks/:id/pages/N)
- *   done     → green, click clears back to pending (undo), small ↻ marks rework
- *   rework   → amber, click resolves back to done (the page shipped again)
- *
- * `rework_count` is rendered as a small badge on the chip — the team leader
- * uses it to spot pages that bounced more than once without having to scrape
- * stage_history. Auto-save keeps every click latency-free; no batched save
- * button for chips (see API user's earlier decision).
- *
- * Pages that haven't been seeded yet (a project created before migration 055
- * or a row dropped by a leader's edit) are rendered as pending placeholders
- * so the chip count still matches `total_pages`.
- */
-function PageChipGrid({ subtask, canEdit, flagged = false, activePage, user, onPageClick, onPageRework }) {
-  const [myPagesOnly, setMyPagesOnly] = useState(false)
-  const total = Number(subtask.total_pages ?? 0)
-  const pages = Array.isArray(subtask.pages) ? subtask.pages : []
-  // Build a fully dense array so the chip count matches total_pages even if
-  // the seed step missed a row (defensive; seedSubtaskPages is idempotent but
-  // a brand-new request after the migration might race a refresh).
-  const cells = Array.from({ length: total }, (_, idx) => {
-    const i = idx + 1
-    const found = pages.find((p) => p.i === i)
-    return found ?? {
-      i,
-      status: 'pending',
-      done_by_name: null,
-      done_at: null,
-      rework_count: 0,
-      assigned_to: null,
-      assigned_to_name: null,
-    }
-  })
-  // The chip's "owner" is whoever should take credit for it visually. A
-  // done chip belongs to whoever shipped it (done_by); a pending/rework
-  // chip belongs to whoever is planned to do it (assigned_to). This is
-  // the same distinction the data model carries (migration 056) — the
-  // two can legitimately diverge when a leader reassigns mid-revision.
-  function ownerOf(p) {
-    return p.status === 'done' ? p.done_by : p.assigned_to
-  }
-  function ownerNameOf(p) {
-    return p.status === 'done' ? p.done_by_name : p.assigned_to_name
-  }
-  const visibleCells = myPagesOnly && user
-    ? cells.filter((c) => c.assigned_to === user.id || c.done_by === user.id)
-    : cells
-  const doneCount = visibleCells.filter((c) => c.status === 'done').length
-  const reworkCount = visibleCells.filter((c) => c.status === 'rework').length
-  const myCount = user
-    ? cells.filter((c) => c.assigned_to === user.id || c.done_by === user.id).length
-    : 0
-  // Distinct owners visible in the current view, used to render the
-  // color legend above the grid. Done by id (stable color) then resolved
-  // to the most-recent name we have for them.
-  const legend = (() => {
-    const seen = new Map() // id -> name
-    for (const c of visibleCells) {
-      const id = ownerOf(c)
-      if (!id) continue
-      const name = ownerNameOf(c)
-      if (!seen.has(id) || (seen.get(id) == null && name)) seen.set(id, name ?? null)
-    }
-    return [...seen.entries()].map(([id, name]) => ({ id, name, color: userColor(id) }))
-  })()
-  return (
-    <div className={cn(
-      'rounded-lg border bg-background px-3 py-2.5 transition-colors',
-      flagged && 'border-amber-300 bg-amber-50/50 ring-1 ring-inset ring-amber-300/60',
-    )}>
-      {flagged && (
-        <div className="mb-2 flex items-center gap-1.5 rounded-md border border-amber-300/70 bg-amber-100/70 px-2 py-1 text-[11px] font-medium text-amber-800">
-          <AlertTriangle className="h-3 w-3 shrink-0" />
-          Demo revize edildi — sayfaları kontrol edin
-        </div>
-      )}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-        <span className="text-sm font-medium">{subtask.title}</span>
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span>{doneCount} / {total} tamamlandı</span>
-          {reworkCount > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-              {reworkCount} revize
-            </span>
-          )}
-          {user && myCount > 0 && (
-            <button
-              type="button"
-              onClick={() => setMyPagesOnly((v) => !v)}
-              aria-pressed={myPagesOnly}
-              className={cn(
-                'inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold transition',
-                myPagesOnly
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-primary',
-              )}
-            >
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ backgroundColor: userColor(user.id) ?? '#888' }}
-              />
-              {myPagesOnly ? `Sadece benim (${myCount})` : `Benim sayfalarım (${myCount})`}
-            </button>
-          )}
-        </div>
-      </div>
-      {/* Owner legend — same colour as the chips so the team leader learns
-          "blue = Aylin" once and reads every chip grid the same way. Hidden
-          when the filter is on (the only owner visible is the viewer). */}
-      {!myPagesOnly && legend.length > 0 && (
-        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-          {legend.map(({ id, name, color }) => (
-            <span key={id} className="inline-flex items-center gap-1">
-              <span
-                className="h-2 w-2 rounded-full ring-1 ring-inset ring-border/40"
-                style={{ backgroundColor: color }}
-              />
-              {name ?? 'Bilinmeyen'}
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="flex flex-wrap gap-1">
-        {visibleCells.map((p) => {
-          const key = `${subtask.id}:${p.i}`
-          const isActive = activePage?.key === key
-          const ownerColor = userColor(ownerOf(p))
-          const ownerTint = colorTint(ownerColor)
-          const chipStyle = ownerColor
-            ? {
-                borderColor: ownerColor,
-                backgroundColor: p.status === 'pending' && ownerTint ? ownerTint : undefined,
-              }
-            : undefined
-          const ownerName = ownerNameOf(p)
-          return (
-            <div key={p.i} className="group relative">
-              <button
-                type="button"
-                onClick={() => onPageClick(p.i, p.status)}
-                disabled={!canEdit || isActive}
-                aria-pressed={p.status !== 'pending'}
-                title={
-                  p.status === 'done' && p.done_by_name
-                    ? `${p.done_by_name}${p.done_at ? ` · ${formatDateTr(p.done_at)}` : ''}${p.rework_count > 0 ? ` · ${p.rework_count}× revize` : ''}`
-                    : p.status === 'rework'
-                      ? `Revize bekliyor${ownerName ? ` · ${ownerName}` : ''}${p.rework_count > 0 ? ` · ${p.rework_count}× revize` : ''}`
-                      : (ownerName ? `Atandı: ${ownerName}` : 'Bekliyor')
-                }
-                className={cn(
-                  'h-7 w-9 rounded-md border text-[11px] font-semibold transition',
-                  // Status still drives the readable-text colour; the
-                  // owner's colour is the border + (for pending) background
-                  // tint. Done chips get the green ring the status already
-                  // had; the owner's border gives the chip its identity.
-                  p.status === 'pending' && !ownerColor && 'border-border bg-muted/30 text-muted-foreground hover:border-primary/40',
-                  p.status === 'pending' && ownerColor && 'text-foreground hover:brightness-95',
-                  p.status === 'done' && !ownerColor && 'border-emerald-300 bg-emerald-100 text-emerald-700 hover:border-emerald-400',
-                  p.status === 'done' && ownerColor && 'bg-emerald-100 text-emerald-800 hover:brightness-95',
-                  p.status === 'rework' && !ownerColor && 'border-amber-300 bg-amber-100 text-amber-700 hover:border-amber-400',
-                  p.status === 'rework' && ownerColor && 'bg-amber-100 text-amber-800 hover:brightness-95',
-                  isActive && 'opacity-60',
-                  !canEdit && 'cursor-default opacity-60',
-                )}
-                style={chipStyle}
-              >
-                {p.i}
-              </button>
-              {canEdit && p.status === 'done' && !isActive && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onPageRework(p.i) }}
-                  title="Bu sayfayı revize et"
-                  aria-label={`Sayfa ${p.i} revize`}
-                  className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white opacity-0 shadow ring-2 ring-background transition group-hover:opacity-100 focus:opacity-100"
-                >
-                  ↻
-                </button>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 export default function ProjectDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -446,6 +253,12 @@ export default function ProjectDetail() {
   const [ekranDemoRejectOpen, setEkranDemoRejectOpen] = useState(false)
   const [projectOrders, setProjectOrders] = useState([])
   const [projectHandover, setProjectHandover] = useState(null)
+  // Full active designer roster — the leader's assign popover on every chip
+  // needs every assignable face, not just the ones already on this project
+  // (the leader may be onboarding a designer mid-revision). Pulled once on
+  // mount via `api.listUsers()`, which is already cached in the user repo
+  // so a hot reload hits the cache instead of the network.
+  const [allUsers, setAllUsers] = useState([])
   const [signOrder, setSignOrder] = useState(null)
   // Distinct from baskiOnayFormOpen above — that's the final production-gate
   // "Baskı Onayı" (BaskiOnayFormDialog), unrelated to a sipariş order's own
@@ -529,6 +342,10 @@ export default function ProjectDetail() {
         setProjectHandover(mine[0] ?? null)
       })
       .catch(() => {})
+    // Designer roster for the chip-grid assign popover. `listUsers()` is
+    // also used by the header assignee list and the NewProjectDialog — it's
+    // the same cache, so the second mount on the same session is free.
+    api.listUsers().then(setAllUsers).catch(() => {})
   }, [id])
 
   const isAssigned = (project?.assignees ?? []).some((a) => a.id === user?.id)
@@ -1133,6 +950,80 @@ export default function ProjectDetail() {
     } catch (err) {
       if (err?.name !== 'CanceledError' && !axios.isCancel(err)) {
         toast.error(err.message || 'Revize kaydedilemedi.')
+      }
+    } finally {
+      if (inflightPagesRef.current.get(key) === controller) {
+        inflightPagesRef.current.delete(key)
+        setActivePage(null)
+      }
+    }
+  }
+
+  /**
+   * Leader reassigns a single page to a different designer — or clears the
+   * assignment entirely (`assignedTo === null`). Mirrors handlePageClick /
+   * handlePageRework: abort any in-flight request for the same chip, set
+   * the active-page flag so the chip stays disabled while the PATCH is
+   * out, optimistically flip the chip's owner locally, then reconcile
+   * with the server's full project shape on success. A server-side
+   * `error` field (the route returns `{ project, page }` for the happy
+   * path or a plain `400` for out-of-range / wrong-kind) becomes a toast
+   * and the optimistic flip reverts.
+   */
+  async function handlePageAssign(sub, pageIndex, assignedTo) {
+    if (!isLeader) return
+    const key = `${sub.id}:${pageIndex}`
+    inflightPagesRef.current.get(key)?.abort()
+    const controller = new AbortController()
+    inflightPagesRef.current.set(key, controller)
+    setActivePage({ key, status: 'assign' })
+    // Snapshot the affected pages array BEFORE the optimistic flip so a
+    // server-side reject can roll the chip back to exactly what it was.
+    // Reading `project` from the closure is fine here — this handler is
+    // only ever called from the user's chip click, and a fresh handlePage
+    // closure over a stale project would still hold the same shape we
+    // need to revert.
+    const before = project?.subtasks?.find((s) => s.id === sub.id)?.pages ?? null
+    setProject((prev) => {
+      if (!prev) return prev
+      const subs = (prev.subtasks ?? []).map((s) => {
+        if (s.id !== sub.id) return s
+        const nextPages = (s.pages ?? []).map((p) => {
+          if (p.i !== pageIndex) return p
+          return {
+            ...p,
+            assigned_to: assignedTo,
+            assigned_to_name: assignedTo
+              ? allUsers.find((u) => u.id === assignedTo)?.name ?? null
+              : null,
+          }
+        })
+        return { ...s, pages: nextPages }
+      })
+      return { ...prev, subtasks: subs }
+    })
+    try {
+      const { project: updated } = await api.assignSubtaskPage(
+        sub.id, pageIndex, assignedTo, { signal: controller.signal },
+      )
+      if (updated) setProject((prev) => ({ ...prev, ...updated }))
+    } catch (err) {
+      if (err?.name !== 'CanceledError' && !axios.isCancel(err)) {
+        // Revert the optimistic flip on a real failure. We only restore
+        // the affected `pages` slice — every other field on the project
+        // may have moved in the meantime (a chip click on another page
+        // for example) and shouldn't be wiped.
+        if (before) {
+          setProject((prev) => {
+            if (!prev) return prev
+            const subs = (prev.subtasks ?? []).map((s) => {
+              if (s.id !== sub.id) return s
+              return { ...s, pages: before }
+            })
+            return { ...prev, subtasks: subs }
+          })
+        }
+        toast.error(err.message || 'Atama kaydedilemedi.')
       }
     } finally {
       if (inflightPagesRef.current.get(key) === controller) {
@@ -2054,10 +1945,20 @@ export default function ProjectDetail() {
                                 flagged={flagged}
                                 user={user}
                                 activePage={activePage}
+                                // migration 056 — only team_leader gets the
+                                // assign popover. Designers still see the
+                                // owner pip as an information layer (their
+                                // chip border picks it up automatically), but
+                                // there's no trigger button on their render.
+                                isLeader={isLeader}
+                                designers={allUsers}
                                 onPageClick={(pageIndex, currentStatus) =>
                                   handlePageClick(s, pageIndex, currentStatus)
                                 }
                                 onPageRework={(pageIndex) => handlePageRework(s, pageIndex)}
+                                onAssign={(pageIndex, assignedTo) =>
+                                  handlePageAssign(s, pageIndex, assignedTo)
+                                }
                               />
                             </div>
                           )
