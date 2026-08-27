@@ -285,13 +285,6 @@
   50%      { background-color: hsl(345 72% 40% / 0.09); }
 }
 
-/* Crisp "today" line — 2px rose rule. Always painted, no motion in
-   the resting state (the label + line color carry the urgency). */
-.yp-today-line {
-  background: linear-gradient(to bottom, hsl(345 72% 40%), hsl(345 72% 45%));
-  box-shadow: 0 0 0 1px hsl(345 72% 40% / 0.15);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .yp-bar-draw,
   .yp-row-enter,
