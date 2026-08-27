@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Yıllık Plan — UI Improvement Sketches</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Geist', 'system-ui', 'sans-serif'],
+          mono: ['Geist Mono', 'ui-monospace', 'monospace'],
+        },
+        colors: {
+          rose: {
+            50: '#fff1f2', 100: '#ffe4e6', 200: '#fecdd3', 300: '#fda4af',
+            400: '#fb7185', 500: '#f43f5e', 600: '#e11d48', 700: '#be123c',
+          },
+        },
+      },
+    },
+  };
+</script>
+<style>
+  body { font-family: 'Geist', system-ui, sans-serif; }
+  .grid-bg {
+    background-image:
+      linear-gradient(to right, rgba(0,0,0,0.04) 1px, transparent 1px);
+    background-size: calc(100% / 12) 100%;
+  }
+  .label { font-family: 'Geist Mono', monospace; }
+</style>
+</head>
+<body class="bg-stone-50 text-stone-900">
+
+<header class="border-b border-stone-200 bg-white px-8 py-6">
+  <h1 class="text-2xl font-semibold tracking-tight">Yıllık Plan — UI Improvement Sketches</h1>
+  <p class="mt-1 text-sm text-stone-500">
+    14 wireframes · grouped by tier · each card = one proposal · not pixel-perfect
+  </p>
+</header>
+
+<main class="mx-auto max-w-7xl space-y-12 px-8 py-8">
+
+  <!-- ============================================ -->
+  <!-- TIER 1 -->
+  <!-- ============================================ -->
+  <section>
+    <div class="mb-4 flex items-baseline gap-3">
+      <span class="label rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-semibold text-rose-700">TIER 1</span>
+      <h2 class="text-lg font-semibold">Quick wins — ship this week</h2>
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+
+      <!-- A. Sticky name column -->
+      <article class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-900 px-1.5 py-0.5 text-[10px] font-bold text-white">A</span>
+          <h3 class="text-sm font-semibold">Sticky name column</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-500">Pull titles out of the bar. Bars become pure schedule signals. Names never truncate.</p>
+        <div class="overflow-hidden rounded-md border border-stone-200">
+          <div class="flex bg-stone-100 text-[10px] font-medium uppercase text-stone-500">
+            <div class="w-[150px] border-r px-2 py-1.5">Proje</div>
+            <div class="grid flex-1 grid-cols-12">
+              <div class="col-span-3 px-1 py-1.5 text-center">Oca-Mar</div>
+              <div class="col-span-3 border-l px-1 py-1.5 text-center">Nis-Haz</div>
+              <div class="col-span-3 border-l px-1 py-1.5 text-center">Tem-Eyl</div>
+              <div class="col-span-3 border-l px-1 py-1.5 text-center">Eki-Ara</div>
+            </div>
+          </div>
+          <div class="divide-y divide-stone-100 text-[11px]">
+            <div class="flex">
+              <div class="w-[150px] truncate border-r px-2 py-2">Kodlama ile Tanışıyorum</div>
+              <div class="relative h-9 flex-1 bg-stone-50"><span class="absolute top-1.5 h-6 w-[28%] rounded bg-rose-500"></span></div>
+            </div>
+            <div class="flex">
+              <div class="w-[150px] truncate border-r px-2 py-2">Zeka Küpü 6. Sınıf</div>
+              <div class="relative h-9 flex-1 bg-stone-50"><span class="absolute top-1.5 h-6 w-[40%] rounded bg-rose-400"></span></div>
+            </div>
+            <div class="flex">
+              <div class="w-[150px] truncate border-r px-2 py-2">Satranç Başlangıç</div>
+              <div class="relative h-9 flex-1 bg-stone-50"><span class="absolute top-1.5 h-6 left-[35%] w-[35%] rounded bg-purple-500"></span></div>
+            </div>
+            <div class="flex">
+              <div class="w-[150px] truncate border-r px-2 py-2">İnkılap Tarihi 8</div>
+              <div class="relative h-9 flex-1 bg-stone-50"><span class="absolute top-1.5 h-6 left-[55%] w-[30%] rounded bg-blue-500"></span></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- B. Today line -->
+      <article class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-900 px-1.5 py-0.5 text-[10px] font-bold text-white">B</span>
+          <h3 class="text-sm font-semibold">Crisp "today" line</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-500">Keep the month wash, overlay a 2px vertical line with "Bugün" label.</p>
+        <div class="overflow-hidden rounded-md border border-stone-200">
+          <div class="relative">
+            <div class="grid grid-cols-12 border-b bg-stone-100 text-[10px] font-medium text-stone-500">
+              <div class="col-span-1 px-1 py-1.5 text-center">Oca</div>
+              <div class="col-span-1 border-l px-1 py-1.5 text-center">Şub</div>
+              <div class="col-span-1 border-l px-1 py-1.5 text-center">Mar</div>
+              <div class="col-span-1 border-l px-1 py-1.5 text-center">Nis</div>
+              <div class="col-span-1 border-l px-1 py-1.5 text-center">May</div>
+              <div class="col-span-1 border-l px-1 py-1.5 text-center">Haz</div>
+              <div class="col-span-1 border-l px-1 py-1.5 text-center">Tem</div>
+              <div class="col-span-1 border-l bg-rose-50 px-1 py-1.5 text-center text-rose-700">Ağu</div>
+              <div class="col-span-1 border-l bg-rose-50 px-1 py-1.5 text-center text-rose-700">Eyl</div>
+              <div class="col-span-1 border-l px-1 py-1.5 text-center">Eki</div>
+              <div class="col-span-1 border-l px-1 py-1.5 text-center">Kas</div>
+              <div class="col-span-1 border-l px-1 py-1.5 text-center">Ara</div>
+            </div>
+            <div class="relative h-[120px] grid-bg">
+              <!-- month wash -->
+              <div class="pointer-events-none absolute inset-y-0 bg-rose-100/40" style="left: calc(100% * 7 / 12); width: calc(100% / 12);"></div>
+              <!-- today line -->
+              <div class="pointer-events-none absolute inset-y-0 border-l-2 border-rose-600" style="left: calc(100% * 7.87 / 12);"></div>
+              <div class="pointer-events-none absolute -top-1 z-10 -translate-x-1/2 rounded bg-rose-600 px-1.5 py-0.5 text-[9px] font-semibold text-white shadow" style="left: calc(100% * 7.87 / 12);">Bugün · 27 Ağu</div>
+              <!-- sample bars -->
+              <span class="absolute h-6 top-3 rounded bg-purple-500" style="left: 28%; width: 22%;"></span>
+              <span class="absolute h-6 top-12 rounded bg-blue-500" style="left: 55%; width: 25%;"></span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- C. Density modes -->
+      <article class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm md:col-span-2">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-900 px-1.5 py-0.5 text-[10px] font-bold text-white">C</span>
+          <h3 class="text-sm font-semibold">Three density modes</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-500">Toolbar toggle: comfortable · compact · overview.</p>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <!-- Comfortable -->
+          <div class="rounded-md border border-stone-200 bg-stone-50 p-3">
+            <div class="mb-2 flex items-center justify-between">
+              <span class="label text-[10px] font-semibold text-stone-500">CONFORTABLE · 36px</span>
+              <span class="text-[10px] text-stone-400">9 satır ↑</span>
+            </div>
+            <div class="space-y-1">
+              <div class="flex h-9 items-center gap-2 rounded bg-rose-500 px-2 text-[10px] font-semibold text-white">FK Kodlama ile Tanışıyorum <span class="ml-auto">100%</span></div>
+              <div class="flex h-9 items-center gap-2 rounded bg-purple-500 px-2 text-[10px] font-semibold text-white">AU Zeka Küpü 6. Sınıf <span class="ml-auto">100%</span></div>
+              <div class="flex h-9 items-center gap-2 rounded bg-blue-500 px-2 text-[10px] font-semibold text-white">NE İnkılap Tarihi <span class="ml-auto">80%</span></div>
+            </div>
+          </div>
+          <!-- Compact -->
+          <div class="rounded-md border border-stone-200 bg-stone-50 p-3">
+            <div class="mb-2 flex items-center justify-between">
+              <span class="label text-[10px] font-semibold text-stone-500">COMPACT · 22px</span>
+              <span class="text-[10px] text-stone-400">15 satır ↑</span>
+            </div>
+            <div class="space-y-0.5 text-[10px]">
+              <div class="flex h-5 items-center gap-2"><span class="w-3 h-3 rounded-full bg-rose-500"></span>FK Kodlama <span class="ml-auto tabular-nums">100%</span></div>
+              <div class="flex h-5 items-center gap-2"><span class="w-3 h-3 rounded-full bg-purple-500"></span>AU Zeka Küpü 6 <span class="ml-auto tabular-nums">100%</span></div>
+              <div class="flex h-5 items-center gap-2"><span class="w-3 h-3 rounded-full bg-purple-500"></span>AU Okul Öncesi <span class="ml-auto tabular-nums">10%</span></div>
+              <div class="flex h-5 items-center gap-2"><span class="w-3 h-3 rounded-full bg-blue-500"></span>NE İnkılap 8 <span class="ml-auto tabular-nums">80%</span></div>
+              <div class="flex h-5 items-center gap-2"><span class="w-3 h-3 rounded-full bg-emerald-500"></span>NE Mucit Karınca <span class="ml-auto tabular-nums">45%</span></div>
+              <div class="flex h-5 items-center gap-2"><span class="w-3 h-3 rounded-full bg-teal-500"></span>FK Akıl Oyunları <span class="ml-auto tabular-nums">55%</span></div>
+            </div>
+          </div>
+          <!-- Overview swim-lanes -->
+          <div class="rounded-md border border-stone-200 bg-stone-50 p-3">
+            <div class="mb-2 flex items-center justify-between">
+              <span class="label text-[10px] font-semibold text-stone-500">OVERVIEW · swim-lane</span>
+              <span class="text-[10px] text-stone-400">editöre göre ↑</span>
+            </div>
+            <div class="space-y-2 text-[10px]">
+              <div>
+                <div class="mb-1 font-semibold text-stone-700">Aylin Ulu</div>
+                <div class="flex h-4 gap-0.5"><span class="flex-1 rounded bg-rose-500"></span><span class="flex-1 rounded bg-rose-400"></span><span class="flex-1 rounded bg-purple-500"></span></div>
+              </div>
+              <div>
+                <div class="mb-1 font-semibold text-stone-700">Feyza Küçükkurt</div>
+                <div class="flex h-4 gap-0.5"><span class="flex-1 rounded bg-rose-500"></span><span class="flex-1 rounded bg-teal-500"></span><span class="flex-1 rounded bg-fuchsia-500"></span></div>
+              </div>
+              <div>
+                <div class="mb-1 font-semibold text-stone-700">Nur Ekincioğlu</div>
+                <div class="flex h-4 gap-0.5"><span class="flex-1 rounded bg-emerald-500"></span><span class="flex-1 rounded bg-blue-500"></span><span class="flex-1 rounded bg-purple-400"></span></div>
+              </div>
+              <div>
+                <div class="mb-1 font-semibold text-stone-700">Sümeyye Arslantürk</div>
+                <div class="flex h-4 gap-0.5"><span class="flex-1 rounded bg-amber-400"></span><span class="flex-1 rounded bg-emerald-500"></span><span class="flex-1 rounded bg-fuchsia-500"></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- D. Progress outside bar -->
+      <article class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-900 px-1.5 py-0.5 text-[10px] font-bold text-white">D</span>
+          <h3 class="text-sm font-semibold">Progress lives outside the bar</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-500">% chip stays readable no matter how narrow the bar is.</p>
+        <div class="space-y-2 rounded-md border border-stone-200 bg-stone-50 p-4 text-[11px]">
+          <div class="flex items-center gap-2">
+            <span class="h-5 w-[28%] rounded bg-rose-500"></span>
+            <span class="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-stone-200 tabular-nums">45%</span>
+            <span class="text-stone-500">Kodlama ile Tanışıyorum</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="h-5 w-[18%] rounded bg-purple-500"></span>
+            <span class="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-stone-200 tabular-nums">10%</span>
+            <span class="text-stone-500">Okul Öncesi Dikkat</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="h-5 w-[35%] rounded bg-blue-500"></span>
+            <span class="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-stone-200 tabular-nums">80%</span>
+            <span class="text-stone-500">İnkılap Tarihi 8</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- E. Lead time caption -->
+      <article class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-900 px-1.5 py-0.5 text-[10px] font-bold text-white">E</span>
+          <h3 class="text-sm font-semibold">Visible lead-time scale</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-500">Tiny caption under the legend explains why bars are the length they are.</p>
+        <div class="rounded-md border border-stone-200 bg-stone-50 p-4 text-[11px]">
+          <div class="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-stone-600">
+            <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-orange-500"></span>Yeni</span>
+            <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-purple-500"></span>Devam Eden</span>
+            <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-emerald-500"></span>Demo</span>
+            <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-blue-500"></span>Ozalit</span>
+            <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-teal-500"></span>Üretime Hazır</span>
+            <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-fuchsia-500"></span>Üretimde</span>
+            <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-amber-400"></span>Satışta</span>
+          </div>
+          <div class="border-t border-stone-200 pt-2 text-[10px] text-stone-500">
+            <span class="label rounded bg-stone-200 px-1 py-0.5 text-[9px] font-semibold">ⓘ</span>
+            Bar uzunluğu tahmini üretim süresini gösterir · <strong>TR = 3 ay</strong> · <strong>ÇİN = 4 ay</strong>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- TIER 2 -->
+  <!-- ============================================ -->
+  <section>
+    <div class="mb-4 flex items-baseline gap-3">
+      <span class="label rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">TIER 2</span>
+      <h2 class="text-lg font-semibold">Structural redesign — next sprint</h2>
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+
+      <!-- F. Swim lanes -->
+      <article class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm md:col-span-2">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-900 px-1.5 py-0.5 text-[10px] font-bold text-white">F</span>
+          <h3 class="text-sm font-semibold">Swim lanes by editor</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-500">Group rows by <code class="rounded bg-stone-100 px-1">assigned_name</code>. Each editor gets a tinted lane, projects stack underneath.</p>
+        <div class="overflow-hidden rounded-md border border-stone-200">
+          <div class="flex bg-stone-100 text-[10px] font-medium uppercase text-stone-500">
+            <div class="w-[140px] border-r px-2 py-1.5">Editör</div>
+            <div class="grid flex-1 grid-cols-12"><div class="col-span-12 px-2 py-1.5 text-center">2026 zaman çizelgesi</div></div>
+          </div>
+          <div>
+            <!-- Aylin -->
+            <div class="flex border-b border-stone-200 bg-blue-50/40">
+              <div class="w-[140px] border-r px-2 py-2 text-[11px]">
+                <div class="font-semibold text-stone-700">Aylin Ulu</div>
+                <div class="text-[10px] text-stone-500">3 proje</div>
+              </div>
+              <div class="relative h-[88px] flex-1 grid-bg">
+                <span class="absolute h-5 top-2 rounded bg-rose-500" style="left: 50%; width: 25%;"></span>
+                <span class="absolute h-5 top-9 rounded bg-purple-500" style="left: 60%; width: 25%;"></span>
+                <span class="absolute h-5 top-16 rounded bg-purple-400" style="left: 75%; width: 25%;"></span>
+              </div>
+            </div>
+            <!-- Feyza -->
+            <div class="flex border-b border-stone-200 bg-rose-50/40">
+              <div class="w-[140px] border-r px-2 py-2 text-[11px]">
+                <div class="font-semibold text-stone-700">Feyza Küçükkurt</div>
+                <div class="text-[10px] text-stone-500">2 proje</div>
+              </div>
+              <div class="relative h-[68px] flex-1 grid-bg">
+                <span class="absolute h-5 top-2 rounded bg-rose-500" style="left: 58%; width: 25%;"></span>
+                <span class="absolute h-5 top-9 rounded bg-teal-500" style="left: 50%; width: 33%;"></span>
+              </div>
+            </div>
+            <!-- Nur -->
+            <div class="flex border-b border-stone-200 bg-emerald-50/40">
+              <div class="w-[140px] border-r px-2 py-2 text-[11px]">
+                <div class="font-semibold text-stone-700">Nur Ekincioğlu</div>
+                <div class="text-[10px] text-stone-500">2 proje</div>
+              </div>
+              <div class="relative h-[68px] flex-1 grid-bg">
+                <span class="absolute h-5 top-2 rounded bg-blue-500" style="left: 55%; width: 30%;"></span>
+                <span class="absolute h-5 top-9 rounded bg-emerald-500" style="left: 45%; width: 33%;"></span>
+              </div>
+            </div>
+            <!-- Sümeyye -->
+            <div class="flex bg-amber-50/40">
+              <div class="w-[140px] border-r px-2 py-2 text-[11px]">
+                <div class="font-semibold text-stone-700">Sümeyye Arslantürk</div>
+                <div class="text-[10px] text-stone-500">2 proje</div>
+              </div>
+              <div class="relative h-[68px] flex-1 grid-bg">
+                <span class="absolute h-5 top-2 rounded bg-amber-400" style="left: 50%; width: 33%;"></span>
+                <span class="absolute h-5 top-9 rounded bg-emerald-500" style="left: 70%; width: 25%;"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- G. Quarter header -->
+      <article class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-900 px-1.5 py-0.5 text-[10px] font-bold text-white">G</span>
+          <h3 class="text-sm font-semibold">Quarter header row</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-500">People think in quarters. Add Q1–Q4 above the months.</p>
+        <div class="overflow-hidden rounded-md border border-stone-200">
+          <div class="grid grid-cols-4 border-b bg-stone-200/50 text-[11px] font-bold uppercase text-stone-600">
+            <div class="px-2 py-1.5 text-center">Q1</div>
+            <div class="border-l border-stone-300 px-2 py-1.5 text-center">Q2</div>
+            <div class="border-l border-stone-300 bg-rose-50 px-2 py-1.5 text-center text-rose-700">Q3 · şimdi</div>
+            <div class="border-l border-stone-300 px-2 py-1.5 text-center">Q4</div>
+          </div>
+          <div class="grid grid-cols-12 bg-stone-100 text-[10px] font-medium text-stone-500">
+            <div class="col-span-3 grid grid-cols-3"><div class="px-1 py-1 text-center">Oca</div><div class="px-1 py-1 text-center">Şub</div><div class="px-1 py-1 text-center">Mar</div></div>
+            <div class="col-span-3 grid grid-cols-3 border-l border-stone-200"><div class="px-1 py-1 text-center">Nis</div><div class="px-1 py-1 text-center">May</div><div class="px-1 py-1 text-center">Haz</div></div>
+            <div class="col-span-3 grid grid-cols-3 border-l border-stone-200"><div class="bg-rose-50 px-1 py-1 text-center text-rose-700">Tem</div><div class="bg-rose-50 px-1 py-1 text-center text-rose-700">Ağu</div><div class="bg-rose-50 px-1 py-1 text-center text-rose-700">Eyl</div></div>
+            <div class="col-span-3 grid grid-cols-3 border-l border-stone-200"><div class="px-1 py-1 text-center">Eki</div><div class="px-1 py-1 text-center">Kas</div><div class="px-1 py-1 text-center">Ara</div></div>
+          </div>
+          <div class="relative h-[60px] grid-bg">
+            <span class="absolute h-5 top-2 rounded bg-purple-500" style="left: 55%; width: 25%;"></span>
+            <span class="absolute h-5 top-9 rounded bg-blue-500" style="left: 75%; width: 20%;"></span>
+          </div>
+        </div>
+      </article>
+
+      <!-- H. Date markers -->
+      <article class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-900 px-1.5 py-0.5 text-[10px] font-bold text-white">H</span>
+          <h3 class="text-sm font-semibold">Inline date markers on bars</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-500">1px tick at target month + diamond at milestones. Hover shows label.</p>
+        <div class="relative h-[140px] rounded-md border border-stone-200 bg-stone-50 p-3">
+          <div class="grid-bg absolute inset-3 rounded"></div>
+          <span class="absolute top-4 h-7 rounded bg-rose-500" style="left: 30%; width: 50%;"></span>
+          <span class="absolute top-4 z-10 h-7 border-r-2 border-white" style="left: 79.5%;" title="target_month"></span>
+          <span class="absolute top-4 z-10 h-7 flex items-center" style="left: 56%;">
+            <span class="h-3 w-3 rotate-45 bg-amber-300 ring-2 ring-white" title="Milestone: Ozalit Onay"></span>
+          </span>
+          <span class="absolute top-4 z-10 h-7 flex items-center" style="left: 70%;">
+            <span class="h-3 w-3 rotate-45 bg-amber-300 ring-2 ring-white" title="Milestone: Matbaa Onay"></span>
+          </span>
+          <div class="absolute bottom-3 left-3 right-3 flex justify-between text-[9px] text-stone-500">
+            <span>◆ milestone</span>
+            <span>| target_month</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- I. At-risk highlight -->
+      <article class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-900 px-1.5 py-0.5 text-[10px] font-bold text-white">I</span>
+          <h3 class="text-sm font-semibold">At-risk highlighting</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-500">If today &gt; target − lead AND progress &lt; 80%, red left border + ⚠.</p>
+        <div class="space-y-2 rounded-md border border-stone-200 bg-stone-50 p-3 text-[11px]">
+          <div class="relative flex items-center gap-2 rounded border border-red-300 bg-red-50 pl-2 pr-2 py-1">
+            <span class="absolute left-0 top-0 h-full w-1 rounded-l bg-red-500"></span>
+            <span>⚠</span>
+            <span class="h-4 flex-1 rounded bg-purple-500"></span>
+            <span class="text-[10px] text-red-700">Gecikiyor · 12 gün</span>
+            <span class="text-[10px] tabular-nums">45%</span>
+          </div>
+          <div class="flex items-center gap-2 rounded bg-white px-2 py-1">
+            <span class="h-4 flex-1 rounded bg-blue-500"></span>
+            <span class="text-[10px] text-stone-500">Yolunda</span>
+            <span class="text-[10px] tabular-nums">80%</span>
+          </div>
+          <div class="flex items-center gap-2 rounded bg-white px-2 py-1">
+            <span class="h-4 flex-1 rounded bg-emerald-500"></span>
+            <span class="text-[10px] text-stone-500">Yolunda</span>
+            <span class="text-[10px] tabular-nums">60%</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- J. Tarihsiz in-grid -->
+      <article class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-900 px-1.5 py-0.5 text-[10px] font-bold text-white">J</span>
+          <h3 class="text-sm font-semibold">Tarihsiz moves inline</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-500">Collapsible section inside the same scroll container. No more orphaned card.</p>
+        <div class="overflow-hidden rounded-md border border-stone-200">
+          <div class="grid grid-cols-12 bg-stone-100 text-[10px] font-medium text-stone-500">
+            <div class="col-span-3 px-2 py-1 text-center">Oca-Mar</div>
+            <div class="col-span-3 border-l px-2 py-1 text-center">Nis-Haz</div>
+            <div class="col-span-3 border-l px-2 py-1 text-center">Tem-Eyl</div>
+            <div class="col-span-3 border-l px-2 py-1 text-center">Eki-Ara</div>
+          </div>
+          <div class="h-12 border-b bg-stone-50"></div>
+          <button class="flex w-full items-center justify-between border-t border-stone-300 bg-stone-200/60 px-3 py-1.5 text-[11px] font-semibold text-stone-600">
+            <span>▾ Tarihsiz · 3 proje</span>
+            <span class="text-stone-400">planlanmamış</span>
+          </button>
+          <div class="flex flex-wrap gap-1.5 bg-stone-100/60 px-2 py-2">
+            <span class="rounded border bg-white px-2 py-1 text-[10px]"><span class="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-purple-500"></span>Çinli Çocuk Şarkıları</span>
+            <span class="rounded border bg-white px-2 py-1 text-[10px]"><span class="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-rose-500"></span>Değerler Eğitimi 2</span>
+            <span class="rounded border bg-white px-2 py-1 text-[10px]"><span class="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-blue-500"></span>Robotik Kodlama</span>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- TIER 3 -->
+  <!-- ============================================ -->
+  <section>
+    <div class="mb-4 flex items-baseline gap-3">
+      <span class="label rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-semibold text-purple-800">TIER 3</span>
+      <h2 class="text-lg font-semibold">Polish & delight</h2>
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+
+      <!-- K. Hover popover -->
+      <article class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-900 px-1.5 py-0.5 text-[10px] font-bold text-white">K</span>
+          <h3 class="text-sm font-semibold">Rich hover popover</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-500">Replaces bare <code class="rounded bg-stone-100 px-1">title=""</code>. Reuses ProjectDetail patterns.</p>
+        <div class="relative rounded-md border border-stone-200 bg-stone-50 p-4">
+          <div class="grid-bg absolute inset-3 rounded"></div>
+          <span class="absolute h-7 top-3 rounded bg-purple-500" style="left: 30%; width: 30%;"></span>
+          <div class="absolute z-10 w-[260px] rounded-lg border border-stone-200 bg-white p-3 shadow-xl" style="left: 35%; top: 50px;">
+            <div class="mb-1 flex items-center gap-1.5">
+              <span class="rounded bg-purple-100 px-1.5 py-0.5 text-[9px] font-semibold text-purple-700">Devam Eden</span>
+              <span class="rounded bg-stone-100 px-1.5 py-0.5 text-[9px] font-semibold text-stone-600">TR</span>
+            </div>
+            <div class="mb-2 text-[12px] font-semibold">İnkılap Tarihi 8. Sınıf Konu Anlatımı</div>
+            <div class="mb-2 flex items-center gap-1.5">
+              <span class="grid h-5 w-5 place-items-center rounded-full bg-blue-200 text-[9px] font-bold text-blue-800">NE</span>
+              <span class="grid h-5 w-5 place-items-center rounded-full bg-amber-200 text-[9px] font-bold text-amber-800">FK</span>
+              <span class="text-[10px] text-stone-500">2 atanmış</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2 border-t border-stone-100 pt-2 text-center">
+              <div><div class="text-[10px] text-stone-400">İlerleme</div><div class="text-[12px] font-bold tabular-nums">80%</div></div>
+              <div><div class="text-[10px] text-stone-400">Kalan</div><div class="text-[12px] font-bold tabular-nums">28g</div></div>
+              <div><div class="text-[10px] text-stone-400">Son aktivite</div><div class="text-[12px] font-bold">2sa</div></div>
+            </div>
+            <button class="mt-2 w-full rounded bg-stone-900 py-1 text-[10px] font-semibold text-white">Projeyi aç →</button>
+          </div>
+        </div>
+      </article>
+
+      <!-- L. Filter chips -->
+      <article class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-900 px-1.5 py-0.5 text-[10px] font-bold text-white">L</span>
+          <h3 class="text-sm font-semibold">Filter chips above the chart</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-500">Multi-select chip row. Lets one chart answer many questions.</p>
+        <div class="rounded-md border border-stone-200 bg-white p-3">
+          <div class="flex flex-wrap items-center gap-2 text-[11px]">
+            <span class="text-stone-500">Filtre:</span>
+            <button class="rounded-full bg-stone-900 px-3 py-1 font-semibold text-white">Sadece benim projelerim ×</button>
+            <button class="rounded-full border border-stone-300 bg-white px-3 py-1">Yalnız TR</button>
+            <button class="rounded-full border border-stone-300 bg-white px-3 py-1">Bu çeyrek</button>
+            <button class="rounded-full border border-rose-300 bg-rose-50 px-3 py-1 font-semibold text-rose-700">⚠ Geciken (3)</button>
+            <button class="rounded-full border border-stone-300 bg-white px-3 py-1">+ Filtre ekle</button>
+            <span class="ml-auto text-[10px] text-stone-400">9 / 12 proje gösteriliyor</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- M. Density heatmap -->
+      <article class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm md:col-span-2">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-900 px-1.5 py-0.5 text-[10px] font-bold text-white">M</span>
+          <h3 class="text-sm font-semibold">Density heatmap strip</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-500">12-cell mini-grid above the months. Shaded by how many projects land in it.</p>
+        <div class="overflow-hidden rounded-md border border-stone-200">
+          <div class="grid grid-cols-12 gap-px border-b border-stone-200 bg-stone-200">
+            <div class="bg-stone-50 px-1 py-2 text-center text-[9px] text-stone-500">Oca</div>
+            <div class="bg-stone-100 px-1 py-2 text-center text-[9px] text-stone-500">Şub</div>
+            <div class="bg-stone-200 px-1 py-2 text-center text-[9px] text-stone-500">Mar</div>
+            <div class="bg-amber-100 px-1 py-2 text-center text-[9px] text-amber-800">Nis · 2</div>
+            <div class="bg-amber-300 px-1 py-2 text-center text-[9px] font-bold text-amber-900">May · 3</div>
+            <div class="bg-amber-200 px-1 py-2 text-center text-[9px] text-amber-800">Haz · 2</div>
+            <div class="bg-stone-100 px-1 py-2 text-center text-[9px] text-stone-500">Tem · 1</div>
+            <div class="bg-rose-300 px-1 py-2 text-center text-[9px] font-bold text-rose-900">Ağu · 5</div>
+            <div class="bg-rose-400 px-1 py-2 text-center text-[9px] font-bold text-white">Eyl · 7</div>
+            <div class="bg-rose-300 px-1 py-2 text-center text-[9px] font-bold text-rose-900">Eki · 4</div>
+            <div class="bg-amber-200 px-1 py-2 text-center text-[9px] text-amber-800">Kas · 2</div>
+            <div class="bg-stone-100 px-1 py-2 text-center text-[9px] text-stone-500">Ara · 1</div>
+          </div>
+          <div class="relative h-[100px] grid-bg">
+            <span class="absolute h-5 top-2 rounded bg-purple-500" style="left: 55%; width: 25%;"></span>
+            <span class="absolute h-5 top-9 rounded bg-blue-500" style="left: 60%; width: 30%;"></span>
+            <span class="absolute h-5 top-16 rounded bg-amber-400" style="left: 40%; width: 35%;"></span>
+          </div>
+          <div class="flex items-center gap-2 border-t bg-stone-50 px-3 py-1.5 text-[10px] text-stone-500">
+            <span>Yoğunluk:</span>
+            <span class="h-3 w-4 bg-stone-100"></span>
+            <span class="h-3 w-4 bg-stone-200"></span>
+            <span class="h-3 w-4 bg-amber-200"></span>
+            <span class="h-3 w-4 bg-amber-300"></span>
+            <span class="h-3 w-4 bg-rose-400"></span>
+            <span class="ml-auto text-stone-400">Eylül darboğaz · 7 proje</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- N. Zoom levels -->
+      <article class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm md:col-span-2">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-900 px-1.5 py-0.5 text-[10px] font-bold text-white">N</span>
+          <h3 class="text-sm font-semibold">Zoom levels — quarter ↔ month ↔ week</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-500">Three presets. Default to quarter. Click to drill in.</p>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <!-- Quarter view -->
+          <div class="rounded-md border border-stone-200 bg-stone-50 p-3">
+            <div class="mb-2 flex items-center justify-between"><span class="label text-[10px] font-semibold text-stone-500">QUARTER ZOOM</span></div>
+            <div class="grid grid-cols-4 gap-1">
+              <div class="rounded bg-stone-200 p-2 text-center"><div class="text-[10px] font-bold">Q1</div><div class="text-[9px] text-stone-500">3 proj</div></div>
+              <div class="rounded bg-stone-200 p-2 text-center"><div class="text-[10px] font-bold">Q2</div><div class="text-[9px] text-stone-500">5 proj</div></div>
+              <div class="rounded bg-rose-200 p-2 text-center"><div class="text-[10px] font-bold text-rose-800">Q3</div><div class="text-[9px] font-semibold text-rose-700">9 proj</div></div>
+              <div class="rounded bg-stone-200 p-2 text-center"><div class="text-[10px] font-bold">Q4</div><div class="text-[9px] text-stone-500">6 proj</div></div>
+            </div>
+          </div>
+          <!-- Month view (current) -->
+          <div class="rounded-md border border-stone-200 bg-stone-50 p-3">
+            <div class="mb-2 flex items-center justify-between"><span class="label text-[10px] font-semibold text-stone-500">MONTH ZOOM · default</span></div>
+            <div class="grid grid-cols-12 gap-px">
+              <div class="h-12 bg-stone-200"></div>
+              <div class="h-12 bg-stone-300"></div>
+              <div class="h-12 bg-stone-300"></div>
+              <div class="h-12 bg-amber-300"></div>
+              <div class="h-12 bg-amber-400"></div>
+              <div class="h-12 bg-amber-300"></div>
+              <div class="h-12 bg-stone-200"></div>
+              <div class="h-12 bg-rose-400"></div>
+              <div class="h-12 bg-rose-500"></div>
+              <div class="h-12 bg-rose-400"></div>
+              <div class="h-12 bg-amber-300"></div>
+              <div class="h-12 bg-stone-200"></div>
+            </div>
+            <div class="label mt-1 text-center text-[9px] text-stone-500">12 ay</div>
+          </div>
+          <!-- Week view -->
+          <div class="rounded-md border border-stone-200 bg-stone-50 p-3">
+            <div class="mb-2 flex items-center justify-between"><span class="label text-[10px] font-semibold text-stone-500">WEEK ZOOM · Q3 detayı</span></div>
+            <div class="grid grid-cols-13 gap-px">
+              <!-- 13 weeks of Q3 -->
+              <div class="h-8 bg-stone-200"></div>
+              <div class="h-8 bg-stone-300"></div>
+              <div class="h-8 bg-stone-300"></div>
+              <div class="h-8 bg-stone-300"></div>
+              <div class="h-8 bg-amber-200"></div>
+              <div class="h-8 bg-amber-300"></div>
+              <div class="h-8 bg-amber-400"></div>
+              <div class="h-8 bg-rose-300"></div>
+              <div class="h-8 bg-rose-400"></div>
+              <div class="h-8 bg-rose-500"></div>
+              <div class="h-8 bg-rose-400"></div>
+              <div class="h-8 bg-rose-300"></div>
+              <div class="h-8 bg-amber-300"></div>
+            </div>
+            <div class="label mt-1 text-center text-[9px] text-stone-500">13 hafta · Tem–Eyl</div>
+          </div>
+        </div>
+        <div class="mt-3 flex items-center justify-center gap-1 text-[11px]">
+          <button class="rounded-l border border-stone-300 bg-white px-3 py-1">Çeyrek</button>
+          <button class="border-y border-stone-300 bg-stone-900 px-3 py-1 font-semibold text-white">Ay</button>
+          <button class="rounded-r border border-stone-300 bg-white px-3 py-1">Hafta</button>
+        </div>
+      </article>
+
+      <!-- O. Intersection observer -->
+      <article class="rounded-xl border border-stone-200 bg-stone-100 p-5 shadow-inner md:col-span-2">
+        <div class="mb-3 flex items-center gap-2">
+          <span class="label rounded bg-stone-700 px-1.5 py-0.5 text-[10px] font-bold text-white">O</span>
+          <h3 class="text-sm font-semibold text-stone-700">Stagger only for in-view bars</h3>
+        </div>
+        <p class="mb-3 text-xs text-stone-600">Implementation note — not visual. Bars off-screen on year-change wait until you scroll to them. Reduces perceived latency on long lists.</p>
+        <div class="rounded-md border border-stone-300 bg-stone-900 p-3 font-mono text-[11px] text-stone-200">
+          <div><span class="text-rose-400">const</span> <span class="text-amber-300">io</span> = <span class="text-rose-400">new</span> <span class="text-amber-300">IntersectionObserver</span>((entries) =&gt; {</div>
+          <div class="pl-4">entries.forEach((e) =&gt; e.isIntersecting &amp;&amp; e.target.classList.add(<span class="text-emerald-400">'yp-bar-draw'</span>));</div>
+          <div>});</div>
+          <div class="mt-1"><span class="text-stone-500">// yıllık plan chevron → tüm gözlemcileri reconnect et</span></div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- Footer summary -->
+  <section class="mt-12 rounded-xl border border-stone-200 bg-white p-6">
+    <h2 class="mb-3 text-base font-semibold">Reading guide</h2>
+    <div class="grid grid-cols-1 gap-4 text-xs text-stone-600 md:grid-cols-3">
+      <div>
+        <span class="label rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">TIER 1</span>
+        <p class="mt-1">Small change, big impact — half a day total. <strong>Ship first.</strong></p>
+      </div>
+      <div>
+        <span class="label rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">TIER 2</span>
+        <p class="mt-1">Structural redesign — quarter/half-day each. Pick what fits next sprint.</p>
+      </div>
+      <div>
+        <span class="label rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-800">TIER 3</span>
+        <p class="mt-1">Polish + zoom + filter. Ship once 1 & 2 are stable and you have user feedback.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>
