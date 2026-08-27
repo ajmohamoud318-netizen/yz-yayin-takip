@@ -321,6 +321,7 @@ export async function subtaskRoutes(fastify) {
       // kinds, totals, assignment) — but the recreate also silently threw
       // away everything the DESIGNERS owned on those rows:
       //
+      //   • is_done                     reset to false
       //   • pages_done / stickers_done   reset to 0
       //   • needs_revize                 cleared, so flagged rework vanished
       //   • done_at                      lost
@@ -329,7 +330,18 @@ export async function subtaskRoutes(fastify) {
       //                                  save wiped every note on the project
       //
       // Updating survivors in place keeps their id, which is what saves the
-      // notes; the columns above are simply never touched.
+      // notes; the columns above are simply never touched by this route.
+      //
+      // is_done and done_at are the designer's work state, set by
+      // PATCH /subtasks/:id (whole-subtask toggle) and
+      // PATCH /subtasks/:id/pages/:pageIndex (per-page chip flip), and must
+      // not be writable from here. The SPA mapper that builds the body
+      // reads is_done from the project repo's in-memory cache, which is
+      // NOT refreshed on every subtask mutation (toggleSubtask /
+      // setSubtaskPage return the response without touching the cache), so
+      // a leader adding a designer to a project whose cache predates the
+      // designer's work would otherwise POST every subtask as is_done=false
+      // and the project's progress would reset to 0% on save.
       const { rows: previous } = await client.query(
         `SELECT id, title, kind, total_pages, total_stickers, assigned_to, is_done
            FROM subtasks WHERE project_id = $1 ORDER BY position, created_at`,
@@ -364,12 +376,16 @@ export async function subtaskRoutes(fastify) {
         // project's primary `assigned_to` so a subtask is never ownerless.
         const subAssignee = s.assigned_to ?? project.assigned_to ?? null
         const existing = claim(s)
+        // NOTE: `is_done` is intentionally absent from this param list. The
+        // designer's work state is owned by the toggle and per-page routes
+        // and must not be writable from the bulk reconcile — see the block
+        // comment at the top of the route. Clients that post it are
+        // silently ignored.
         const params = [
           s.title,
           s.kind ?? 'check',
           s.total_pages ?? null,
           s.total_stickers ?? null,
-          !!s.is_done,
           subAssignee,
           index,
         ]
@@ -378,13 +394,15 @@ export async function subtaskRoutes(fastify) {
           const { rows } = await client.query(
             `UPDATE subtasks
                 SET title = $2, kind = $3, total_pages = $4, total_stickers = $5,
-                    is_done = $6, assigned_to = $7, position = $8,
-                    -- Stamp done_at on the transition only, and clear it when
-                    -- the row is reopened; an unchanged is_done keeps its
-                    -- original completion time.
-                    done_at = CASE WHEN $6 AND NOT is_done THEN NOW()
-                                   WHEN NOT $6 THEN NULL
-                                   ELSE done_at END,
+                    assigned_to = $6, position = $7,
+                    -- The done flag is intentionally NOT in the SET clause:
+                    -- the designer's work state is owned by the per-row
+                    -- toggle route and the per-page endpoint. done_at
+                    -- follows the column (keep when the flag is set, clear
+                    -- when it is not) so the two stay in lock-step — a
+                    -- row that has somehow been cleared outside this route
+                    -- still has its done_at nulled on the next save.
+                    done_at = CASE WHEN is_done THEN done_at ELSE NULL END,
                     -- Lowering a total must not leave a counter above it
                     -- (12/16 pages becoming 12/8). Raising one changes nothing.
                     pages_done = LEAST(pages_done, COALESCE($4, pages_done)),
@@ -399,8 +417,13 @@ export async function subtaskRoutes(fastify) {
         } else {
           const { rows } = await client.query(
             `INSERT INTO subtasks
-               (project_id, title, kind, total_pages, total_stickers, is_done, assigned_to, position)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+               (project_id, title, kind, total_pages, total_stickers, assigned_to, position)
+             -- The done flag is omitted: the column defaults to FALSE in
+             -- migration 003, and brand-new subtasks have no designer
+             -- work to credit. Keep the column out of the column list
+             -- AND the VALUES list so future readers don't see the
+             -- route as a legitimate writer of designer state.
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
             [project.id, ...params],
           )
           finalRows.push(rows[0])

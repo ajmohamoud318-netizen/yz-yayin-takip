@@ -437,3 +437,122 @@ describe('resyncSubtaskPageAssignments', () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// PUT /projects/:id/subtasks — source-level contract that the bulk reconcile
+// route never overwrites the designer's work state (is_done / done_at).
+//
+// Background: the NewProjectDialog's mapper in
+// client/src/application/mappers/project-mapper.js fills the body's
+// `is_done` from the project repo's in-memory cache, which is NOT refreshed
+// on every subtask mutation (toggleSubtask / setSubtaskPage return without
+// touching the cache). When the leader opens the edit dialog on a project
+// whose cache predates the designer's work, every subtask is sent back as
+// is_done=false, and the route's old UPDATE wrote that value back. The
+// project reset to 0% on save — the "project starts from zero" bug.
+//
+// The fix is route-level: drop `is_done` and `done_at` from the SET clause
+// and treat them as designer-owned columns. We lock the contract here as a
+// source-level test (cheaper and more reliable than running the route
+// through a fake client that cannot parse SQL) so a future refactor that
+// reintroduces either column will fail loudly.
+const subtasksRouteSrc = readFileSync(
+  fileURLToPath(new URL('../routes/subtasks.js', import.meta.url)),
+  'utf8',
+)
+
+function extractUpdateBlock(src) {
+  // Pull just the UPDATE subtasks statement — the one inside the
+  // `if (existing) { ... }` branch of the bulk-reconcile loop. There are
+  // other UPDATEs in this file (e.g. on the per-page PATCH), so we
+  // anchor on the unique "SET title = $2" prefix that only this statement
+  // has, plus the WHERE id = $1 / RETURNING * tail.
+  const re = /`UPDATE subtasks\s+SET title = \$2[\s\S]*?RETURNING \*`/
+  const m = src.match(re)
+  assert.ok(m, 'expected the bulk-reconcile UPDATE in routes/subtasks.js to be findable')
+  return m[0]
+}
+
+// Strip SQL line comments (--…) before running a regex against the
+// captured block. Without this, prose in the in-template SQL comments
+// like "is_done=" would trip the `is_done\s*=` check even when the
+// executable SQL doesn't reference the column. Only the code lines
+// matter for the contract we're locking in.
+function stripSqlComments(block) {
+  return block
+    .split('\n')
+    .map((line) => line.replace(/--.*$/, ''))
+    .join('\n')
+}
+
+describe('PUT /projects/:id/subtasks — designer work state is preserved', () => {
+  it('UPDATE on existing subtasks does NOT set is_done', () => {
+    // The designer's `is_done` is owned by PATCH /subtasks/:id and
+    // PATCH /subtasks/:id/pages/:pageIndex. The bulk-reconcile route
+    // can change the SHAPE of the subtask list (titles, kinds, totals,
+    // assignment) but must never silently rewind a project back to 0%
+    // because the SPA mapper sent a stale `is_done` from the cache.
+    const update = stripSqlComments(extractUpdateBlock(subtasksRouteSrc))
+    assert.ok(
+      !/\bis_done\s*=/.test(update),
+      'PUT /projects/:id/subtasks UPDATE must not set is_done; '
+        + 're-add it only via PATCH /subtasks/:id or the per-page endpoint',
+    )
+  })
+
+  it('UPDATE on existing subtasks follows is_done for done_at, not a client param', () => {
+    // done_at must mirror the column value (is_done), not a `$6` from
+    // the client — the same reasoning as the is_done check. A client
+    // param would let a stale cache reset done_at to NOW() (claiming
+    // the wrong completion time) or to NULL (dropping the original
+    // completion time) on a save.
+    const update = stripSqlComments(extractUpdateBlock(subtasksRouteSrc))
+    assert.match(
+      update,
+      /done_at = CASE WHEN is_done THEN done_at ELSE NULL END/,
+      'done_at should be a function of the existing is_done column, not a client param',
+    )
+  })
+
+  it('param list for the UPDATE is 7 elements: id + 6 settable columns', () => {
+    // Param count: $1 = existing.id, $2 = title, $3 = kind, $4 = total_pages,
+    // $5 = total_stickers, $6 = subAssignee, $7 = index. `is_done` MUST NOT
+    // be in this list — that's the contract. An extra param would let the
+    // client side push a value into $6, but the SQL no longer references
+    // it; the assertion below is on the route source so a future
+    // refactor that re-introduces the value also re-introduces the bug.
+    const paramsMatch = subtasksRouteSrc.match(
+      /const params = \[\s*([\s\S]*?)\]\s*\n\s*if \(existing\)/,
+    )
+    assert.ok(paramsMatch, 'expected to find the bulk-reconcile params array')
+    const items = paramsMatch[1]
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    assert.equal(
+      items.length, 6,
+      `expected 6 params (no is_done); got ${items.length}: ${items.join(', ')}`,
+    )
+  })
+
+  it('INSERT for new subtasks does not include is_done either', () => {
+    // Brand-new subtasks have no designer work to credit, so the column
+    // is correctly absent from the INSERT (migration 003 defaults it to
+    // FALSE). What we're locking in is that the column isn't added to
+    // the INSERT VALUES list as a placeholder for "false" — that would
+    // be a no-op for new rows, but it'd advertise to future readers
+    // that the route is allowed to write is_done, which it isn't.
+    const insertMatch = subtasksRouteSrc.match(
+      /INSERT INTO subtasks[\s\S]*?VALUES \(\$1,\$2,\$3,\$4,\$5,\$6,\$7\) RETURNING \*/,
+    )
+    assert.ok(
+      insertMatch,
+      'expected the bulk-reconcile INSERT to omit is_done from both columns and VALUES',
+    )
+    const insert = stripSqlComments(insertMatch[0])
+    assert.ok(
+      !insert.includes('is_done'),
+      'INSERT statement should not list is_done — column defaults to FALSE in migration 003',
+    )
+  })
+})
