@@ -8,8 +8,7 @@ import api from '@/api'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SpecSheet, EditableSpecSheet } from '@/components/SpecSheet'
-import PRODUCT_INFO from '@/data/productInfo'
-import { saveComponentsForProject, primeProductInfoCache } from '@/data/productCatalog'
+import { saveComponentsForProject, primeProductInfoCache, getSeedData } from '@/data/productCatalog'
 
 const deepCopy = (x) => JSON.parse(JSON.stringify(x))
 
@@ -61,7 +60,7 @@ export default function BaskiReceteleri() {
     return () => { cancelled = true }
   }, [])
 
-  const compsFor = (pid) => overrides[pid] ?? PRODUCT_INFO[pid]
+  const compsFor = (pid) => overrides[pid] ?? getSeedData()[pid]
 
   // One row per project (real or seed) that has at least one reçete —
   // mirrors UrunBilgileri's `products` builder exactly, since both read the
@@ -74,7 +73,7 @@ export default function BaskiReceteleri() {
         realKeys.add(p.id)
         return { project: p, comps: compsFor(p.id) }
       })
-    const orphanIds = new Set([...Object.keys(PRODUCT_INFO), ...Object.keys(overrides)])
+    const orphanIds = new Set([...Object.keys(getSeedData()), ...Object.keys(overrides)])
     const orphans = []
     for (const pid of orphanIds) {
       if (realKeys.has(pid)) continue

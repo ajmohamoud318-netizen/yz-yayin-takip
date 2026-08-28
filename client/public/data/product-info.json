@@ -1,9 +1,4 @@
-// Auto-generated from "REÇETE.xlsx".
-// Master product spec per project — the latest values merged from the sheet.
-// Reference data used when requesting a Demo or an Ozalit. A product can have
-// several components (parçalar) when multiple sheets share the same İTEM NO.
-// Shape: PRODUCT_INFO[projectId] = [ { component, date, fields:[{k,v}] } ]
-export const PRODUCT_INFO = {
+{
   "p-x1": [
     {
       "component": "30 GÜNDE DİKKATİNİ GELİŞTİR",
@@ -42,7 +37,7 @@ export const PRODUCT_INFO = {
           "v": "Kapak dışı parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x2": [
     {
@@ -102,7 +97,7 @@ export const PRODUCT_INFO = {
           "v": "16 kanca, 8 halka 2 cm yuvarlak"
         }
       ]
-    },
+    }
   ],
   "p-x3": [
     {
@@ -142,7 +137,7 @@ export const PRODUCT_INFO = {
           "v": "Tüm basılı kısımlar mat selofon"
         }
       ]
-    },
+    }
   ],
   "p-x4": [
     {
@@ -208,7 +203,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x5": [
     {
@@ -252,7 +247,7 @@ export const PRODUCT_INFO = {
           "v": "80 mm çapında stickerlı ayna"
         }
       ]
-    },
+    }
   ],
   "p-x6": [
     {
@@ -348,7 +343,7 @@ export const PRODUCT_INFO = {
           "v": "Zil"
         }
       ]
-    },
+    }
   ],
   "p-x7": [
     {
@@ -394,7 +389,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x8": [
     {
@@ -414,7 +409,7 @@ export const PRODUCT_INFO = {
           "v": "220 mm x 220 mm yükseklik"
         }
       ]
-    },
+    }
   ],
   "p-x9": [
     {
@@ -458,7 +453,7 @@ export const PRODUCT_INFO = {
           "v": "1 adet Kolay Kavrama Kalemi"
         }
       ]
-    },
+    }
   ],
   "p-x10": [
     {
@@ -540,7 +535,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x11": [
     {
@@ -618,7 +613,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x12": [
     {
@@ -684,7 +679,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x13": [
     {
@@ -744,7 +739,7 @@ export const PRODUCT_INFO = {
           "v": "16 kanca, 8 halka 2 cm yuvarlak"
         }
       ]
-    },
+    }
   ],
   "p-x14": [
     {
@@ -784,7 +779,7 @@ export const PRODUCT_INFO = {
           "v": "Tüm basılı kısımlar parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x15": [
     {
@@ -828,7 +823,7 @@ export const PRODUCT_INFO = {
           "v": "Güvenli Makas"
         }
       ]
-    },
+    }
   ],
   "p-x16": [
     {
@@ -876,7 +871,7 @@ export const PRODUCT_INFO = {
           "v": "5 farklı cins kumaş"
         }
       ]
-    },
+    }
   ],
   "p-x17": [
     {
@@ -972,7 +967,7 @@ export const PRODUCT_INFO = {
           "v": "Zil"
         }
       ]
-    },
+    }
   ],
   "p-x18": [
     {
@@ -1018,7 +1013,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x19": [
     {
@@ -1062,7 +1057,7 @@ export const PRODUCT_INFO = {
           "v": "400 mm x 200 mm ortaya harmanlanacak"
         }
       ]
-    },
+    }
   ],
   "p-x20": [
     {
@@ -1102,7 +1097,7 @@ export const PRODUCT_INFO = {
           "v": "Kapak dışı parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x21": [
     {
@@ -1146,7 +1141,7 @@ export const PRODUCT_INFO = {
           "v": "1 adet Kolay Kavrama Kalemi"
         }
       ]
-    },
+    }
   ],
   "p-x22": [
     {
@@ -1224,7 +1219,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x23": [
     {
@@ -1302,7 +1297,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x24": [
     {
@@ -1342,7 +1337,7 @@ export const PRODUCT_INFO = {
           "v": "Kapak dışı parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x25": [
     {
@@ -1402,7 +1397,7 @@ export const PRODUCT_INFO = {
           "v": "9 kanca, 9 halka 2 cm kare"
         }
       ]
-    },
+    }
   ],
   "p-x26": [
     {
@@ -1438,7 +1433,7 @@ export const PRODUCT_INFO = {
           "v": "İplik dikiş"
         }
       ]
-    },
+    }
   ],
   "p-x27": [
     {
@@ -1478,7 +1473,7 @@ export const PRODUCT_INFO = {
           "v": "Kapak dışı parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x28": [
     {
@@ -1534,7 +1529,7 @@ export const PRODUCT_INFO = {
           "v": "15 mm x 75 mm halka kırmızı cırt, 10 mm x 10 mm kanca kırmızı cırt"
         }
       ]
-    },
+    }
   ],
   "p-x29": [
     {
@@ -1638,7 +1633,7 @@ export const PRODUCT_INFO = {
           "v": "Zil"
         }
       ]
-    },
+    }
   ],
   "p-x30": [
     {
@@ -1696,7 +1691,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x31": [
     {
@@ -1740,7 +1735,7 @@ export const PRODUCT_INFO = {
           "v": "420 mm x 300 mm ortaya harmanlanacak 2 yaprak"
         }
       ]
-    },
+    }
   ],
   "p-x32": [
     {
@@ -1784,7 +1779,7 @@ export const PRODUCT_INFO = {
           "v": "1 adet Kolay Kavrama Kalemi"
         }
       ]
-    },
+    }
   ],
   "p-x33": [
     {
@@ -1854,7 +1849,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x34": [
     {
@@ -1932,7 +1927,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x35": [
     {
@@ -1992,7 +1987,7 @@ export const PRODUCT_INFO = {
           "v": "22 kanca, 22 halka, 2 cm kare"
         }
       ]
-    },
+    }
   ],
   "p-x36": [
     {
@@ -2036,7 +2031,7 @@ export const PRODUCT_INFO = {
           "v": "240 mm x 220 mm 1 sayfa en arkaya yapışacak x4"
         }
       ]
-    },
+    }
   ],
   "p-x37": [
     {
@@ -2076,7 +2071,7 @@ export const PRODUCT_INFO = {
           "v": "Kapak dışı parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x38": [
     {
@@ -2132,7 +2127,7 @@ export const PRODUCT_INFO = {
           "v": "15 mm x 75 mm halka kırmızı cırt, 10 mm x 10 mm kanca yeşil cırt"
         }
       ]
-    },
+    }
   ],
   "p-x39": [
     {
@@ -2232,7 +2227,7 @@ export const PRODUCT_INFO = {
           "v": "Zil"
         }
       ]
-    },
+    }
   ],
   "p-x40": [
     {
@@ -2290,7 +2285,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x41": [
     {
@@ -2334,7 +2329,7 @@ export const PRODUCT_INFO = {
           "v": "330 mm x 235 cm yükseklik 4 sayfa sticker en arka sayfalar olarak harmanlanacak."
         }
       ]
-    },
+    }
   ],
   "p-x42": [
     {
@@ -2378,7 +2373,7 @@ export const PRODUCT_INFO = {
           "v": "1 adet Kolay Kavrama Kalemi"
         }
       ]
-    },
+    }
   ],
   "p-x43": [
     {
@@ -2448,7 +2443,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x44": [
     {
@@ -2526,7 +2521,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x45": [
     {
@@ -2578,7 +2573,7 @@ export const PRODUCT_INFO = {
           "v": "128 kanca, 64 halka 1 cm kare"
         }
       ]
-    },
+    }
   ],
   "p-x46": [
     {
@@ -2648,7 +2643,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x47": [
     {
@@ -2688,7 +2683,7 @@ export const PRODUCT_INFO = {
           "v": "Kapak dışı parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x48": [
     {
@@ -2744,7 +2739,7 @@ export const PRODUCT_INFO = {
           "v": "15 mm x 75 mm halka kırmızı cırt, 10 mm x 10 mm kanca turuncu cırt"
         }
       ]
-    },
+    }
   ],
   "p-x49": [
     {
@@ -2802,7 +2797,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x50": [
     {
@@ -2846,7 +2841,7 @@ export const PRODUCT_INFO = {
           "v": "330 mm x 235 cm yükseklik 4 sayfa sticker en arka sayfalar olarak harmanlanacak."
         }
       ]
-    },
+    }
   ],
   "p-x51": [
     {
@@ -2890,7 +2885,7 @@ export const PRODUCT_INFO = {
           "v": "1 adet Kolay Kavrama Kalemi"
         }
       ]
-    },
+    }
   ],
   "p-x52": [
     {
@@ -2968,7 +2963,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x53": [
     {
@@ -3046,7 +3041,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x54": [
     {
@@ -3098,7 +3093,7 @@ export const PRODUCT_INFO = {
           "v": "128 kanca, 64 halka 1 cm kare"
         }
       ]
-    },
+    }
   ],
   "p-x55": [
     {
@@ -3164,7 +3159,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt mat selofon"
         }
       ]
-    },
+    }
   ],
   "p-x56": [
     {
@@ -3220,7 +3215,7 @@ export const PRODUCT_INFO = {
           "v": "250 gr mat kuşe 35 x 50 tabakada 55 adet parlak selofon kaplı"
         }
       ]
-    },
+    }
   ],
   "p-x57": [
     {
@@ -3276,7 +3271,7 @@ export const PRODUCT_INFO = {
           "v": "15 mm x 75 mm halka kırmızı cırt, 10 mm x 10 mm kanca mor cırt"
         }
       ]
-    },
+    }
   ],
   "p-x58": [
     {
@@ -3320,7 +3315,7 @@ export const PRODUCT_INFO = {
           "v": "400 mm x 200 mm ortaya harmanlanacak"
         }
       ]
-    },
+    }
   ],
   "p-x59": [
     {
@@ -3364,7 +3359,7 @@ export const PRODUCT_INFO = {
           "v": "1 adet Kolay Kavrama Kalemi"
         }
       ]
-    },
+    }
   ],
   "p-x60": [
     {
@@ -3442,7 +3437,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x61": [
     {
@@ -3520,7 +3515,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x62": [
     {
@@ -3572,7 +3567,7 @@ export const PRODUCT_INFO = {
           "v": "128 kanca, 64 halka 1 cm kare"
         }
       ]
-    },
+    }
   ],
   "p-x63": [
     {
@@ -3632,7 +3627,7 @@ export const PRODUCT_INFO = {
           "v": "10 mm sarı spiral"
         }
       ]
-    },
+    }
   ],
   "p-x64": [
     {
@@ -3652,7 +3647,7 @@ export const PRODUCT_INFO = {
           "v": "ÇİN"
         }
       ]
-    },
+    }
   ],
   "p-x65": [
     {
@@ -3710,7 +3705,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x66": [
     {
@@ -3754,7 +3749,7 @@ export const PRODUCT_INFO = {
           "v": "1 adet Kolay Kavrama Kalemi"
         }
       ]
-    },
+    }
   ],
   "p-x67": [
     {
@@ -3832,7 +3827,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x68": [
     {
@@ -3884,7 +3879,7 @@ export const PRODUCT_INFO = {
           "v": "128 kanca, 64 halka 1 cm kare"
         }
       ]
-    },
+    }
   ],
   "p-x69": [
     {
@@ -3940,7 +3935,7 @@ export const PRODUCT_INFO = {
           "v": "250 gr mat kuşe 35 x 50 tabakada 55 adet parlak selofon kaplı"
         }
       ]
-    },
+    }
   ],
   "p-x70": [
     {
@@ -4004,7 +3999,7 @@ export const PRODUCT_INFO = {
           "v": "Yeşil stickerlı eva: 238 mm 213 mm"
         }
       ]
-    },
+    }
   ],
   "p-x71": [
     {
@@ -4048,7 +4043,7 @@ export const PRODUCT_INFO = {
           "v": "1 adet Kolay Kavrama Kalemi"
         }
       ]
-    },
+    }
   ],
   "p-x72": [
     {
@@ -4130,7 +4125,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x73": [
     {
@@ -4182,7 +4177,7 @@ export const PRODUCT_INFO = {
           "v": "128 kanca, 64 halka 1 cm kare"
         }
       ]
-    },
+    }
   ],
   "p-x74": [
     {
@@ -4226,7 +4221,7 @@ export const PRODUCT_INFO = {
           "v": "Tek kulp ebadı:186 mm genişlik 70 mm yükseklik bıçaklı 345+345 hi bulk bristol. birbirine sıvamalı ve parlak selofonlu. 35 x 50 tabakada 11 adet tek yüz sığıyor. Baskı düz kırmızı renk tek yüz."
         }
       ]
-    },
+    }
   ],
   "p-x75": [
     {
@@ -4274,7 +4269,7 @@ export const PRODUCT_INFO = {
           "v": "ÇİN ( ZT )"
         }
       ]
-    },
+    }
   ],
   "p-x76": [
     {
@@ -4318,7 +4313,7 @@ export const PRODUCT_INFO = {
           "v": "1 adet Kolay Kavrama Kalemi"
         }
       ]
-    },
+    }
   ],
   "p-x77": [
     {
@@ -4400,7 +4395,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x78": [
     {
@@ -4456,7 +4451,7 @@ export const PRODUCT_INFO = {
           "v": "1 adet Kolay Kavrama Kalemi"
         }
       ]
-    },
+    }
   ],
   "p-x79": [
     {
@@ -4500,7 +4495,7 @@ export const PRODUCT_INFO = {
           "v": "Tek kulp ebadı:186 mm genişlik 70 mm yükseklik bıçaklı 345+345 hi bulk bristol. birbirine sıvamalı ve parlak selofonlu. 35 x 50 tabakada 11 adet tek yüz sığıyor. Baskı düz kırmızı renk tek yüz."
         }
       ]
-    },
+    }
   ],
   "p-x80": [
     {
@@ -4556,7 +4551,7 @@ export const PRODUCT_INFO = {
           "v": "ÇİN (Smiki)"
         }
       ]
-    },
+    }
   ],
   "p-x81": [
     {
@@ -4632,7 +4627,7 @@ export const PRODUCT_INFO = {
           "v": "Siyah 1 mm keçe"
         }
       ]
-    },
+    }
   ],
   "p-x82": [
     {
@@ -4684,7 +4679,7 @@ export const PRODUCT_INFO = {
           "v": "29 kanca, 58 halka 1 cm kare"
         }
       ]
-    },
+    }
   ],
   "p-x83": [
     {
@@ -4720,7 +4715,7 @@ export const PRODUCT_INFO = {
           "v": "ÇİN (Leleyu)"
         }
       ]
-    },
+    }
   ],
   "p-x84": [
     {
@@ -4796,7 +4791,7 @@ export const PRODUCT_INFO = {
           "v": "Siyah 1 mm keçe"
         }
       ]
-    },
+    }
   ],
   "p-x85": [
     {
@@ -4848,7 +4843,7 @@ export const PRODUCT_INFO = {
           "v": "29 kanca, 58 halka 1 cm kare"
         }
       ]
-    },
+    }
   ],
   "p-x86": [
     {
@@ -4884,7 +4879,7 @@ export const PRODUCT_INFO = {
           "v": "ÇİN (Leleyu)"
         }
       ]
-    },
+    }
   ],
   "p-x87": [
     {
@@ -4938,7 +4933,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x88": [
     {
@@ -5002,7 +4997,7 @@ export const PRODUCT_INFO = {
           "v": "ÇİN (Smiki)"
         }
       ]
-    },
+    }
   ],
   "p-x89": [
     {
@@ -5056,7 +5051,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x90": [
     {
@@ -5108,7 +5103,7 @@ export const PRODUCT_INFO = {
           "v": "ÇİN ( Smiki)"
         }
       ]
-    },
+    }
   ],
   "p-x91": [
     {
@@ -5162,7 +5157,7 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
+    }
   ],
   "p-x92": [
     {
@@ -5178,7 +5173,7 @@ export const PRODUCT_INFO = {
           "v": "2"
         }
       ]
-    },
+    }
   ],
   "p-x93": [
     {
@@ -5232,8 +5227,6 @@ export const PRODUCT_INFO = {
           "v": "Üst kağıt parlak selofon"
         }
       ]
-    },
-  ],
+    }
+  ]
 }
-
-export default PRODUCT_INFO

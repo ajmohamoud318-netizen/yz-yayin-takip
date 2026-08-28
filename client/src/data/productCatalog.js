@@ -6,14 +6,23 @@
 //   1) server cache (the `product_info` table, primed on boot) — the source
 //      of truth, shared across users and browsers
 //   2) localStorage overrides (offline mirror / fallback only)
-//   3) bundled PRODUCT_INFO seed (read-only reference / orphan templates)
+//   3) JSON seed fetched lazily from /data/product-info.json (offline fallback)
 //
 // Writes go to the server (via `api.saveProductInfo`) and update both the
 // in-memory cache and the localStorage mirror so the UI is instant and still
 // works offline. Reads stay synchronous (many call sites are useMemo bodies);
-// `hydrateProductInfo()` fills the cache from the server ahead of time.
+// `hydrateProductInfo()` fills the cache from the server ahead of time and
+// pre-loads the JSON seed so synchronous reads can fall back to it.
 import api from '@/api'
-import PRODUCT_INFO from '@/data/productInfo'
+
+// Lazy-loaded seed data — starts empty, populated by loadSeed() during
+// hydrateProductInfo(). Replaces the old static import of productInfo.js.
+let _seed = {}
+
+/** Returns the lazily-loaded seed data (empty object until hydration). */
+export function getSeedData() {
+  return _seed
+}
 
 const LS_KEY = 'yz_product_info_overrides_v1'
 const clone = (x) => JSON.parse(JSON.stringify(x ?? []))
@@ -48,22 +57,44 @@ export function primeProductInfoCache(rows) {
 }
 
 /**
+ * Fetch the JSON seed from /data/product-info.json into the module-level
+ * cache. Called once during hydrateProductInfo() so synchronous reads can
+ * fall back to it when the server is unreachable.
+ */
+async function loadSeed() {
+  try {
+    const res = await fetch('/data/product-info.json')
+    if (res.ok) _seed = await res.json()
+  } catch {
+    // Offline or missing — seed stays empty, reads fall through to localStorage.
+  }
+}
+
+/**
  * Load every project's spec from the server into the cache. Also performs a
  * one-time backfill: any localStorage override for a *real* project that the
  * server doesn't have yet is pushed up, so specs authored before this feature
  * existed aren't lost. Safe to call repeatedly (e.g. on every projects
  * refetch); the backfill is a no-op once the server has the row.
  *
+ * Also pre-loads the JSON seed (from /data/product-info.json) so synchronous
+ * reads can fall back to it for orphan entries when offline.
+ *
  * `realProjectIds` scopes the backfill so we never push orphan (p-x…) seed
  * overrides or synthetic ids to the server.
  */
 export async function hydrateProductInfo(realProjectIds = []) {
+  // Load the seed first (fast local fetch) so it's available for synchronous
+  // reads before the server response arrives.
+  const seedPromise = loadSeed()
   let rows
   try {
     rows = await api.listProductInfo()
     primeProductInfoCache(rows)
   } catch {
     // Offline / unauthenticated — sync reads fall back to localStorage + seed.
+    // Ensure the seed is loaded even if the server fetch failed.
+    await seedPromise
     return
   }
   const overrides = readOverrides()
@@ -86,6 +117,8 @@ export async function hydrateProductInfo(realProjectIds = []) {
   const mirror = {}
   for (const [pid, comps] of serverCache) mirror[pid] = comps
   writeOverrides(mirror)
+  // Ensure the seed is loaded by the time hydration completes.
+  await seedPromise
 }
 
 /** Returns the components array for a given project, or [] if none. */
@@ -93,13 +126,14 @@ export function getComponentsForProject(projectId) {
   if (!projectId) return []
   if (serverCache.has(projectId)) return serverCache.get(projectId)
   const overrides = readOverrides()
-  return overrides[projectId] ?? PRODUCT_INFO[projectId] ?? []
+  return overrides[projectId] ?? _seed[projectId] ?? []
 }
 
 /**
  * Every kayıt (backlist) spec that has no project behind it yet.
  *
- * `PRODUCT_INFO` is generated from REÇETE.xlsx and keyed by seed id (`p-x1`…).
+ * `_seed` is fetched from /data/product-info.json (generated from REÇETE.xlsx)
+ * and keyed by seed id (`p-x1`…).
  * A seed with no matching project exists only in this browser: it can't be
  * saved server-side (`PUT /product-info/p-x1` 404s) and Sales can't order it.
  * Promoting it via `POST /api/projects/import` creates the real project and
@@ -114,7 +148,7 @@ export function getComponentsForProject(projectId) {
 export function listRecordSeeds(realProjectIds = []) {
   const real = new Set(realProjectIds)
   const overrides = readOverrides()
-  const ids = new Set([...Object.keys(PRODUCT_INFO), ...Object.keys(overrides)])
+  const ids = new Set([...Object.keys(_seed), ...Object.keys(overrides)])
   const out = []
   for (const pid of ids) {
     if (real.has(pid)) continue

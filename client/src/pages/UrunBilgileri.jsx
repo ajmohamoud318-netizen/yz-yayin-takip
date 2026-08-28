@@ -10,8 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import PromoteRecordDialog from '@/components/PromoteRecordDialog'
 import ProductSubtaskEditor from '@/components/ProductSubtaskEditor'
 import { SpecSheet, EditableSpecSheet } from '@/components/SpecSheet'
-import PRODUCT_INFO from '@/data/productInfo'
-import { saveComponentsForProject, primeProductInfoCache } from '@/data/productCatalog'
+import { saveComponentsForProject, primeProductInfoCache, getSeedData } from '@/data/productCatalog'
 
 /* ---- offline mirror (server is the source of truth) ---- */
 // Specs live server-side (see productCatalog + /api/product-info). We still
@@ -407,7 +406,7 @@ export default function UrunBilgileri() {
     return () => { cancelled = true }
   }, [canEdit])
 
-  const compsFor = (pid) => overrides[pid] ?? PRODUCT_INFO[pid]
+  const compsFor = (pid) => overrides[pid] ?? getSeedData()[pid]
 
   function toggle(id) {
     if (editingId === id) return
@@ -455,7 +454,7 @@ export default function UrunBilgileri() {
     // For real projects, an empty override simply restores the seed
     // visibility — but since real projects are filtered out unless they
     // have product info, an empty override hides the product. For seed
-    // (orphan) entries, an empty override masks PRODUCT_INFO[pid] so the
+    // (orphan) entries, an empty override masks getSeedData()[pid] so the
     // catalog hides the row until the user re-saves it.
     setOverrides((prev) => ({ ...prev, [pid]: [] }))
     saveComponentsForProject(pid, [])
@@ -490,12 +489,12 @@ export default function UrunBilgileri() {
         realKeys.add(p.id)
         return { project: p, comps: compsFor(p.id) }
       })
-    // 2) Orphan catalog entries — PRODUCT_INFO rows whose id is not a real
+    // 2) Orphan catalog entries — seed rows whose id is not a real
     //    project. Render them as synthetic products so the catalog is
     //    browsable even before the team creates matching project rows.
     const nowIso = new Date().toISOString()
     const orphanIds = new Set([
-      ...Object.keys(PRODUCT_INFO),
+      ...Object.keys(getSeedData()),
       ...Object.keys(overrides),
     ])
     const orphans = []

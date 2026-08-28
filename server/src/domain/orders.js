@@ -16,9 +16,9 @@ export const ORDER_STEP_LABELS = {
 
 // matbaa_onay is multi-party, leader-first (every active team leader AND
 // every order assignee must approve — see computeMatbaaOnayApproval in
-// order-transitions.js), NOT a flat single-owner step. The 'team_leader'
-// value below is only documentary here — routes/orders.js's /advance route
-// special-cases matbaa_onay before ever consulting this map.
+// domain/entities/Order.js), NOT a flat single-owner step. The 'team_leader'
+// value below is only documentary here — Order.advance() special-cases
+// matbaa_onay before ever consulting this map.
 //
 // ekran_onay IS a flat single-owner step (team_leader, one click, no
 // receipt gate, no ledger — unlike matbaa_onay) and rides the same generic

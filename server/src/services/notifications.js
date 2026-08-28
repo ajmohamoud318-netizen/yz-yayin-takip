@@ -1110,7 +1110,7 @@ export async function notifyOrderRejected(client, { order, project, actor, reque
  * Full parity with the main pipeline's demo/ozalit started/cancel/edit/
  * change-request notifications (migration 048/049), scoped to the order's
  * own ozalit round (tasarimci_onay). Only team_leader can cancel/edit/
- * request a change on this side (see order-transitions.js), so — unlike the
+ * request a change on this side (see domain/entities/Order.js), so — unlike the
  * main pipeline's leader+designer pings — these only ever target leaders.
  */
 export async function notifyOrderOzalitStarted(client, { order, project, actor }) {
