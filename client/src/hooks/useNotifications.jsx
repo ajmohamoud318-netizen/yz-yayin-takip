@@ -1,5 +1,6 @@
 import {
-  createContext, useContext, useState, useCallback, useEffect, useRef, createElement,
+  createContext, useContext, useState, useCallback, useEffect, useRef,
+  createElement, useMemo,
 } from 'react'
 import api from '@/api'
 import { useAuth } from '@/hooks/useAuth.js'
@@ -79,6 +80,29 @@ export function NotificationsProvider({ children }) {
     }
   }, [])
 
+  // In-process pub/sub so other components (ProjectDetail, Orders, etc.) can
+  // subscribe to notification events and refetch their own data when a relevant
+  // event arrives. The signal carries projectId/orderId so subscribers can
+  // filter by what they care about without parsing every event.
+  //
+  // Subscribers receive the full event payload: { userId, notificationId,
+  // eventId, projectId, orderId, type }. They should be idempotent — the same
+  // event may fire multiple times during a reconnect.
+  const subscribersRef = useRef(new Set())
+  const subscribe = useCallback((callback) => {
+    subscribersRef.current.add(callback)
+    return () => subscribersRef.current.delete(callback)
+  }, [])
+
+  const dispatchToSubscribers = useCallback((event) => {
+    for (const cb of subscribersRef.current) {
+      try { cb(event) } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[notifications] subscriber threw:', err)
+      }
+    }
+  }, [])
+
   // Reset + refetch whenever the signed-in user changes (login / switch /
   // logout). Keyed on user id so a different account never sees stale rows.
   const userId = user?.id ?? null
@@ -109,7 +133,18 @@ export function NotificationsProvider({ children }) {
     if (typeof EventSource !== 'undefined') {
       eventSource = new EventSource('/api/events/stream', { withCredentials: true })
       eventSource.onopen = () => setSseConnected(true)
-      eventSource.addEventListener('notification', () => {
+      eventSource.addEventListener('notification', (ev) => {
+        // The server's signal carries { userId, notificationId, eventId,
+        // projectId, orderId, type }. Forward to the notification feed refetch
+        // AND to any subscribers (e.g. ProjectDetail listening for events on
+        // its projectId).
+        try {
+          const event = JSON.parse(ev.data)
+          dispatchToSubscribers(event)
+        } catch {
+          // Malformed event — still refetch (the feed may have changed) but
+          // skip subscriber dispatch.
+        }
         refetch()
       })
       eventSource.onerror = () => {
@@ -131,9 +166,11 @@ export function NotificationsProvider({ children }) {
       if (eventSource) eventSource.close()
       clearInterval(pollTimer)
     }
-  }, [userId, refetch, sseConnected])
+  }, [userId, refetch, sseConnected, dispatchToSubscribers])
 
-  const value = { items, unread, unseen, loading, refetch, markRead, markAllRead, markSeen }
+  const value = useMemo(() => ({
+    items, unread, unseen, loading, refetch, markRead, markAllRead, markSeen, subscribe,
+  }), [items, unread, unseen, loading, refetch, markRead, markAllRead, markSeen, subscribe])
   return createElement(NotificationsContext.Provider, { value }, children)
 }
 

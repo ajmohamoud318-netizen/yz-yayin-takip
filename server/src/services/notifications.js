@@ -124,12 +124,18 @@ export async function emit(client, {
 
   // Signal connected SSE clients after commit. Each affected user gets a
   // lightweight signal so their bell can refetch the feed in real time
-  // instead of waiting for the next 15s poll.
+  // instead of waiting for the next 15s poll. The signal carries the
+  // projectId/orderId so pages like ProjectDetail can decide whether to
+  // refetch their own data — otherwise the bell updates but the page the
+  // user is currently viewing stays stale until a manual refresh.
   if (eventId) {
     const signalEntries = rows.map((r) => ({
       userId: r.user_id,
       notificationId: r.id,
       eventId,
+      projectId: projectId ?? null,
+      orderId: orderId ?? null,
+      type,
     }))
     dispatchSseSignal(client, signalEntries)
   }
@@ -1274,7 +1280,7 @@ export function clampPageSize(limit) {
   if (!Number.isFinite(n) || n < 1) return FEED_PAGE_SIZE
   return Math.min(Math.trunc(n), FEED_MAX_PAGE_SIZE)
 }
-
+   
 /**
  * One page of a user's feed, newest first.
  *

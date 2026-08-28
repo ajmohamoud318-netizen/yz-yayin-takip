@@ -355,6 +355,23 @@ export default function ProjectDetail() {
     api.listUsers().then(setAllUsers).catch(() => {})
   }, [id])
 
+  // Real-time refresh: when a notification event arrives that involves THIS
+  // project (or any of its orders), refetch the project data so the page
+  // shows the new state without a manual reload. Without this, a leader
+  // approving a demo from another screen would see the bell update but the
+  // project detail would keep showing the old stage/approvals until refresh.
+  //
+  // We also refetch on hover/visibility events below — SSE handles the rest.
+  const { subscribe } = useNotifications()
+  useEffect(() => {
+    if (!id) return undefined
+    const unsubscribe = subscribe((event) => {
+      if (event.projectId !== id && !projectOrders.some((o) => o.id === event.orderId)) return
+      refetch()
+    })
+    return unsubscribe
+  }, [id, subscribe, refetch, projectOrders])
+
   const isAssigned = (project?.assignees ?? []).some((a) => a.id === user?.id)
 
   // Distinct designers actually doing work on this project. We include:
