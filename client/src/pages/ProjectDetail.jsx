@@ -24,6 +24,7 @@ import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
 import { useProject } from '@/hooks/useProjects'
+import { useNotifications } from '@/hooks/useNotifications'
 import api, {
   STAGE_LABELS, TYPE_LABELS, IN_FLIGHT_DEMO_OZALIT_STAGES, isLegacyProject,
   ORDER_STEP_LABELS, orderStepPath,
