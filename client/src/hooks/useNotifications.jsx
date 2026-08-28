@@ -7,15 +7,13 @@ import { useAuth } from '@/hooks/useAuth.js'
 /**
  * Server-backed notification feed, shared app-wide.
  *
- * Replaces the old localStorage-derived bell log + project-diffing toasts.
- * The server owns the notifications (durable, cross-device, real read-state);
- * this provider polls the feed and exposes it to the bell AND the toast
- * watcher so there's exactly one poll loop and one source of truth.
+ * Uses SSE (Server-Sent Events) for real-time delivery when cookie sessions
+ * are available (production). Falls back to 15s polling for dev environments
+ * with header auth (EventSource can't send custom headers).
  *
- * Polling (not push) is deliberate: the app authenticates with a trusted
- * `X-User-Id` header, which EventSource/WebSocket can't attach cleanly, and
- * the rest of the app already polls (projects at 30s). We poll a touch faster
- * (15s) so notifications feel timely.
+ * The SSE signal is minimal ({ userId, notificationId, eventId }) — the client
+ * uses it to decide whether to refetch the feed, not as the notification data
+ * itself. The feed query remains the single source of truth.
  */
 
 const NotificationsContext = createContext(null)
@@ -28,6 +26,7 @@ export function NotificationsProvider({ children }) {
   const [unread, setUnread] = useState(0)   // per-item to-do (is_read=false)
   const [unseen, setUnseen] = useState(0)   // bell badge (seen=false)
   const [loading, setLoading] = useState(true)
+  const [sseConnected, setSseConnected] = useState(false)
 
   const refetch = useCallback(async () => {
     try {
@@ -91,6 +90,7 @@ export function NotificationsProvider({ children }) {
       setUnread(0)
       setUnseen(0)
       setLoading(!!userId)
+      setSseConnected(false)
     }
     if (!userId) return undefined
 
@@ -100,17 +100,38 @@ export function NotificationsProvider({ children }) {
     // the bell empty on cold start for sessions where "30 gün hatırla" was not
     // ticked (nothing is written to localStorage in that case).
     refetch()
-    // Don't poll a backgrounded app. iOS freezes the timer regardless, and
-    // PushBridge refetches on every return to the foreground — so the only
-    // thing these ticks would achieve is spending battery and data on a feed
-    // nobody can see. A push that arrives meanwhile still shows as a system
-    // notification, which is the point of the worker.
-    const t = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-      refetch()
+
+    // Try SSE for real-time delivery. EventSource sends cookies automatically,
+    // so this works in production with cookie sessions. In dev with header
+    // auth, the SSE endpoint returns 401 and the error handler closes the
+    // connection, so we fall back to polling.
+    let eventSource = null
+    if (typeof EventSource !== 'undefined') {
+      eventSource = new EventSource('/api/events/stream', { withCredentials: true })
+      eventSource.onopen = () => setSseConnected(true)
+      eventSource.addEventListener('notification', () => {
+        refetch()
+      })
+      eventSource.onerror = () => {
+        setSseConnected(false)
+        eventSource.close()
+      }
+    }
+
+    // Polling fallback: only active when SSE is not connected. If SSE connects
+    // successfully, we stop polling to save bandwidth and battery. If SSE
+    // fails (dev with header auth, network issues), polling kicks in at 15s.
+    const pollTimer = setInterval(() => {
+      if (!sseConnected && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refetch()
+      }
     }, POLL_MS)
-    return () => clearInterval(t)
-  }, [userId, refetch])
+
+    return () => {
+      if (eventSource) eventSource.close()
+      clearInterval(pollTimer)
+    }
+  }, [userId, refetch, sseConnected])
 
   const value = { items, unread, unseen, loading, refetch, markRead, markAllRead, markSeen }
   return createElement(NotificationsContext.Provider, { value }, children)

@@ -17,7 +17,7 @@
 
 INSERT INTO users (id, name, email, password, role, is_active, joined_at, created_at)
 VALUES (
-  '00000000-0000-0000-0000-0000000000a1',
+  '785ea3f9-0000-0000-0000-000000000000',
   'Ayşenur Kanak',
   'aysenur.kanak@yukselenzeka.com',
   '$2a$08$d/cj/lr0ho1OlfO9zKLbneQRr1GKGWrPOfe.0KqPt5.7oaS0v1/96',

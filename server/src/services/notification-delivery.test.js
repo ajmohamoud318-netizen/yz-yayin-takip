@@ -27,6 +27,10 @@ function fakeClient(rows = []) {
     calls,
     async query(text, values) {
       calls.push({ text, values })
+      // Event store INSERT: return a dummy row so emit() gets an event id.
+      if (text.includes('INTO domain_events')) {
+        return { rows: [{ id: 'ev-1', created_at: new Date() }], rowCount: 1 }
+      }
       return { rows, rowCount: rows.length }
     },
   }

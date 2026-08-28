@@ -106,10 +106,6 @@ export async function seed() {
       )
     }
   }
-  // Trigger title cache (no-op for inserts but documented in case the seed
-  // table design changes). The client reads project titles straight off
-  // `projects.title` via the GET /projects endpoint.
-  void SEED_TITLES
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -49,9 +49,9 @@ CREATE INDEX IF NOT EXISTS idx_target_project_idea_notes_idea
   ON target_project_idea_notes(idea_id, created_at);
 
 INSERT INTO target_project_idea_notes (id, idea_id, body, created_by, created_by_name, created_at)
-SELECT 'tpin-' || substr(md5(random()::text || id), 1, 16), id, btrim(notes), created_by, created_by_name, created_at
+SELECT 'tpin-' || substr(md5(gen_random_uuid()::text || id), 1, 16), id, btrim(notes), created_by, created_by_name, created_at
 FROM target_project_ideas
 WHERE notes IS NOT NULL AND btrim(notes) <> '';
 
-ALTER TABLE target_project_ideas DROP COLUMN link;
-ALTER TABLE target_project_ideas DROP COLUMN notes;
+ALTER TABLE target_project_ideas DROP COLUMN IF EXISTS link;
+ALTER TABLE target_project_ideas DROP COLUMN IF EXISTS notes;

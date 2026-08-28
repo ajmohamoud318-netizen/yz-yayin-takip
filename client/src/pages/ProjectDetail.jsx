@@ -92,16 +92,23 @@ const DISPLAY_ORDER_STEP_LABELS = {
 // Mirrors the per-page action labels in MyProjects/SiparisOnay/SiparisTalepleri
 // (each only ever renders one of these for its own role's queue) — collected
 // here since this page shows a project's orders to whichever role opens it.
+// matbaa_onay reads as "Onaylayın" here too so the leader sees the same
+// verb they saw in the queue card; the receipt gate ("Teslim Alındı" /
+// "Teslim Alınamadı") is presented inside the dialog when matbaa_received
+// is still false, before the approval click — see TalepSignDialog's
+// matbaa_onay handling. This keeps the detail page in lock-step with
+// SiparisTalepleri so a leader who lands here from the queue doesn't see
+// the action verb flip under their feet.
 const ORDER_ACTION_LABELS = {
   pending: 'Tasarımcıya Aktarın',
   goruldu: 'Kontrolleri Yapın',
   kontrol_edildi: 'Ozalit İsteyin',
   tasarimci_onay: 'Teslim Edin',
   ekran_onay: 'Onaylayın',
+  matbaa_onay: 'Onaylayın',
   siparis_baski_onay: 'Baskı Onay Formu',
 }
 function orderActionLabel(order) {
-  if (order.status === 'matbaa_onay') return order.matbaa_received ? 'Onaylayın' : 'Teslim Alın'
   return ORDER_ACTION_LABELS[order.status] ?? 'Onaylayın'
 }
 

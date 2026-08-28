@@ -6,5 +6,5 @@
 -- previous day is simply never returned.
 
 ALTER TABLE users
-  ADD COLUMN daily_status TEXT,
-  ADD COLUMN daily_status_date DATE;
+  ADD COLUMN IF NOT EXISTS daily_status TEXT,
+  ADD COLUMN IF NOT EXISTS daily_status_date DATE;

@@ -23,6 +23,8 @@ import { loadProjectAssignees } from './project-repository.js'
 import { ORDER_STEP_OWNER } from '../domain/orders.js'
 import { getPool } from '../db/pool.js'
 import { isPushEnabled, sendToRecipients } from './push.js'
+import { appendDomainEvent } from './event-store.js'
+import { publishNotificationEvent } from './event-bus.js'
 
 /**
  * How many times a notification whose delivery keeps failing transiently is
@@ -65,6 +67,7 @@ export async function emit(client, {
   projectId = null,
   orderId = null,
   link = null,
+  event = undefined,
 }) {
   const clean = [...new Set(recipientIds.filter(Boolean))].filter((id) => id !== actorId)
   if (clean.length === 0) return 0
@@ -94,13 +97,42 @@ export async function emit(client, {
     values,
   )
 
+  // Record the business event in the domain event log (one event per emit
+  // call, not per recipient). This is the append-only event store that
+  // future consumers (Slack, email digest, analytics) can replay from
+  // without changing any notifyXxx caller. The INSERT runs in the same
+  // transaction, so it commits iff the notifications commit.
+  let eventId = null
+  if (event?.type) {
+    const ev = await appendDomainEvent(client, {
+      eventType: event.type,
+      aggregateId: event.aggregateId ?? projectId ?? orderId ?? null,
+      actorId,
+      payload: { type, title, body, tone, link, projectId, orderId },
+    })
+    eventId = ev?.id ?? null
+  }
+
   // Deliver to registered devices as well as the in-app feed. Runs only
   // after the caller's transaction commits — see dispatchPush.
-  dispatchPush(client, rows.map((r) => ({
+  const pushEntries = rows.map((r) => ({
     userId: r.user_id,
     notificationId: r.id,
     payload: { type, title, body, tone, link, projectId, notificationId: r.id },
-  })))
+  }))
+  dispatchPush(client, pushEntries)
+
+  // Signal connected SSE clients after commit. Each affected user gets a
+  // lightweight signal so their bell can refetch the feed in real time
+  // instead of waiting for the next 15s poll.
+  if (eventId) {
+    const signalEntries = rows.map((r) => ({
+      userId: r.user_id,
+      notificationId: r.id,
+      eventId,
+    }))
+    dispatchSseSignal(client, signalEntries)
+  }
 
   return clean.length
 }
@@ -156,6 +188,32 @@ function dispatchPush(client, entries) {
           console.error('[notifications] push dispatch failed:', err?.message)
         })
     })
+  }
+}
+
+/**
+ * Signal SSE clients after the transaction commits.
+ *
+ * Same afterCommit pattern as dispatchPush: the signal must not fire for a
+ * transaction that later rolls back (a push for an event that never happened
+ * is worse than a missed one). Each entry is published to the in-process
+ * event bus, which the SSE route subscribes to for real-time streaming.
+ *
+ * The signal is fire-and-forget — if the event bus has no subscribers (no
+ * SSE connections open), the publish is a no-op. Nothing to retry because
+ * the bell feed is the source of truth and SSE is just a latency optimiser.
+ */
+function dispatchSseSignal(client, entries) {
+  if (entries.length === 0) return
+  const publish = () => {
+    for (const entry of entries) {
+      publishNotificationEvent(entry)
+    }
+  }
+  if (typeof client?.afterCommit === 'function') {
+    client.afterCommit(publish)
+  } else {
+    setImmediate(publish)
   }
 }
 
@@ -360,6 +418,7 @@ export async function notifyProjectCreated(client, { project, actor, assignees }
     tone: 'green',
     projectId: project.id,
     link: `/projects/${project.id}`,
+    event: { type: 'project.created', aggregateId: project.id },
   })
 }
 
@@ -389,13 +448,14 @@ export async function notifyDemoReceived(client, { project, actor, assignees }) 
   const who = actor?.name ?? 'Ekipten biri'
   const base = {
     actorId: actor?.id, title: who, projectId: project.id, link: `/projects/${project.id}`,
+    event: { type: 'project.demo_received', aggregateId: project.id },
   }
   const a = await emit(client, {
     ...base, recipientIds: leaders, type: 'demo_approval_pending', tone: 'amber',
     body: `${project.title} demoyu teslim aldı, onayınızı bekliyor`,
   })
   const b = await emit(client, {
-    ...base, recipientIds: designers, type: 'demo_received', tone: 'blue',
+    ...base, event: null, recipientIds: designers, type: 'demo_received', tone: 'blue',
     body: `${project.title} demoyu teslim aldı, onay bekleniyor`,
   })
   return a + b
@@ -420,13 +480,14 @@ export async function notifyOzalitReceived(client, { project, actor, assignees }
   const base = {
     // Person as the title, book in the body — see notifyDemoReceived.
     actorId: actor?.id, title: who, projectId: project.id, link: `/projects/${project.id}`,
+    event: { type: 'project.ozalit_received', aggregateId: project.id },
   }
   const a = await emit(client, {
     ...base, recipientIds: leaders, type: 'ozalit_approval_pending', tone: 'amber',
     body: `${project.title} ozaliti teslim aldı, onayınızı bekliyor`,
   })
   const b = await emit(client, {
-    ...base, recipientIds: designers, type: 'ozalit_received', tone: 'blue',
+    ...base, event: null, recipientIds: designers, type: 'ozalit_received', tone: 'blue',
     body: `${project.title} ozaliti teslim aldı, ekip lideri onayı bekleniyor`,
   })
   return a + b
@@ -446,6 +507,7 @@ export async function notifyBaskiOnayPrepared(client, { project, actor, teamLead
     actorId: actor?.id, title: who, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: leaders, type: 'baski_onay_prepared', tone: 'amber',
     body: `${project.title} için baskı onay formunu hazırladı, onayınız bekleniyor`,
+    event: { type: 'project.baski_onay_prepared', aggregateId: project.id },
   })
 }
 
@@ -462,6 +524,7 @@ export async function notifyDemoStarted(client, { project, actor, assignees }) {
     actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: [...leaders, ...designers], type: 'demo_started', tone: 'blue',
     body: 'Matbaa demo çalışmasına başladı, iptal veya düzenleme artık değişiklik isteği gerektirir',
+    event: { type: 'project.demo_started', aggregateId: project.id },
   })
 }
 
@@ -472,6 +535,7 @@ export async function notifyOzalitStarted(client, { project, actor, assignees })
     actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: [...leaders, ...designers], type: 'ozalit_started', tone: 'blue',
     body: 'Matbaa ozalit çalışmasına başladı, iptal veya düzenleme artık değişiklik isteği gerektirir',
+    event: { type: 'project.ozalit_started', aggregateId: project.id },
   })
 }
 
@@ -488,6 +552,7 @@ export async function notifyDemoChangeRequested(client, { project, actor, note }
     body: note
       ? `${project.title} için demoda değişiklik istedi, not: ${note}, kabul veya red bekleniyor`
       : `${project.title} için demoda değişiklik istedi, kabul veya red bekleniyor`,
+    event: { type: 'project.demo_change_requested', aggregateId: project.id },
   })
 }
 
@@ -500,6 +565,7 @@ export async function notifyOzalitChangeRequested(client, { project, actor, note
     body: note
       ? `${project.title} için ozalitte değişiklik istedi, not: ${note}, kabul veya red bekleniyor`
       : `${project.title} için ozalitte değişiklik istedi, kabul veya red bekleniyor`,
+    event: { type: 'project.ozalit_change_requested', aggregateId: project.id },
   })
 }
 
@@ -514,6 +580,7 @@ export async function notifyDemoChangeAccepted(client, { project, actor, assigne
     actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: [...leaders, ...designers], type: 'demo_change_accepted', tone: 'green',
     body: 'Matbaa değişiklik talebinizi kabul etti, iptal veya düzenleme artık yapılabilir',
+    event: { type: 'project.demo_change_accepted', aggregateId: project.id },
   })
 }
 
@@ -524,6 +591,7 @@ export async function notifyOzalitChangeAccepted(client, { project, actor, assig
     actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: [...leaders, ...designers], type: 'ozalit_change_accepted', tone: 'green',
     body: 'Matbaa değişiklik talebinizi kabul etti, iptal veya düzenleme artık yapılabilir',
+    event: { type: 'project.ozalit_change_accepted', aggregateId: project.id },
   })
 }
 
@@ -538,6 +606,7 @@ export async function notifyDemoChangeDeclined(client, { project, actor, assigne
     actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: [...leaders, ...designers], type: 'demo_change_declined', tone: 'rose',
     body: 'Matbaa değişiklik talebinizi reddetti, normal teslim süreci devam ediyor',
+    event: { type: 'project.demo_change_declined', aggregateId: project.id },
   })
 }
 
@@ -548,6 +617,7 @@ export async function notifyOzalitChangeDeclined(client, { project, actor, assig
     actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: [...leaders, ...designers], type: 'ozalit_change_declined', tone: 'rose',
     body: 'Matbaa değişiklik talebinizi reddetti, normal teslim süreci devam ediyor',
+    event: { type: 'project.ozalit_change_declined', aggregateId: project.id },
   })
 }
 
@@ -561,6 +631,7 @@ export async function notifyDemoCancelled(client, { project, actor }) {
     actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: printers, type: 'demo_cancelled', tone: 'rose',
     body: 'Demo talebi iptal edildi, tasarıma geri döndü, bekleyen işiniz kalmadı',
+    event: { type: 'project.demo_cancelled', aggregateId: project.id },
   })
 }
 
@@ -570,6 +641,7 @@ export async function notifyOzalitCancelled(client, { project, actor }) {
     actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: printers, type: 'ozalit_cancelled', tone: 'rose',
     body: 'Ozalit talebi iptal edildi, tasarıma geri döndü, bekleyen işiniz kalmadı',
+    event: { type: 'project.ozalit_cancelled', aggregateId: project.id },
   })
 }
 
@@ -584,6 +656,7 @@ export async function notifyDemoEdited(client, { project, actor }) {
     actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: printers, type: 'demo_edited', tone: 'amber',
     body: 'Demo formu güncellendi, yeni haliyle inceleyin',
+    event: { type: 'project.demo_edited', aggregateId: project.id },
   })
 }
 
@@ -593,6 +666,7 @@ export async function notifyOzalitEdited(client, { project, actor }) {
     actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: printers, type: 'ozalit_edited', tone: 'amber',
     body: 'Ozalit formu güncellendi, yeni haliyle inceleyin',
+    event: { type: 'project.ozalit_edited', aggregateId: project.id },
   })
 }
 
@@ -608,6 +682,7 @@ export async function notifyEkranDemoRequested(client, { project, actor }) {
     actorId: actor?.id, title: who, projectId: project.id, link: `/projects/${project.id}`,
     recipientIds: leaders, type: 'ekran_demo_requested', tone: 'amber',
     body: `${project.title} için ekran demo onayı istedi, onayınız bekleniyor`,
+    event: { type: 'project.ekran_demo_requested', aggregateId: project.id },
   })
 }
 
@@ -625,6 +700,7 @@ export async function notifyEkranDemoRejected(client, { project, actor, assignee
     body: reason
       ? `Ekran demo onayı reddedildi: ${reason}, normal demo süreciyle devam edin`
       : 'Ekran demo onayı reddedildi, normal demo süreciyle devam edin',
+    event: { type: 'project.ekran_demo_rejected', aggregateId: project.id },
   })
 }
 
@@ -644,7 +720,8 @@ export async function notifyProjectTransition(client, {
   const leaders = await activeUserIdsByRole(client, 'team_leader')
   const printers = await activeUserIdsByRole(client, 'printer')
   const sales = await activeUserIdsByRole(client, 'satis')
-  const base = { actorId: actor?.id, title: project.title, projectId: project.id }
+  const base = { actorId: actor?.id, title: project.title, projectId: project.id,
+    event: { type: 'project.transition', aggregateId: project.id } }
 
   // Rejection back to Tasarım → the designer has to rework.
   if (action === 'reject' && toStage === 'tasarim') {
@@ -767,7 +844,7 @@ export async function notifyProjectTransition(client, {
         body: 'Proje baskıda alındı', link: '/baski-listesi',
       })
       const b = await emit(client, {
-        ...ready, recipientIds: [...leaders, ...designers], type: 'in_production',
+        ...ready, event: null, recipientIds: [...leaders, ...designers], type: 'in_production',
         body: 'Baskıya alındı', link: `/projects/${project.id}`,
       })
       return a + b
@@ -814,9 +891,10 @@ export async function notifyProjectDeleted(client, { project, actor, assignees }
   const base = {
     actorId: actor?.id, title: project.title, projectId: project.id,
     type: 'project_deleted', tone: 'rose', body: 'Proje silindi',
+    event: { type: 'project.deleted', aggregateId: project.id },
   }
   const a = await emit(client, { ...base, recipientIds: [...designers, ...printers], link: '/projects' })
-  const b = await emit(client, { ...base, recipientIds: leaders, link: '/deleted-projects' })
+  const b = await emit(client, { ...base, event: null, recipientIds: leaders, link: '/deleted-projects' })
   return a + b
 }
 
@@ -848,6 +926,7 @@ export async function notifyProductCatalogChanged(client, { project, actor, hidd
       ? 'Ürün katalogdan kaldırıldı, baskı verilemez'
       : 'Ürün katalogda tekrar yayında',
     link: '/urunler',
+    event: { type: hidden ? 'product.delisted' : 'product.relisted', aggregateId: project.id },
   })
 }
 
@@ -871,6 +950,7 @@ export async function notifyTargetProjectIdeaCreated(client, { idea, actor }) {
     body: `${actor?.name ?? 'Ekipten biri'} yeni bir hedef proje ekledi`,
     tone: 'blue',
     link: '/baski-listesi',
+    event: { type: 'target_project_idea.created', aggregateId: idea.id },
   })
 }
 
@@ -893,6 +973,7 @@ export async function notifyMeetingCreated(client, { meeting, actor }) {
     body: `${actor?.name ?? 'Ekipten biri'} yeni bir toplantı ekledi`,
     tone: 'blue',
     link: '/toplanti',
+    event: { type: 'meeting.created', aggregateId: meeting.id },
   })
 }
 
@@ -941,7 +1022,8 @@ export async function notifyOrderTransition(client, {
   order, project, newStatus, actor, requesterId, assigneeIds = [],
 }) {
   const title = project?.title ?? order?.project_title ?? 'Baskı'
-  const base = { actorId: actor?.id, title, projectId: order?.project_id ?? project?.id, orderId: order?.id }
+  const base = { actorId: actor?.id, title, projectId: order?.project_id ?? project?.id, orderId: order?.id,
+    event: { type: 'order.transition', aggregateId: order?.id } }
 
   if (newStatus === 'onaylandi') {
     return emit(client, {
@@ -964,7 +1046,7 @@ export async function notifyOrderTransition(client, {
       body: 'Matbaa ozaliti teslim etti, "Teslim Alındı" bekleniyor', link: '/siparis-talepleri',
     })
     const b = await emit(client, {
-      ...base, recipientIds: assigneeIds, type: 'matbaa_receipt_pending', tone: 'amber',
+      ...base, event: null, recipientIds: assigneeIds, type: 'matbaa_receipt_pending', tone: 'amber',
       body: 'Matbaa ozaliti teslim etti, "Teslim Alındı" bekleniyor', link: '/siparis-onay',
     })
     return a + b
@@ -1006,6 +1088,7 @@ export async function notifyOrderRejected(client, { order, project, actor, reque
     projectId: order?.project_id ?? project?.id,
     orderId: order?.id,
     link: '/siparis-talebi',
+    event: { type: 'order.rejected', aggregateId: order?.id },
   })
 }
 
@@ -1032,6 +1115,7 @@ export async function notifyOrderOzalitStarted(client, { order, project, actor }
     recipientIds: leaders, type: 'order_ozalit_started', tone: 'blue',
     body: 'Matbaa ozalit çalışmasına başladı, iptal veya düzenleme artık değişiklik isteği gerektirir',
     link: '/siparis-talepleri',
+    event: { type: 'order.ozalit_started', aggregateId: order?.id },
   })
 }
 
@@ -1044,6 +1128,7 @@ export async function notifyOrderOzalitCancelled(client, { order, project, actor
     recipientIds: printers, type: 'order_ozalit_cancelled', tone: 'rose',
     body: 'Baskı ozalit talebi iptal edildi, bekleyen işiniz kalmadı',
     link: '/approvals/siparis',
+    event: { type: 'order.ozalit_cancelled', aggregateId: order?.id },
   })
 }
 
@@ -1056,6 +1141,7 @@ export async function notifyOrderOzalitEdited(client, { order, project, actor })
     recipientIds: printers, type: 'order_ozalit_edited', tone: 'amber',
     body: 'Baskı ürün bilgileri güncellendi, yeni haliyle inceleyin',
     link: '/approvals/siparis',
+    event: { type: 'order.ozalit_edited', aggregateId: order?.id },
   })
 }
 
@@ -1071,6 +1157,7 @@ export async function notifyOrderOzalitChangeRequested(client, { order, project,
       ? `${project?.title ?? order?.project_title ?? 'Baskı'} için değişiklik istedi, not: ${note}, kabul veya red bekleniyor`
       : `${project?.title ?? order?.project_title ?? 'Baskı'} için değişiklik istedi, kabul veya red bekleniyor`,
     link: '/approvals/siparis',
+    event: { type: 'order.ozalit_change_requested', aggregateId: order?.id },
   })
 }
 
@@ -1083,6 +1170,7 @@ export async function notifyOrderOzalitChangeAccepted(client, { order, project, 
     recipientIds: leaders, type: 'order_ozalit_change_accepted', tone: 'green',
     body: 'Matbaa değişiklik talebinizi kabul etti, iptal veya düzenleme artık yapılabilir',
     link: '/siparis-talepleri',
+    event: { type: 'order.ozalit_change_accepted', aggregateId: order?.id },
   })
 }
 
@@ -1095,6 +1183,7 @@ export async function notifyOrderOzalitChangeDeclined(client, { order, project, 
     recipientIds: leaders, type: 'order_ozalit_change_declined', tone: 'rose',
     body: 'Matbaa değişiklik talebinizi reddetti, normal teslim süreci devam ediyor',
     link: '/siparis-talepleri',
+    event: { type: 'order.ozalit_change_declined', aggregateId: order?.id },
   })
 }
 
@@ -1103,6 +1192,7 @@ export async function notifyMatbaaReceived(client, { order, project, actor, assi
   const who = actor?.name ?? 'Ekipten biri'
   const base = {
     actorId: actor?.id, title: who, projectId: order?.project_id ?? project?.id, orderId: order?.id,
+    event: { type: 'order.matbaa_received', aggregateId: order?.id },
   }
   const a = await emit(client, {
     ...base, recipientIds: leaders, type: 'matbaa_approval_pending', tone: 'amber',
@@ -1110,7 +1200,7 @@ export async function notifyMatbaaReceived(client, { order, project, actor, assi
     link: '/siparis-talepleri',
   })
   const b = await emit(client, {
-    ...base, recipientIds: assigneeIds, type: 'matbaa_received', tone: 'blue',
+    ...base, event: null, recipientIds: assigneeIds, type: 'matbaa_received', tone: 'blue',
     body: `${project?.title ?? order?.project_title ?? 'Baskı'} ozaliti teslim alındı, ekip lideri onayı bekleniyor`,
     link: '/siparis-onay',
   })
@@ -1131,9 +1221,10 @@ export async function notifyMatbaaApprovalPending(client, { order, project, acto
     projectId: order?.project_id ?? project?.id, orderId: order?.id,
     type: 'matbaa_approval_pending', tone: 'amber',
     body: `${actor?.name ?? 'Ekipten biri'} baskı ozaliti onayladı, onayınız bekleniyor`,
+    event: { type: 'order.matbaa_approval_pending', aggregateId: order?.id },
   }
   const a = await emit(client, { ...base, recipientIds: pendingLeaders, link: '/siparis-talepleri' })
-  const b = await emit(client, { ...base, recipientIds: pendingDesigners, link: '/siparis-onay' })
+  const b = await emit(client, { ...base, event: null, recipientIds: pendingDesigners, link: '/siparis-onay' })
   return a + b
 }
 
@@ -1146,6 +1237,7 @@ export async function notifyHandoverRequested(client, { project, actor }) {
     recipientIds: sales, actorId: actor?.id, type: 'handover_request', tone: 'amber',
     title: project.title, body: 'Teslim talebi, onayınızı bekliyor',
     projectId: project.id, link: '/teslim-onaylari',
+    event: { type: 'handover.requested', aggregateId: project.id },
   })
 }
 
@@ -1158,6 +1250,7 @@ export async function notifyHandoverConfirmed(client, { project, actor, raisedBy
     type: 'handover_confirmed', tone: 'pink',
     title: project.title, body: 'Teslim onaylandı, satışa çıktı 🎉',
     projectId: project.id, link: `/projects/${project.id}`,
+    event: { type: 'handover.confirmed', aggregateId: project.id },
   })
 }
 

@@ -85,15 +85,21 @@ function fakeClient() {
         const ids = (params[0] ?? []).flatMap((role) => ROLE_USERS[role] ?? [])
         return { rows: ids.map((id) => ({ id })) }
       }
+      // Event store INSERT (migration 058): domain_events table.
+      // Return a dummy row so emit() gets an event id for SSE signalling.
+      if (sql.includes('INTO domain_events')) {
+        return { rows: [{ id: 'ev-1', created_at: new Date() }] }
+      }
       // emit()'s multi-row INSERT: 10 bound params per recipient, in the
       // column order declared there.
+      const prevCount = rows.length
       for (let i = 0; i < params.length; i += 10) {
         rows.push({
           userId: params[i], type: params[i + 1], title: params[i + 2],
           body: params[i + 3], tone: params[i + 4],
         })
       }
-      return { rows: rows.map((r, i) => ({ id: `n-${i}`, user_id: r.userId })) }
+      return { rows: rows.slice(prevCount).map((r, i) => ({ id: `n-${prevCount + i}`, user_id: r.userId })) }
     },
   }
 }

@@ -30,8 +30,8 @@ CREATE INDEX IF NOT EXISTS idx_meeting_notes_meeting
   ON meeting_notes(meeting_id, created_at);
 
 INSERT INTO meeting_notes (id, meeting_id, body, created_by, created_by_name, created_at)
-SELECT 'mtgn-' || substr(md5(random()::text || id), 1, 16), id, btrim(notes), created_by, created_by_name, created_at
+SELECT 'mtgn-' || substr(md5(gen_random_uuid()::text || id), 1, 16), id, btrim(notes), created_by, created_by_name, created_at
 FROM meetings
 WHERE notes IS NOT NULL AND btrim(notes) <> '';
 
-ALTER TABLE meetings DROP COLUMN notes;
+ALTER TABLE meetings DROP COLUMN IF EXISTS notes;

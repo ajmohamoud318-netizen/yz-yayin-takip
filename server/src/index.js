@@ -12,6 +12,7 @@ import { orderRoutes } from './routes/orders.js'
 import { handoverRoutes } from './routes/handovers.js'
 import { notificationRoutes } from './routes/notifications.js'
 import { pushRoutes } from './routes/push.js'
+import { eventRoutes } from './routes/events.js'
 import { workLogRoutes } from './routes/work-log.js'
 import { targetProjectIdeaRoutes } from './routes/target-project-ideas.js'
 import { meetingRoutes } from './routes/meetings.js'
@@ -156,6 +157,7 @@ export async function buildServer() {
   await fastify.register(handoverRoutes, { prefix: '/api' })
   await fastify.register(notificationRoutes, { prefix: '/api' })
   await fastify.register(pushRoutes, { prefix: '/api' })
+  await fastify.register(eventRoutes, { prefix: '/api' })
   await fastify.register(workLogRoutes, { prefix: '/api' })
   await fastify.register(targetProjectIdeaRoutes, { prefix: '/api' })
   await fastify.register(meetingRoutes, { prefix: '/api' })
