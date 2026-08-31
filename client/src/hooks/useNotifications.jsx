@@ -28,6 +28,13 @@ export function NotificationsProvider({ children }) {
   const [unseen, setUnseen] = useState(0)   // bell badge (seen=false)
   const [loading, setLoading] = useState(true)
   const [sseConnected, setSseConnected] = useState(false)
+  // Mirror of sseConnected for use INSIDE the polling callback without
+  // re-running the SSE effect when the value flips. The pre-fix version
+  // included `sseConnected` in the effect's dependency array, so any error
+  // (including the dev/header-auth 401 that fires once on every retry)
+  // re-created the EventSource, which errored again — a recreate loop that
+  // only stopped when the user navigated away.
+  const sseConnectedRef = useRef(false)
 
   const refetch = useCallback(async () => {
     try {
@@ -114,6 +121,7 @@ export function NotificationsProvider({ children }) {
       setUnread(0)
       setUnseen(0)
       setLoading(!!userId)
+      sseConnectedRef.current = false
       setSseConnected(false)
     }
     if (!userId) return undefined
@@ -125,15 +133,19 @@ export function NotificationsProvider({ children }) {
     // ticked (nothing is written to localStorage in that case).
     refetch()
 
-    // Try SSE for real-time delivery. EventSource sends cookies automatically,
-    // so this works in production with cookie sessions. In dev with header
-    // auth, the SSE endpoint returns 401 and the error handler closes the
-    // connection, so we fall back to polling.
-    let eventSource = null
-    if (typeof EventSource !== 'undefined') {
-      eventSource = new EventSource('/api/events/stream', { withCredentials: true })
-      eventSource.onopen = () => setSseConnected(true)
-      eventSource.addEventListener('notification', (ev) => {
+    // (Re-)opens the SSE stream. Called once on mount and again when the
+    // tab returns to the foreground with the socket in a non-OPEN state
+    // (e.g. intermediaries timed out the idle connection while the tab
+    // was backgrounded). Kept as a small helper so both call sites share
+    // the same wiring.
+    const openEventSource = () => {
+      if (typeof EventSource === 'undefined') return null
+      const es = new EventSource('/api/events/stream', { withCredentials: true })
+      es.onopen = () => {
+        sseConnectedRef.current = true
+        setSseConnected(true)
+      }
+      es.addEventListener('notification', (ev) => {
         // The server's signal carries { userId, notificationId, eventId,
         // projectId, orderId, type }. Forward to the notification feed refetch
         // AND to any subscribers (e.g. ProjectDetail listening for events on
@@ -147,26 +159,56 @@ export function NotificationsProvider({ children }) {
         }
         refetch()
       })
-      eventSource.onerror = () => {
+      es.onerror = () => {
+        // Native EventSource already auto-reconnects on transient network
+        // failures (radio blip, proxy hiccup). The previous code closed
+        // the socket on ANY error — including the dev/header-auth 401 —
+        // and because `sseConnected` was a dep, every close triggered a
+        // re-run of this effect, which built a fresh EventSource, which
+        // errored again, forever. Leave the native reconnect alone and
+        // only mark the state as down. The visibility handler below
+        // decides when an explicit recreation is actually warranted.
+        sseConnectedRef.current = false
         setSseConnected(false)
-        eventSource.close()
       }
+      return es
     }
+
+    let eventSource = openEventSource()
 
     // Polling fallback: only active when SSE is not connected. If SSE connects
     // successfully, we stop polling to save bandwidth and battery. If SSE
     // fails (dev with header auth, network issues), polling kicks in at 15s.
+    // Reads sseConnectedRef rather than the state value so the polling
+    // schedule doesn't re-subscribe every time the SSE blips.
     const pollTimer = setInterval(() => {
-      if (!sseConnected && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      if (!sseConnectedRef.current && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         refetch()
       }
     }, POLL_MS)
 
+    // Resume-while-backgrounded reconnection. Backgrounding the tab drops
+    // idle SSE connections at intermediaries (proxies, mobile carriers);
+    // on return the native EventSource may not have reconnected yet, and
+    // the 15s polling tick is a noticeable delay. If the socket isn't
+    // healthy when the page comes back, tear it down and open a fresh
+    // one so the real-time signal resumes within a second instead of
+    // waiting for the poll.
+    const onVisibilityChange = () => {
+      if (typeof document === 'undefined') return
+      if (document.visibilityState !== 'visible') return
+      if (eventSource && eventSource.readyState === EventSource.OPEN) return
+      if (eventSource) eventSource.close()
+      eventSource = openEventSource()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
     return () => {
       if (eventSource) eventSource.close()
       clearInterval(pollTimer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [userId, refetch, sseConnected, dispatchToSubscribers])
+  }, [userId, refetch, dispatchToSubscribers])
 
   const value = useMemo(() => ({
     items, unread, unseen, loading, refetch, markRead, markAllRead, markSeen, subscribe,

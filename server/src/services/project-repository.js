@@ -1,13 +1,23 @@
 /**
- * Project persistence: thin SQL wrapper that mirrors the client repo's
- * surface. Designed for use from route handlers inside `withTx`.
+ * Project persistence: thin SQL wrapper for the `projects` table (and
+ * its closely coupled `stage_history` + `demos` tables). Designed for
+ * use from route handlers and service entry points inside `withTx`.
  *
- * Returns plain JS objects shaped for the client. Project history is
- * fetched lazily by `loadHistory` so list endpoints stay light.
+ * Sibling to `subtask-repository.js` — that file owns the `subtasks`
+ * and `subtask_pages` tables. The split keeps each aggregate's CRUD in
+ * one file: projects and history here, subtasks and pages next door.
+ * `loadProjectAssignees` stays here because it returns project-level
+ * data (the merge of project primary + every distinct per-subtask
+ * owner) — its purpose is to feed project-level UI like the assignee
+ * avatar stack and the notification fan-out, not to mutate subtasks.
+ *
+ * Returns plain JS objects shaped for the SPA. Project history is
+ * fetched lazily by `listProjectHistory` so list endpoints stay light.
  */
 
 import { getPool, withTx } from '../db/pool.js'
 import { nanoid } from 'nanoid'
+import { HttpError } from '../domain/errors.js'
 
 const PROJECT_COLUMNS = `
   id, title, type, stage, assigned_to, created_by, target_month,
@@ -272,21 +282,6 @@ export async function getProjectForUpdate(client, id) {
   return rows[0] ? rowToProject(rows[0]) : null
 }
 
-/**
- * One subtask's worth of page rows (migration 055 + 056), keyed by subtask_id
- * so a single follow-up query can splice them onto the subtask list. Returned
- * shape is exactly what the SPA's chip grid expects — `{ i, status, done_by,
- * done_by_name, done_at, rework_count, assigned_to, assigned_to_name,
- * assigned_at }` — already in page-index order. Exported so the page-edit
- * route can refetch a single subtask's pages after a PATCH without
- * re-running the full project subtask list.
- *
- * `assigned_to` (migration 056) is resolved at read time via the same LEFT
- * JOIN pattern `done_by` uses — the column itself stores the user id, and
- * the name comes from `users.name`. The grid uses assigned_to for the
- * chip's color (so every designer can see at a glance which pages are
- * theirs) and done_by for the tooltip's "shipped by" line.
- */
 export async function listProjectHistory(client, projectId) {
   // LEFT JOIN users so each row carries `done_by_name`. Without this the
   // ProjectDetail UI shows the user icon with no name — every entry would
@@ -407,7 +402,7 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
   'ekran_demo_requested_by_name',
 ])
 
-export async function patchProject(client, id, fields) {
+export async function patchProject(client, id, fields, { expectedVersion = null } = {}) {
   // Translate the SPA's `assignees[0]` convenience field into the
   // `assigned_to` column the projects table actually has. The SPA
   // payload includes `assignees` as a convenience for multi-select
@@ -421,16 +416,53 @@ export async function patchProject(client, id, fields) {
   }
   const cols = Object.keys(fields).filter((c) => PROJECT_WRITABLE_COLUMNS.has(c))
   if (cols.length === 0) return getProjectForUpdate(client, id)
-  const setSql = cols.map((c, i) => `${c} = $${i + 2}`).join(', ')
-  const values = cols.map((c) => fields[c])
+  // SQL-side version bump: the entity (`Project`) bumps `this.version` in
+  // memory, but `version` is in NON_DIFFED_COLUMNS so it's never in `fields`.
+  // Without this SET clause the DB row stays at the old version forever,
+  // silently breaking the optimistic-concurrency check on the next read.
+  // The route's `updated_at = NOW()` is the same pattern — the SQL owns
+  // the counter, not the in-memory entity.
+  const setSql = [
+    ...cols.map((c, i) => `${c} = $${i + 2}`),
+    'version = version + 1',
+    'updated_at = NOW()',
+  ].join(', ')
+  // Optimistic-concurrency guard: when the caller passes `expectedVersion`
+  // (the version observed when the row was locked at the top of the tx),
+  // the UPDATE only matches if no concurrent writer bumped the row in
+  // between. Zero rows = throw 409 so the service surfaces the same
+  // conflict message the entity's _assertExpectedVersion already uses.
+  // The `SELECT ... FOR UPDATE` in getProjectForUpdate already serialises
+  // tx-scoped writers, but this is the backstop for out-of-band writes
+  // (admin scripts, future non-locking paths) and for the rare case the
+  // lock wasn't acquired.
+  const whereExtra = expectedVersion != null
+    ? ` AND version = $${cols.length + 2}`
+    : ''
+  const values = [
+    ...cols.map((c) => fields[c]),
+    ...(expectedVersion != null ? [expectedVersion] : []),
+  ]
   const { rows } = await client.query(
     // The routes hand this row straight back to the SPA, so the derived name
     // has to be resolved here too — otherwise the response to the very
     // request that renamed things would still carry the stale snapshot.
-    `UPDATE projects SET ${setSql}, updated_at = NOW() WHERE id = $1
+    `UPDATE projects SET ${setSql} WHERE id = $1${whereExtra}
      RETURNING ${PROJECT_COLUMNS}, ${deliveredByNameSql('projects')}`,
     [id, ...values],
   )
+  if (expectedVersion != null && rows.length === 0) {
+    // Same Turkish message the Order entity uses for its 409 — the SPA's
+    // `Bu kayıt başka biri tarafından güncellendi. Sayfayı yenileyin.` toast
+    // comes from this single source of truth regardless of which guard
+    // (entity or SQL) caught the stale write. The `conflict` code mirrors
+    // `domain/errors.js#conflict`.
+    throw new HttpError(
+      409,
+      'Bu kayıt başka biri tarafından güncellendi. Sayfayı yenileyin.',
+      'conflict',
+    )
+  }
   return rows[0] ? rowToProject(rows[0]) : null
 }
 
@@ -477,7 +509,7 @@ export async function listDeletedProjects() {
             p.deleted_at, p.deleted_by, p.deleted_by_name,
             a.name AS assignee_name
        FROM projects p
-       LEFT JOIN users a ON a.id = p.assigned_to
+     LEFT JOIN users a ON a.id = p.assigned_to
       WHERE p.deleted_at IS NOT NULL
       ORDER BY p.deleted_at DESC, p.id`,
   )
@@ -625,15 +657,24 @@ export async function reconcileOzalitApprovals(actor) {
       const complete = required.length > 0 && required.every((rid) => approvedIds.has(rid))
       if (!complete) return
 
-      await patchProject(client, id, {
-        stage: 'baski_onay',
-        version: (project.version ?? 0) + 1,
-        ozalit_approvals: JSON.stringify([]),
-        ozalit_leader_approved: false,
-        ozalit_leader_approved_by: null,
-        ozalit_leader_approved_at: null,
-        ozalit_designer_approvals: JSON.stringify([]),
-      })
+      await patchProject(
+        client,
+        id,
+        {
+          stage: 'baski_onay',
+          ozalit_approvals: JSON.stringify([]),
+          ozalit_leader_approved: false,
+          ozalit_leader_approved_by: null,
+          ozalit_leader_approved_at: null,
+          ozalit_designer_approvals: JSON.stringify([]),
+        },
+        // Pass the locked row's version as the SQL-level OCC guard. The
+        // previous contract set `version: (project.version ?? 0) + 1` in
+        // `fields`, but `version = version + 1` in the SET clause is now
+        // authoritative; the `expectedVersion` is what the WHERE clause
+        // matches against to refuse a concurrent writer.
+        { expectedVersion: project.version },
+      )
       await logHistory(
         client,
         {
@@ -811,7 +852,6 @@ function rowToProject(r) {
     deleted_by_name: r.deleted_by_name ?? null,
   }
 }
-
 
 /* ----------------------------- Barrel re-exports --------------------------- */
 

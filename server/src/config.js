@@ -40,9 +40,15 @@ export const config = {
       : ['http://localhost:5173', 'http://localhost:4173']),
   // When true, the server ALSO accepts the legacy `X-User-Id` header as a
   // fallback identity (dev/test convenience). Cookie sessions are always
-  // tried first. MUST be false in production so auth is cookie-only and
-  // the header can't be used to impersonate a user. See SECURITY_PLAN.md P0.
-  trustHeaderAuth: boolEnv('TRUST_HEADER_AUTH', true),
+  // tried first. Default is now production-safe: when NODE_ENV=production
+  // and TRUST_HEADER_AUTH is unset, header auth is OFF — one missing env
+  // var in a Dokploy config can no longer flip impersonation on. The
+  // dev/test convenience stays opt-out (unset = on), so local + CI
+  // keep working without anyone touching their env file.
+  trustHeaderAuth: boolEnv(
+    'TRUST_HEADER_AUTH',
+    process.env.NODE_ENV !== 'production'
+  ),
 
   // Session cookie settings. The cookie holds an opaque server-side session
   // token (see services/sessions.js) — the real replacement for header auth.

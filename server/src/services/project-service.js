@@ -209,7 +209,7 @@ async function runProjectCommand(projectId, actor, { prepare, run, after } = {},
 
     const fields = changedFields(before, project)
     const updated = Object.keys(fields).length > 0
-      ? await patchProject(client, projectId, fields)
+      ? await patchProject(client, projectId, fields, { expectedVersion: before.version })
       : row
 
     if (event.projectHistory) {

@@ -153,10 +153,13 @@ export class Order {
     return this._record(this._composeAdvanceEvent({ next, advancing, wasPending, matbaaInfo, ctx }))
   }
 
-  /** Optimistic concurrency: refuse a click made against a stale read. */
+  /** Optimistic concurrency: refuse a click made against a stale read.
+   *  The message matches the SQL-level guard in `services/order-repository.js`
+   *  so a 409 from either side surfaces the same Turkish phrase to the user.
+   */
   _assertExpectedVersion(expectedVersion) {
     if (expectedVersion != null && this.version !== expectedVersion) {
-      conflict('Bu talep başka biri tarafından güncellendi. Sayfayı yenileyin.')
+      conflict('Bu kayıt başka biri tarafından güncellendi. Sayfayı yenileyin.')
     }
   }
 

@@ -157,7 +157,16 @@ export async function subtaskRoutes(fastify) {
         'SELECT * FROM subtasks WHERE project_id = $1', [project.id],
       )
       const progress = progressFor(project, projectSubs)
-      const updProject = await patchProject(client, project.id, { progress })
+      // Pass the locked row's version as the SQL-level OCC guard so a
+      // concurrent writer (admin script, future non-locking path) can't
+      // silently overwrite this progress bump. Mirrors the contract the
+      // `runProjectCommand` orchestrator uses for FSM-driven writes.
+      const updProject = await patchProject(
+        client,
+        project.id,
+        { progress },
+        { expectedVersion: project.version },
+      )
       // The project timeline is the single source of truth for "who did
       // what". We tag every subtask change with a fine-grained event so
       // the UI can pick the right icon (check toggle vs. page counter vs.
@@ -357,6 +366,11 @@ export async function subtaskRoutes(fastify) {
       }
     }
     const result = await withTx(async (client) => {
+      // Lock the project inside the tx so the SQL-level OCC guard on the
+      // later patchProject matches a version that no concurrent writer
+      // can mutate underneath us. The earlier non-locking `getProject`
+      // read above is only used for the orphan-designer guard.
+      const lockedProject = await getProjectForUpdate(client, project.id)
       // ── Reconcile, don't recreate ──────────────────────────────────
       //
       // This route used to DELETE every subtask and re-INSERT the whole

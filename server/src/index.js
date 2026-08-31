@@ -176,10 +176,33 @@ export async function buildServer() {
 }
 
 async function main() {
+  // Refuse to boot with SEED_ON_BOOT=true in production. The seed
+  // inserts real user accounts (db/seed/users.js) with a documented
+  // demo password (`123456`); one env-var drift in Dokploy and those
+  // passwords ship to production. Loud-fail here so the misconfig is
+  // obvious in `docker logs` rather than silently shipping a known
+  // password to every user row.
+  if (config.seedOnBoot && process.env.NODE_ENV === 'production') {
+    // eslint-disable-next-line no-console
+    console.error(
+      '[server] SEED_ON_BOOT=true is forbidden in production ' +
+      '(NODE_ENV=production). The seed inserts real user accounts with a ' +
+      'documented demo password (123456). Unset SEED_ON_BOOT or run locally. ' +
+      'Refusing to start.',
+    )
+    process.exit(1)
+  }
   if (config.migrateOnBoot) {
     await migrateUp()
   }
   if (config.seedOnBoot) {
+    // Dev-only reminder. The log line is once-per-boot and harmless in CI;
+     // it disappears in production because the guard above exits before this.
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[server] SEED_ON_BOOT=true — inserting demo users with ' +
+      'the documented demo password "123456". Dev only.',
+    )
     // Lazy import: the seed runner depends on db/seed/* which the
     // production runtime image doesn't ship. Loading it only here (and
     // only when SEED_ON_BOOT=true) keeps the hot boot path free of

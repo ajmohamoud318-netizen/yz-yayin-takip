@@ -9,6 +9,7 @@ import { schemas } from '../schemas/index.js'
 import { createInvitation } from '../services/invitations.js'
 import { dailyStatusSelect, workLogTodaySelect } from '../services/work-log.js'
 import { sendMail, renderInviteEmail } from '../services/mail.js'
+import { deleteUserSessions } from '../services/sessions.js'
 import {
   MAX_AVATAR_BYTES,
   avatarCacheHeaders,
@@ -226,6 +227,16 @@ export async function userRoutes(fastify) {
       [id],
     )
     if (!rows[0]) notFound('Kullanıcı bulunamadı.')
+    // Kill the deactivated user's active sessions so their cookie stops
+    // resolving on the next request. Without this, the row stays in the
+    // `sessions` table until the cookie TTL expires (default 7 days) and
+    // every intermediate request does an extra `is_active=false` lookup.
+    // Best-effort: never block the deactivate on a session-cleanup blip.
+    try {
+      await deleteUserSessions(id)
+    } catch (err) {
+      request.log.warn({ err, userId: id }, 'session cleanup after deactivate failed; continuing')
+    }
     // Deactivating a leader shrinks the "every active leader must approve"
     // set. Advance any pending ozalit that this now completes so it doesn't
     // stall waiting on the person who just lost access.

@@ -138,7 +138,7 @@ async function runOrderCommand(orderId, actor, { prepare, run, after } = {}, cli
     // Idempotent no-op — nothing to persist, log or announce.
     if (!event) return withoutPayload(before)
 
-    const updated = await repo.updateOrder(client, orderId, changedFields(before, order))
+    const updated = await repo.updateOrder(client, orderId, changedFields(before, order), before.version)
     if (event.orderHistory) {
       await repo.insertOrderHistory(client, {
         orderId,

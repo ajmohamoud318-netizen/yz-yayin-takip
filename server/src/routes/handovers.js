@@ -99,7 +99,17 @@ export async function handoverRoutes(fastify) {
       )
       const project = await getProjectForUpdate(client, handover.project_id)
       if (!project) notFound('Proje bulunamadı.')
-      const updated = await patchProject(client, project.id, { stage: 'satista' })
+      // Pass the locked row's version as the SQL-level OCC guard so a
+      // concurrent writer that slipped past `getProjectForUpdate`'s row
+      // lock (admin scripts, future non-locking paths) can't silently
+      // overwrite this stage flip. Same `expectedVersion` contract the
+      // `runProjectCommand` orchestrator uses for FSM-driven writes.
+      const updated = await patchProject(
+        client,
+        project.id,
+        { stage: 'satista' },
+        { expectedVersion: project.version },
+      )
       await logHistory(
         client,
         {

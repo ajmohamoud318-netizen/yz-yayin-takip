@@ -11,6 +11,7 @@
 
 import { nanoid } from 'nanoid'
 import { getPool } from '../db/pool.js'
+import { conflict, HttpError } from '../domain/errors.js'
 
 /**
  * Every column of `order_requests`, in the order the HTTP responses have
@@ -169,8 +170,16 @@ export async function snapshotProjectSubtasks(client, orderId, projectId) {
  * click that legitimately changes no column (re-approving an already-signed
  * matbaa_onay round) still has to move the optimistic-concurrency counter,
  * which is what the pre-refactor UPDATE did unconditionally.
+ *
+ * Optimistic-concurrency backstop. When `expectedVersion` is supplied, the
+ * WHERE clause gains `AND version = $expectedVersion` so a click made against
+ * a stale lock (or, more importantly, a concurrent writer that slipped past
+ * the entity's `_assertExpectedVersion` check) hits zero rows and the SQL
+ * refuses the write. The entity's check is the API-level guard the SPA sees
+ * (`409 Bu kayıt başka biri …`); this is the DB-level guard that catches the
+ * race even when no SPA `expectedVersion` is sent.
  */
-export async function updateOrder(client, orderId, fields = {}) {
+export async function updateOrder(client, orderId, fields = {}, expectedVersion = null) {
   const cols = Object.keys(fields).filter((c) => ORDER_WRITABLE_COLUMNS.has(c))
   const assignments = [
     ...cols.map((c, i) => `${c} = $${i + 2}${ORDER_JSONB_COLUMNS.has(c) ? '::jsonb' : ''}`),
@@ -180,13 +189,26 @@ export async function updateOrder(client, orderId, fields = {}) {
   const values = cols.map((c) => (
     ORDER_JSONB_COLUMNS.has(c) ? JSON.stringify(fields[c]) : fields[c]
   ))
-  const { rows } = await client.query(
-    `UPDATE order_requests
+  // The version guard sits at the tail of the WHERE clause so the entity
+  // (which already owns the "version bumps in memory" contract) and the SQL
+  // agree on what the new row looks like.
+  let sql = `UPDATE order_requests
         SET ${assignments}
-      WHERE id = $1
-      RETURNING ${ORDER_COLUMNS}`,
-    [orderId, ...values],
-  )
+      WHERE id = $1`
+  const params = [orderId, ...values]
+  if (expectedVersion !== null && expectedVersion !== undefined) {
+    sql += ` AND version = $${params.length + 1}`
+    params.push(expectedVersion)
+  }
+  sql += ` RETURNING ${ORDER_COLUMNS}`
+  const { rows } = await client.query(sql, params)
+  if (expectedVersion !== null && expectedVersion !== undefined && rows.length === 0) {
+    throw new HttpError(
+      409,
+      'Bu kayıt başka biri tarafından güncellendi. Sayfayı yenileyin.',
+      'conflict',
+    )
+  }
   return rows[0]
 }
 

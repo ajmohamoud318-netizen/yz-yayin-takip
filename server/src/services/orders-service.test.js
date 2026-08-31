@@ -179,7 +179,14 @@ describe('orders-service — persistence diffing', () => {
     assert.equal(patch.matbaa_received_by, 'Ayşenur')
     assert.match(sql, /version = version \+ 1/)
     assert.match(sql, /updated_at = NOW\(\)/)
-    assert.doesNotMatch(sql, /version = \$/, 'version is never written from memory')
+    // `version` lives in the SET clause only as the SQL-side increment
+    // (`version = version + 1`); the WHERE clause carries the optimistic-
+    // concurrency guard (`version = $N`) which is a parameter, not the
+    // entity writing back. Assert the SET specifically so the two stay
+    // distinct — a future change that parameterises the SET would
+    // silently break optimistic concurrency otherwise.
+    const setClause = sql.match(/SET\s+(.*?)\s+WHERE/s)?.[1] ?? ''
+    assert.doesNotMatch(setClause, /version = \$/, 'version is never written from memory in SET')
   })
 
   it('still bumps version when a command changes no column at all', async () => {
