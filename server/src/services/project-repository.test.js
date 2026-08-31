@@ -297,8 +297,11 @@ describe('project row queries', () => {
 // (that one uses a Fastify in-memory client and never parses SQL) but
 // 500s in production the first time the leader clicks the assign popover.
 describe('assignSubtaskPage — parameter type cast', () => {
+  // Slice 3 moved assignSubtaskPage into subtask-repository.js; this test
+  // still inspects its source for the `$3::text` cast, so it reads from
+  // the new home.
   const src = readFileSync(
-    fileURLToPath(new URL('./project-repository.js', import.meta.url)),
+    fileURLToPath(new URL('./subtask-repository.js', import.meta.url)),
     'utf8',
   )
 
@@ -817,12 +820,10 @@ describe('POST /api/subtasks/:id/pages/bulk-assign — distribute targets projec
 // work without ever telling Aylin, and the audit trail would say
 // Aylin shipped something Cem actually undid — bug #6 territory.
 describe('PATCH /api/subtasks/:id/pages/:pageIndex — per-page assignment is not a permission gate', () => {
-  // Read the project-repository.js source for the SQL-contract assertion.
-  // The assignSubtaskPage — parameter type cast describe block above
-  // also reads this file as `src`, but describe-block-scoped consts don't
-  // leak across blocks.
-  const repoSrc = readFileSync(
-    fileURLToPath(new URL('./project-repository.js', import.meta.url)),
+  // Slice 3 moved setSubtaskPage into subtask-repository.js; the source
+  // check below reads from the new home.
+  const subtaskSrc = readFileSync(
+    fileURLToPath(new URL('./subtask-repository.js', import.meta.url)),
     'utf8',
   )
 
@@ -856,7 +857,7 @@ describe('PATCH /api/subtasks/:id/pages/:pageIndex — per-page assignment is no
     //
     // Pull the body of the done-status branch and assert it only checks
     // `page.status` and `page.done_by`, not `page.assigned_to`.
-    const fn = repoSrc.match(/export async function setSubtaskPage\([\s\S]*?\n\}/)
+    const fn = subtaskSrc.match(/export async function setSubtaskPage\([\s\S]*?\n\}/)
     assert.ok(fn, 'setSubtaskPage not found in source')
     const body = fn[0]
     assert.match(
