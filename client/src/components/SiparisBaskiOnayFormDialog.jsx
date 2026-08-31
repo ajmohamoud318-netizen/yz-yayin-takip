@@ -349,7 +349,7 @@ export default function SiparisBaskiOnayFormDialog({
     </Dialog>
   )
 }
-
+   
 function defaultAdet(order) {
   const items = Array.isArray(order.items) ? order.items : []
   if (items.length > 1) {
