@@ -165,7 +165,7 @@ export default function App() {
             <Route
               path="/approvals/demo"
               element={
-                <RoleGuard allow={['printer', 'team_leader', 'designer']}>
+                <RoleGuard allow={['printer', 'team_leader']}>
                   <Approvals tab="demo" />
                 </RoleGuard>
               }
@@ -173,7 +173,7 @@ export default function App() {
             <Route
               path="/approvals/ozalit"
               element={
-                <RoleGuard allow={['printer', 'team_leader', 'designer']}>
+                <RoleGuard allow={['printer', 'team_leader']}>
                   <Approvals tab="ozalit" />
                 </RoleGuard>
               }
@@ -231,7 +231,7 @@ export default function App() {
             <Route
               path="/urun-bilgileri"
               element={
-                <RoleGuard allow={['team_leader', 'designer']}>
+                <RoleGuard allow={['team_leader']}>
                   <UrunBilgileri />
                 </RoleGuard>
               }
