@@ -26,6 +26,7 @@ import {
   notifyOrderTransition, notifyOrderRejected, notifyMatbaaReceived, notifyMatbaaApprovalPending,
   notifyOrderOzalitStarted, notifyOrderOzalitCancelled, notifyOrderOzalitEdited,
   notifyOrderOzalitChangeRequested, notifyOrderOzalitChangeAccepted, notifyOrderOzalitChangeDeclined,
+  notifyOrderBaskiOnayPrepared,
 } from './notifications.js'
 import * as repo from './order-repository.js'
 
@@ -101,6 +102,10 @@ async function dispatchNotification(client, { notification, order, project, acto
       return notifyOrderTransition(client, {
         ...base, newStatus: notification.destination, requesterId,
         assigneeIds: Array.isArray(order.assignee_ids) ? order.assignee_ids : [],
+      })
+    case 'baskiOnayPrepared':
+      return notifyOrderBaskiOnayPrepared(client, {
+        ...base, teamLeaderIds: notification.teamLeaderIds ?? [],
       })
     case 'finalApproved':
       return notifyOrderTransition(client, { ...base, newStatus: 'onaylandi', requesterId })
@@ -441,13 +446,34 @@ export async function saveBaskiOnayForm(orderId, actor, {
  * same project can finish after the project has already moved past baskida
  * (via the first order, or via the main pipeline) and must not regress it.
  */
+export async function prepareBaskiOnayForm(orderId, actor, {
+  components, adet, tarih, basimYeri, hazirlayan, notes = '',
+} = {}, client = null) {
+  return runOrderCommand(orderId, actor, {
+    // The preparer needs the active leader set only so the notification can
+    // ping everyone who now owes an approval — the entity itself doesn't
+    // consult it on this half.
+    prepare: async ({ client }) => ({ teamLeaderIds: await repo.activeTeamLeaderIds(client) }),
+    run: (order) => order.prepareBaskiOnayForm(actor, {
+      form: { components, adet, tarih, basimYeri, hazirlayan }, notes,
+    }),
+    after({ event, ctx }) {
+      if (event.notification) event.notification.teamLeaderIds = ctx.teamLeaderIds ?? []
+    },
+  }, client)
+}
+
 export async function approveBaskiOnayForm(orderId, actor, {
   components, adet, tarih, basimYeri, hazirlayan, notes = '',
 } = {}, client = null) {
   return runOrderCommand(orderId, actor, {
-    run: (order) => order.approveBaskiOnayForm(actor, {
+    // Unlike matbaa_onay this is unconditional: the maker-checker gate
+    // (migration 060) consults the active leader set on every approve, since
+    // that count is exactly what decides whether the preparer may self-approve.
+    prepare: async ({ client }) => ({ teamLeaderIds: await repo.activeTeamLeaderIds(client) }),
+    run: (order, ctx) => order.approveBaskiOnayForm(actor, {
       form: { components, adet, tarih, basimYeri, hazirlayan }, notes,
-    }),
+    }, { teamLeaderIds: ctx.teamLeaderIds ?? [] }),
     async after({ client, event, loadProject }) {
       const project = await loadProject()
       if (!project) return

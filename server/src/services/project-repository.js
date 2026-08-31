@@ -39,6 +39,7 @@ const PROJECT_COLUMNS = `
   ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name, ozalit_change_requested_note,
   ozalit_fix_pending,
   ekran_demo_requested_at, ekran_demo_requested_by, ekran_demo_requested_by_name,
+  ekran_ozalit,
   origin,
   catalog_hidden, catalog_hidden_at, catalog_hidden_by,
   created_at, updated_at,
@@ -400,6 +401,30 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
   'ekran_demo_requested_at',
   'ekran_demo_requested_by',
   'ekran_demo_requested_by_name',
+  // Ekran Ozalit (migration 061): set by the designer's post-revize resubmit,
+  // cleared when the round ends (approved by a leader, or rejected into a new
+  // round). Unlike the ekran-demo trio above this is a plain boolean — the
+  // round IS the request, there is no separate pending state.
+  'ekran_ozalit',
+])
+
+// The JSONB columns on `projects`. They MUST be serialised with
+// `JSON.stringify` and bound through an explicit `::jsonb` cast — same
+// contract as `ORDER_JSONB_COLUMNS` in order-repository.js.
+//
+// Without it node-postgres encodes a JS array as a Postgres ARRAY LITERAL,
+// not as JSON: `[{ id: 'u1', ... }]` goes to the wire as
+// `{"{\"id\":\"u1\",...}"}`, which the jsonb input parser rejects with
+// `22P02 invalid input syntax for type json` — a raw PG error with no
+// statusCode, i.e. a 500 out of POST /projects/:id/approve the moment a
+// team leader recorded the first ozalit sign-off. The empty-array reset
+// was worse than an error because it *succeeded*: `[]` encodes to `{}`,
+// so the column quietly held an empty JSON object instead of an array and
+// `jsonb_array_length` then failed on that row (see
+// reconcileOzalitApprovals).
+const PROJECT_JSONB_COLUMNS = new Set([
+  'ozalit_approvals',
+  'ozalit_designer_approvals',
 ])
 
 export async function patchProject(client, id, fields, { expectedVersion = null } = {}) {
@@ -423,7 +448,7 @@ export async function patchProject(client, id, fields, { expectedVersion = null 
   // The route's `updated_at = NOW()` is the same pattern — the SQL owns
   // the counter, not the in-memory entity.
   const setSql = [
-    ...cols.map((c, i) => `${c} = $${i + 2}`),
+    ...cols.map((c, i) => `${c} = $${i + 2}${PROJECT_JSONB_COLUMNS.has(c) ? '::jsonb' : ''}`),
     'version = version + 1',
     'updated_at = NOW()',
   ].join(', ')
@@ -440,7 +465,9 @@ export async function patchProject(client, id, fields, { expectedVersion = null 
     ? ` AND version = $${cols.length + 2}`
     : ''
   const values = [
-    ...cols.map((c) => fields[c]),
+    ...cols.map((c) => (
+      PROJECT_JSONB_COLUMNS.has(c) ? JSON.stringify(fields[c] ?? null) : fields[c]
+    )),
     ...(expectedVersion != null ? [expectedVersion] : []),
   ]
   const { rows } = await client.query(
@@ -633,9 +660,16 @@ export async function reconcileOzalitApprovals(actor) {
   )
   const activeLeaderIds = leaderRows.map((r) => r.id)
 
+  // `jsonb_typeof(...) = 'array'` is not decoration: rows written before
+  // patchProject's `::jsonb` cast existed hold `{}` (an empty JSON object)
+  // rather than `[]`, and `jsonb_array_length` raises `22023 cannot get
+  // array length of a non-array` on those — one bad row took the whole
+  // reconcile down. Migration 059 normalises them; this guard keeps the
+  // query safe on any DB that hasn't run it yet.
   const { rows: candidates } = await getPool().query(
     `SELECT id FROM projects
       WHERE stage = 'ozalit_onay'
+        AND jsonb_typeof(COALESCE(ozalit_approvals, '[]'::jsonb)) = 'array'
         AND jsonb_array_length(COALESCE(ozalit_approvals, '[]'::jsonb)) > 0`,
   )
 
@@ -662,11 +696,11 @@ export async function reconcileOzalitApprovals(actor) {
         id,
         {
           stage: 'baski_onay',
-          ozalit_approvals: JSON.stringify([]),
+          ozalit_approvals: [],
           ozalit_leader_approved: false,
           ozalit_leader_approved_by: null,
           ozalit_leader_approved_at: null,
-          ozalit_designer_approvals: JSON.stringify([]),
+          ozalit_designer_approvals: [],
         },
         // Pass the locked row's version as the SQL-level OCC guard. The
         // previous contract set `version: (project.version ?? 0) + 1` in

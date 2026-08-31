@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 
 import {
   computeAdvance, computeApproval, computeOzalitReceive, computeRejection,
-  computeBaskiOnayPrepare,
+  computeBaskiOnayPrepare, computeOzalitNotReceived,
 } from './transitions.js'
 
 const L1 = { id: 'L1', role: 'team_leader', name: 'Ayşenur' }
@@ -301,5 +301,102 @@ describe('ozalit "Teslim Alındı" gate (migration 035)', () => {
     assert.equal(next.ozalit_received, false)
     assert.equal(next.ozalit_received_by, null)
     assert.equal(next.ozalit_received_at, null)
+  })
+})
+
+
+/**
+ * Ekran Ozalit (migration 061) — the screen route the designer may pick on a
+ * post-revize resubmit instead of another physical round.
+ *
+ * The load-bearing contrast is with the physical route directly above: the
+ * screen one is a SINGLE leader click with no receipt gate and no ledger,
+ * while choosing the physical route must leave the full multi-party sign-off
+ * completely untouched. Both are asserted here so a future change to one
+ * cannot quietly become a change to the other.
+ */
+describe('ekran ozalit', () => {
+  const revized = (overrides = {}) => ({
+    id: 'p-9', type: 'TR', stage: 'tasarim', progress: 100,
+    last_reject_type: 'ozalit', ozalit_attempt: 1, ozalit_approvals: [],
+    ...overrides,
+  })
+  const onScreen = (overrides = {}) => ozalitProject({
+    ekran_ozalit: true, ozalit_received: false, ...overrides,
+  })
+
+  it('the designer must choose a route on the resubmit', () => {
+    assert.throws(() => computeAdvance(revized(), D1), /Ozalit mi yoksa Ekran Ozalit mi/)
+    assert.throws(() => computeAdvance(revized(), D1, { route: 'x' }), /Geçersiz ozalit seçimi/)
+  })
+
+  it('a route may not be passed on any other advance', () => {
+    assert.throws(
+      () => computeAdvance({ id: 'p-9', type: 'TR', stage: 'baskida', progress: 100 }, L1, { route: 'ekran' }),
+      /yalnızca revize sonrası gönderimde/,
+    )
+  })
+
+  it('the ekran route lands on ozalit_onay with no matbaa leg', () => {
+    const { project: next, history } = computeAdvance(revized(), D1, { route: 'ekran' })
+    assert.equal(next.stage, 'ozalit_onay')
+    assert.equal(next.ekran_ozalit, true)
+    assert.equal(next.ozalit_requested, false, 'the matbaa is never asked for a proof')
+    assert.equal(next.ozalit_received, false, 'nothing physical arrived')
+    // The rejection that sent it back already counted this round; the
+    // physical route doesn't re-count either, so neither may this one.
+    assert.equal(next.ozalit_attempt, 1)
+    assert.equal(history.event, 'ekran_ozalit_requested')
+  })
+
+  it('one leader approves it straight through to baski_onay', () => {
+    const { project: next, history } = computeApproval(onScreen(), L1, ctx)
+    assert.equal(next.stage, 'baski_onay', 'no second signature required')
+    assert.equal(next.ekran_ozalit, false, 'flag consumed with the round')
+    assert.equal(history.event, 'ekran_ozalit_approved')
+  })
+
+  it('approves without any receipt, unlike a physical round', () => {
+    // The same project on the physical route would be refused here.
+    assert.throws(
+      () => computeApproval(ozalitProject({ ozalit_received: false }), L1, ctx),
+      /Teslim Alındı/,
+    )
+    const { project: next } = computeApproval(onScreen(), L1, ctx)
+    assert.equal(next.stage, 'baski_onay')
+  })
+
+  it('refuses a designer — the leader signs a screen ozalit alone', () => {
+    assert.throws(() => computeApproval(onScreen(), D1, ctx), /yalnızca ekip lideri/)
+  })
+
+  it('has no delivery to receive or report missing', () => {
+    assert.throws(() => computeOzalitReceive(onScreen(), L1, ctx), /teslim alma yapılmaz/)
+    assert.throws(() => computeOzalitNotReceived(onScreen(), L1, ctx), /matbaa teslimi yoktur/)
+  })
+
+  it('a rejection clears the flag so the next round picks its own route', () => {
+    const { project: next } = computeRejection(onScreen(), 'olmamış', [], 'designer', { actorName: 'Ayşenur', actor: L1 })
+    assert.equal(next.stage, 'tasarim')
+    assert.equal(next.ekran_ozalit, false)
+    assert.equal(next.last_reject_type, 'ozalit')
+  })
+
+  // The other half of the user-facing promise: picking "normal ozalit" must
+  // still go through the matbaa and the full leader+designer ledger.
+  it('the physical route is unchanged — matbaa leg plus multi-party sign-off', () => {
+    const { project: sent } = computeAdvance(revized(), D1, { route: 'ozalit' })
+    assert.equal(sent.stage, 'ozalit_teslim')
+    assert.equal(sent.ekran_ozalit, false)
+    assert.equal(sent.ozalit_requested, true, 'the matbaa is asked for a proof')
+
+    // ...and once delivered, one leader is still not enough.
+    const delivered = ozalitProject({ ekran_ozalit: false })
+    const { project: afterL1 } = computeApproval(delivered, L1, ctx)
+    assert.equal(afterL1.stage, 'ozalit_onay', 'still waiting on the rest')
+    const { project: afterL2 } = computeApproval(afterL1, L2, ctx)
+    assert.equal(afterL2.stage, 'ozalit_onay', 'designer has not signed')
+    const { project: afterD1 } = computeApproval(afterL2, D1, ctx)
+    assert.equal(afterD1.stage, 'baski_onay', 'complete only when everyone signed')
   })
 })

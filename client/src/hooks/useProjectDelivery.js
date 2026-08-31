@@ -276,7 +276,9 @@ export function useProjectDelivery(project, refetch, user) {
 
   // Copy + handler for each teslim decision, keyed by the pending confirm.
   // Both "Teslim Alınamadı" variants send the project back to the matbaa and
-  // bump the attempt counter, so the description says so plainly.
+  // bump the attempt counter, so the description says so plainly. Neither
+  // re-opens the "Başladım" gate — the matbaa owes a re-delivery, not a
+  // restart — so the copy promises a re-delivery, not a new round of work.
   const TESLIM_CONFIRMS = {
     'demo-received': {
       title: 'Demoyu teslim aldınız mı?',
@@ -289,7 +291,7 @@ export function useProjectDelivery(project, refetch, user) {
     'demo-not-received': {
       title: 'Demo size ulaşmadı mı?',
       description:
-        'Proje matbaanın demo teslim aşamasına geri döner ve yeni bir demo turu başlar (Demo sayacı +1). Bu işlem geri alınamaz.',
+        'Proje matbaanın demo teslim aşamasına geri döner ve matbaa yeniden teslim eder (Demo sayacı +1). Bu işlem geri alınamaz.',
       confirmLabel: 'Teslim Alınamadı',
       variant: 'destructive',
       onConfirm: handleDemoNotReceived,

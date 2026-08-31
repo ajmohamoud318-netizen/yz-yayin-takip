@@ -53,6 +53,10 @@ function orderRow(overrides = {}) {
     ozalit_fix_pending: false,
     last_reject_type: null,
     baski_onay_form: {},
+    baski_onay_prepared: false,
+    baski_onay_prepared_by: null,
+    baski_onay_prepared_by_name: null,
+    baski_onay_prepared_at: null,
     ozalit_attempt: 0,
     version: 3,
     created_at: '2026-08-01T00:00:00.000Z',
@@ -493,10 +497,25 @@ describe('orders-service — baskı onay', () => {
     components: [], adet: '500', tarih: '2026-09-01', basimYeri: 'İstanbul', hazirlayan: 'Ayşenur',
   }
 
+  // Migration 060: approve is the CHECKER half, so every approve test starts
+  // from a sheet another leader already prepared. L2 prepares, L1 signs.
+  const preparedRow = (overrides = {}) => orderRow({
+    status: 'siparis_baski_onay',
+    baski_onay_prepared: true,
+    baski_onay_prepared_by: 'L2',
+    baski_onay_prepared_by_name: 'İkinci Lider',
+    baski_onay_prepared_at: '2026-09-01T00:00:00.000Z',
+    ...overrides,
+  })
+  const bothLeaders = ['L1', 'L2']
+
   it('flips the project to baskida when it has not reached it yet', async () => {
-    const order = orderRow({ status: 'siparis_baski_onay' })
+    const order = preparedRow()
     // 'baski_onay' sits one step before 'baskida' in the TR pipeline.
-    const client = makeClient({ order, project: { id: 'p-1', stage: 'baski_onay', type: 'TR', title: 'Kitap' } })
+    const client = makeClient({
+      order, leaders: bothLeaders,
+      project: { id: 'p-1', stage: 'baski_onay', type: 'TR', title: 'Kitap' },
+    })
 
     const result = await service.approveBaskiOnayForm('o-1', L1, approvedForm, client)
 
@@ -511,10 +530,13 @@ describe('orders-service — baskı onay', () => {
   })
 
   it('never regresses a project that already moved past baskida', async () => {
-    const order = orderRow({ status: 'siparis_baski_onay' })
+    const order = preparedRow()
     // 'satista' sits after 'baskida': a second concurrent order finishing
     // late must record the approval without dragging the project back.
-    const client = makeClient({ order, project: { id: 'p-1', stage: 'satista', type: 'TR', title: 'Kitap' } })
+    const client = makeClient({
+      order, leaders: bothLeaders,
+      project: { id: 'p-1', stage: 'satista', type: 'TR', title: 'Kitap' },
+    })
 
     const result = await service.approveBaskiOnayForm('o-1', L1, approvedForm, client)
 
@@ -527,7 +549,7 @@ describe('orders-service — baskı onay', () => {
   })
 
   it('requires the mandatory fields', async () => {
-    const client = makeClient({ order: orderRow({ status: 'siparis_baski_onay' }) })
+    const client = makeClient({ order: preparedRow(), leaders: bothLeaders })
     await assert.rejects(
       () => service.approveBaskiOnayForm('o-1', L1, {
         components: [], adet: '', tarih: '2026-09-01', basimYeri: 'İstanbul', hazirlayan: 'Ayşenur',
@@ -535,6 +557,47 @@ describe('orders-service — baskı onay', () => {
       /zorunludur/,
     )
     assert.equal(client.matching(/UPDATE order_requests/).length, 0)
+  })
+
+  it('prepare stamps the maker half without touching the project', async () => {
+    const order = orderRow({ status: 'siparis_baski_onay' })
+    const client = makeClient({
+      order, leaders: bothLeaders,
+      project: { id: 'p-1', stage: 'baski_onay', type: 'TR', title: 'Kitap' },
+    })
+
+    const result = await service.prepareBaskiOnayForm('o-1', L2, approvedForm, client)
+
+    assert.equal(result.status, 'siparis_baski_onay', 'prepare must not advance the order')
+    assert.equal(result.baski_onay_prepared, true)
+    assert.equal(result.baski_onay_prepared_by, 'L2')
+    assert.equal(client.matching(/UPDATE projects SET/).length, 0, 'project stage untouched')
+  })
+
+  // The whole point of migration 060: with a second leader active, one person
+  // can no longer both fill in the sheet and sign it — the gap that let a
+  // sipariş reach `baskida` on a single signature while the project pipeline
+  // required two.
+  it('refuses the preparer while another leader is active', async () => {
+    const client = makeClient({ order: preparedRow(), leaders: bothLeaders })
+    await assert.rejects(
+      () => service.approveBaskiOnayForm('o-1', L2, approvedForm, client),
+      /kendi onayını veremez/,
+    )
+    assert.equal(client.matching(/UPDATE order_requests/).length, 0)
+  })
+
+  // Today's production shape: a single active leader. The gate must collapse
+  // to self-approval rather than strand the order.
+  it('lets a lone active leader prepare and approve their own sheet', async () => {
+    const client = makeClient({
+      order: preparedRow({ baski_onay_prepared_by: 'L1', baski_onay_prepared_by_name: 'Ayşenur' }),
+      leaders: ['L1'],
+      project: { id: 'p-1', stage: 'baski_onay', type: 'TR', title: 'Kitap' },
+    })
+
+    const result = await service.approveBaskiOnayForm('o-1', L1, approvedForm, client)
+    assert.equal(result.status, 'onaylandi')
   })
 
   it('saves a draft quietly — no history row, no timeline, no notification', async () => {
@@ -643,7 +706,9 @@ describe('orders-service — ozalit round', () => {
     const { patch } = updatePatch(client)
     assert.equal(patch.ozalit_attempt, 2)
     assert.equal(patch.matbaa_approvals, '[]')
-    assert.equal(patch.ozalit_started, false)
+    // The matbaa already did the work — only the handover failed, so the
+    // started flag is left alone and the printer sees "Teslim Edin" again.
+    assert.equal(patch.ozalit_started, undefined)
     assert.equal(timeline(client)[0].event, 'order_matbaa_not_received')
   })
 })

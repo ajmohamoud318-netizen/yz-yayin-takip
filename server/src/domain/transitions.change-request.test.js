@@ -196,19 +196,27 @@ describe('a fresh printer round resets the started/change-request ledger', () =>
     assert.equal(next.stage, 'demo_teslim')
   })
 
-  it('computeDemoNotReceived resets demo_started', () => {
+})
+
+// "Teslim Alınamadı" is NOT a fresh printer round — the matbaa's physical work
+// already exists and only the handover failed, so the started flag survives the
+// bounce. That keeps the printer on "Teslim Edin" instead of sending them back
+// through "İşlemi Başlatın", and keeps the leader on "Değişiklik İste" instead
+// of dropping them back to a free cancel/edit.
+describe('"Teslim Alınamadı" keeps the started ledger', () => {
+  it('computeDemoNotReceived keeps demo_started', () => {
     const { project: next } = computeDemoNotReceived(
       { id: 'p-3', type: 'TR', stage: 'demo_onay', demo_attempt: 1, demo_received: false, demo_started: true },
       leader, { designerIds: [] },
     )
-    assert.equal(next.demo_started, false)
+    assert.equal(next.demo_started, true)
   })
 
-  it('computeOzalitNotReceived resets ozalit_started', () => {
+  it('computeOzalitNotReceived keeps ozalit_started', () => {
     const { project: next } = computeOzalitNotReceived(
       { id: 'p-4', type: 'TR', stage: 'ozalit_onay', ozalit_attempt: 1, ozalit_received: false, ozalit_started: true },
       leader, { designerIds: [] },
     )
-    assert.equal(next.ozalit_started, false)
+    assert.equal(next.ozalit_started, true)
   })
 })

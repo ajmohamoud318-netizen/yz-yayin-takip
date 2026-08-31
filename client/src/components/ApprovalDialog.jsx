@@ -18,6 +18,7 @@ import api, { STAGE_LABELS, STAGES_REQUIRING_FULL_PROGRESS } from '@/api'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { useAuth } from '@/hooks/useAuth'
 import { isSubtaskDone } from '@/domain/services/progress'
+import { needsOzalitRouteChoice } from '@/domain'
 import { cn } from '@/lib/utils'
 import SpecFormDialog, {
   specVariantForStage,
@@ -167,7 +168,9 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
       rejectTarget === 'matbaa'
         ? `Proje "${teslimLabel}" aşamasına döner; matbaa yeniden teslim eder. Tasarım değişmez. Bir red sebebi yazın.`
         : 'Proje tasarım aşamasına döner; seçtiğiniz alt görevler revize edilir. Bir red sebebi yazın.',
-    advance: 'Bu projeyi sonraki aşamaya elle ilerleteceksiniz. Devam edilsin mi?',
+    advance: needsOzalitRouteChoice(project)
+      ? 'Revizeyi nasıl kontrol ettireceğinizi seçin: matbaadan yeni bir fiziksel ozalit isteyin, ya da ekran üzerinden ekip liderinin onayına gönderin.'
+      : 'Bu projeyi sonraki aşamaya elle ilerleteceksiniz. Devam edilsin mi?',
   }
 
   // Ozalit approval is leader-only — block any non-leader from submitting.
@@ -200,7 +203,13 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
     }
   }
 
-  async function handleSubmit(e) {
+  /* Ozalit resubmit route (migration 061). The designer who did the revision
+     picks whether it warrants another physical round or just a screen check;
+     the server refuses the advance without a choice, so both paths below go
+     through an explicit button rather than a default. */
+  const offersOzalitRoute = mode === 'advance' && needsOzalitRouteChoice(project)
+
+  async function handleSubmit(e, ozalitRoute = null) {
     e.preventDefault()
     if (!project) return
     if (mode === 'reject' && !reason.trim()) {
@@ -244,7 +253,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
           rejectTarget,
         )
       else {
-        updated = await api.advanceProject(project.id)
+        updated = await api.advanceProject(project.id, ozalitRoute)
         // Demo Talepleri's "Teslim Et" delivers through this bare confirm
         // instead of the demo form, so stamp the delivery AND the matbaa's
         // signature here — exactly what SpecFormDialog.handleAdvance does.
@@ -290,7 +299,10 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
           <DialogDescription>{descriptions[mode]}</DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form
+          onSubmit={(e) => handleSubmit(e, offersOzalitRoute ? 'ozalit' : null)}
+          className="space-y-4"
+        >
           <div className="rounded-md border bg-muted/30 p-3 text-sm">
             <p className="font-medium text-foreground">{project.title}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
@@ -428,6 +440,19 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               İptal
             </Button>
+            {/* Mirrors the sipariş pipeline's resubmit footer (SpecFormFooter):
+                the screen route is the secondary button, another physical
+                round stays primary. */}
+            {offersOzalitRoute && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy || blocksUretim}
+                onClick={(e) => handleSubmit(e, 'ekran')}
+              >
+                {busy ? 'Gönderiliyor…' : 'Ekran Ozalit İsteyin'}
+              </Button>
+            )}
             <Button
               type="submit"
               disabled={
@@ -449,7 +474,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
                   ? approveLabel
                   : mode === 'reject'
                     ? (rejectTarget === 'matbaa' ? 'Devam Edin' : 'Reddedin')
-                    : advanceLabel}
+                    : offersOzalitRoute ? 'Matbaadan Ozalit İsteyin' : advanceLabel}
             </Button>
           </DialogFooter>
         </form>

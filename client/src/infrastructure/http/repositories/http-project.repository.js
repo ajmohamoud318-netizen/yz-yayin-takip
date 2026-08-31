@@ -218,8 +218,12 @@ export function createHttpProjectRepository(userRepo) {
       cache.set(id, data)
       return data
     },
-    async advanceProject(id) {
-      const { data } = await httpClient.post(`/projects/${id}/advance`, {})
+    // `route` ('ozalit' | 'ekran') is the post-revize ozalit choice
+    // (migration 061) — physical round via the matbaa, or an Ekran Ozalit
+    // straight to the leader. The server refuses it on any other advance, so
+    // it is only ever sent when the dialog actually offered the choice.
+    async advanceProject(id, route = null) {
+      const { data } = await httpClient.post(`/projects/${id}/advance`, route ? { route } : {})
       cache.set(id, data)
       return data
     },

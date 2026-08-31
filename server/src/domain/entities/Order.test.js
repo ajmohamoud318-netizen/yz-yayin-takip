@@ -40,6 +40,10 @@ function baseOrder(overrides = {}) {
     ozalit_attempt: 0,
     last_reject_type: null,
     baski_onay_form: null,
+    baski_onay_prepared: false,
+    baski_onay_prepared_by: null,
+    baski_onay_prepared_by_name: null,
+    baski_onay_prepared_at: null,
     version: 1,
     ...overrides,
   }
@@ -104,9 +108,19 @@ describe('Order.markMatbaaNotReceived', () => {
     const event = order.markMatbaaNotReceived(L1, { designerIds: [] })
     assert.equal(order.status, 'tasarimci_onay')
     assert.deepEqual(order.matbaa_approvals, [])
-    assert.equal(order.ozalit_started, false)
     assert.equal(order.ozalit_attempt, 3)
     assert.equal(event.notification.destination, 'tasarimci_onay')
+  })
+
+  it('keeps ozalit_started — the work was done, only the handover failed', () => {
+    const order = new Order(baseOrder({
+      status: 'matbaa_onay', ozalit_started: true, ozalit_started_by_name: 'Matbaa',
+    }))
+    order.markMatbaaNotReceived(L1, { designerIds: [] })
+    // TalepSignDialog gates "Teslim Edin" on this: the printer re-delivers
+    // instead of pressing "İşlemi Başlatın" a second time.
+    assert.equal(order.ozalit_started, true)
+    assert.equal(order.ozalit_started_by_name, 'Matbaa')
   })
 
   it('refuses once the proof has been acknowledged', () => {
@@ -356,39 +370,131 @@ describe('Order.saveBaskiOnayForm', () => {
   })
 })
 
-describe('Order.approveBaskiOnayForm', () => {
-  it('flips the order to onaylandi with approved_by/at', () => {
+const FULL_FORM = {
+  components: [], adet: '500', tarih: '2026-09-01',
+  basimYeri: 'Oktay Matbaa', hazirlayan: 'Ayşenur',
+}
+
+/** An order already through the maker half, prepared by `leader`. */
+function preparedOrder(leader = L1, overrides = {}) {
+  return baseOrder({
+    status: 'siparis_baski_onay',
+    baski_onay_prepared: true,
+    baski_onay_prepared_by: leader.id,
+    baski_onay_prepared_by_name: leader.name,
+    baski_onay_prepared_at: '2026-09-01T00:00:00.000Z',
+    ...overrides,
+  })
+}
+
+describe('Order.prepareBaskiOnayForm', () => {
+  it('stamps the preparation without advancing', () => {
     const order = new Order(baseOrder({ status: 'siparis_baski_onay' }))
-    const event = order.approveBaskiOnayForm(L1, {
-      form: {
-        components: [], adet: '500', tarih: '2026-09-01',
-        basimYeri: 'Oktay Matbaa', hazirlayan: 'Ayşenur',
-      },
-      notes: 'all good',
-    })
-    assert.equal(order.status, 'onaylandi')
-    assert.equal(order.baski_onay_form.approved_by, 'L1')
-    assert.equal(order.baski_onay_form.approved_at, order.baski_onay_form.approved_at)
-    assert.match(event.orderHistory.note, /Baskı onaylandı/)
-    assert.equal(event.notification.kind, 'finalApproved')
+    const event = order.prepareBaskiOnayForm(L1, { form: FULL_FORM })
+    assert.equal(order.status, 'siparis_baski_onay', 'prepare must not advance')
+    assert.equal(order.baski_onay_prepared, true)
+    assert.equal(order.baski_onay_prepared_by, 'L1')
+    assert.equal(order.baski_onay_prepared_by_name, 'Ayşenur')
+    assert.equal(order.baski_onay_form.adet, '500')
+    assert.equal(event.notification.kind, 'baskiOnayPrepared')
+    assert.match(event.orderHistory.note, /hazırlandı/)
   })
 
   it('refuses when required fields are missing', () => {
     const order = new Order(baseOrder({ status: 'siparis_baski_onay' }))
     assert.throws(
-      () => order.approveBaskiOnayForm(L1, {
-        form: { adet: '500', tarih: '', basimYeri: 'X', hazirlayan: 'Y' },
-      }),
+      () => order.prepareBaskiOnayForm(L1, { form: { ...FULL_FORM, basimYeri: '  ' } }),
       /Adet, tarih, basım yeri/,
     )
   })
 
   it('refuses non-leader', () => {
     const order = new Order(baseOrder({ status: 'siparis_baski_onay' }))
+    assert.throws(() => order.prepareBaskiOnayForm(D1, { form: FULL_FORM }), /yalnızca ekip lideri/)
+  })
+
+  it('refuses outside siparis_baski_onay', () => {
+    const order = new Order(baseOrder({ status: 'matbaa_onay' }))
+    assert.throws(() => order.prepareBaskiOnayForm(L1, { form: FULL_FORM }), /yalnızca bu aşamada/)
+  })
+
+  it('a parked draft does NOT count as a preparation', () => {
+    const order = new Order(baseOrder({ status: 'siparis_baski_onay' }))
+    order.saveBaskiOnayForm(L1, FULL_FORM)
+    assert.equal(order.baski_onay_prepared, false)
     assert.throws(
-      () => order.approveBaskiOnayForm(D1, {
-        form: { adet: '1', tarih: 'x', basimYeri: 'x', hazirlayan: 'x' },
-      }),
+      () => order.approveBaskiOnayForm(L2, { form: FULL_FORM }, { teamLeaderIds: ['L1', 'L2'] }),
+      /Önce baskı onay formu hazırlanmalıdır/,
+    )
+  })
+})
+
+describe('Order.approveBaskiOnayForm', () => {
+  it('flips the order to onaylandi with approved_by/at', () => {
+    const order = new Order(preparedOrder(L1))
+    const event = order.approveBaskiOnayForm(L2, { form: FULL_FORM, notes: 'all good' },
+      { teamLeaderIds: ['L1', 'L2'] })
+    assert.equal(order.status, 'onaylandi')
+    assert.equal(order.baski_onay_form.approved_by, 'L2')
+    assert.match(event.orderHistory.note, /Baskı onaylandı/)
+    assert.equal(event.notification.kind, 'finalApproved')
+  })
+
+  it('clears the preparation stamps once it advances', () => {
+    const order = new Order(preparedOrder(L1))
+    order.approveBaskiOnayForm(L2, { form: FULL_FORM }, { teamLeaderIds: ['L1', 'L2'] })
+    assert.equal(order.baski_onay_prepared, false)
+    assert.equal(order.baski_onay_prepared_by, null)
+    assert.equal(order.baski_onay_prepared_by_name, null)
+    assert.equal(order.baski_onay_prepared_at, null)
+  })
+
+  it('refuses an approve with no preparation at all', () => {
+    const order = new Order(baseOrder({ status: 'siparis_baski_onay' }))
+    assert.throws(
+      () => order.approveBaskiOnayForm(L1, { form: FULL_FORM }, { teamLeaderIds: ['L1'] }),
+      /Önce baskı onay formu hazırlanmalıdır/,
+    )
+  })
+
+  it('refuses the preparer while another leader is active', () => {
+    const order = new Order(preparedOrder(L1))
+    assert.throws(
+      () => order.approveBaskiOnayForm(L1, { form: FULL_FORM }, { teamLeaderIds: ['L1', 'L2'] }),
+      /kendi onayını veremez/,
+    )
+  })
+
+  // The escape hatch, and today's production shape: one active leader means
+  // the maker and the checker are necessarily the same person. Enforcing
+  // "different person" here would strand the order forever.
+  it('lets the preparer self-approve when they are the only active leader', () => {
+    const order = new Order(preparedOrder(L1))
+    order.approveBaskiOnayForm(L1, { form: FULL_FORM }, { teamLeaderIds: ['L1'] })
+    assert.equal(order.status, 'onaylandi')
+  })
+
+  // A leader deactivated after preparing must not block the remaining one.
+  it('lets an active leader approve a sheet prepared by a now-inactive leader', () => {
+    const order = new Order(preparedOrder(L2))
+    order.approveBaskiOnayForm(L1, { form: FULL_FORM }, { teamLeaderIds: ['L1'] })
+    assert.equal(order.status, 'onaylandi')
+  })
+
+  it('refuses when required fields are missing', () => {
+    const order = new Order(preparedOrder(L1))
+    assert.throws(
+      () => order.approveBaskiOnayForm(L2, {
+        form: { ...FULL_FORM, tarih: '' },
+      }, { teamLeaderIds: ['L1', 'L2'] }),
+      /Adet, tarih, basım yeri/,
+    )
+  })
+
+  it('refuses non-leader', () => {
+    const order = new Order(preparedOrder(L1))
+    assert.throws(
+      () => order.approveBaskiOnayForm(D1, { form: FULL_FORM }, { teamLeaderIds: ['L1', 'L2'] }),
       /yalnızca ekip lideri/,
     )
   })

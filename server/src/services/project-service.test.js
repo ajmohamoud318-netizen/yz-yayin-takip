@@ -277,7 +277,7 @@ describe('project-service — advance', () => {
     const project = projectRow({ stage: 'tasarim', last_reject_type: 'ozalit', progress: 100 })
     const client = makeClient({ project })
 
-    await service.advanceProject('p-1', L1, {}, client)
+    await service.advanceProject('p-1', L1, { route: 'ozalit' }, client)
 
     const rows = historyRows(client)
     assert.equal(rows.length, 1)

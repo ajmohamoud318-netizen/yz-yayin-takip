@@ -316,6 +316,30 @@ export async function notifyMatbaaApprovalPending(client, { order, project, acto
   return a + b
 }
 
+/**
+ * One team leader prepared the sipariş Baskı Onay Formu (migration 060) → tell
+ * every OTHER active leader that an approval is owed. The preparer is dropped
+ * from the list because they cannot sign their own preparation while anyone
+ * else is active, so a ping would only send them back to a button that
+ * refuses them.
+ *
+ * The lone-leader case deliberately notifies nobody: the escape hatch in
+ * `Order.approveBaskiOnayForm` lets that same leader approve, and they are
+ * standing in the dialog that just told them so.
+ */
+export async function notifyOrderBaskiOnayPrepared(client, { order, project, actor, teamLeaderIds = [] }) {
+  const pending = teamLeaderIds.filter((id) => id !== actor?.id)
+  return emit(client, {
+    recipientIds: pending, actorId: actor?.id,
+    title: project?.title ?? order?.project_title ?? 'Baskı',
+    projectId: order?.project_id ?? project?.id, orderId: order?.id,
+    type: 'order_baski_onay_pending', tone: 'amber',
+    body: `${actor?.name ?? 'Ekipten biri'} baskı onay formunu hazırladı, onayınız bekleniyor`,
+    link: '/siparis-talepleri',
+    event: { type: 'order.baski_onay_prepared', aggregateId: order?.id },
+  })
+}
+
 /* ------------------------------ handovers -------------------------------- */
 
 /** Matbaa raised a teslim → tell sales to confirm receipt. */

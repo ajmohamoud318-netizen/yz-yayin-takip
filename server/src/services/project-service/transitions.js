@@ -111,7 +111,7 @@ function withDemoSnapshot(kind, body) {
 export function advanceProject(projectId, actor, ctx = {}, client = null) {
   return runProjectCommand(projectId, actor, {
     prepare: withSubtasks,
-    run: (project) => project.advance(actor, { note: ctx.note ?? '' }),
+    run: (project) => project.advance(actor, { note: ctx.note ?? '', route: ctx.route ?? null }),
   }, client)
 }
 

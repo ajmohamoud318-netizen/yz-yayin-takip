@@ -10,7 +10,7 @@
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { loadProjectAssignees, assignSubtaskPage, resyncSubtaskPageAssignments } from './project-repository.js'
+import { loadProjectAssignees, assignSubtaskPage, resyncSubtaskPageAssignments, patchProject } from './project-repository.js'
 
 // Minimal in-memory pg client: each query() is matched on the WHERE clause
 // fragment so the same client can serve both the primary lookup and the
@@ -876,5 +876,65 @@ describe('PATCH /api/subtasks/:id/pages/:pageIndex — per-page assignment is no
       !notYoursMatch[0].includes('assigned_to'),
       'not_yours check must NOT reference assigned_to — only done_by',
     )
+  })
+})
+
+/**
+ * patchProject's JSONB binding.
+ *
+ * `ozalit_approvals` / `ozalit_designer_approvals` are JSONB columns.
+ * node-postgres encodes a raw JS array as a Postgres ARRAY LITERAL, so
+ * binding one without an explicit `::jsonb` cast sent
+ * `{"{\"id\":\"u-lead\",...}"}` to the jsonb parser — `22P02 invalid input
+ * syntax for type json`, surfacing as a 500 from POST /projects/:id/approve
+ * on the very first ozalit sign-off. `[]` was worse: it encodes to `{}`,
+ * which Postgres accepts, so the column silently held an empty JSON object
+ * and `jsonb_array_length` later raised 22023 on that row.
+ */
+describe('patchProject JSONB columns', () => {
+  function capturingClient() {
+    const calls = []
+    return {
+      calls,
+      async query(sql, params) {
+        calls.push({ sql, params })
+        return { rows: [{ id: 'p-1', ozalit_approvals: [] }] }
+      },
+    }
+  }
+
+  it('binds ozalit approval arrays as JSON text through an explicit ::jsonb cast', async () => {
+    const client = capturingClient()
+    const approvals = [{ id: 'u-lead', role: 'team_leader', name: 'Ayşenur', at: '2026-08-31T00:00:00.000Z' }]
+    await patchProject(client, 'p-1', { ozalit_approvals: approvals })
+
+    const update = client.calls.find((c) => /^UPDATE projects/.test(c.sql.trim()))
+    assert.ok(update, 'expected an UPDATE projects query')
+    assert.match(update.sql, /ozalit_approvals = \$2::jsonb/, 'must carry the ::jsonb cast')
+    assert.equal(
+      update.params[1],
+      JSON.stringify(approvals),
+      'the value must go to the wire as JSON text, never as a raw JS array',
+    )
+  })
+
+  it('sends the empty reset as the JSON array [] and not the object {}', async () => {
+    const client = capturingClient()
+    await patchProject(client, 'p-1', { ozalit_approvals: [], ozalit_designer_approvals: [] })
+
+    const update = client.calls.find((c) => /^UPDATE projects/.test(c.sql.trim()))
+    assert.match(update.sql, /ozalit_approvals = \$2::jsonb/)
+    assert.match(update.sql, /ozalit_designer_approvals = \$3::jsonb/)
+    assert.equal(update.params[1], '[]')
+    assert.equal(update.params[2], '[]')
+  })
+
+  it('leaves non-JSONB columns bound as plain values', async () => {
+    const client = capturingClient()
+    await patchProject(client, 'p-1', { stage: 'baski_onay', progress: 100 })
+
+    const update = client.calls.find((c) => /^UPDATE projects/.test(c.sql.trim()))
+    assert.doesNotMatch(update.sql, /::jsonb/, 'no cast belongs on scalar columns')
+    assert.deepEqual(update.params, ['p-1', 'baski_onay', 100])
   })
 })

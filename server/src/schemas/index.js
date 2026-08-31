@@ -624,7 +624,12 @@ const projectsAdvance = {
   body: {
     type: 'object',
     additionalProperties: false,
-    properties: { note: { type: 'string', maxLength: 1000 } },
+    properties: {
+      note: { type: 'string', maxLength: 1000 },
+      // Ozalit-revision resubmit only (migration 061): physical round or
+      // screen check. computeAdvance refuses it on any other click.
+      route: { type: 'string', enum: ['ozalit', 'ekran'] },
+    },
   },
 }
 

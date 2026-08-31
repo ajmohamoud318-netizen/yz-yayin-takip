@@ -183,8 +183,12 @@ export function assertDemoCanAdvance(progress) {
  *   isOzalitApprover  — advance `ozalit_onay → baski_onay`
  *                       owner: team_leader only
  *   ozalitLeaderApproved / canApproveOzalitNow
- *                     — sign off at `ozalit_onay` (multi-party, leader-first)
+ *                     — sign off at `ozalit_onay` (multi-party, leader-first;
+ *                       a single leader when the round is an Ekran Ozalit)
  *                       owner: team_leader, then the assigned designers
+ *   needsOzalitRouteChoice
+ *                     — the post-revize resubmit must pick physical vs ekran
+ *                       owner: the assigned designer making the resubmit
  *   isDemoApprover    — advance `demo_onay → ozalit_teslim` |
  *                              `cin_demo_onay → cin_baski_onay`
  *                       owner: team_leader  OR  printer
@@ -232,11 +236,27 @@ export function ozalitLeaderApproved(project) {
  */
 export function canApproveOzalitNow(user, project) {
   if (!user || !project) return false
+  // Ekran Ozalit (migration 061): a screen round has no physical proof to
+  // receive and no multi-party ledger — a single team leader signs it. Mirrors
+  // the ekran_ozalit branch of the server's computeOzalitOnayApproval.
+  if (project.ekran_ozalit) return user.role === 'team_leader'
   if (!project.ozalit_received) return false
   if (user.role === 'team_leader') return true
   const isAssignedDesigner =
     user.role === 'designer' && (project.assignees ?? []).some((a) => a.id === user.id)
   return isAssignedDesigner && ozalitLeaderApproved(project)
+}
+
+/**
+ * Does this ozalit-revision resubmit still owe a route choice? True exactly
+ * when the designer is about to send a revized ozalit and must pick between
+ * another physical round and an Ekran Ozalit — the server refuses the advance
+ * without one (computeAdvance, migration 061), so the UI has to ask.
+ *
+ * @param {{ stage?: string, last_reject_type?: string|null }} project
+ */
+export function needsOzalitRouteChoice(project) {
+  return project?.stage === 'tasarim' && project?.last_reject_type === 'ozalit'
 }
 
 /**
@@ -372,9 +392,12 @@ export function canRespondDemoChange(user, project) {
  * `computeEkranDemoRequest/Approve/Reject` (server `domain/transitions.js`,
  * migration 050).
  *
- *   canRequestEkranDemo — leader/assigned designer asks for it instead of
- *                         the normal `Demo İste` resend
+ *   canRequestEkranDemo — the ASSIGNED DESIGNER asks for it instead of the
+ *                         normal `Demo İste` resend
  *   canRespondEkranDemo — team leader approves/rejects the pending request
+ *
+ * The two are deliberately disjoint: whoever asks is never the one who
+ * decides.
  */
 
 /** @param {{ id: string, role: string }} user @param {object} project */
@@ -384,7 +407,8 @@ export function canRequestEkranDemo(user, project) {
   if (project.demo_held !== true) return false
   if ((project.progress ?? 0) !== 100) return false
   if (project.ekran_demo_requested_at) return false
-  if (user?.role === 'team_leader') return true
+  // Assigned designer only — the leader responds, they don't request. Mirrors
+  // the server's computeEkranDemoRequest gate; see the reasoning there.
   return user?.role === 'designer' && (project.assignees ?? []).some((a) => a.id === user.id)
 }
 

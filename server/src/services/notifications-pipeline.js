@@ -466,7 +466,18 @@ export async function notifyProjectTransition(client, {
     // approval ping: since migration 035 computeOzalitOnayApproval refuses
     // until the proof is marked "Teslim Alındı". The approval ping follows
     // from notifyOzalitReceived once someone acknowledges it.
+    //
+    // An EKRAN OZALIT (migration 061) reaches the same stage by a different
+    // road: no matbaa, no delivery, no receipt to wait on — so it must not
+    // announce a delivery that never happened. It IS an approval ping, and it
+    // goes to leaders only, since a single leader signs it off.
     case 'ozalit_onay':
+      if (project.ekran_ozalit) {
+        return emit(client, {
+          ...base, recipientIds: leaders, type: 'ekran_ozalit_pending', tone: 'amber',
+          body: 'Ekran ozalit onayı bekleniyor', link: `/projects/${project.id}`,
+        })
+      }
       return emit(client, {
         ...base, recipientIds: [...leaders, ...designers], type: 'ozalit_receipt_pending', tone: 'amber',
         body: 'Matbaa ozaliti teslim etti, "Teslim Alındı" bekleniyor', link: `/projects/${project.id}`,

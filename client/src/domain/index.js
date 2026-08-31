@@ -22,6 +22,7 @@ export {
   isOzalitApprover,
   ozalitLeaderApproved,
   canApproveOzalitNow,
+  needsOzalitRouteChoice,
   canMarkDemoStarted,
   canMarkOzalitStarted,
   isOzalitRoundLive,

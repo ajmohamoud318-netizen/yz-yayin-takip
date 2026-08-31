@@ -23,7 +23,9 @@ export const ORDER_COLUMNS = `id, project_id, status, requested_by, payload, ass
   ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
   ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
   ozalit_change_requested_note, ozalit_fix_pending,
-  last_reject_type, baski_onay_form, ozalit_attempt, version, created_at, updated_at`
+  last_reject_type, baski_onay_form, ozalit_attempt,
+  baski_onay_prepared, baski_onay_prepared_by, baski_onay_prepared_by_name, baski_onay_prepared_at,
+  version, created_at, updated_at`
 
 /**
  * Columns `updateOrder` is allowed to write. `version` and `updated_at` are
@@ -38,6 +40,8 @@ const ORDER_WRITABLE_COLUMNS = new Set([
   'ozalit_change_requested_at', 'ozalit_change_requested_by', 'ozalit_change_requested_by_name',
   'ozalit_change_requested_note', 'ozalit_fix_pending',
   'last_reject_type', 'baski_onay_form', 'ozalit_attempt',
+  'baski_onay_prepared', 'baski_onay_prepared_by', 'baski_onay_prepared_by_name',
+  'baski_onay_prepared_at',
 ])
 
 // JSONB columns must be stringified and cast explicitly: node-pg renders a
@@ -58,6 +62,8 @@ export async function listOrders(db = getPool()) {
             o.ozalit_change_requested_at, o.ozalit_change_requested_by, o.ozalit_change_requested_by_name,
             o.ozalit_change_requested_note, o.ozalit_fix_pending,
             o.last_reject_type, o.baski_onay_form, o.ozalit_attempt,
+            o.baski_onay_prepared, o.baski_onay_prepared_by,
+            o.baski_onay_prepared_by_name, o.baski_onay_prepared_at,
             o.version, o.created_at, o.updated_at, p.title AS project_title,
             u.name AS requested_by_name
        FROM order_requests o

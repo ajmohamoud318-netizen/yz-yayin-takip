@@ -90,10 +90,13 @@ export class Project {
    * Generic forward advance. The advance route already loaded assignees
    * and subtasks onto the row so computeAdvance can read them.
    *
-   * ctx: { note }
+   * ctx: { note, route }
+   *
+   * `route` ('ozalit' | 'ekran') is only meaningful on an ozalit-revision
+   * resubmit, where computeAdvance requires it — see migration 061.
    */
   advance(actor, ctx = {}) {
-    const event = runFsm(this, computeAdvance, [actor], 'project.advance', {
+    const event = runFsm(this, computeAdvance, [actor, { route: ctx.route ?? null }], 'project.advance', {
       kind: 'transition',
     })
     if (!event) return null

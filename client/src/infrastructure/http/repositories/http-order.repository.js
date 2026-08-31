@@ -42,6 +42,14 @@ export function createHttpOrderRepository() {
       const { data } = await httpClient.patch(`/order-requests/${id}/baski-onay-form`, body)
       return data
     },
+    // Mark the siparis_baski_onay form "hazırlandı" (migration 060, maker
+    // half): saves the sheet and hands it to another team leader. Does NOT
+    // advance the order — approveOrderBaskiOnayForm does that, and refuses
+    // the preparer while any other leader is active.
+    async prepareOrderBaskiOnayForm(id, body) {
+      const { data } = await httpClient.post(`/order-requests/${id}/baski-onay-prepare`, body)
+      return data
+    },
     // Approve the siparis_baski_onay form — saves the final snapshot AND
     // advances the order to onaylandi in one action.
     async approveOrderBaskiOnayForm(id, body) {

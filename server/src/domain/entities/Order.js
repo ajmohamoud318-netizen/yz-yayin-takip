@@ -342,9 +342,9 @@ export class Order {
   /**
    * Counterpart to receiveMatbaaOzalit: the physical proof never arrived.
    * Sends the order back to tasarimci_onay for re-delivery, wipes the
-   * partial approval ledger, resets ozalit_started state (rework is a
-   * fresh round), and bumps ozalit_attempt (new sipariş ozalit round —
-   * migration 053).
+   * partial approval ledger and any change-request state, and bumps
+   * ozalit_attempt (new sipariş ozalit round — migration 053).
+   * ozalit_started is kept: the work was done, the delivery wasn't.
    */
   markMatbaaNotReceived(actor, ctx = {}) {
     const designerIds = ctx.designerIds ?? []
@@ -366,10 +366,11 @@ export class Order {
     this.matbaa_received_by = null
     this.matbaa_received_at = null
     this.matbaa_approvals = []
-    this.ozalit_started = false
-    this.ozalit_started_at = null
-    this.ozalit_started_by = null
-    this.ozalit_started_by_name = null
+    // ozalit_started deliberately survives — see computeDemoNotReceived in
+    // transitions.js. The matbaa already did the physical work; only the
+    // handover failed, so TalepSignDialog keeps showing "Teslim Edin" rather
+    // than sending the printer back through "İşlemi Başlatın", and the leader
+    // keeps the change-request path instead of a free cancel/edit.
     this.ozalit_change_requested_at = null
     this.ozalit_change_requested_by = null
     this.ozalit_change_requested_by_name = null
@@ -665,16 +666,42 @@ export class Order {
   }
 
   /**
-   * Save a draft of the siparis_baski_onay print-spec form. No
-   * timeline log, no notification — this is a partial-friendly save.
+   * Shared gate for the two commands that EDIT the siparis_baski_onay sheet
+   * (save draft, prepare): only a team leader, only at that step. Pulled out
+   * because the maker half (migration 060) would otherwise have copied it.
+   *
+   * `approveBaskiOnayForm` deliberately keeps its own copy: signing is a
+   * different act from editing, and its Turkish says so ("onayını
+   * verebilir" / "bu işlem" rather than "formunu düzenleyebilir").
    */
-  saveBaskiOnayForm(actor, form) {
+  _assertBaskiOnayEditable(actor) {
     if (actor?.role !== 'team_leader') {
       forbidden('Baskı onay formunu yalnızca ekip lideri düzenleyebilir.')
     }
     if (this.status !== 'siparis_baski_onay') {
       badRequest('Baskı onay formu yalnızca bu aşamada düzenlenebilir.')
     }
+  }
+
+  /**
+   * ADET / TARİH / BASIM YERİ / HAZIRLAYAN are what the matbaa physically
+   * prints from, so neither half of the maker-checker pair may leave them
+   * blank — the preparer because the checker would be signing an incomplete
+   * sheet, the approver because that sheet is the final snapshot.
+   */
+  static _assertBaskiOnayFormComplete(form) {
+    const { adet, tarih, basimYeri, hazirlayan } = form ?? {}
+    if (![adet, tarih, basimYeri, hazirlayan].every((v) => v?.trim())) {
+      badRequest('Adet, tarih, basım yeri ve hazırlayan alanları zorunludur.')
+    }
+  }
+
+  /**
+   * Save a draft of the siparis_baski_onay print-spec form. No
+   * timeline log, no notification — this is a partial-friendly save.
+   */
+  saveBaskiOnayForm(actor, form) {
+    this._assertBaskiOnayEditable(actor)
 
     const now = new Date().toISOString()
     const nextForm = {
@@ -697,27 +724,96 @@ export class Order {
   }
 
   /**
-   * Approve the siparis_baski_onay form — final approval. Saves the
-   * final snapshot AND flips the order to onaylandi. Project stage
-   * flip (forward-only to baskida) is the service's job, not the
-   * entity's, because it touches a different aggregate.
+   * Prepare the siparis_baski_onay form — the MAKER half of the maker-checker
+   * pair (migration 060), mirroring the project pipeline's
+   * `computeBaskiOnayPrepare` (domain/transitions.js).
+   *
+   * Saves the sheet AND stamps it "hazırlandı". Deliberately does NOT advance
+   * the order: it stays at siparis_baski_onay until a team leader approves,
+   * and `approveBaskiOnayForm` additionally requires that leader to be a
+   * DIFFERENT person whenever there is another active one.
+   *
+   * Distinct from `saveBaskiOnayForm` on purpose — a quiet parked draft must
+   * never count as a preparation, or the checker would be signing off on
+   * something nobody claimed to have finished. Re-preparing after further
+   * edits just re-stamps who/when.
    *
    * @param {object} actor
    * @param {object} input
    * @param {object} input.form — { components, adet, tarih, basimYeri, hazirlayan }
    * @param {string} [input.notes]
    */
-  approveBaskiOnayForm(actor, { form, notes = '' } = {}) {
+  prepareBaskiOnayForm(actor, { form, notes = '' } = {}) {
+    this._assertBaskiOnayEditable(actor)
+    Order._assertBaskiOnayFormComplete(form)
+
+    const now = new Date().toISOString()
+    const { components, adet, tarih, basimYeri, hazirlayan } = form ?? {}
+    this.baski_onay_form = {
+      ...(this.baski_onay_form ?? {}),
+      components, adet, tarih, basimYeri, hazirlayan,
+      saved_by: actor?.id,
+      saved_by_name: actor?.name,
+      saved_at: now,
+    }
+    this.baski_onay_prepared = true
+    this.baski_onay_prepared_by = actor?.id ?? null
+    this.baski_onay_prepared_by_name = actor?.name ?? null
+    this.baski_onay_prepared_at = now
+    this.version = (this.version ?? 0) + 1
+
+    return this._record({
+      type: 'order.baski_onay_prepared',
+      orderHistory: {
+        step: 'baski_onay_prepared',
+        note: notes
+          ? `${notes} · Baskı onay formu hazırlandı`
+          : 'Baskı onay formu hazırlandı, onay bekleniyor',
+      },
+      projectHistories: [{
+        event: 'order_baski_onay_prepared', action: 'system',
+        note: 'Baskı onay formu hazırlandı, onay bekleniyor',
+      }],
+      notification: { kind: 'baskiOnayPrepared' },
+    })
+  }
+
+  /**
+   * Approve the siparis_baski_onay form — the CHECKER half. Saves the
+   * final snapshot AND flips the order to onaylandi. Project stage
+   * flip (forward-only to baskida) is the service's job, not the
+   * entity's, because it touches a different aggregate.
+   *
+   * Since migration 060 this requires a preparation to exist and to have been
+   * made by someone else, unless the preparer is the only active team leader
+   * there is — the same escape hatch computeApproval's baski_onay branch uses,
+   * for the same reason: enforcing "different person" with nobody else left
+   * would strand the order with no one who could ever approve it.
+   *
+   * @param {object} actor
+   * @param {object} input
+   * @param {object} input.form — { components, adet, tarih, basimYeri, hazirlayan }
+   * @param {string} [input.notes]
+   * @param {object} [ctx]
+   * @param {string[]} [ctx.teamLeaderIds] — active leader ids
+   */
+  approveBaskiOnayForm(actor, { form, notes = '' } = {}, ctx = {}) {
     if (actor?.role !== 'team_leader') {
       forbidden('Baskı onayını yalnızca ekip lideri verebilir.')
     }
     if (this.status !== 'siparis_baski_onay') {
       badRequest('Bu işlem yalnızca baskı onay aşamasında yapılabilir.')
     }
-    const { components, adet, tarih, basimYeri, hazirlayan } = form ?? {}
-    if (![adet, tarih, basimYeri, hazirlayan].every((v) => v?.trim())) {
-      badRequest('Adet, tarih, basım yeri ve hazırlayan alanları zorunludur.')
+    if (!this.baski_onay_prepared) {
+      badRequest('Önce baskı onay formu hazırlanmalıdır.')
     }
+    const teamLeaderIds = ctx.teamLeaderIds ?? []
+    const otherActiveLeaders = teamLeaderIds.filter((id) => id !== this.baski_onay_prepared_by)
+    if (actor?.id === this.baski_onay_prepared_by && otherActiveLeaders.length > 0) {
+      badRequest('Baskı onay formunu hazırlayan kişi kendi onayını veremez, başka bir ekip lideri onaylamalıdır.')
+    }
+    Order._assertBaskiOnayFormComplete(form)
+    const { components, adet, tarih, basimYeri, hazirlayan } = form ?? {}
 
     const now = new Date().toISOString()
     const finalForm = {
@@ -729,6 +825,13 @@ export class Order {
     }
     this.baski_onay_form = finalForm
     this.status = 'onaylandi'
+    // Consumed — a re-run of this gate must be prepared afresh rather than
+    // inherit a stamp from the round that just closed (mirrors migration 045's
+    // reset on the project side).
+    this.baski_onay_prepared = false
+    this.baski_onay_prepared_by = null
+    this.baski_onay_prepared_by_name = null
+    this.baski_onay_prepared_at = null
     this.version = (this.version ?? 0) + 1
 
     return this._record({

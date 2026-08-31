@@ -87,6 +87,7 @@ export async function projectRoutes(fastify) {
     await attachUser(request)
     return projectService.advanceProject(request.params.id, request.user, {
       note: request.body?.note ?? '',
+      route: request.body?.route ?? null,
     })
   })
 

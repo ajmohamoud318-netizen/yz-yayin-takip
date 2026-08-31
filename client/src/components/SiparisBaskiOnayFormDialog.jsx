@@ -69,7 +69,18 @@ export default function SiparisBaskiOnayFormDialog({
   // line there rather than pre-filling the approver.
   const [onaylayan, setOnaylayan] = useState('')
   const [saving, setSaving] = useState(false)
+  const [preparing, setPreparing] = useState(false)
   const [approving, setApproving] = useState(false)
+
+  /* ── Sipariş Baskı Onayı maker-checker (migration 060) ─────────────────────
+   * Brought in line with the project-side gate (migration 045): one team
+   * leader PREPARES the sheet, a DIFFERENT one gives the actual approval.
+   * The server is the source of truth for "different person" — it counts the
+   * ACTIVE leaders and lets a lone one self-approve rather than strand the
+   * order — so this dialog only picks which button to show, and lets the
+   * server's Turkish error surface via toast on a blocked click. */
+  const baskiOnayPrepared = !!order?.baski_onay_prepared
+  const preparedByName = order?.baski_onay_prepared_by_name
 
   const isReadOnly = mode === 'view' || user?.role !== 'team_leader' || order?.status !== 'siparis_baski_onay'
   const isOpen = inline || open
@@ -191,6 +202,25 @@ export default function SiparisBaskiOnayFormDialog({
     }
   }
 
+  /**
+   * Maker half: saves the sheet and stamps it "hazırlandı". Does NOT advance
+   * the order — it stays at siparis_baski_onay until a leader approves.
+   */
+  async function handlePrepare() {
+    if (!requiredFilled()) return
+    setPreparing(true)
+    try {
+      const updated = await api.prepareOrderBaskiOnayForm(order.id, currentPayload())
+      toast.success('Baskı onay formu hazırlandı, ekip lideri onayı bekleniyor.')
+      onOpenChange?.(false)
+      onApproved?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'Hazırlama başarısız.')
+    } finally {
+      setPreparing(false)
+    }
+  }
+
   async function handleApprove() {
     if (!requiredFilled()) return
     setApproving(true)
@@ -207,7 +237,7 @@ export default function SiparisBaskiOnayFormDialog({
   }
 
   const bookTitle = order.project_title?.replace(/ \/ /g, ' ') ?? ''
-  const busy = saving || approving
+  const busy = saving || preparing || approving
 
   /* The dialog IS the form: the same document handlePrint() puts on paper,
      rendered live. Editable and read-only share one layout; only the fields
@@ -273,9 +303,18 @@ export default function SiparisBaskiOnayFormDialog({
           <Button type="button" variant="ghost" onClick={handleSave} disabled={busy}>
             {saving ? 'Kaydediliyor…' : 'Onaylamadan Kaydedin'}
           </Button>
-          <Button type="button" onClick={handleApprove} disabled={busy}>
-            {approving ? 'Onaylanıyor…' : 'Onaylayın'}
-          </Button>
+          {/* Which half is still owed. A parked draft ("Onaylamadan Kaydedin")
+              deliberately does not count as a preparation — the checker must
+              only ever sign a sheet someone claimed to have finished. */}
+          {baskiOnayPrepared ? (
+            <Button type="button" onClick={handleApprove} disabled={busy}>
+              {approving ? 'Onaylanıyor…' : 'Onaylayın'}
+            </Button>
+          ) : (
+            <Button type="button" onClick={handlePrepare} disabled={busy}>
+              {preparing ? 'Hazırlanıyor…' : 'Baskı Onayı Hazırlayın'}
+            </Button>
+          )}
         </div>
       )}
     </div>
@@ -299,7 +338,9 @@ export default function SiparisBaskiOnayFormDialog({
           <DialogDescription>
             {isReadOnly
               ? 'Bu adımda kaydedilen form.'
-              : 'Adet ve diğer alanları kontrol edin, gerekirse düzeltin, ardından onaylayın.'}
+              : baskiOnayPrepared
+                ? `${preparedByName ?? 'Bir ekip lideri'} formu hazırladı. Kontrol edin ve onaylayın.`
+                : 'Adet ve diğer alanları kontrol edin, gerekirse düzeltin, ardından onaya gönderin.'}
           </DialogDescription>
         </DialogHeader>
         {body}

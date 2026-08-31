@@ -115,7 +115,7 @@ export function createApi() {
     // Ürünler catalog "kaldır" / "geri al" — hides a finished product from
     // Sales without touching the project itself. See AGENTS.md → "Ürünler".
     setProductCatalogHidden: (id, hidden) => projectRepo.setProductCatalogHidden(id, hidden),
-    advanceProject: (id) => projectRepo.advanceProject(id),
+    advanceProject: (id, route = null) => projectRepo.advanceProject(id, route),
     approveProject: (id) => projectRepo.approveProject(id),
     receiveDemo: (id) => projectRepo.receiveDemo(id),
     reportDemoNotReceived: (id) => projectRepo.reportDemoNotReceived(id),
@@ -188,6 +188,7 @@ export function createApi() {
     matbaaNotReceivedOrder: (id) => orderRepo.matbaaNotReceivedOrder(id),
     updateOrderSubtask: (orderId, subtaskId, patch) => orderRepo.updateOrderSubtask(orderId, subtaskId, patch),
     saveOrderBaskiOnayForm: (id, body) => orderRepo.saveOrderBaskiOnayForm(id, body),
+    prepareOrderBaskiOnayForm: (id, body) => orderRepo.prepareOrderBaskiOnayForm(id, body),
     approveOrderBaskiOnayForm: (id, body) => orderRepo.approveOrderBaskiOnayForm(id, body),
     startOrderOzalit: (id) => orderRepo.startOrderOzalit(id),
     cancelOrderOzalit: (id) => orderRepo.cancelOrderOzalit(id),

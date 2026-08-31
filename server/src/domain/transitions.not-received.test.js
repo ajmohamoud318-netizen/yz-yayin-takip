@@ -9,6 +9,10 @@
  *     receipt gate). Reporting non-receipt locks the re-delivery to the matbaa
  *     and wipes the partial approval ledger, since a new physical proof needs
  *     everyone's sign-off again.
+ *
+ * Both legs keep the matbaa's "Başladım" flag on the way back — unlike a
+ * resend or a delivery, the printer already did the work and owes only the
+ * re-delivery.
  */
 
 import { describe, it } from 'node:test'
@@ -58,6 +62,20 @@ describe('demo "Teslim Alınamadı" escape hatch', () => {
     assert.equal(next.stage, 'demo_teslim')
   })
 
+  it('keeps the "Başladım" gate set — the demo exists, the handover failed', () => {
+    const { project: next } = computeDemoNotReceived(
+      demoProject({ demo_started: true, demo_started_by_name: 'Matbaa' }),
+      leader, { designerIds: [] },
+    )
+    // canMarkDemoStarted goes false / canRequestDemoChange goes true off this:
+    // the printer's next action is "Teslim Edin", the leader's "Değişiklik İste".
+    assert.equal(next.demo_started, true)
+    assert.equal(next.demo_started_by_name, 'Matbaa')
+    // A stale change-request ledger still does not carry into the new round.
+    assert.equal(next.demo_fix_pending, false)
+    assert.equal(next.demo_change_requested_at, null)
+  })
+
   it('rejects a user who is neither leader nor assigned designer', () => {
     const stranger = { id: 'u-x', role: 'designer', name: 'Biri' }
     assert.throws(
@@ -104,6 +122,17 @@ describe('ozalit "Teslim Alınamadı" escape hatch', () => {
       ozalitProject(), designer, { designerIds: ['u-d'] },
     )
     assert.equal(next.stage, 'ozalit_teslim')
+  })
+
+  it('keeps the "Başladım" gate set — same reasoning as the demo leg', () => {
+    const { project: next } = computeOzalitNotReceived(
+      ozalitProject({ ozalit_started: true, ozalit_started_by_name: 'Matbaa' }),
+      leader, { designerIds: [] },
+    )
+    assert.equal(next.ozalit_started, true)
+    assert.equal(next.ozalit_started_by_name, 'Matbaa')
+    assert.equal(next.ozalit_fix_pending, false)
+    assert.equal(next.ozalit_change_requested_at, null)
   })
 
   it('rejects a user who is neither leader nor assigned designer', () => {

@@ -32,6 +32,11 @@ import {
   canRequestOzalitChange,
   canRespondDemoChange,
   canRespondOzalitChange,
+  canRequestEkranDemo,
+  canRespondEkranDemo,
+  needsOzalitRouteChoice,
+  canApproveOzalitNow,
+  ozalitLeaderApproved,
   isDemoApprover,
   canRejectAtStage,
   canEditProductInfo,
@@ -413,5 +418,107 @@ describe('isLegacyProject / assertNotLegacy (kayıtlı ürünler)', () => {
     let status
     try { assertNotLegacy(legacy) } catch (e) { status = e.status }
     expect(status).toBe(400)
+  })
+})
+
+
+/**
+ * Ekran Demo Onayı. The SPA copy of a server rule (computeEkranDemoRequest /
+ * computeEkranDemoApprove, server/src/domain/transitions.js) — kept in the
+ * same parity contract as assertNotLegacy above: a divergence here means the
+ * SPA shows a button the API refuses, or hides one it would allow.
+ *
+ * The load-bearing rule is that request and response are DISJOINT: the
+ * assigned designer asks, the team leader decides. Nobody does both.
+ */
+describe('canRequestEkranDemo / canRespondEkranDemo', () => {
+  const designer = { id: 'u-d', role: 'designer' }
+  const leader = { id: 'u-l', role: 'team_leader' }
+  const printer = { id: 'u-p', role: 'printer' }
+
+  const held = (overrides = {}) => ({
+    stage: 'demo_onay',
+    demo_held: true,
+    progress: 100,
+    ekran_demo_requested_at: null,
+    assignees: [{ id: 'u-d' }],
+    ...overrides,
+  })
+
+  it('lets the assigned designer request it on a held demo at 100%', () => {
+    expect(canRequestEkranDemo(designer, held())).toBe(true)
+  })
+
+  it('refuses the team leader — they respond, they do not request', () => {
+    expect(canRequestEkranDemo(leader, held())).toBe(false)
+  })
+
+  it('refuses an unassigned designer and the matbaa', () => {
+    expect(canRequestEkranDemo({ id: 'u-x', role: 'designer' }, held())).toBe(false)
+    expect(canRequestEkranDemo(printer, held())).toBe(false)
+    // An id match alone must not be enough — the role has to be designer too.
+    expect(canRequestEkranDemo(printer, held({ assignees: [{ id: 'u-p' }] }))).toBe(false)
+  })
+
+  it('requires a held demo at exactly 100% in a demo_onay stage', () => {
+    expect(canRequestEkranDemo(designer, held({ demo_held: false }))).toBe(false)
+    expect(canRequestEkranDemo(designer, held({ progress: 80 }))).toBe(false)
+    expect(canRequestEkranDemo(designer, held({ stage: 'demo_teslim' }))).toBe(false)
+    expect(canRequestEkranDemo(designer, held({ type: 'CIN', stage: 'cin_demo_onay' }))).toBe(true)
+  })
+
+  it('refuses stacking a second request while one is pending', () => {
+    expect(canRequestEkranDemo(designer, held({ ekran_demo_requested_at: '2026-01-01T00:00:00Z' }))).toBe(false)
+  })
+
+  it('lets only the leader respond, and only to a pending request', () => {
+    const pending = held({ ekran_demo_requested_at: '2026-01-01T00:00:00Z' })
+    expect(canRespondEkranDemo(leader, pending)).toBe(true)
+    expect(canRespondEkranDemo(designer, pending)).toBe(false)
+    expect(canRespondEkranDemo(leader, held())).toBe(false)
+  })
+})
+
+
+/**
+ * Ekran Ozalit (migration 061) — SPA copy of the server rule. Same parity
+ * contract as the rest of this file: a divergence means the SPA offers an
+ * approval the API refuses, or hides one it would allow.
+ */
+describe('ekran ozalit', () => {
+  const leader = { id: 'u-l', role: 'team_leader' }
+  const designer = { id: 'u-d', role: 'designer' }
+
+  it('asks for a route only on a post-revize ozalit resubmit', () => {
+    expect(needsOzalitRouteChoice({ stage: 'tasarim', last_reject_type: 'ozalit' })).toBe(true)
+    // A demo rejection resubmits without a choice — it has only one road back.
+    expect(needsOzalitRouteChoice({ stage: 'tasarim', last_reject_type: 'demo' })).toBe(false)
+    expect(needsOzalitRouteChoice({ stage: 'tasarim', last_reject_type: null })).toBe(false)
+    expect(needsOzalitRouteChoice({ stage: 'ozalit_teslim', last_reject_type: 'ozalit' })).toBe(false)
+    expect(needsOzalitRouteChoice(null)).toBe(false)
+  })
+
+  it('lets a single leader approve a screen round with no receipt', () => {
+    const screen = { ekran_ozalit: true, ozalit_received: false, ozalit_approvals: [] }
+    expect(canApproveOzalitNow(leader, screen)).toBe(true)
+    // No designer counter-sign on a screen round.
+    expect(canApproveOzalitNow({ ...designer }, { ...screen, assignees: [{ id: 'u-d' }] })).toBe(false)
+  })
+
+  it('leaves the physical round on the full multi-party rule', () => {
+    const physical = {
+      ekran_ozalit: false, ozalit_received: true,
+      ozalit_approvals: [], assignees: [{ id: 'u-d' }],
+    }
+    // Receipt still gates it, leader still goes first, designer still signs.
+    expect(canApproveOzalitNow(leader, { ...physical, ozalit_received: false })).toBe(false)
+    expect(canApproveOzalitNow(leader, physical)).toBe(true)
+    expect(canApproveOzalitNow(designer, physical)).toBe(false)
+    const afterLeader = {
+      ...physical,
+      ozalit_approvals: [{ id: 'u-l', role: 'team_leader' }],
+    }
+    expect(ozalitLeaderApproved(afterLeader)).toBe(true)
+    expect(canApproveOzalitNow(designer, afterLeader)).toBe(true)
   })
 })

@@ -96,7 +96,7 @@ function canRejectAt(stage, actor) {
  *  advance(project, actor) → next project state
  * ========================================================================== */
 
-export function computeAdvance(project, actor) {
+export function computeAdvance(project, actor, { route = null } = {}) {
   const now = new Date().toISOString()
   const actorName = actor?.name ?? 'Bilinmeyen'
 
@@ -110,18 +110,71 @@ export function computeAdvance(project, actor) {
   }
 
   // 1) Ozalit revision resubmit — designer finished a redesign after a
-  // previous ozalit rejection → jump straight to ozalit_teslim.
+  // previous ozalit rejection. The designer chooses how the fix gets checked:
+  //
+  //   'ozalit' → another PHYSICAL round: ozalit_teslim, matbaa delivers a
+  //              proof, then the full multi-party ozalit_onay sign-off.
+  //   'ekran'  → an EKRAN OZALIT (migration 061): straight to ozalit_onay
+  //              with no matbaa leg and no receipt gate, signed off by a
+  //              single team leader.
+  //
+  // The choice is mandatory, mirroring the sipariş pipeline's equivalent
+  // moment (`_resolveAdvanceTarget`, domain/entities/Order.js): the person who
+  // did the revision is the one who knows whether it needs ink on paper, so
+  // defaulting it silently would put that call back on whoever clicks first.
   if (project.stage === 'tasarim' && project.last_reject_type === 'ozalit') {
+    if (!route) {
+      badRequest('Revize sonrası Ozalit mi yoksa Ekran Ozalit mi isteneceğini seçmelisiniz.')
+    }
+    if (route !== 'ozalit' && route !== 'ekran') {
+      badRequest('Geçersiz ozalit seçimi.')
+    }
+    const cleared = {
+      last_reject_type: null,
+      last_reject_reason: null,
+      reject_target: null,
+      updated_at: now,
+    }
+    if (route === 'ekran') {
+      assertCanEnterProductionLocal('ozalit_onay', project.progress)
+      return {
+        project: {
+          ...project,
+          ...cleared,
+          stage: 'ozalit_onay',
+          ekran_ozalit: true,
+          ozalit_requested: false,
+          // Nothing physical arrives, so nothing can be "Teslim Alındı" —
+          // the receipt gate is skipped for this round rather than faked,
+          // and the flag stays honest about what was actually received.
+          ozalit_received: false,
+          ozalit_received_by: null,
+          ozalit_received_at: null,
+          ozalit_approvals: [],
+          // ozalit_attempt is deliberately NOT bumped: computeRejection
+          // already counted this round when it bounced the ozalit back, and
+          // the physical route below doesn't bump it either. Counting here
+          // would number a screen round one higher than the physical round
+          // it replaced.
+        },
+        history: makeEntry(project, {
+          action: 'advance',
+          event: 'ekran_ozalit_requested',
+          from_stage: 'tasarim',
+          to_stage: 'ozalit_onay',
+          done_by_name: actorName,
+          note: 'Ozalit revizyonu tamamlandı, ekran ozalit onayına gönderildi',
+        }),
+      }
+    }
     assertCanEnterProductionLocal('ozalit_teslim', project.progress)
     return {
       project: {
         ...project,
+        ...cleared,
         stage: 'ozalit_teslim',
-        last_reject_type: null,
-        last_reject_reason: null,
-        reject_target: null,
+        ekran_ozalit: false,
         ozalit_requested: true,
-        updated_at: now,
       },
       history: makeEntry(project, {
         action: 'advance',
@@ -131,6 +184,14 @@ export function computeAdvance(project, actor) {
         note: 'Ozalit revizyonu tamamlandı, matbaaya gönderildi',
       }),
     }
+  }
+
+  // A route is only ever meaningful on that one resubmit click. Refusing it
+  // everywhere else stops a stale picker from silently no-op'ing (same rule
+  // the sipariş pipeline states as "Onay seçimi yalnızca ozalit isteme
+  // adımında yapılabilir").
+  if (route != null) {
+    badRequest('Ozalit seçimi yalnızca revize sonrası gönderimde yapılabilir.')
   }
 
   // 2) Re-send a demo at a demo stage. The matbaa delivers at
@@ -523,9 +584,21 @@ export function computeEkranDemoRequest(project, actor) {
   if ((project.progress ?? 0) < 100) {
     badRequest('Ekran demo onayı yalnızca tasarım %100 tamamlandığında istenebilir.')
   }
-  const isAssigned = (project.assignees ?? []).some((a) => a.id === actor?.id)
-  if (actor?.role !== 'team_leader' && !isAssigned) {
-    badRequest('Ekran demo onayını yalnızca ekip lideri veya atanmış tasarımcı isteyebilir.')
+  // Requesting is the DESIGNER's call, never the leader's. The whole point of
+  // the gate is that the person who finished the work asks to skip the second
+  // physical demo, and a leader then decides — letting a leader request it too
+  // would leave them approving their own request with no second party, the
+  // same self-serve loop the baskı onayı maker-checker exists to prevent.
+  // A leader who wants the physical round instead still has computeAdvance's
+  // demo re-send, so nothing is stranded when no designer is assigned.
+  //
+  // Note this checks the ROLE as well as the assignment: `assignees` is a
+  // membership list, and matching an id alone would let any non-designer who
+  // ever landed in it through.
+  const isAssignedDesigner = actor?.role === 'designer'
+    && (project.assignees ?? []).some((a) => a.id === actor?.id)
+  if (!isAssignedDesigner) {
+    badRequest('Ekran demo onayını yalnızca atanmış tasarımcı isteyebilir.')
   }
   if (project.ekran_demo_requested_at != null) {
     badRequest('Zaten bekleyen bir ekran demo onayı talebi var.')
@@ -704,11 +777,11 @@ export function computeDemoNotReceived(project, actor, ctx = {}) {
       demo_received: false,
       demo_received_by: null,
       demo_received_at: null,
-      // New round starts fresh — see the matching comment in computeDemoTeslimAdvance.
-      demo_started: false,
-      demo_started_at: null,
-      demo_started_by: null,
-      demo_started_by_name: null,
+      // The "Başladım" gate deliberately does NOT reset here, unlike a resend
+      // or computeDemoTeslimAdvance. The matbaa's physical work still exists —
+      // only the handover failed — so the printer's next action is "Teslim
+      // Edin", not "İşlemi Başlatın" again, and the leader keeps "Değişiklik
+      // İste" instead of dropping back to free cancel/edit.
       demo_change_requested_at: null,
       demo_change_requested_by: null,
       demo_change_requested_by_name: null,
@@ -745,6 +818,9 @@ export function computeOzalitReceive(project, actor, ctx = {}) {
   const actorName = actor?.name ?? 'Bilinmeyen'
   if (project.stage !== 'ozalit_onay') {
     badRequest('Teslim alma yalnızca ozalit onay aşamasında yapılabilir.')
+  }
+  if (project.ekran_ozalit === true) {
+    badRequest('Ekran ozalitte teslim alma yapılmaz, doğrudan onaylayın.')
   }
   const designerIds = ctx.designerIds ?? []
   const isLeader = actor?.role === 'team_leader'
@@ -791,6 +867,13 @@ export function computeOzalitNotReceived(project, actor, ctx = {}) {
   if (project.stage !== 'ozalit_onay') {
     badRequest('Bu işlem yalnızca ozalit onay aşamasında yapılabilir.')
   }
+  // No matbaa delivery was ever made on a screen round, so there is nothing
+  // that could have failed to arrive — and the fallback this reports to
+  // (ozalit_teslim with the matbaa lock) would strand a round the matbaa
+  // was never part of.
+  if (project.ekran_ozalit === true) {
+    badRequest('Ekran ozalitte matbaa teslimi yoktur.')
+  }
   const designerIds = ctx.designerIds ?? []
   const isLeader = actor?.role === 'team_leader'
   const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
@@ -815,11 +898,8 @@ export function computeOzalitNotReceived(project, actor, ctx = {}) {
       ozalit_leader_approved_at: null,
       ozalit_designer_approvals: [],
       ozalit_approvals: [],
-      // New round starts fresh — see the matching comment in computeDemoTeslimAdvance.
-      ozalit_started: false,
-      ozalit_started_at: null,
-      ozalit_started_by: null,
-      ozalit_started_by_name: null,
+      // Started stays set — see computeDemoNotReceived. The proof was made,
+      // it just never arrived, so the matbaa owes a re-delivery, not a restart.
       ozalit_change_requested_at: null,
       ozalit_change_requested_by: null,
       ozalit_change_requested_by_name: null,
@@ -1415,6 +1495,40 @@ export function computeBaskiOnayPrepare(project, actor) {
 }
 
 function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
+  // Ekran Ozalit (migration 061): the designer chose a screen check instead of
+  // a physical proof, so this is a flat single-leader sign-off — no receipt
+  // gate (nothing arrived), no multi-party ledger, no designer counter-sign.
+  // Same shape as the sipariş pipeline's `ekran_onay` step and the project's
+  // own Ekran Demo Onayı.
+  if (project.ekran_ozalit === true) {
+    if (actor?.role !== 'team_leader') {
+      badRequest('Ekran ozalit onayını yalnızca ekip lideri verebilir.')
+    }
+    assertCanEnterProductionLocal('baski_onay', project.progress)
+    return {
+      project: {
+        ...project,
+        stage: 'baski_onay',
+        // Consumed with the round — a later ozalit must declare its own route.
+        ekran_ozalit: false,
+        ozalit_approvals: [],
+        ozalit_leader_approved: false,
+        ozalit_leader_approved_by: null,
+        ozalit_leader_approved_at: null,
+        ozalit_designer_approvals: [],
+        updated_at: now,
+      },
+      history: makeEntry(project, {
+        action: 'approve',
+        event: 'ekran_ozalit_approved',
+        from_stage: 'ozalit_onay',
+        to_stage: 'baski_onay',
+        done_by_name: actorName,
+        note: 'Ekran ozalit onaylandı',
+      }),
+    }
+  }
+
   // Multi-party approval: EVERY active team leader AND every assigned designer
   // must approve before the project advances to Üretime Hazır, and a team
   // leader has to go FIRST (see the leader-first gate below). ctx carries the
@@ -1524,7 +1638,8 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
   // Onaylar queue: the "Demoyu Reddedin" button used to render next to
   // "Demoyu Teslim Alın"). Wipe *_received* alongside the leg-reset below
   // so a fresh round starts with the receipt field unset, same as approve.
-  if (project.stage === 'ozalit_onay' && !project.ozalit_received) {
+  // An ekran ozalit has no physical proof, so there is no receipt to gate on.
+  if (project.stage === 'ozalit_onay' && !project.ozalit_received && !project.ekran_ozalit) {
     badRequest('Önce ozalit "Teslim Alındı" olarak işaretlenmelidir.')
   }
   if (
@@ -1556,6 +1671,8 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
   // even been redelivered yet.
   const legReset = isOzalit
     ? {
+        // The rejected round is over; the next one declares its own route.
+        ekran_ozalit: false,
         ozalit_received: false,
         ozalit_received_by: null,
         ozalit_received_at: null,

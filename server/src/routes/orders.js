@@ -19,6 +19,7 @@ import * as orders from '../services/orders-service.js'
  * POST   /api/order-requests/:id/ozalit-change-accept   — matbaa accepts the ask
  * POST   /api/order-requests/:id/ozalit-change-decline  — matbaa declines the ask
  * PATCH  /api/order-requests/:id/baski-onay-form        — save the print-spec draft
+ * POST   /api/order-requests/:id/baski-onay-prepare     — mark it hazırlandı (maker half)
  * POST   /api/order-requests/:id/baski-onay-approve     — approve it, order → onaylandi
  * PATCH  /api/order-requests/:orderId/subtasks/:id      — toggle one alt görev row
  *
@@ -92,6 +93,11 @@ export async function orderRoutes(fastify) {
   fastify.patch('/order-requests/:id/baski-onay-form', { schema: schemas.ordersBaskiOnayForm }, async (request) => {
     await attachUser(request)
     return orders.saveBaskiOnayForm(request.params.id, request.user, request.body)
+  })
+
+  fastify.post('/order-requests/:id/baski-onay-prepare', { schema: schemas.ordersBaskiOnayForm }, async (request) => {
+    await attachUser(request)
+    return orders.prepareBaskiOnayForm(request.params.id, request.user, request.body)
   })
 
   fastify.post('/order-requests/:id/baski-onay-approve', { schema: schemas.ordersBaskiOnayForm }, async (request) => {

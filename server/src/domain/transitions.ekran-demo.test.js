@@ -30,43 +30,65 @@ function heldDemoProject(overrides = {}) {
 }
 
 describe('computeEkranDemoRequest', () => {
-  it('leader can request it on a held demo at 100%', () => {
-    const { project: next, history } = computeEkranDemoRequest(heldDemoProject(), leader)
-    assert.equal(next.ekran_demo_requested_by, 'u-l')
+  it('assigned designer can request it on a held demo at 100%', () => {
+    const { project: next, history } = computeEkranDemoRequest(heldDemoProject(), designer)
+    assert.equal(next.ekran_demo_requested_by, 'u-d')
     assert.ok(next.ekran_demo_requested_at)
     assert.equal(next.stage, 'demo_onay')
     assert.equal(history.event, 'ekran_demo_requested')
   })
 
-  it('assigned designer can also request it', () => {
-    const { project: next } = computeEkranDemoRequest(heldDemoProject(), designer)
-    assert.equal(next.ekran_demo_requested_by, 'u-d')
+  // Requesting and deciding must stay in different hands: the leader is the
+  // one who answers this request, so they may not raise it.
+  it('refuses the team leader — they respond, they do not request', () => {
+    assert.throws(
+      () => computeEkranDemoRequest(heldDemoProject(), leader),
+      /yalnızca atanmış tasarımcı/,
+    )
   })
 
   it('refuses a non-assigned designer', () => {
     assert.throws(
       () => computeEkranDemoRequest(heldDemoProject(), stranger),
-      /yalnızca ekip lideri veya atanmış tasarımcı/,
+      /yalnızca atanmış tasarımcı/,
+    )
+  })
+
+  it('refuses the matbaa', () => {
+    assert.throws(
+      () => computeEkranDemoRequest(heldDemoProject(), printer),
+      /yalnızca atanmış tasarımcı/,
+    )
+  })
+
+  // `assignees` is a membership list, so an id match alone is not enough —
+  // the actor has to actually be a designer.
+  it('refuses a non-designer who happens to be in assignees', () => {
+    assert.throws(
+      () => computeEkranDemoRequest(
+        heldDemoProject({ assignees: [{ id: 'u-p' }] }), printer,
+      ),
+      /yalnızca atanmış tasarımcı/,
     )
   })
 
   it('refuses when the demo is not held', () => {
     assert.throws(
-      () => computeEkranDemoRequest(heldDemoProject({ demo_held: false }), leader),
+      () => computeEkranDemoRequest(heldDemoProject({ demo_held: false }), designer),
       /yalnızca askıda kalan bir demo için/,
     )
   })
 
   it('refuses below 100% progress', () => {
     assert.throws(
-      () => computeEkranDemoRequest(heldDemoProject({ progress: 80 }), leader),
+      () => computeEkranDemoRequest(heldDemoProject({ progress: 80 }), designer),
       /tasarım %100 tamamlandığında/,
     )
   })
 
   it('refuses outside demo_onay/cin_demo_onay', () => {
     assert.throws(
-      () => computeEkranDemoRequest(heldDemoProject({ stage: 'demo_teslim' }), leader),
+      () => computeEkranDemoRequest(heldDemoProject({ stage: 'demo_teslim' }), designer),
       /yalnızca demo onay aşamasında/,
     )
   })
@@ -74,7 +96,7 @@ describe('computeEkranDemoRequest', () => {
   it('refuses stacking a second pending request', () => {
     assert.throws(
       () => computeEkranDemoRequest(
-        heldDemoProject({ ekran_demo_requested_at: '2026-01-01T00:00:00Z' }), leader,
+        heldDemoProject({ ekran_demo_requested_at: '2026-01-01T00:00:00Z' }), designer,
       ),
       /Zaten bekleyen bir ekran demo onayı talebi var/,
     )
@@ -82,7 +104,7 @@ describe('computeEkranDemoRequest', () => {
 
   it('works for the ÇİN mirror stage', () => {
     const { project: next } = computeEkranDemoRequest(
-      heldDemoProject({ type: 'CIN', stage: 'cin_demo_onay' }), leader,
+      heldDemoProject({ type: 'CIN', stage: 'cin_demo_onay' }), designer,
     )
     assert.ok(next.ekran_demo_requested_at)
   })

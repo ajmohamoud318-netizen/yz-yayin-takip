@@ -238,15 +238,38 @@ describe('Project.demoChangeAccept', () => {
 })
 
 describe('Project.advance', () => {
-  it('tasarim → ozalit_teslim on ozalit rejection resubmit', () => {
-    const project = new Project(baseProject({
-      stage: 'tasarim', last_reject_type: 'ozalit', progress: 100,
-    }))
-    const event = project.advance(L1)
+  const resubmit = () => new Project(baseProject({
+    stage: 'tasarim', last_reject_type: 'ozalit', progress: 100,
+  }))
+
+  it('tasarim → ozalit_teslim on an ozalit rejection resubmit routed physical', () => {
+    const project = resubmit()
+    const event = project.advance(L1, { route: 'ozalit' })
     assert.equal(project.stage, 'ozalit_teslim')
+    assert.equal(project.ekran_ozalit, false)
     assert.equal(project.last_reject_type, null)
     assert.equal(event.type, 'project.advance')
     assert.equal(event.notification.kind, 'transition')
+  })
+
+  // Migration 061: the screen route skips the matbaa leg entirely and lands
+  // on the approval stage itself.
+  it('tasarim → ozalit_onay on an ozalit rejection resubmit routed ekran', () => {
+    const project = resubmit()
+    project.advance(L1, { route: 'ekran' })
+    assert.equal(project.stage, 'ozalit_onay')
+    assert.equal(project.ekran_ozalit, true)
+    assert.equal(project.ozalit_requested, false)
+    // Nothing physical arrived, so nothing may claim to have been received.
+    assert.equal(project.ozalit_received, false)
+  })
+
+  it('refuses the resubmit when no route was chosen', () => {
+    assert.throws(() => resubmit().advance(L1), /Ozalit mi yoksa Ekran Ozalit mi/)
+  })
+
+  it('refuses an unknown route', () => {
+    assert.throws(() => resubmit().advance(L1, { route: 'sihir' }), /Geçersiz ozalit seçimi/)
   })
 
   it('refuses a tasarim resubmit with outstanding revize flags', () => {
