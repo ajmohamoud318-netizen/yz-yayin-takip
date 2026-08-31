@@ -155,7 +155,7 @@ function makeClient({ project, subtasks = [], assignees = [], leaders = [] } = {
         const u = assignees.find((a) => a.id === params[0])
         return { rows: u ? [u] : [] }
       }
-      if (/role = 'team_leader' AND is_active = TRUE/.test(sql)) {
+      if (/role = (?:'team_leader'|ANY\(\$1\)) AND is_active = TRUE/.test(sql)) {
         return { rows: leaders.map((id) => ({ id })) }
       }
       if (/UPDATE subtasks[\s\S]*SET is_done/.test(sql)) {
@@ -359,6 +359,132 @@ describe('project-service — baski_onay approve', () => {
       () => service.approveProject('p-1', D1, { stage: 'baski_onay' }, client),
       /Baskı onayını yalnızca ekip lideri/,
     )
+  })
+})
+
+/* Regression tests for the prepared-ctx forwarding pattern.
+
+   The bug class: a `run: (project) => project.X(actor)` arrow that drops
+   the second arg from `runProjectCommand`. Without the prepared ctx
+   (designerIds / teamLeaderIds / demoId), the FSM silently blocks
+   designers from receipt/correction and the multi-party approval gates
+   misfire. Each test below would have failed against the buggy service. */
+describe('project-service — prepared-ctx forwarding', () => {
+  // loadProjectAssignees's subtask-owner scan SQL isn't fully matched by
+  // this mock, so each "designer is on the project" test sets
+  // `assigned_to: 'D1'` to drive the single-user branch the mock DOES match.
+  it('receiveDemo: an assigned designer can mark the demo "Teslim Alındı"', async () => {
+    const project = projectRow({ stage: 'demo_onay', demo_received: false, assigned_to: 'D1', assignees: [D1] })
+    const client = makeClient({ project, assignees: [D1] })
+
+    const result = await service.receiveDemo('p-1', D1, client)
+
+    assert.equal(result.demo_received, true)
+    assert.equal(result.demo_received_by, 'Rahşan')
+    const patch = updatePatch(client)
+    assert.equal(patch.demo_received, true)
+  })
+
+  it('receiveDemo: an unassigned designer is still refused by the gate', async () => {
+    const project = projectRow({ stage: 'demo_onay', demo_received: false })
+    const client = makeClient({ project, assignees: [] })
+
+    await assert.rejects(
+      () => service.receiveDemo('p-1', D1, client),
+      /yalnızca ekip lideri veya atanmış tasarımcı/,
+    )
+  })
+
+  it('demoNotReceived: an assigned designer can report "Teslim Alınamadı"', async () => {
+    const project = projectRow({
+      stage: 'demo_onay', demo_received: false, type: 'TR', demo_attempt: 1,
+      assigned_to: 'D1', assignees: [D1],
+    })
+    const client = makeClient({ project, assignees: [D1] })
+
+    const result = await service.demoNotReceived('p-1', D1, client)
+
+    assert.equal(result.stage, 'demo_teslim')
+    assert.equal(result.demo_attempt, 2)
+  })
+
+  it('ozalitReceive: an assigned designer can mark the ozalit "Teslim Alındı"', async () => {
+    const project = projectRow({ stage: 'ozalit_onay', ozalit_received: false, assigned_to: 'D1', assignees: [D1] })
+    const client = makeClient({ project, assignees: [D1] })
+
+    const result = await service.ozalitReceive('p-1', D1, client)
+
+    assert.equal(result.ozalit_received, true)
+    assert.equal(result.ozalit_received_by, 'Rahşan')
+  })
+
+  it('ozalitNotReceived: an assigned designer can report ozalit "Teslim Alınamadı"', async () => {
+    const project = projectRow({
+      stage: 'ozalit_onay', ozalit_received: false, ozalit_attempt: 1,
+      assigned_to: 'D1', assignees: [D1],
+    })
+    const client = makeClient({ project, assignees: [D1] })
+
+    const result = await service.ozalitNotReceived('p-1', D1, client)
+
+    assert.equal(result.stage, 'ozalit_teslim')
+    assert.equal(result.ozalit_attempt, 2)
+    assert.equal(result.reject_target, 'matbaa')
+    assert.deepEqual(result.ozalit_approvals, [])
+  })
+
+  it('approveProject at ozalit_onay: an assigned designer passes the role gate (then trips leader-first)', async () => {
+    const project = projectRow({
+      stage: 'ozalit_onay', ozalit_received: true,
+      assigned_to: 'D1', assignees: [D1],
+      ozalit_approvals: [], progress: 100,
+    })
+    const client = makeClient({ project, assignees: [D1], leaders: ['L1', 'L2'] })
+
+    await assert.rejects(
+      () => service.approveProject('p-1', D1, { stage: 'ozalit_onay' }, client),
+      /Önce ekip lideri onaylamalıdır/,
+    )
+  })
+
+  it('approveProject at baski_onay: the preparer cannot self-approve when another leader is active', async () => {
+    const project = projectRow({
+      stage: 'baski_onay',
+      baski_onay_prepared: true,
+      baski_onay_prepared_by: 'L1',
+      progress: 100,
+      assignees: [],
+    })
+    const client = makeClient({ project, leaders: ['L1', 'L2'] })
+
+    await assert.rejects(
+      () => service.approveProject('p-1', L1, { stage: 'baski_onay' }, client),
+      /Baskı onay formunu hazırlayan kişi kendi onayını veremez/,
+    )
+  })
+
+  it('demoEditNotify: the corrected sheet\'s id lands on the timeline row', async () => {
+    const project = projectRow({ stage: 'demo_teslim', demo_started: false })
+    const client = makeClient({ project })
+
+    await service.demoEditNotify('p-1', L1, { payload: { items: [] }, attempt: 1 }, client)
+
+    const [hist] = historyRows(client)
+    assert.equal(hist.event, 'demo_form_edited')
+    assert.equal(hist.demo_id, 'd-test')
+  })
+
+  it('ozalitEditNotify: the corrected sheet\'s id lands on the timeline row', async () => {
+    const project = projectRow({
+      stage: 'ozalit_teslim', ozalit_started: false, ozalit_requested: true,
+    })
+    const client = makeClient({ project })
+
+    await service.ozalitEditNotify('p-1', L1, { payload: { items: [] }, attempt: 1 }, client)
+
+    const [hist] = historyRows(client)
+    assert.equal(hist.event, 'ozalit_form_edited')
+    assert.equal(hist.demo_id, 'd-test')
   })
 })
 

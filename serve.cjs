@@ -15,7 +15,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { promisify } = require('node:util');
 
-const DIST = path.join(__dirname, 'client', 'dist');
+// SERVE_DIST overrides the built-in default. Production ignores it — the
+// Dockerfile copies `client/dist` next to `serve.cjs` so the default path
+// resolves. The override exists so the integration test in
+// server/test/serve-headers.test.js can boot serve.cjs against a fake dist
+// without touching the real build output.
+const DIST = process.env.SERVE_DIST || path.join(__dirname, 'client', 'dist');
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
@@ -47,6 +52,110 @@ const MIME = {
   // reject it silently and the install prompt never appears.
   '.webmanifest': 'application/manifest+json; charset=utf-8',
 };
+
+/**
+ * Always-on defense-in-depth headers. Called for every non-/api/ response,
+ * BEFORE setCacheHeaders — the two helpers stack: security headers here,
+ * Cache-Control there.
+ *
+ * Directives, in order:
+ *   default-src 'self'
+ *     Default-deny everything not explicitly allowed. The SPA only ever
+ *     talks to itself; if a third-party dep starts fetching something we
+ *     didn't whitelist, CSP refuses it instead of letting it leak.
+ *
+ *   script-src 'self' 'wasm-unsafe-eval'
+ *     Same-origin only. 'wasm-unsafe-eval' is scoped to WebAssembly —
+ *     narrower than 'unsafe-eval', which would also re-enable JS eval().
+ *     Required for any WASM-compiled module Vite ships in the future.
+ *
+ *   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com
+ *     shadcn-ui / Radix inject inline `style="top: …; left: …"` for
+ *     portal positioning (dropdowns, popovers, dialogs). Drop
+ *     'unsafe-inline' and every overlay renders in the corner clipped
+ *     against the body — silent failure, hard to debug. Long-term fix is
+ *     nonces, tracked separately. `fonts.googleapis.com` is added because
+ *     client/index.html loads the combined Google Fonts stylesheet
+ *     (Fraunces / Geist / Geist Mono / Alex Brush / Utter Butter) — see
+ *     the matching `font-src` entry below.
+ *
+ *   img-src 'self' data: blob:
+ *     Avatars (/uploads/* proxied to the API on the same origin), plus
+ *     data: and blob: for inline previews / canvas captures.
+ *
+ *   font-src 'self' data: https://fonts.gstatic.com
+ *     The Google Fonts stylesheet references woff2 files on
+ *     fonts.gstatic.com — without this the browser silently falls back to
+ *     system fonts. `data:` covers one-off base64 glyph payloads.
+ *
+ *   worker-src 'self' blob:
+ *     lottie-react spawns its animation worker from a blob URL; same-origin
+ *     `'self'` covers any explicit URL workers we add later.
+ *
+ *   connect-src 'self'
+ *     All XHR / fetch / EventSource traffic is same-origin (/api/*, /data/*).
+ *     We intentionally do NOT add fcm.googleapis.com or push.apple.com —
+ *     those are server-to-server endpoints, never reached from the browser.
+ *
+ *   manifest-src 'self'
+ *     /manifest.webmanifest is served from this origin. Locking to 'self'
+ *     stops a future <link rel="manifest"> injection from pointing at a
+ *     hostile manifest.
+ *
+ *   base-uri 'self'
+ *     Prevents an attacker who injects HTML from rewriting <base href> to
+ *     hijack relative URLs (the classic "host the SPA at /login but
+ *     route all asset requests to evil.com" trick).
+ *
+ *   form-action 'self'
+ *     Hard-locks every <form action> to this origin. The SPA has no forms
+ *     that POST elsewhere; this is purely belt-and-braces against an
+ *     injected <form>.
+ *
+ *   frame-ancestors 'none'
+ *     Replaces helmet's default X-Frame-Options: SAMEORIGIN with a stricter
+ *     deny. This SPA is not meant to be embedded anywhere — if a third
+ *     party tries to iframe it, the browser refuses.
+ *
+ * Adjacent headers:
+ *   X-Content-Type-Options: nosniff
+ *     Stops IE / Chrome from MIME-sniffing a JS file as HTML and executing
+ *     it. Cheap, no downsides.
+ *
+ *   X-Frame-Options: DENY
+ *     Belt for browsers that ignore CSP frame-ancestors (legacy user agents,
+ *     some PDF viewers).
+ *
+ *   Referrer-Policy: strict-origin-when-cross-origin
+ *     Sends only the origin (not the path) on cross-origin navigations.
+ *     Project URLs leak role/team context — keeping them server-side is
+ *     the safer default.
+ *
+ *   Permissions-Policy: camera=(), microphone=(), geolocation=()
+ *     This SPA has no need for any sensor. Empty allowlist = denied for
+ *     every legacy feature name in the policy; a future feature that needs
+ *     one will have to opt in explicitly.
+ */
+function setSecurityHeaders(res) {
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data: https://fonts.gstatic.com",
+    "worker-src 'self' blob:",
+    "connect-src 'self'",
+    "manifest-src 'self'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ');
+  res.setHeader('Content-Security-Policy', csp);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+}
 
 function setCacheHeaders(res, filePath) {
   // The service worker must NEVER be cached. Browsers re-fetch /sw.js to
@@ -188,6 +297,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Every /api/* path is proxied (no static headers — that's the API's job).
+  // Everything below this line is a static-file response and gets defense
+  // headers unconditionally: 200s, 405s, and 404s all stack the CSP and
+  // friends before setCacheHeaders writes Cache-Control.
+  setSecurityHeaders(res);
+
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.writeHead(405, { 'Allow': 'GET, HEAD' });
     return res.end();
@@ -215,6 +330,10 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
+  // server.address().port is the actually-bound port, which differs from the
+  // input when PORT=0. For any fixed PORT (the prod case) it's identical.
+  const addr = server.address();
+  const actualPort = typeof addr === 'object' && addr ? addr.port : PORT;
   // eslint-disable-next-line no-console
-  console.log(`[yz-yayin-takip] serving ${DIST} on http://${HOST}:${PORT}`);
+  console.log(`[yz-yayin-takip] serving ${DIST} on http://${HOST}:${actualPort}`);
 });

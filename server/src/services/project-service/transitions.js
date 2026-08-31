@@ -119,7 +119,12 @@ export function advanceProject(projectId, actor, ctx = {}, client = null) {
 export function approveProject(projectId, actor, ctx = {}, client = null) {
   return runProjectCommand(projectId, actor, {
     prepare: withAssigneesAndLeaders,
-    run: (project) => project.approve(actor, { stage: ctx.stage, note: ctx.note ?? '' }),
+    run: (project, pCtx) => project.approve(actor, {
+      stage: ctx.stage,
+      note: ctx.note ?? '',
+      designerIds: pCtx.designerIds ?? [],
+      teamLeaderIds: pCtx.teamLeaderIds ?? [],
+    }),
   }, client)
 }
 
@@ -127,7 +132,9 @@ export function approveProject(projectId, actor, ctx = {}, client = null) {
 export function receiveDemo(projectId, actor, client = null) {
   return runProjectCommand(projectId, actor, {
     prepare: withAssignees,
-    run: (project) => project.demoReceive(actor),
+    run: (project, pCtx) => project.demoReceive(actor, {
+      designerIds: pCtx.designerIds ?? [],
+    }),
   }, client)
 }
 
@@ -135,7 +142,9 @@ export function receiveDemo(projectId, actor, client = null) {
 export function demoNotReceived(projectId, actor, client = null) {
   return runProjectCommand(projectId, actor, {
     prepare: withAssignees,
-    run: (project) => project.demoNotReceived(actor),
+    run: (project, pCtx) => project.demoNotReceived(actor, {
+      designerIds: pCtx.designerIds ?? [],
+    }),
   }, client)
 }
 
@@ -143,7 +152,9 @@ export function demoNotReceived(projectId, actor, client = null) {
 export function ozalitReceive(projectId, actor, client = null) {
   return runProjectCommand(projectId, actor, {
     prepare: withAssignees,
-    run: (project) => project.ozalitReceive(actor),
+    run: (project, pCtx) => project.ozalitReceive(actor, {
+      designerIds: pCtx.designerIds ?? [],
+    }),
   }, client)
 }
 
@@ -151,7 +162,9 @@ export function ozalitReceive(projectId, actor, client = null) {
 export function ozalitNotReceived(projectId, actor, client = null) {
   return runProjectCommand(projectId, actor, {
     prepare: withAssignees,
-    run: (project) => project.ozalitNotReceived(actor),
+    run: (project, pCtx) => project.ozalitNotReceived(actor, {
+      designerIds: pCtx.designerIds ?? [],
+    }),
   }, client)
 }
 
@@ -206,9 +219,7 @@ export function ozalitCancel(projectId, actor, client = null) {
 export function demoEditNotify(projectId, actor, body = {}, client = null) {
   return runProjectCommand(projectId, actor, {
     prepare: withDemoSnapshot('demo', body),
-    // Preserve slice-1 behavior: the entity currently ignores ctx.demoId.
-    // Tracked as a slice-1 follow-up — see withDemoSnapshot's docblock.
-    run: (project) => project.demoEdit(actor, { demoId: undefined }),
+    run: (project, pCtx) => project.demoEdit(actor, { demoId: pCtx.demoId ?? null }),
   }, client)
 }
 
@@ -216,8 +227,7 @@ export function demoEditNotify(projectId, actor, body = {}, client = null) {
 export function ozalitEditNotify(projectId, actor, body = {}, client = null) {
   return runProjectCommand(projectId, actor, {
     prepare: withDemoSnapshot('ozalit', body),
-    // Preserve slice-1 behavior: see demoEditNotify.
-    run: (project) => project.ozalitEdit(actor, { demoId: undefined }),
+    run: (project, pCtx) => project.ozalitEdit(actor, { demoId: pCtx.demoId ?? null }),
   }, client)
 }
 
