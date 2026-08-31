@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# CI is read-only: no write perms needed. Pinning the default here so a
+# future contributor expanding this workflow can't accidentally inherit
+# token write access on a fork PR.
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Build & test
+    runs-on: ubuntu-latest
+    # Server tests (~5s) + client tests (~3s) + `npm ci` + `vite build`
+    # total ~5 min worst case on a cold cache. The 20-minute cap is just
+    # insurance against a hung runner — it should never trip.
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20 (with npm cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          # The client install is heavy (rollup's native binary download
+          # is the worst single step on a cold cache). `cache: npm` keeps
+          # ~/.npm between runs so repeat PRs skip the registry round
+          # trip. `cache-dependency-path` is the npm-workspaces lockfile;
+          # both `client/` and `server/` resolve from this one.
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install workspace deps (npm ci)
+        # `npm ci`, not `npm install`, so the committed lockfile is the
+        # source of truth and drift between `package.json` and the lock
+        # fails the build instead of silently changing resolved versions.
+        # Workspaces install both client and server deps in one shot.
+        run: npm ci
+
+      - name: Test server (node --test)
+        # Pure-unit tests on the Fastify backend. They use a fake pg pool
+        # (see e.g. server/src/db/pool.test.js, event-store.test.js) so
+        # no Postgres or Redis is needed in CI. ~426 tests, ~5s on a warm
+        # cache. This is what guards the FSM parity the brief flagged:
+        # server/src/domain/transitions.js drives the authoritative
+        # pipeline states that client/src/domain/services/pipeline.js
+        # mirrors.
+        run: npm run test:server
+
+      - name: Test client (vitest)
+        # Component, hook, and the client-side FSM-mirror suite. jsdom
+        # environment (see client/vitest.config.js) — no live browser.
+        # ~235 tests, ~3s.
+        run: npm test
+
+      - name: Build client SPA (vite build)
+        # Produces client/dist, which serve.cjs serves in production.
+        # Runs before the smoke step because that step requires the dist
+        # to exist; also catches Vite-time failures (broken imports,
+        # misconfigured Tailwind, etc.) a moment before the smoke probe.
+        run: npm run build
+
+      - name: Smoke test: node serve.cjs serves client/dist
+        # CHOICE: skip the Docker build+run smoke in favour of launching
+        # serve.cjs directly. Rationale:
+        #
+        #   * The Dockerfile's runtime stage is `COPY client/dist +
+        #     serve.cjs` + `CMD ["node", "serve.cjs"]`. Rebuilding the
+        #     full SPA inside Docker only re-validates steps we already
+        #     ran above (`npm ci`, `vite build`) at the cost of pulling
+        #     `node:20-alpine` twice and re-installing node_modules
+        #     inside the image — ~2-3 min per PR for no extra coverage
+        #     of the FSM or transitions parity that motivated this CI.
+        #   * serve.cjs IS the production entrypoint. Launching it
+        #     directly exercises the exact same code path.
+        #   * The Dockerfile is small and mechanical (3 stages, ~15
+        #     lines). A contributor who breaks it will hit the failure
+        #     on their first `docker build` locally.
+        #
+        # What this step actually asserts:
+        #   1. The server starts and binds on PORT.
+        #   2. / serves client/dist/index.html with `Cache-Control:
+        #      no-cache, no-store, must-revalidate`. Without this,
+        #      deploys don't roll out without a manual hard refresh —
+        #      the contract serve.cjs encodes in its comments.
+        #   3. Unknown extension-less paths fall back to index.html
+        #      (history-mode routing), with the same no-cache header.
+        #      A 404 here means SPA routes break on every new page.
+        #   4. Hashed assets under /assets/* get the long-cache +
+        #      CORS header pair. Vite emits `crossorigin` on hashed
+        #      asset imports, and without `Access-Control-Allow-Origin`
+        #      the browser silently drops the module — the page
+        #      renders with no styling and DevTools shows a
+        #      misleading `ERR_ABORTED 404`.
+        env:
+          PORT: '3001'
+        run: |
+          set -euo pipefail
+          node serve.cjs &
+          SERVER_PID=$!
+
+          # Wait until the listener accepts connections (max 30 s).
+          ready=false
+          for _ in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://localhost:3001/; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "true" ]; then
+            echo "::error::serve.cjs did not start listening on :3001 within 30s" >&2
+            kill "$SERVER_PID" 2>/dev/null || true
+            wait "$SERVER_PID" 2>/dev/null || true
+            exit 1
+          fi
+
+          # (2) index.html must NEVER be cached.
+          # curl writes raw HTTP headers to stdout — `\r\n` line endings
+          # — and `grep -x` rejects a trailing `\r`. Strip CRs and use
+          # `grep -Fix` (literal, whole-line, case-insensitive) so commas
+          # and dashes in cache-header values aren't regex metachars.
+          echo "--- / Cache-Control ---"
+          curl -fsS -D - -o /dev/null http://localhost:3001/ \
+            | tr -d '\r' \
+            | grep -Fix 'cache-control: no-cache, no-store, must-revalidate'
+
+          # (3) SPA fallback — unknown extension-less path → index.html.
+          echo "--- /some/spa/route status ---"
+          curl -fsS -o /dev/null -w '%{http_code}\n' \
+            http://localhost:3001/some/spa/route | grep -qx '200'
+
+          # (4) Hashed assets cache aggressively + carry CORS.
+          ASSET=$(find client/dist/assets -maxdepth 1 -type f -name '*.js' | head -n1)
+          if [ -z "$ASSET" ]; then
+            echo "::error::no JS asset under client/dist/assets; vite build did not emit assets/" >&2
+            kill "$SERVER_PID" 2>/dev/null || true
+            wait "$SERVER_PID" 2>/dev/null || true
+            exit 1
+          fi
+          echo "--- /assets/* Cache-Control ---"
+          curl -fsS -D - -o /dev/null "http://localhost:3001/assets/$(basename "$ASSET")" \
+            | tr -d '\r' \
+            | grep -Fix 'cache-control: public, max-age=3600, must-revalidate'
+
+          echo "smoke OK"
+          kill "$SERVER_PID" 2>/dev/null || true
+          wait "$SERVER_PID" 2>/dev/null || true
