@@ -1,15 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
-import { ShoppingCart, ChevronDown, Package, Pencil, Plus, X, Check, ListChecks, FileText, RefreshCw } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import api, {
   ORDER_STEP_LABELS, ORDER_STEP_NEXT, ORDER_REJECT_TO, ORDER_REJECT_TARGETS,
-  ORDER_STEP_PATH_DEFAULT, orderStepPath,
   canApproveMatbaaOnayNow, matbaaOnayLeaderApproved,
 } from '@/api'
 import { getComponentsForProject, saveComponentsForProject, primeProductInfoCache } from '@/data/productCatalog'
-import { buildAdetRows } from '@/data/orderAdet'
+import { saveSubtaskFlags } from '@/data/orderSubtasks'
 import { useAuth } from '@/hooks/useAuth'
+import { useOrderOzalitRound } from '@/hooks/useOrderOzalitRound'
 import { isSubtaskDone } from '@/domain/services/progress'
 import { Button } from '@/components/ui/button'
 import {
@@ -23,8 +23,30 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { cn, formatNumber } from '@/lib/utils'
-import { stampSpecSignature } from '@/components/SpecFormDialog'
+import { cn } from '@/lib/utils'
+import MiniPipeline from '@/components/TalepMiniPipeline'
+import TalepRejectForm from '@/components/TalepRejectForm'
+import { TalepAssignDesigners, TalepOrderSummary } from '@/components/TalepOrderSummary'
+import { TalepMatbaaReceiptBanner, TalepOzalitPanel } from '@/components/TalepOzalitPanel'
+import { ProductInfoPanel, SubtaskPanel } from '@/components/TalepSpecEditors'
+
+/* ------------------------------------------------------------------ */
+/*  Sibling files (slice: client god-components)                      */
+/* ------------------------------------------------------------------ */
+/**
+ * This file used to be 1433 lines. What it kept is the sign-off itself —
+ * which step this is, who may act on it, and what the two submits (advance,
+ * reject) write. Everything the dialog SHOWS or does around that moved next
+ * to it:
+ *
+ *  - `TalepOrderSummary.jsx`  — what was ordered + the assign-step picker
+ *  - `TalepMiniPipeline.jsx`  — the step strip
+ *  - `TalepSpecEditors.jsx`   — alt görevler / Ürün Bilgileri editors + panels
+ *  - `TalepRejectForm.jsx`    — route, revize picker, reason
+ *  - `TalepOzalitPanel.jsx`   — the tasarimci_onay round + receipt banner
+ *  - `hooks/useOrderOzalitRound.js` — every action on that round
+ *  - `data/orderSubtasks.js`  — persisting the designer's Revize flags
+ */
 
 const deepClone = (x) => JSON.parse(JSON.stringify(x ?? []))
 // Reads the shared, server-backed spec (cache → local mirror → seed).
@@ -35,51 +57,6 @@ function loadProductComps(projectId) {
 // Ürün Bilgileri and the Demo/Ozalit forms read from.
 function saveProductComps(projectId, comps) {
   return saveComponentsForProject(projectId, comps)
-}
-
-// Per-subtask fields PATCH /api/order-requests/:orderId/subtasks/:id accepts
-// from the designer.
-const SUBTASK_PATCH_FIELDS = ['needs_revize', 'is_done', 'pages_done', 'stickers_done']
-
-/**
- * Persist the designer's Revize flags by PATCHing only the rows that actually
- * changed.
- *
- * These are `order_subtasks` rows — this order's own snapshot of the
- * project's alt görevler (migration 039), not the shared `subtasks` table —
- * so two concurrent orders on the same project never see or overwrite each
- * other's rework tracking.
- *
- * This deliberately does NOT use `PUT /projects/:id/subtasks`. That endpoint
- * replaces the whole list and belongs to the team leader, who owns the list's
- * SHAPE (titles, kinds, totals, assignment). Sending this dialog's rows there
- * failed three ways: the rows carry server-side fields (`id`, `position`,
- * `assigned_name`, timestamps) that its additionalProperties:false schema
- * rejects with a 400; the route is team_leader-only, so a designer got a 403;
- * and it never persisted `needs_revize` anyway — the one field this editor
- * exists to set. The net effect was that a designer who touched alt görevler
- * could not sign at all, while their ürün bilgileri edit (saved just above)
- * had already gone through.
- */
-async function saveSubtaskFlags(orderId, subtasks, originalJson) {
-  const before = new Map(JSON.parse(originalJson).map((s) => [s.id, s]))
-  for (const s of subtasks) {
-    const prev = before.get(s.id)
-    // Rows with no id were never persisted; the list shape is the leader's to
-    // change, so this dialog only ever updates existing subtasks.
-    if (!s.id || !prev) continue
-    const patch = {}
-    for (const f of SUBTASK_PATCH_FIELDS) {
-      if (s[f] === prev[f]) continue
-      // `pages_done`/`stickers_done` are integers server-side; a null (a
-      // counter that was never started) is not a value the schema accepts.
-      if (f === 'pages_done' || f === 'stickers_done') {
-        if (!Number.isFinite(s[f])) continue
-      }
-      patch[f] = s[f]
-    }
-    if (Object.keys(patch).length > 0) await api.updateOrderSubtask(orderId, s.id, patch)
-  }
 }
 
 /**
@@ -114,9 +91,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   const { user } = useAuth()
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
-  // matbaa_onay receipt gate — "Teslim Alındı" / "Teslim Alınamadı".
-  const [matbaaBusy, setMatbaaBusy] = useState(false)
-  const [confirmMatbaaNotReceived, setConfirmMatbaaNotReceived] = useState(false)
   // Designer step 1 of 2 (status 'goruldu', migration 054) — "Kontrolleri
   // Yapın": alt görevler + ürün bilgileri. Step 2 ("Ozalit İsteyin", status
   // 'kontrol_edildi') isn't this dialog at all: it opens the Ozalit Üretim
@@ -164,14 +138,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   const [assignIds, setAssignIds] = useState([])
   const [subtasks, setSubtasks] = useState([])
   const [subsOpen, setSubsOpen] = useState(false)
-  // Ozalit round state for the tasarimci_onay step (full parity with the main
-  // pipeline's demo/ozalit started/cancel/edit/change-request flow, migrations
-  // 048/049, scoped to the order's own round from migration 051). Declared up
-  // here with the rest of the state — everything below the `if (!order) return
-  // null` guard is skipped on a null order, so a hook down there would change
-  // the hook count between renders (React #310).
-  const [ozalitBusy, setOzalitBusy] = useState(false)
-  const [changeNote, setChangeNote] = useState('')
   const originalRef = useRef('[]')
   const originalSubsRef = useRef('[]')
   // Mirror of SpecFormDialog's `noChangesToSend`: when the dialog opens with
@@ -179,6 +145,17 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   // clicking "Düzeltmeyi Matbaaya Gönderin", the button greys out so a
   // notification can't go out with an empty diff to review.
   const noCatalogChanges = JSON.stringify(comps) === originalRef.current
+
+  /* Every action on the order's ozalit round — the printer's start/answer,
+     the leader's cancel/edit/request-change, and the matbaa_onay receipt
+     gate. See hooks/useOrderOzalitRound.js. */
+  const {
+    ozalitBusy, changeNote, setChangeNote,
+    matbaaBusy, confirmMatbaaNotReceived, setConfirmMatbaaNotReceived,
+    handleStartOzalit, handleSaveOzalitEdit, handleCancelOzalit,
+    handleRequestOzalitChange, handleAcceptOzalitChange, handleDeclineOzalitChange,
+    handleMatbaaReceive, handleMatbaaNotReceived,
+  } = useOrderOzalitRound({ order, user, comps, originalRef, open, onSigned, onUpdated, onOpenChange })
 
   useEffect(() => {
     if (open && order && canEditSpec) {
@@ -262,13 +239,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
       unsubscribe?.()
     }
   }, [open, order?.id, order?.project_id, isAssignStep])
-
-  // Each (re)open starts the receipt-gate confirm prompts collapsed — a
-  // stale "are you sure" from a previously opened order shouldn't carry over.
-  useEffect(() => {
-    if (!open) return
-    setConfirmMatbaaNotReceived(false)
-  }, [open, order?.id])
 
   if (!order) return null
 
@@ -452,168 +422,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     }
   }
 
-  // Matbaa marks physical work begun — after this, the team leader's free
-  // cancel/edit closes and a change request is required instead.
-  async function handleStartOzalit() {
-    setOzalitBusy(true)
-    try {
-      const updated = await api.startOrderOzalit(order.id)
-      toast.success('Başlatıldı olarak işaretlendi.')
-      onUpdated?.(updated)
-    } catch (err) {
-      toast.error(err.message || 'İşlem başarısız.')
-    } finally {
-      setOzalitBusy(false)
-    }
-  }
-
-  // Team leader edits the product spec while it's still sitting with the
-  // matbaa, pre-start — saves to the shared Ürün Bilgileri catalog (same
-  // path the designer's own goruldu edit uses) and logs+notifies via the
-  // dedicated route, since this step's generic submit belongs to the
-  // printer (the owner of tasarimci_onay), not the leader.
-  async function handleSaveOzalitEdit() {
-    // Short-circuit when nothing was actually edited. `originalRef.current`
-    // is the JSON snapshot taken when the dialog opened; comparing the live
-    // `comps` against it is the same diff the main sign step uses (see
-    // `compsChanged` below), so a leader who opens this dialog, doesn't
-    // touch anything, and clicks "Düzeltmeyi Matbaaya Gönderin" no longer
-    // re-stamps product_info's updated_by and pushes a notification with
-    // nothing to review.
-    const compsChanged = JSON.stringify(comps) !== originalRef.current
-    if (!compsChanged) {
-      toast.info('Değişiklik yapılmadı, matbaaya bildirim gönderilmedi.')
-      onOpenChange(false)
-      return
-    }
-    setOzalitBusy(true)
-    try {
-      // notifyOrderOzalitEdit runs computeOrderOzalitEdit, which refuses once
-      // the matbaa has hit "Başladım" — so it goes FIRST. Writing the shared
-      // catalog before it meant a leader whose page predated that click
-      // changed the spec for good and got told only "İşlem başarısız", while
-      // the printer worked on from the version they started with.
-      const updated = await api.notifyOrderOzalitEdit(order.id)
-      await saveProductComps(order.project_id, comps)
-      toast.success('Ürün bilgileri güncellendi, matbaa bilgilendirildi.')
-      onOpenChange(false)
-      onUpdated?.(updated)
-    } catch (err) {
-      toast.error(err.message || 'İşlem başarısız.')
-    } finally {
-      setOzalitBusy(false)
-    }
-  }
-
-  // Team leader cancels a pending (not-yet-started) ozalit request outright
-  // — closes the dialog and sends the order back to goruldu.
-  async function handleCancelOzalit() {
-    setOzalitBusy(true)
-    try {
-      const updated = await api.cancelOrderOzalit(order.id)
-      toast.success('Ozalit talebi iptal edildi.')
-      onOpenChange(false)
-      onSigned?.(updated)
-    } catch (err) {
-      toast.error(err.message || 'İşlem başarısız.')
-    } finally {
-      setOzalitBusy(false)
-    }
-  }
-
-  // Team leader asks the matbaa to accept a cancel/edit once they've already
-  // started — doesn't close the dialog, the round stays at tasarimci_onay
-  // either way until the printer responds.
-  async function handleRequestOzalitChange() {
-    setOzalitBusy(true)
-    try {
-      const updated = await api.requestOrderOzalitChange(order.id, changeNote.trim())
-      toast.success('Değişiklik talebiniz matbaaya iletildi.')
-      setChangeNote('')
-      onUpdated?.(updated)
-    } catch (err) {
-      toast.error(err.message || 'İşlem başarısız.')
-    } finally {
-      setOzalitBusy(false)
-    }
-  }
-
-  // Matbaa accepts the pending change-request — un-starts the round so the
-  // leader's free cancel/edit reopens.
-  async function handleAcceptOzalitChange() {
-    setOzalitBusy(true)
-    try {
-      const updated = await api.acceptOrderOzalitChange(order.id)
-      toast.success('Değişiklik talebi kabul edildi.')
-      onUpdated?.(updated)
-    } catch (err) {
-      toast.error(err.message || 'İşlem başarısız.')
-    } finally {
-      setOzalitBusy(false)
-    }
-  }
-
-  // Matbaa declines — round stays started, nothing else changes.
-  async function handleDeclineOzalitChange() {
-    setOzalitBusy(true)
-    try {
-      const updated = await api.declineOrderOzalitChange(order.id)
-      toast.success('Değişiklik talebi reddedildi.')
-      onUpdated?.(updated)
-    } catch (err) {
-      toast.error(err.message || 'İşlem başarısız.')
-    } finally {
-      setOzalitBusy(false)
-    }
-  }
-
-  // "Teslim Alındı" — the matbaa_onay receipt gate. This is a one-question
-  // dialog (see the compact early-return render below), so it closes once
-  // answered rather than chaining into the full approval form — approving is
-  // a separate, deliberate action the user takes later via the list's own
-  // "Onayla" button. Not onSigned: the order hasn't left the queue, just
-  // picked up matbaa_received, so onUpdated pushes the fresh order back up
-  // to keep the parent's list in sync.
-  async function handleMatbaaReceive() {
-    setMatbaaBusy(true)
-    try {
-      const updated = await api.matbaaReceiveOrder(order.id)
-      // Same stamp the main pipeline's ozalit ack writes (SpecFormDialog's
-      // handleReceiveOzalit): the acknowledgment is the sheet's TESLİM ALAN
-      // KİŞİ row. This dialog signs the round without ever mounting the sheet,
-      // so it has to write the stamp itself — the sipariş's sheet is keyed by
-      // the ORDER, and stampSpecSignature only needs the project's id.
-      stampSpecSignature('ozalit', { id: order.project_id }, {
-        teslimAlanKisi: user?.name ?? '',
-      }, { order }).catch(() => {})
-      toast.success('Matbaa ozaliti teslim alındı.')
-      onUpdated?.(updated)
-      onOpenChange(false)
-    } catch (err) {
-      toast.error(err.message || 'İşlem başarısız.')
-    } finally {
-      setMatbaaBusy(false)
-    }
-  }
-
-  // "Teslim Alınamadı" — the counterpart. The order actually leaves
-  // matbaa_onay here (back to tasarimci_onay for re-delivery), so this DOES
-  // close the dialog and call onSigned, same as a rejection.
-  async function handleMatbaaNotReceived() {
-    setMatbaaBusy(true)
-    try {
-      const updated = await api.matbaaNotReceivedOrder(order.id)
-      toast.success('Matbaa teslimi alınamadı, matbaaya geri gönderildi.')
-      setConfirmMatbaaNotReceived(false)
-      onOpenChange(false)
-      onSigned?.(updated)
-    } catch (err) {
-      toast.error(err.message || 'İşlem başarısız.')
-    } finally {
-      setMatbaaBusy(false)
-    }
-  }
-
   function handleClose() {
     if (saving) return
     setNotes('')
@@ -699,68 +507,18 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
         </DialogHeader>
 
         <form onSubmit={handleSign} className="space-y-4">
-          {/* Order summary */}
-          <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
-            <div className="flex items-start gap-2">
-              <ShoppingCart className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold leading-snug">
-                  {order.project_title?.replace(/ \/ /g, ' ')}
-                </p>
-                {items.length > 0 ? (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {items.map((item) => (
-                      <span
-                        key={item.name}
-                        className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"
-                      >
-                        {item.name}
-                        <span className="font-normal text-primary/70">
-                          · {formatNumber(item.quantity)}
-                        </span>
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {formatNumber(order.quantity)} adet
-                  </p>
-                )}
-                {order.notes && (
-                  <p className="mt-0.5 text-xs text-muted-foreground">Not: {order.notes}</p>
-                )}
-              </div>
-            </div>
-          </div>
+          <TalepOrderSummary order={order} items={items} />
 
-          {/* Mini-pipeline progress */}
           <MiniPipeline order={order} nextStep={nextStep} />
 
           {/* Designer-only: edit the project's subtasks (alt görevler) — first */}
           {isDesignerStep && (
-            <div className="overflow-hidden rounded-lg border">
-              <button
-                type="button"
-                onClick={() => setSubsOpen((v) => !v)}
-                className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
-              >
-                <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <ListChecks className="h-3.5 w-3.5" />
-                  Alt Görevler
-                  {subtasks.filter((s) => s.needs_revize).length > 0 && (
-                    <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-700">
-                      {subtasks.filter((s) => s.needs_revize).length} revize
-                    </span>
-                  )}
-                </span>
-                <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform duration-200', subsOpen && 'rotate-180')} />
-              </button>
-              {subsOpen && (
-                <div className="border-t bg-muted/20 p-2">
-                  <SubtaskEditor subtasks={subtasks} onChange={setSubtasks} />
-                </div>
-              )}
-            </div>
+            <SubtaskPanel
+              subtasks={subtasks}
+              onChange={setSubtasks}
+              open={subsOpen}
+              onToggle={() => setSubsOpen((v) => !v)}
+            />
           )}
 
           {/* Designer at goruldu, team leader approving matbaa_onay/
@@ -769,88 +527,24 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
               pipeline's Ozalit form, where the team leader may correct the
               spec right up through approval. */}
           {canEditSpec && (
-            <div className="overflow-hidden rounded-lg border">
-              <button
-                type="button"
-                onClick={() => setEditorOpen((v) => !v)}
-                className="flex w-full items-start justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
-              >
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    <Pencil className="h-3.5 w-3.5 shrink-0" />
-                    Ürün Bilgileri
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {items.length > 0
-                      ? items.map((it) => (
-                          <span key={it.name} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground/80">
-                            {it.name}
-                            <span className="text-muted-foreground">{formatNumber(it.quantity)} adet</span>
-                          </span>
-                        ))
-                      : order.quantity != null && (
-                          <span className="inline-flex items-center whitespace-nowrap rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground/80">
-                            {formatNumber(order.quantity)} adet
-                          </span>
-                        )}
-                  </div>
-                </div>
-                <ChevronDown className={cn('mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', editorOpen && 'rotate-180')} />
-              </button>
-              {editorOpen && (
-                <div className="space-y-2 border-t bg-muted/20 p-2">
-                  {comps.length === 0 ? (
-                    <p className="px-2 py-3 text-center text-xs text-muted-foreground">Bu ürün için bilgi yok.</p>
-                  ) : (
-                    comps.map((c, ci) => (
-                      <EditableComp
-                        key={ci}
-                        comp={c}
-                        onChange={(nc) => setComps((prev) => prev.map((x, i) => (i === ci ? nc : x)))}
-                      />
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
+            <ProductInfoPanel
+              comps={comps}
+              onChangeComp={(ci, nc) => setComps((prev) => prev.map((x, i) => (i === ci ? nc : x)))}
+              items={items}
+              quantity={order.quantity}
+              open={editorOpen}
+              onToggle={() => setEditorOpen((v) => !v)}
+            />
           )}
 
-          {/* Assign step: pick the designer(s) who will check this run */}
           {isAssignStep && (
-            <div className="space-y-1.5">
-              <Label>Tasarımcı(lar), kim kontrol edecek? *</Label>
-              <p className="text-xs text-muted-foreground">
-                Bu baskıyı orijinal tasarımcı(lar)a veya farklı birine atayabilirsiniz.
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {designers.map((d) => {
-                  const sel = assignIds.includes(d.id)
-                  return (
-                    <button
-                      type="button"
-                      key={d.id}
-                      onClick={() =>
-                        setAssignIds((prev) =>
-                          prev.includes(d.id) ? prev.filter((x) => x !== d.id) : [...prev, d.id],
-                        )
-                      }
-                      className={cn(
-                        'inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                        sel
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border text-muted-foreground hover:bg-muted/50',
-                      )}
-                    >
-                      {sel && <Check className="h-3 w-3" />}
-                      {d.name}
-                    </button>
-                  )
-                })}
-                {designers.length === 0 && (
-                  <span className="text-xs text-muted-foreground">Aktif tasarımcı bulunamadı.</span>
-                )}
-              </div>
-            </div>
+            <TalepAssignDesigners
+              designers={designers}
+              assignIds={assignIds}
+              onToggle={(id) =>
+                setAssignIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+              }
+            />
           )}
 
           {/* Signature block removed for now (previously shown here on every
@@ -870,269 +564,49 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
 
           {/* Team-leader reject of the sales-side ozalit */}
           {canReject && showReject && (
-            <div className="space-y-2.5 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-              {/* Route choice: who re-does the rejected ozalit? Only the
-                  targets this step actually offers are shown — ekran_onay
-                  never touched a physical proof, so it has no 'matbaa'
-                  option, and no 'reassign' either. */}
-              {ORDER_REJECT_TARGETS[order.status] && (
-                <div className="space-y-1.5">
-                  <Label className="text-destructive">Kime geri gönderilsin?</Label>
-                  <div
-                    className="grid gap-2"
-                    style={{ gridTemplateColumns: `repeat(${Object.keys(ORDER_REJECT_TARGETS[order.status]).length}, 1fr)` }}
-                  >
-                    {ORDER_REJECT_TARGETS[order.status].designer && (
-                      <button
-                        type="button"
-                        onClick={() => setRejectRoute('designer')}
-                        className={cn(
-                          'rounded-lg border px-3 py-2 text-left transition',
-                          rejectRoute === 'designer'
-                            ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
-                            : 'hover:bg-muted/50',
-                        )}
-                      >
-                        <span className="block text-sm font-semibold">Tasarımcı</span>
-                        <span className="block text-xs text-muted-foreground">Tasarımı yeniden düzenler</span>
-                      </button>
-                    )}
-                    {ORDER_REJECT_TARGETS[order.status].matbaa && (
-                      <button
-                        type="button"
-                        onClick={() => setRejectRoute('matbaa')}
-                        className={cn(
-                          'rounded-lg border px-3 py-2 text-left transition',
-                          rejectRoute === 'matbaa'
-                            ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
-                            : 'hover:bg-muted/50',
-                        )}
-                      >
-                        <span className="block text-sm font-semibold">Matbaa</span>
-                        <span className="block text-xs text-muted-foreground">Yeniden teslim eder</span>
-                      </button>
-                    )}
-                    {ORDER_REJECT_TARGETS[order.status].reassign && (
-                      <button
-                        type="button"
-                        onClick={() => setRejectRoute('reassign')}
-                        className={cn(
-                          'rounded-lg border px-3 py-2 text-left transition',
-                          rejectRoute === 'reassign'
-                            ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/30'
-                            : 'hover:bg-muted/50',
-                        )}
-                      >
-                        <span className="block text-sm font-semibold">Kadro değişsin</span>
-                        <span className="block text-xs text-muted-foreground">Tasarımcıyı yeniden seçer</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-              {/* Which alt görevler have to be redone. Mirrors the demo/ozalit
-                  rejection picker in ApprovalDialog. */}
-              {rejectRoute === 'designer' && revisableSubtasks.length > 0 && (
-                <div className="space-y-1.5">
-                  <Label className="text-destructive">
-                    Revize Edilecek Alt Görevler{' '}
-                    <span className="font-normal text-muted-foreground">(isteğe bağlı)</span>
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Yalnızca tamamlanmış görevler revize edilebilir. Seçtikleriniz tasarımcıya
-                    revize olarak işaretlenir; seçmezseniz talep sadece geri gönderilir.
-                  </p>
-                  <div className="max-h-44 space-y-1.5 overflow-y-auto rounded-md border bg-background p-2">
-                    {revisableSubtasks.map((s) => {
-                      const checked = revizeIds.includes(s.id)
-                      return (
-                        <label
-                          key={s.id}
-                          className={cn(
-                            'flex cursor-pointer items-center gap-2.5 rounded-md border px-2.5 py-2 text-sm transition',
-                            checked ? 'border-amber-300 bg-amber-50' : 'border-transparent hover:bg-muted/50',
-                          )}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() =>
-                              setRevizeIds((prev) =>
-                                prev.includes(s.id) ? prev.filter((x) => x !== s.id) : [...prev, s.id],
-                              )
-                            }
-                            className="h-4 w-4 accent-amber-500"
-                          />
-                          <span className={cn('min-w-0 flex-1', checked && 'font-medium text-amber-800')}>
-                            {s.title}
-                          </span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-              <div className="space-y-1.5">
-                <Label htmlFor="reject-reason" className="text-destructive">Red Sebebi *</Label>
-                <Textarea
-                  id="reject-reason"
-                  rows={2}
-                  placeholder="Ozalitin neden reddedildiğini yazın…"
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  className="resize-none text-sm"
-                />
-                <p className="text-xs text-muted-foreground">
-                  {rejectRoute === 'designer'
-                    ? 'Tasarımcıya geri gönderilir; tasarımı revize eder. Ozalit deneme sayacı artar.'
-                    : rejectRoute === 'reassign'
-                    ? 'Talep başa sarılır; takım lideri tasarımcı kadrosunu yeniden seçer. Ozalit deneme sayacı artar.'
-                    : 'Matbaaya geri gönderilir; yeni bir Ozalit teslim edilir. Tasarım değişmez. Ozalit deneme sayacı artar.'}
-                </p>
-              </div>
-            </div>
+            <TalepRejectForm
+              order={order}
+              route={rejectRoute}
+              onRouteChange={setRejectRoute}
+              revisableSubtasks={revisableSubtasks}
+              revizeIds={revizeIds}
+              onToggleRevize={(id) =>
+                setRevizeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+              }
+              reason={rejectReason}
+              onReasonChange={setRejectReason}
+            />
           )}
 
-          {/* tasarimci_onay: printer's "İşlemi Başlatın" + change-request
-              accept/decline, or the team leader's cancel/save-edit/
-              request-change — migration 051, full parity with the main
-              pipeline's demo/ozalit started flow (migrations 048/049). */}
           {isTasarimciOnayStep && !showReject && (
-            <div className="space-y-2.5">
-              {user?.role === 'printer' && !ozalitChangePending && (ozalitStarted || !ozalitFixPending) && (
-                <div className="flex items-center justify-between gap-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-                  <span>
-                    {ozalitStarted
-                      ? 'İşe başladığınız işaretlendi.'
-                      : 'Fiziksel işe başladığınızda işaretleyin — ekip lideri bundan sonra iptal/düzenleme yerine değişiklik talebi gönderir.'}
-                  </span>
-                  {!ozalitStarted && (
-                    <Button type="button" size="sm" variant="outline" onClick={handleStartOzalit} disabled={ozalitBusy}>
-                      {ozalitBusy ? 'İşleniyor…' : 'İşlemi Başlatın'}
-                    </Button>
-                  )}
-                </div>
-              )}
-
-              {/* Fix owed, printer's turn to wait — the İşlemi Başlatın block
-                  above hides itself here, so without this the printer's
-                  panel goes silently empty with no clue why. */}
-              {user?.role === 'printer' && !ozalitChangePending && !ozalitStarted && ozalitFixPending && (
-                <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-                  <Check className="h-4 w-4 shrink-0" />
-                  <span>Değişiklik talebini kabul ettiniz, ekip liderinin düzeltmeyi göndermesi bekleniyor.</span>
-                </div>
-              )}
-
-              {canRespondOzalitChange && (
-                <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-                  <p>
-                    Ekip lideri değişiklik istedi
-                    {order.ozalit_change_requested_note ? `: "${order.ozalit_change_requested_note}"` : '.'}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button type="button" size="sm" variant="destructive" onClick={handleDeclineOzalitChange} disabled={ozalitBusy}>
-                      Reddedin
-                    </Button>
-                    <Button type="button" size="sm" variant="success" onClick={handleAcceptOzalitChange} disabled={ozalitBusy}>
-                      Kabul Edin
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {user?.role === 'team_leader' && ozalitChangePending && (
-                <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-                  <Check className="h-4 w-4 shrink-0" />
-                  <span>Değişiklik talebiniz matbaada bekliyor.</span>
-                </div>
-              )}
-
-              {canRequestOzalitChange && (
-                <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-                  <p className="text-xs text-muted-foreground">
-                    Matbaa ozalit çalışmasına başladı — doğrudan iptal veya düzenleme artık yapılamaz, bir değişiklik talebi gönderin.
-                  </p>
-                  <Textarea
-                    rows={2}
-                    placeholder="Değişiklik notu (isteğe bağlı)…"
-                    value={changeNote}
-                    onChange={(e) => setChangeNote(e.target.value)}
-                    className="resize-none text-sm"
-                  />
-                  <Button type="button" size="sm" variant="outline" onClick={handleRequestOzalitChange} disabled={ozalitBusy}>
-                    {ozalitBusy ? 'Gönderiliyor…' : 'Değişiklik İsteyin'}
-                  </Button>
-                </div>
-              )}
-
-              {/* Stacks on a phone: the two buttons now name their actions in
-                  full, and side-by-side they left the sentence beside them
-                  squeezed into a two-word-wide column at 390px. */}
-              {canCancelOrEditOzalit && (
-                <div className="flex flex-col gap-2 rounded-md border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-xs text-muted-foreground">
-                    Matbaa henüz başlamadı — ürün bilgilerini yukarıdan düzenleyip kaydedebilir, veya talebi doğrudan iptal edebilirsiniz.
-                  </p>
-                  <div className="flex shrink-0 gap-2">
-                    <Button
-                      type="button" size="sm" variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                      onClick={handleCancelOzalit} disabled={ozalitBusy}
-                    >
-                      İptal Edin
-                    </Button>
-                    {/* handleSaveOzalitEdit notifies the matbaa before it
-                        writes anything — the same action the spec form calls
-                        by this name, so it is called that here too. The button
-                        also short-circuits on a no-op open, so an unchanged
-                        catalog greys it out instead of letting a leader
-                        notify the matbaa with nothing to review. */}
-                    <Button
-                      type="button" size="sm" variant="outline"
-                      onClick={handleSaveOzalitEdit}
-                      disabled={ozalitBusy || noCatalogChanges}
-                    >
-                      {ozalitBusy
-                        ? 'Gönderiliyor…'
-                        : noCatalogChanges
-                          ? 'Değişiklik Yok'
-                          : 'Düzeltmeyi Matbaaya Gönderin'}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <TalepOzalitPanel
+              order={order}
+              user={user}
+              ozalitBusy={ozalitBusy}
+              ozalitStarted={ozalitStarted}
+              ozalitChangePending={ozalitChangePending}
+              ozalitFixPending={ozalitFixPending}
+              canRespondOzalitChange={canRespondOzalitChange}
+              canRequestOzalitChange={canRequestOzalitChange}
+              canCancelOrEditOzalit={canCancelOrEditOzalit}
+              changeNote={changeNote}
+              onChangeNote={setChangeNote}
+              noCatalogChanges={noCatalogChanges}
+              onStartOzalit={handleStartOzalit}
+              onAcceptOzalitChange={handleAcceptOzalitChange}
+              onDeclineOzalitChange={handleDeclineOzalitChange}
+              onRequestOzalitChange={handleRequestOzalitChange}
+              onCancelOzalit={handleCancelOzalit}
+              onSaveOzalitEdit={handleSaveOzalitEdit}
+            />
           )}
 
-          {/* matbaa_onay receipt gate — the approve button below stays
-              disabled until the proof is acknowledged. The "not yet
-              received" state itself is handled by the compact early-return
-              dialog above; by the time this form renders, receipt has
-              already been confirmed (or this is the reject flow, where the
-              gate is irrelevant and hidden via !showReject). */}
           {canActOnMatbaaOnay && !showReject && matbaaReceived && (
-            matbaaAwaitingLeader ? (
-              <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-                <Check className="h-4 w-4 shrink-0" />
-                <span>
-                  Matbaa ozaliti teslim alındı{order.matbaa_received_by ? `, ${order.matbaa_received_by}` : ''}.
-                  Onay sırası ekip liderinde, o onayladıktan sonra onaylayabilirsiniz.
-                </span>
-              </div>
-            ) : matbaaAlreadyApproved ? (
-              <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
-                <Check className="h-4 w-4 shrink-0" />
-                <span>Onayınızı verdiniz, diğer onaylar bekleniyor.</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
-                <Check className="h-4 w-4 shrink-0" />
-                <span>
-                  Matbaa ozaliti teslim alındı{order.matbaa_received_by ? `, ${order.matbaa_received_by}` : ''}. Onaylayabilirsiniz.
-                </span>
-              </div>
-            )
+            <TalepMatbaaReceiptBanner
+              order={order}
+              matbaaAwaitingLeader={matbaaAwaitingLeader}
+              matbaaAlreadyApproved={matbaaAlreadyApproved}
+            />
           )}
 
           <DialogFooter className="gap-2 sm:justify-between">
@@ -1188,246 +662,10 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   )
 }
 
-function SignedStepRow({ step, onForm }) {
-  const date = step.signed_at
-    ? new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(step.signed_at))
-    : '—'
-  return (
-    <button
-      type="button"
-      onClick={onForm}
-      className="block w-full rounded-lg border bg-white px-4 py-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-          {step.step_label}
-        </p>
-        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600">
-          <svg className="h-2.5 w-2.5" viewBox="0 0 12 12" fill="none">
-            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          İmzalandı
-        </span>
-      </div>
-      <div className="mt-2 flex min-h-[2.5rem] items-end border-b border-foreground/25 pb-0.5">
-        {step.signed_by_name && (
-          <span style={{ fontFamily: "'Alex Brush', cursive", fontSize: '1.35rem', color: 'hsl(325 21% 20% / 0.8)' }}>
-            {step.signed_by_name}
-          </span>
-        )}
-      </div>
-      <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
-        <span>{roleLabel(step.signed_by_role)} · İmza</span>
-        <span>{date}</span>
-      </div>
-      {step.notes && (
-        <p className="mt-1.5 text-xs italic text-muted-foreground">"{step.notes}"</p>
-      )}
-      <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-primary">
-        <FileText className="h-3 w-3" />
-        Formu Gör
-      </span>
-    </button>
-  )
-}
-
-// ── Order-step progress helpers ──────────────────────────────────────────────
-// An order's TRUE position is its current `status`, NOT whatever lingers in
-// order_history. A rejection loops the order backward (e.g. matbaa_onay →
-// goruldu) yet leaves the old forward entries in history; deriving state
-// from `status` makes rolled-back steps correctly render as "not yet reached"
-// instead of falsely showing as signed.
-function reachedStepIndex(order) {
-  return orderStepPath(order).indexOf(order?.status)
-}
-
-function PendingStepRow({ step }) {
-  return (
-    <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-3 opacity-60">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-        {ORDER_STEP_LABELS[step] ?? step}
-      </p>
-      <div className="mt-2 flex min-h-[2.5rem] items-end border-b border-dashed border-foreground/15 pb-0.5" />
-      <p className="mt-1 text-[10px] text-muted-foreground">Bekliyor…</p>
-    </div>
-  )
-}
-
-function MiniPipeline({ order, nextStep }) {
-  const allSteps = orderStepPath(order)
-  const reached = reachedStepIndex(order)
-  return (
-    <div className="flex items-center gap-1 overflow-x-auto py-1">
-      {allSteps.map((step, i) => {
-        const done = i <= reached
-        const isNext = step === nextStep
-        const label = stepShortLabel(step)
-        return (
-          <div key={step} className="flex min-w-0 items-center">
-            <div className={cn(
-              'flex h-6 min-w-0 shrink-0 items-center justify-center rounded-full px-2 text-[10px] font-semibold whitespace-nowrap',
-              done ? 'bg-emerald-100 text-emerald-700' : isNext ? 'bg-primary/10 text-primary ring-1 ring-primary/30' : 'bg-muted text-muted-foreground/50',
-            )}>
-              {label}
-            </div>
-            {i < allSteps.length - 1 && (
-              <span className={cn('mx-0.5 h-px w-3 shrink-0', done ? 'bg-emerald-300' : 'bg-border')} />
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── designer inline spec editor ──────────────────────────────────────────────
-function EditableComp({ comp, onChange }) {
-  const fields = comp.fields ?? []
-  const setField = (i, patch) => onChange({ ...comp, fields: fields.map((f, idx) => (idx === i ? { ...f, ...patch } : f)) })
-  const addField = () => onChange({ ...comp, fields: [...fields, { k: '', v: '' }] })
-  const removeField = (i) => onChange({ ...comp, fields: fields.filter((_, idx) => idx !== i) })
-
-  return (
-    <div className="overflow-hidden rounded-lg border bg-white">
-      <div className="border-b bg-muted/30 px-3 py-1.5 text-center text-[11px] font-bold uppercase tracking-widest text-foreground">
-        {comp.component}
-      </div>
-      <div className="px-2 py-1">
-        {fields.map((f, i) => (
-          <div key={i} className="flex items-center gap-1.5 border-b py-1 last:border-b-0">
-            <input
-              value={f.k}
-              onChange={(e) => setField(i, { k: e.target.value })}
-              placeholder="ALAN"
-              className="w-24 shrink-0 bg-transparent text-[11px] font-semibold uppercase tracking-wide outline-none placeholder:text-muted-foreground/50"
-            />
-            <span className="text-xs font-bold text-muted-foreground">:</span>
-            <input
-              value={f.v}
-              onChange={(e) => setField(i, { v: e.target.value })}
-              placeholder="Değer"
-              className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/50"
-            />
-            <button
-              type="button"
-              onClick={() => removeField(i)}
-              aria-label="Satırı sil"
-              className="shrink-0 rounded p-0.5 text-muted-foreground transition active:scale-90 hover:text-destructive print:hidden"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={addField}
-          className="mt-1 inline-flex items-center gap-1 px-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80 print:hidden"
-        >
-          <Plus className="h-3 w-3" /> Satır Ekle
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ── designer inline subtask (alt görev) editor ───────────────────────────────
-/**
- * Reprint-check subtask list. The work is already complete, so this is NOT a
- * done/undone checklist — the designer flags which subtasks need revision for
- * this run. Marking "Revize" sets needs_revize and drops the item from done
- * (so the rework shows up); unmarking restores it as complete.
- */
-function SubtaskEditor({ subtasks, onChange }) {
-  const set = (i, patch) => onChange(subtasks.map((s, idx) => (idx === i ? { ...s, ...patch } : s)))
-  const toggleRevize = (i) => {
-    const s = subtasks[i]
-    const flag = !s.needs_revize
-    if (flag) {
-      const patch = { needs_revize: true, is_done: false, done_at: null }
-      if (s.kind === 'pages') patch.pages_done = 0
-      if (s.kind === 'sticker-count') patch.stickers_done = 0
-      set(i, patch)
-    } else {
-      const patch = { needs_revize: false, is_done: true, done_at: new Date().toISOString() }
-      if (s.kind === 'pages') patch.pages_done = s.total_pages ?? 0
-      if (s.kind === 'sticker-count') patch.stickers_done = s.total_stickers ?? 0
-      set(i, patch)
-    }
-  }
-  const revizeCount = subtasks.filter((s) => s.needs_revize).length
-
-  return (
-    <div className="space-y-1">
-      <p className="px-1 pb-1 text-[11px] text-muted-foreground">
-        Revize ettiğiniz alt görevleri işaretleyin.{' '}
-        {revizeCount > 0 ? `${revizeCount} görev revize edildi.` : 'İşaretlenen yok, her şey hazır.'}
-      </p>
-      {subtasks.length === 0 ? (
-        <p className="px-2 py-3 text-center text-xs text-muted-foreground">Bu projede alt görev yok.</p>
-      ) : (
-        subtasks.map((s, i) => {
-          const flagged = !!s.needs_revize
-          return (
-            <div
-              key={s.id ?? i}
-              className={cn(
-                'flex items-center gap-2 rounded-md border px-2 py-1.5',
-                flagged ? 'border-amber-300 bg-amber-50' : 'bg-white',
-              )}
-            >
-              <span className={cn('min-w-0 flex-1 text-[13px]', flagged && 'font-medium text-amber-800')}>
-                {s.title}
-              </span>
-              <button
-                type="button"
-                onClick={() => toggleRevize(i)}
-                aria-pressed={flagged}
-                className={cn(
-                  'inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition active:scale-95',
-                  flagged
-                    ? 'border-amber-400 bg-amber-100 text-amber-700'
-                    : 'border-input text-muted-foreground hover:border-amber-300 hover:text-amber-700',
-                )}
-              >
-                <RefreshCw className="h-3 w-3" />
-                {flagged ? 'Revize edildi' : 'Revize'}
-              </button>
-            </div>
-          )
-        })
-      )}
-    </div>
-  )
-}
-
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function normalizeItems(items, quantity) {
   if (!Array.isArray(items) || items.length === 0) return []
   if (typeof items[0] === 'string') return items.map((name) => ({ name, quantity }))
   return items
-}
-
-function stepShortLabel(step) {
-  const map = {
-    pending: 'Talep',
-    goruldu: 'Aktarıldı',
-    kontrol_edildi: 'Kontrol',
-    tasarimci_onay: 'Ozalit',
-    ekran_onay: 'Ekran Onayı',
-    matbaa_onay: 'Onay',
-    siparis_baski_onay: 'Baskı Onayı',
-    onaylandi: 'Üretimde',
-  }
-  return map[step] ?? step
-}
-
-function roleLabel(role) {
-  const map = {
-    team_leader: 'Takım Lideri',
-    designer: 'Tasarımcı',
-    printer: 'Matbaa',
-    satis: 'Satış Ekibi',
-  }
-  return map[role] ?? role
 }
