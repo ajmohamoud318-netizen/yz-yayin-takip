@@ -71,7 +71,16 @@ export async function createProject(actor, body) {
       }
     }
     const progress = subtaskProgress(subRows)
-    const updated = await patchProject(client, project.id, { progress })
+    // SQL-level OCC guard: the freshly-inserted project's version is 0
+    // (default in migration 002), so the WHERE clause matches the row
+    // we just created. Passing the post-insert version keeps the contract
+    // uniform with every other patchProject call site.
+    const updated = await patchProject(
+      client,
+      project.id,
+      { progress },
+      { expectedVersion: project.version },
+    )
     await logHistory(
       client,
       {
@@ -221,7 +230,15 @@ export async function patchProjectFields(id, actor, fields) {
   return withTx(async (client) => {
     const before = await getProjectForUpdate(client, id)
     if (!before) notFound('Proje bulunamadı.')
-    const updated = await patchProject(client, id, fields)
+    // SQL-level OCC guard: pass the locked row's version so a concurrent
+    // writer (admin script that doesn't go through the orchestrator,
+    // future non-locking path) can't silently overwrite this admin edit.
+    const updated = await patchProject(
+      client,
+      id,
+      fields,
+      { expectedVersion: before.version },
+    )
     if (!updated) notFound('Proje bulunamadı.')
     const FIELD_LABELS = {
       title: 'Başlık',

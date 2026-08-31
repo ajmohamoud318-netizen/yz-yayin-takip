@@ -632,7 +632,17 @@ export async function subtaskRoutes(fastify) {
       )
       const inserted = refreshedRows
       const progress = progressFor(project, inserted)
-      const updated = await patchProject(client, project.id, { progress })
+      // SQL-level OCC guard: refuse the write if the project's version
+      // moved between the lock at the top of this tx and now. A concurrent
+      // writer that raced past us would have bumped version, so the WHERE
+      // guard catches it and surfaces a 409 with the same Turkish message
+      // the entity-level guard uses.
+      const updated = await patchProject(
+        client,
+        project.id,
+        { progress },
+        { expectedVersion: lockedProject.version },
+      )
       // Only log when something actually moved. Opening the editor and
       // hitting save is not an event, and the old unconditional write is
       // exactly how a project ends up with eight identical timeline rows.
@@ -775,7 +785,17 @@ export async function subtaskRoutes(fastify) {
         'SELECT * FROM subtasks WHERE project_id = $1', [project.id],
       )
       const progress = progressFor(project, projectSubs)
-      const updProject = await patchProject(client, project.id, { progress })
+      // SQL-level OCC guard: pass the locked row's version so a concurrent
+      // writer that slipped past `getProjectForUpdate` (admin script,
+      // future non-locking path) can't silently overwrite this progress
+      // bump. Same `expectedVersion` contract the `runProjectCommand`
+      // orchestrator uses for FSM-driven writes.
+      const updProject = await patchProject(
+        client,
+        project.id,
+        { progress },
+        { expectedVersion: project.version },
+      )
       const subtasksList = await listProjectSubtasks(client, project.id)
       const history = await listProjectHistory(client, project.id)
       const assigneesOut = await loadProjectAssignees(client, updProject)
@@ -879,7 +899,17 @@ export async function subtaskRoutes(fastify) {
         badRequest(`Sayfa numarası 1 ile ${sub.total_pages} arasında olmalı.`)
       }
       // Same full-project-shape contract every other subtask route uses.
-      const updProject = await patchProject(client, project.id, {})
+      // SQL-level OCC guard: pass the locked row's version so a concurrent
+      // writer that slipped past `getProjectForUpdate` (admin script,
+      // future non-locking path) can't silently overwrite. Same
+      // `expectedVersion` contract the `runProjectCommand` orchestrator
+      // uses for FSM-driven writes.
+      const updProject = await patchProject(
+        client,
+        project.id,
+        {},
+        { expectedVersion: project.version },
+      )
       const subtasksList = await listProjectSubtasks(client, project.id)
       const history = await listProjectHistory(client, project.id)
       const assigneesOut = await loadProjectAssignees(client, updProject)
@@ -1045,7 +1075,17 @@ export async function subtaskRoutes(fastify) {
       )
 
       // Same full-project-shape contract every other subtask route uses.
-      const updProject = await patchProject(client, project.id, {})
+      // SQL-level OCC guard: pass the locked row's version so a concurrent
+      // writer that slipped past `getProjectForUpdate` (admin script,
+      // future non-locking path) can't silently overwrite. Same
+      // `expectedVersion` contract the `runProjectCommand` orchestrator
+      // uses for FSM-driven writes.
+      const updProject = await patchProject(
+        client,
+        project.id,
+        {},
+        { expectedVersion: project.version },
+      )
       const subtasksList = await listProjectSubtasks(client, project.id)
       const history = await listProjectHistory(client, project.id)
       const assigneesOut = await loadProjectAssignees(client, updProject)

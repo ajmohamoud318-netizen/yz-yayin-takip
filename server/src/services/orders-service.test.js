@@ -354,6 +354,68 @@ describe('orders-service — advance', () => {
     assert.equal(client.matching(/UPDATE order_requests/).length, 0)
   })
 
+  it('SQL guard: refuses a stale write that the entity check missed (zero rows → 409)', async () => {
+    // The entity check (`Order._assertExpectedVersion`) and the SQL guard
+    // (`UPDATE order_requests ... AND version = $X`) are defence in depth.
+    // This test exercises the SQL guard in isolation: the entity accepts
+    // (the SPA didn't send an expectedVersion, OR it matched the SPA's
+    // view), but a concurrent writer has already bumped the row's version
+    // past what the orchestrator locked. The repo sees zero rows and
+    // throws the same Turkish 409 the entity throws on its own guard.
+    //
+    // The fake client simulates the race by returning 0 rows from the
+    // UPDATE — exactly what the real DB does when the WHERE clause's
+    // version no longer matches.
+    const order = orderRow({ status: 'goruldu', version: 7 })
+    const client = makeClient({ order })
+    const baseQuery = client.query
+    client.query = async (sql, params = []) => {
+      const result = await baseQuery(sql, params)
+      if (/UPDATE order_requests/.test(sql)) {
+        // Concurrent writer won — the WHERE version=$X matched nothing.
+        return { rows: [] }
+      }
+      return result
+    }
+
+    await assert.rejects(
+      () => service.advanceOrder('o-1', D1, {}, client),
+      (err) => {
+        assert.equal(err.status, 409, 'http status must be 409')
+        assert.equal(err.code, 'conflict', 'code must be "conflict"')
+        assert.match(err.message, /Bu kayıt başka biri tarafından güncellendi\./)
+        return true
+      },
+    )
+    // No history / notification fan-out: the 409 aborts the tx before any
+    // side effect runs.
+    assert.equal(client.matching(/INTO order_history/).length, 0)
+    assert.equal(client.matching(/INTO stage_history/).length, 0)
+  })
+
+  it('SQL guard: the WHERE clause carries version = $expectedVersion alongside id = $1', async () => {
+    // Source-level contract: every UPDATE order_requests emitted by the
+    // orchestrator must include the SQL-level OCC guard when expectedVersion
+    // is non-null. The orchestrator always passes `before.version` from
+    // the locked row, so the guard is in effect on every command. A future
+    // refactor that drops the WHERE clause silently re-introduces the race
+    // this work was meant to close.
+    const order = orderRow({ status: 'goruldu', version: 7 })
+    const client = makeClient({ order })
+
+    await service.advanceOrder('o-1', D1, {}, client)
+
+    const call = client.one(/UPDATE order_requests/)
+    // For a `goruldu → kontrol_edildi` advance the only field the entity
+    // writes is `status` (no `assignee_ids` flip on a non-pending step),
+    // so the SET clause carries one $N column and the WHERE version guard
+    // sits at $N+1. params: [$1=id, $2=status, $3=expectedVersion].
+    assert.match(call.sql, /WHERE id = \$1\s+AND version = \$3/)
+    assert.equal(call.params[2], 7)
+    // And the SET clause still bumps version by +1 — entity and SQL agree.
+    assert.match(call.sql, /version = version \+ 1/)
+  })
+
   it('refuses a bare advance at siparis_baski_onay', async () => {
     const client = makeClient({ order: orderRow({ status: 'siparis_baski_onay' }) })
     await assert.rejects(

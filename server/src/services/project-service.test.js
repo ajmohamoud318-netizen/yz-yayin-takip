@@ -296,6 +296,60 @@ describe('project-service — advance', () => {
       (err) => { assert.equal(err.status, 404); return true },
     )
   })
+
+  it('SQL guard: refuses a stale write the entity accepted (zero rows → 409)', async () => {
+    // Defence-in-depth contract. The `runProjectCommand` orchestrator
+    // always passes the locked row's version as `expectedVersion` to
+    // patchProject; if a concurrent writer has bumped the row's version
+    // past the orchestrator's snapshot, the UPDATE matches zero rows and
+    // patchProject throws 409 with the same Turkish phrase the Order
+    // entity uses. This test simulates the race by returning zero rows
+    // from the UPDATE — exactly what the real DB does on a stale write.
+    const project = projectRow({ stage: 'tasarim', progress: 100 })
+    const client = makeClient({ project })
+    const baseQuery = client.query
+    client.query = async (sql, params = []) => {
+      const result = await baseQuery(sql, params)
+      if (/UPDATE projects SET/.test(sql)) {
+        // Concurrent writer won — the WHERE version=$X matched nothing.
+        return { rows: [] }
+      }
+      return result
+    }
+
+    await assert.rejects(
+      () => service.advanceProject('p-1', L1, {}, client),
+      (err) => {
+        assert.equal(err.status, 409, 'http status must be 409')
+        assert.equal(err.code, 'conflict', 'code must be "conflict"')
+        assert.match(err.message, /Bu kayıt başka biri tarafından güncellendi\./)
+        return true
+      },
+    )
+    // No history / notification fan-out: the 409 aborts the tx before any
+    // side effect runs.
+    assert.equal(client.matching(/INTO stage_history/).length, 0)
+  })
+
+  it('SQL guard: the WHERE clause carries version = $expectedVersion alongside id = $1', async () => {
+    // Source-level contract: the orchestrator always passes the locked
+    // row's version as `expectedVersion`, so the WHERE version=$X guard
+    // rides on every UPDATE the orchestrator emits. A refactor that drops
+    // the expectedVersion argument silently re-introduces the race.
+    const project = projectRow({ stage: 'tasarim', progress: 100, version: 11 })
+    const client = makeClient({ project })
+
+    await service.advanceProject('p-1', L1, {}, client)
+
+    const call = client.one(/UPDATE projects SET/)
+    assert.match(call.sql, /WHERE id = \$1\s+AND version = \$3/)
+    // The third parameter is expectedVersion (params[0] = id, params[1..] = the
+    // set fields — for an `advance` from `tasarim` those are `stage` and
+    // `ozalit_requested`).
+    assert.equal(call.params[2], 11)
+    // SQL owns the version increment.
+    assert.match(call.sql, /version = version \+ 1/)
+  })
 })
 
 describe('project-service — reject', () => {

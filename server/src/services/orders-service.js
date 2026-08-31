@@ -452,7 +452,16 @@ export async function approveBaskiOnayForm(orderId, actor, {
       const project = await loadProject()
       if (!project) return
       if (!isAtOrPastStage(project, 'baskida')) {
-        await patchProject(client, project.id, { stage: 'baskida' })
+        // SQL-level OCC guard: pass the locked project's version so a
+        // concurrent writer (e.g. the reprint/cancel flows that also
+        // touch the same project row) can't silently overwrite this
+        // forward-only stage flip.
+        await patchProject(
+          client,
+          project.id,
+          { stage: 'baskida' },
+          { expectedVersion: project.version },
+        )
         event.projectHistories = [{
           event: 'order_final', action: 'system',
           to_stage: 'baskida', note: 'Baskı onaylandı, baskıya alındı',
