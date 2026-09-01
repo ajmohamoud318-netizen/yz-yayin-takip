@@ -23,6 +23,7 @@ vi.mock('@/hooks/useAuth.js', () => ({
   useAuth: () => ({ user: { id: 'u-test' } }),
 }))
 
+import api from '@/api'
 import { NotificationsProvider } from './useNotifications.jsx'
 
 /**
@@ -71,6 +72,7 @@ describe('useNotifications SSE effect', () => {
 
   beforeEach(() => {
     FakeEventSource.instances = []
+    api.listNotifications.mockClear()
     globalThis.EventSource = FakeEventSource
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -144,5 +146,37 @@ describe('useNotifications SSE effect', () => {
     })
 
     expect(FakeEventSource.instances.length).toBe(1)
+  })
+
+  it('refetches the feed on every open, so a drop mid-flight is resynced', async () => {
+    mount()
+    // The effect's own refetch() on mount.
+    await act(async () => {})
+    const afterMount = api.listNotifications.mock.calls.length
+
+    await act(async () => {
+      FakeEventSource.instances[0]._emit('open')
+    })
+    expect(api.listNotifications.mock.calls.length).toBe(afterMount + 1)
+
+    // Model a mobile drop: the stream dies (on real hardware this surfaces
+    // as ERR_QUIC_PROTOCOL_ERROR.QUIC_TOO_MANY_RTOS), the tab comes back,
+    // and the visibility handler opens a fresh socket. Any notification
+    // emitted during the gap went to a bus nobody was subscribed to and
+    // there is no server-side replay, so the refetch on THIS open is the
+    // only thing that recovers it.
+    await act(async () => {
+      FakeEventSource.instances[0]._emit('error')
+    })
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(FakeEventSource.instances.length).toBe(2)
+
+    const beforeReopen = api.listNotifications.mock.calls.length
+    await act(async () => {
+      FakeEventSource.instances[1]._emit('open')
+    })
+    expect(api.listNotifications.mock.calls.length).toBe(beforeReopen + 1)
   })
 })

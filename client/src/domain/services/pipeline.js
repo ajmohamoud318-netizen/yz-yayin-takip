@@ -346,6 +346,14 @@ export function canEditSentDemoRequest(user, project) {
   if (!project) return false
   if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') return false
   if (project.demo_started) return false
+  // Reject-to-matbaa created this round automatically — the design is
+  // unchanged, the matbaa gets the file exactly as they had it when they
+  // pressed "İşlemi Başlatın", and the leader has no business silently
+  // editing it. Want a change? Cancel the request, or reject-to-designer
+  // with revize — both are explicit, not silent. The flag is cleared by
+  // every transition that "consumes" the round (resend, cancel, …),
+  // so a fresh, manually-created request on the next iteration is fine.
+  if (project.last_reject_target === 'matbaa') return false
   return user?.role === 'team_leader'
 }
 
@@ -355,6 +363,10 @@ export function canEditSentOzalitRequest(user, project) {
   // Liveness, not `ozalit_requested` — see isOzalitRoundLive. Cancel keeps the
   // stricter flag on purpose; correcting a sheet the matbaa holds does not.
   if (!isOzalitRoundLive(project) || project.ozalit_started) return false
+  // Same auto-reject lock as the demo twin above. Mirrors computeOzalitEdit's
+  // server guard so a stale client or hand-crafted call can't bypass the UI
+  // and silently ship a different file.
+  if (project.last_reject_target === 'matbaa') return false
   return user?.role === 'team_leader'
 }
 

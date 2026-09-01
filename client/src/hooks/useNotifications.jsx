@@ -193,6 +193,16 @@ export function NotificationsProvider({ children }) {
       es.onopen = () => {
         sseConnectedRef.current = true
         setSseConnected(true)
+        // Resync on every open, not just the first. Native EventSource
+        // reconnects on its own after a drop, and mobile clients drop this
+        // stream constantly (carrier handoff shows up in the console as
+        // ERR_QUIC_PROTOCOL_ERROR.QUIC_TOO_MANY_RTOS). Anything emitted
+        // during the gap was published to a bus we weren't subscribed to,
+        // so it is gone — and the poll below stops the moment this flag
+        // flips back to true. Without this refetch a notification that
+        // lands mid-drop never reaches the bell until some unrelated later
+        // event triggers a refetch. The server has no replay; this is it.
+        refetch()
       }
       es.addEventListener('notification', (ev) => {
         // The server's signal carries { userId, notificationId, eventId,

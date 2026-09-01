@@ -14,16 +14,24 @@
  * won't connect and the client falls back to polling. In production with
  * cookie sessions, SSE works automatically.
  *
- * Reconnection: the client sends Last-Event-ID on reconnect, and the server
- * replays everything it missed from the domain_events table before switching
- * to live streaming. This guarantees no events are lost during brief
- * disconnections (network blips, tab switches).
+ * Reconnection: the client resyncs by refetching the whole feed in its
+ * `onopen` handler — see useNotifications. There is deliberately no
+ * Last-Event-ID replay here. Two reasons it was removed:
+ *   1. domain_events.id is a random UUID (gen_random_uuid()::text), so the
+ *      `WHERE id > $1` cursor it relied on compared UUIDs lexicographically.
+ *      That has no relationship to time: each reconnect replayed a random
+ *      slice of the table and skipped a random slice of what was missed.
+ *   2. domain_events holds one row per business event, not per recipient,
+ *      so a replay could not be scoped to the reconnecting user — every
+ *      client got every other user's title/body/link over the wire.
+ * A full feed refetch on open is cheap, correct, and already the single
+ * source of truth. This path matters: mobile clients drop the stream
+ * constantly (QUIC RTO timeouts on carrier handoff), so reconnect is the
+ * common case, not the edge case.
  */
 
 import { attachUser } from '../middleware/auth.js'
-import { getPool } from '../db/pool.js'
 import { subscribe } from '../services/event-bus.js'
-import { queryEventsSince } from '../services/event-store.js'
 
 export async function eventRoutes(fastify) {
   /**
@@ -32,9 +40,11 @@ export async function eventRoutes(fastify) {
    * The client opens this with EventSource. The server:
    *   1. Authenticates via cookie session
    *   2. Sets SSE headers (Content-Type: text/event-stream, no caching)
-   *   3. Replays missed events if Last-Event-ID is present
-   *   4. Subscribes to the event bus for live streaming
-   *   5. Keeps the connection open until the client disconnects
+   *   3. Subscribes to the event bus for live streaming
+   *   4. Keeps the connection open until the client disconnects
+   *
+   * Anything the client missed while disconnected is picked up by its own
+   * refetch on open, not by a server-side replay — see the module header.
    */
   fastify.get('/events/stream', async (request, reply) => {
     await attachUser(request)
@@ -49,18 +59,6 @@ export async function eventRoutes(fastify) {
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
     })
-
-    // Replay missed events on reconnect. The client sends Last-Event-ID
-    // (automatically set by EventSource when it receives an event with an
-    // id field). We query domain_events for anything newer and stream them
-    // before switching to live events.
-    const lastEventId = request.headers['last-event-id']
-    if (lastEventId) {
-      const missed = await queryEventsSince(getPool(), { sinceId: lastEventId })
-      for (const ev of missed) {
-        reply.raw.write(`id: ${ev.id}\nevent: ${ev.event_type}\ndata: ${JSON.stringify(ev.payload)}\n\n`)
-      }
-    }
 
     // Subscribe to live events. Filter by userId so the client only receives
     // events it cares about (notifications addressed to it). The event bus

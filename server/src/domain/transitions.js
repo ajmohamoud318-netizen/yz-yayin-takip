@@ -132,6 +132,7 @@ export function computeAdvance(project, actor, { route = null } = {}) {
     const cleared = {
       last_reject_type: null,
       last_reject_reason: null,
+      last_reject_target: null,
       reject_target: null,
       updated_at: now,
     }
@@ -267,6 +268,7 @@ export function computeAdvance(project, actor, { route = null } = {}) {
         reject_target: null,
         last_reject_reason: null,
         last_reject_type: null,
+        last_reject_target: null,
         updated_at: now,
       },
       history: makeEntry(project, {
@@ -304,6 +306,7 @@ export function computeAdvance(project, actor, { route = null } = {}) {
       reject_target: null,
       last_reject_reason: null,
       last_reject_type: null,
+      last_reject_target: null,
       updated_at: now,
     },
     history: makeEntry(project, {
@@ -355,6 +358,7 @@ function computeDemoTeslimAdvance(project, actor, now, approvalStage) {
       reject_target: null,
       last_reject_reason: null,
       last_reject_type: null,
+      last_reject_target: null,
       updated_at: now,
     },
     history: makeEntry(project, {
@@ -419,6 +423,9 @@ function computeOzalitTeslimAdvance(project, actor, now) {
       ozalit_change_requested_note: null,
       ozalit_fix_pending: false,
       reject_target: null,
+      last_reject_reason: null,
+      last_reject_type: null,
+      last_reject_target: null,
       updated_at: now,
     },
     history: makeEntry(project, {
@@ -1077,6 +1084,9 @@ export function computeDemoCancel(project, actor, ctx = {}) {
       demo_change_requested_note: null,
       demo_fix_pending: false,
       reject_target: null,
+      last_reject_reason: null,
+      last_reject_type: null,
+      last_reject_target: null,
       updated_at: now,
     },
     history: makeEntry(project, {
@@ -1128,6 +1138,9 @@ export function computeOzalitCancel(project, actor, ctx = {}) {
       ozalit_change_requested_note: null,
       ozalit_fix_pending: false,
       reject_target: null,
+      last_reject_reason: null,
+      last_reject_type: null,
+      last_reject_target: null,
       updated_at: now,
     },
     history: makeEntry(project, {
@@ -1172,6 +1185,15 @@ export function computeDemoEdit(project, actor, ctx = {}) {
   if (project.demo_started) {
     badRequest('Matbaa demo çalışmasına başladı, değişiklik isteyin.')
   }
+  // Reject-to-matbaa created this round automatically — the design is
+  // unchanged, the matbaa gets the file exactly as they had it when they
+  // pressed "İşlemi Başlatın", and the leader has no business silently
+  // editing it. Want a change? Cancel the request, or reject-to-designer
+  // with revize — both are explicit, not silent. Mirrors canEditSentDemo-
+  // Request's client gate.
+  if (project.last_reject_target === 'matbaa') {
+    badRequest('Red sonrası otomatik istenen demo üzerinde düzenleme yapılamaz; iptal edin veya tasarımcıya reddedin.')
+  }
   return {
     // Clears the "fix owed" flag an accepted change request may have set
     // (computeDemoChangeAccept) — this submission IS the fix. A no-op patch
@@ -1213,6 +1235,12 @@ export function computeOzalitEdit(project, actor, ctx = {}) {
   }
   if (project.ozalit_started) {
     badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
+  }
+  // Same auto-reject lock as the demo twin — see computeDemoEdit's comment.
+  // canEditSentOzalitRequest gates the client button; this guard closes the
+  // stale-client / hand-crafted-API hole.
+  if (project.last_reject_target === 'matbaa') {
+    badRequest('Red sonrası otomatik istenen ozalit üzerinde düzenleme yapılamaz; iptal edin veya tasarımcıya reddedin.')
   }
   return {
     // See computeDemoEdit's comment — this submission is the fix.

@@ -36,11 +36,20 @@ export async function appendDomainEvent(client, { eventType, aggregateId, actorI
 }
 
 /**
- * Query events newer than a given id. Used by the SSE route on reconnect:
- * client sends Last-Event-ID, server replays everything it missed.
+ * Query events newer than a given id.
+ *
+ * WARNING — the `sinceId` cursor is NOT a reliable "everything after X".
+ * domain_events.id is a random UUID (gen_random_uuid()::text), so `id > $1`
+ * is a lexicographic comparison with no relationship to insertion order:
+ * it returns a random subset and omits a random subset. Passing sinceId=null
+ * (all events, oldest-first) is sound; anything else is not.
+ *
+ * This is why the SSE route no longer replays on Last-Event-ID — see
+ * routes/events.js. A trustworthy cursor needs a monotonic column
+ * (BIGSERIAL) on the table; until then treat sinceId as best-effort.
  *
  * Returns at most `limit` events, ordered oldest-first (the order they
- * occurred). The SSE route streams them to the client in this order.
+ * occurred).
  */
 export async function queryEventsSince(client, { sinceId, limit = 100 }) {
   const { rows } = await client.query(
