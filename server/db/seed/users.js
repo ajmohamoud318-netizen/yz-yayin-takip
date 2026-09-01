@@ -6,13 +6,16 @@
  * non-UUID slugs like `u-ayse` no longer fit — we hash the slug into a
  * UUID-shaped constant instead).
  *
- * Password is bcrypt of the demo password `123456`.
+ * Password is bcrypt (cost 12, matching `routes/auth.js`) of the demo
+ * password `123456`. A higher cost would noticeably slow `npm run seed`
+ * during local `docker compose up`; 12 is the floor that the login path
+ * already uses, so seeded accounts authenticate at the same strength.
  */
 
 import bcrypt from 'bcryptjs'
 import { slugUuid } from './slug-uuid.js'
 
-const DEMO_PASSWORD_BCRYPT = bcrypt.hashSync('123456', 8)
+const DEMO_PASSWORD_BCRYPT = bcrypt.hashSync('123456', 12)
 
 export const SEED_USERS = [
   { id: slugUuid('u-ayse'),      name: 'Ayşenur Kanak',         email: 'aysenur.kanak@yukselenzeka.com',                role: 'team_leader' },

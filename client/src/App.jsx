@@ -33,6 +33,7 @@ const SiparisOnay         = lazy(() => import('./pages/SiparisOnay.jsx'))
 const TeslimTalepleri     = lazy(() => import('./pages/TeslimTalepleri.jsx'))
 const TeslimOnaylari      = lazy(() => import('./pages/TeslimOnaylari.jsx'))
 const Settings            = lazy(() => import('./pages/Settings.jsx'))
+const MatbaaIsleri        = lazy(() => import('./pages/MatbaaIsleri.jsx'))
 import NotificationSync from './components/NotificationSync.jsx'
 import PushBridge from './components/PushBridge.jsx'
 import { CelebrationProvider } from './hooks/useCelebration.jsx'
@@ -191,6 +192,16 @@ export default function App() {
               element={
                 <RoleGuard allow={['printer']}>
                   <Approvals tab="siparis" />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/matbaa-isleri"
+              element={
+                <RoleGuard allow={['printer']}>
+                  <Suspense fallback={<RouteFallback />}>
+                    <MatbaaIsleri />
+                  </Suspense>
                 </RoleGuard>
               }
             />

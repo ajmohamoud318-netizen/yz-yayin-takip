@@ -1,4 +1,4 @@
--- 028 — explicit subtask ordering
+-- 027 — explicit subtask ordering
 --
 -- Until now the order of a project's subtasks was an accident of
 -- `ORDER BY s.created_at`, which only produced the team leader's intended

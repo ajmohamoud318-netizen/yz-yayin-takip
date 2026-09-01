@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Printer, ShoppingCart } from 'lucide-react'
+import { Pencil, Printer, ShoppingCart } from 'lucide-react'
 import { toast } from 'sonner'
 
 import api from '@/api'
@@ -71,6 +71,12 @@ export default function SiparisBaskiOnayFormDialog({
   const [saving, setSaving] = useState(false)
   const [preparing, setPreparing] = useState(false)
   const [approving, setApproving] = useState(false)
+  // Approver-side edit override (same pattern as BaskiOnayFormDialog /
+  // SpecFormDialog's baskiOnayEditOverride). Defaults OFF so the form opens
+  // locked once prepared; the approver clicks "Düzenleyin" in the footer to
+  // unlock if a field really needs a fix before signing. Reset on every
+  // (re)open so a stale unlock from a previous order never carries over.
+  const [baskiOnayEditOverride, setBaskiOnayEditOverride] = useState(false)
 
   /* ── Sipariş Baskı Onayı maker-checker (migration 060) ─────────────────────
    * Brought in line with the project-side gate (migration 045): one team
@@ -82,11 +88,29 @@ export default function SiparisBaskiOnayFormDialog({
   const baskiOnayPrepared = !!order?.baski_onay_prepared
   const preparedByName = order?.baski_onay_prepared_by_name
 
-  const isReadOnly = mode === 'view' || user?.role !== 'team_leader' || order?.status !== 'siparis_baski_onay'
+  // Approver-step read-only lock (same shape as BaskiOnayFormDialog's
+  // baskiOnayLocked in SpecFormDialog): once the form has been prepared,
+  // the approver is signing what was prepared, not authoring — so the form
+  // defaults to read-only with an opt-in "Düzenleyin" override.
+  const isApproverStep =
+    mode === 'approve'
+    && user?.role === 'team_leader'
+    && order?.status === 'siparis_baski_onay'
+  const baskiOnayLocked =
+    isApproverStep && baskiOnayPrepared && !baskiOnayEditOverride
+
+  const isReadOnly =
+    mode === 'view'
+    || user?.role !== 'team_leader'
+    || order?.status !== 'siparis_baski_onay'
+    || baskiOnayLocked
   const isOpen = inline || open
 
   useEffect(() => {
     if (!isOpen || !order) return
+    // Every reopen: clear the edit override so a previous unlock doesn't
+    // bleed into a different order's approve view.
+    setBaskiOnayEditOverride(false)
     const saved = order.baski_onay_form
     if (saved?.components?.length) {
       setComponents(deepClone(saved.components))
@@ -295,17 +319,36 @@ export default function SiparisBaskiOnayFormDialog({
         <Printer className="h-4 w-4" />
         Yazdırın
       </Button>
-      {!isReadOnly && (
+      {isApproverStep && (
         <div className="flex gap-2">
-          {/* Saves the sheet on the order and stops there — the approval is
-              the button beside it. Next to "Onaylayın", a bare "Kaydedin"
-              left which of the two signs off to guesswork. */}
-          <Button type="button" variant="ghost" onClick={handleSave} disabled={busy}>
-            {saving ? 'Kaydediliyor…' : 'Onaylamadan Kaydedin'}
-          </Button>
-          {/* Which half is still owed. A parked draft ("Onaylamadan Kaydedin")
-              deliberately does not count as a preparation — the checker must
-              only ever sign a sheet someone claimed to have finished. */}
+          {/* "Onaylamadan Kaydedin" — only while preparing (not yet
+              baskiOnayPrepared). Once prepared, every edit rides through
+              Approve via the current payload, so a separate Save no longer
+              makes sense. The override button below is how the approver
+              parks changes before signing. */}
+          {!isReadOnly && !baskiOnayPrepared && (
+            <Button type="button" variant="ghost" onClick={handleSave} disabled={busy}>
+              {saving ? 'Kaydediliyor…' : 'Onaylamadan Kaydedin'}
+            </Button>
+          )}
+          {/* Approver-step edit override — same shape as BaskiOnayFormDialog's
+              SpecFormFooter toggle. The approver signs what was prepared,
+              so the form is locked by default; they click Düzenleyin if a
+              field really needs a fix before signing. */}
+          {baskiOnayPrepared && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setBaskiOnayEditOverride((v) => !v)}
+              disabled={busy}
+            >
+              <Pencil className="h-4 w-4" />
+              {baskiOnayEditOverride ? 'Kilitleyin' : 'Düzenleyin'}
+            </Button>
+          )}
+          {/* Prepare / Approve half. Lives OUTSIDE the !isReadOnly check on
+              purpose: the approve button must stay clickable while the
+              form is locked, so the approver can sign what was prepared. */}
           {baskiOnayPrepared ? (
             <Button type="button" onClick={handleApprove} disabled={busy}>
               {approving ? 'Onaylanıyor…' : 'Onaylayın'}
@@ -339,7 +382,7 @@ export default function SiparisBaskiOnayFormDialog({
             {isReadOnly
               ? 'Bu adımda kaydedilen form.'
               : baskiOnayPrepared
-                ? `${preparedByName ?? 'Bir ekip lideri'} formu hazırladı. Kontrol edin ve onaylayın.`
+                ? `${preparedByName ?? 'Bir ekip lideri'} formu hazırladı. Form kilitlidir — yalnızca onaylayabilirsiniz. Bir alanı düzeltmeniz gerekirse sağ alttaki "Düzenleyin" ile geçici olarak açabilirsiniz.`
                 : 'Adet ve diğer alanları kontrol edin, gerekirse düzeltin, ardından onaya gönderin.'}
           </DialogDescription>
         </DialogHeader>

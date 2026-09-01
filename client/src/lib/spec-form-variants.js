@@ -105,6 +105,15 @@ export const VARIANTS = {
   // (handleApprove) — see the isBaskiOnayApproval block further down. There
   // is no advance mode: the form is auto-created on entering the stage,
   // never requested.
+  //
+  // The dialog distinguishes the prepare and approve halves of `mode='approve'`
+  // using `baski_onay_prepared` and adds a SECOND lock on top of this
+  // variant: once the form has been prepared, the approver is signing what
+  // was prepared — not authoring — so the dialog forces the form read-only
+  // for them and offers a "Düzenleyin" button (SpecFormFooter) to opt back
+  // in. The variant's pure role/mode table cannot express that (it would
+  // either leave prepare editable or lock the approver out of fixes), so
+  // the gate lives next to `baski_onay_prepared` in SpecFormDialog.jsx.
   baski_onay: {
     kind: 'baski_onay',
     storagePrefix: 'yz_baski_onay_form_',
@@ -149,4 +158,56 @@ const STAGE_VARIANT = {
 
 export function specVariantForStage(stage) {
   return STAGE_VARIANT[stage] ?? null
+}
+
+/**
+ * Baskı Onay approve-step read-only lock.
+ *
+ * `VARIANTS.baski_onay.isReadOnly` deliberately returns false for a team
+ * leader at `mode='approve'` so the leader can still AUTHOR the form during
+ * the prepare half of that mode (the dialog uses `mode='approve'` for both
+ * halves and discriminates with `baski_onay_prepared`). The dialog then
+ * adds this second lock on top: once the form HAS been prepared, the
+ * approver is signing what was prepared — not authoring — so the form is
+ * read-only by default, with an opt-in "Düzenleyin" override.
+ *
+ * Inputs are intentionally booleans already computed in the dialog so this
+ * helper is pure and testable without mounting SpecFormDialog.
+ *
+ * @param {{ isBaskiOnayApproval: boolean, baskiOnayPrepared: boolean, editOverride: boolean }} flags
+ * @returns {boolean}
+ */
+export function computeBaskiOnayLocked({ isBaskiOnayApproval, baskiOnayPrepared, editOverride }) {
+  return Boolean(isBaskiOnayApproval && baskiOnayPrepared && !editOverride)
+}
+
+/**
+ * Demo form past its approval gate — the demo is a signed snapshot, not a
+ * draft.
+ *
+ * `tasarim` is pre-demo; `demo_teslim`/`demo_onay`/`cin_demo_teslim`/
+ * `cin_demo_onay` are still inside the demo round itself (a rejection can
+ * rewind back to `demo_teslim` from `demo_onay`, so those stay editable).
+ * Everything past `demo_onay` (TR) or `cin_demo_onay` (CIN) means the demo
+ * has been approved and the project has moved on — opening the Demo form
+ * from Geçmiş or "Demo Formu" should be a read-only viewer.
+ *
+ * Mirrors the project-side baski_onay fix: the variant's pure `isReadOnly`
+ * can't express this on its own (it doesn't take `project.stage`), so the
+ * dialog adds this gate on top.
+ *
+ * @param {{ stage?: string } | null | undefined} project
+ * @returns {boolean}
+ */
+const DEMO_IN_PROGRESS_STAGES = new Set([
+  'tasarim',
+  'demo_teslim',
+  'demo_onay',
+  'cin_demo_teslim',
+  'cin_demo_onay',
+])
+
+export function isDemoAlreadyApproved(project) {
+  if (!project || !project.stage) return false
+  return !DEMO_IN_PROGRESS_STAGES.has(project.stage)
 }

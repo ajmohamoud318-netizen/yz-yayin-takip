@@ -17,6 +17,7 @@ import { workLogRoutes } from './routes/work-log.js'
 import { targetProjectIdeaRoutes } from './routes/target-project-ideas.js'
 import { meetingRoutes } from './routes/meetings.js'
 import { config } from './config.js'
+import { assertSafeMailConfig } from './services/mail.js'
 import { HttpError } from './domain/errors.js'
 import { up as migrateUp } from './services/migrate.js'
 import { closePool } from './db/pool.js'
@@ -176,6 +177,16 @@ export async function buildServer() {
 }
 
 async function main() {
+  // Refuse to boot when SMTP_HOST is unset in production. The mail
+  // service's console fallback (see services/mail.js) prints the
+  // rendered message — which carries the opaque invitation /
+  // password-reset token — to stdout. In production that lands in
+  // `docker logs` for anyone with log access to read. Loud-fail here so
+  // the misconfig is obvious rather than silently shipping tokens into
+  // the container log stream. Same shape as the SEED_ON_BOOT guard
+  // below; both boot-time refusals live together so a Dokploy deploy
+  // can't accidentally skip one.
+  assertSafeMailConfig()
   // Refuse to boot with SEED_ON_BOOT=true in production. The seed
   // inserts real user accounts (db/seed/users.js) with a documented
   // demo password (`123456`); one env-var drift in Dokploy and those

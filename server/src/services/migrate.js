@@ -9,6 +9,12 @@
  *    applied set is recorded in a `_migrations` table inside the same
  *    transaction, so a partially-applied file can never be recorded as
  *    successful.
+ *  • Integrity guard (added 2026-09-01): every applied migration's file
+ *    content is hashed at apply time and that hash is re-checked at boot
+ *    against the file on disk. A mismatch refuses to start. Catches
+ *    someone editing an already-applied migration after the fact, and
+ *    catches a Docker volume reused across two different checkout SHAs
+ *    where the same migration id was executed with different SQL.
  *  • Manual override: `node src/services/migrate.js status` shows applied
  *    vs. pending; `up` applies whatever's missing; `--down N` rolls back
  *    the last N migrations (added later — out of scope for this pass).
@@ -65,6 +71,65 @@ async function appliedIds() {
   return new Set(rows.map((r) => r.id))
 }
 
+async function appliedChecksums() {
+  const { rows } = await getPool().query(
+    'SELECT id, checksum FROM _migrations ORDER BY id',
+  )
+  return rows
+}
+
+/**
+ * Boot-time integrity guard (decision 2026-09-01, Path A).
+ *
+ * Compares each applied migration's recorded checksum against the file on
+ * disk and refuses to start on a mismatch. Catches:
+ *  • a migration file edited locally after it was applied (someone
+ *    "fixing" history after the fact)
+ *  • a Docker volume reused across two different checkout SHAs where
+ *    one container ran migration N with one SQL body and a sibling ran
+ *    the same migration id with a different one
+ *
+ * Behaviour choices:
+ *  • File missing → warn and continue. Deleting an applied migration's
+ *    file is a normal refactor (e.g. consolidated into an earlier one)
+ *    and shouldn't block boot.
+ *  • Recorded checksum NULL → log info and skip. Back-compat for any
+ *    legacy row that predates the checksum recording.
+ *
+ * Throws with a clear, debuggable message that names the offending id;
+ * the upstream caller lets the exception bubble so the boot fails fast.
+ *
+ * Exported (named with a leading underscore) so `migrate.test.js` can
+ * exercise the four branches without spinning up a real `_migrations`
+ * table or running `up()`. Production callers reach it only through `up()`.
+ */
+export async function _assertAppliedChecksums(appliedRows) {
+  const files = await listMigrationFiles()
+  const fileById = new Map(files.map((f) => [f.id, f]))
+  for (const row of appliedRows) {
+    const file = fileById.get(row.id)
+    if (!file) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[migrate] ${row.id}: applied migration's file is no longer in db/migrations/, skipping checksum check`,
+      )
+      continue
+    }
+    const sql = await fs.readFile(file.path, 'utf8')
+    const current = hashSql(sql)
+    if (row.checksum === null || row.checksum === undefined) {
+      // eslint-disable-next-line no-console
+      console.log(`[migrate] ${row.id}: no recorded checksum, skipping check (legacy row)`)
+      continue
+    }
+    if (current !== row.checksum) {
+      throw new Error(
+        `[migrate] checksum mismatch for ${row.id}: file has been modified since it was applied. Refusing to start.`,
+      )
+    }
+  }
+}
+
 export async function status() {
   await ensureMigrationsTable()
   const files = await listMigrationFiles()
@@ -94,7 +159,12 @@ export async function up() {
 
     await ensureMigrationsTable()
     const files = await listMigrationFiles()
-    const applied = await appliedIds()
+    const checksumRows = await appliedChecksums()
+    // Boot-time integrity guard: refuse to start if any applied migration's
+    // file has been modified since it was recorded. See _assertAppliedChecksums
+    // for the rationale.
+    await _assertAppliedChecksums(checksumRows)
+    const applied = new Set(checksumRows.map((r) => r.id))
     const pending = files.filter((m) => !applied.has(m.id))
     if (pending.length === 0) {
       // eslint-disable-next-line no-console
@@ -130,10 +200,25 @@ export async function down() {
   throw new Error('down() not implemented — run `up` again (idempotent) instead')
 }
 
-function hashSql(sql) {
-  // Tiny content checksum so a tweaked-applied-file is visible in the DB.
-  // We don't validate against it on subsequent runs (intentional — keeps
-  // local edits cheap) but it's recorded for forensics.
+/**
+ * Tiny deterministic content hash for a SQL file's body. Exported for the
+ * unit test in migrate.test.js.
+ *
+ * The hash is recorded next to each applied migration in `_migrations.checksum`
+ * and is verified at every boot by `assertAppliedChecksums` (decision 2026-09-01,
+ * Path A). That makes a post-apply edit to the file visible: the next boot
+ * will refuse to start instead of silently running with the modified SQL.
+ *
+ * The algorithm is intentionally trivial — a tiny non-cryptographic hash
+ * (Java-style `h * 31 + charCode`). It's not for tamper resistance; it's
+ * for "did the bytes on disk change?". Anything stronger (SHA-256, etc.)
+ * would mean pulling in a dependency just to defend a column we never
+ * expected anyone to actually look at. The values are stable across runs
+ * and platforms.
+ *
+ * Returned as a hex string so the DB column can stay `TEXT`.
+ */
+export function hashSql(sql) {
   let h = 0
   for (let i = 0; i < sql.length; i++) {
     h = (h * 31 + sql.charCodeAt(i)) | 0

@@ -61,6 +61,21 @@ export function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, de
   // ── Grup 2: Onaylar (sadece printer + team_leader) ────────────
   const approvalItems = [
     {
+      // Matbaa İşleri — printer's one-page hub. Sits at the top of the
+      // printer's approval group so the headline number on the sidebar
+      // (demoApprovals + ozalitApprovals + pending sipariş) lines up with
+      // the page it actually opens. The other approval items below stay
+      // reachable for back-compat and for the queues that don't fit on the
+      // hub (e.g. Baskı Listesi runs on a different stage filter).
+      to: '/matbaa-isleri',
+      label: 'Matbaa İşleri',
+      icon: Factory,
+      badge: counts.demoApprovals + counts.ozalitApprovals + printerOrders,
+      badgeTone: 'amber',
+      highlight: (counts.demoApprovals + counts.ozalitApprovals + printerOrders) > 0,
+      roles: ['printer'],
+    },
+    {
       to: '/approvals/demo',
       label: 'Onaylar',
       icon: BadgeCheck,

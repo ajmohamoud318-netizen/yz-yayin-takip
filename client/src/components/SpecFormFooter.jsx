@@ -1,4 +1,4 @@
-import { Check, CheckCircle2, Printer, Send } from 'lucide-react'
+import { Check, CheckCircle2, Pencil, Printer, Send } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { DialogFooter } from '@/components/ui/dialog'
@@ -34,6 +34,8 @@ export default function SpecFormFooter({
   onAdvance,
   isBaskiOnayApproval,
   baskiOnayPrepared,
+  baskiOnayEditOverride,
+  onToggleBaskiOnayEdit,
   onPrepareBaskiOnay,
   needsOzalitReceive,
   ozalitAwaitingLeader,
@@ -109,6 +111,17 @@ export default function SpecFormFooter({
         <Button disabled={busy || missingRequired.length > 0} onClick={onPrepareBaskiOnay}>
           <Send className="h-4 w-4" />
           {busy ? 'Kaydediliyor…' : 'Hazırlayın ve Onaya Gönderin'}
+        </Button>
+      )}
+      {/* Baskı Onay approve step: the approver signs what was prepared, so the
+          form is locked by default. This button lets them opt in to editing if
+          they spot something that needs a fix before signing — and re-lock
+          after. Never shown in the prepare step (baskiOnayPrepared === false),
+          where the leader is meant to be authoring, not signing. */}
+      {isBaskiOnayApproval && baskiOnayPrepared && (
+        <Button type="button" variant="outline" onClick={onToggleBaskiOnayEdit} disabled={busy}>
+          <Pencil className="h-4 w-4" />
+          {baskiOnayEditOverride ? 'Kilitleyin' : 'Düzenleyin'}
         </Button>
       )}
       {mode === 'approve' && (!isBaskiOnayApproval || baskiOnayPrepared) && (

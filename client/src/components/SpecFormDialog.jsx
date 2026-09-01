@@ -22,7 +22,7 @@ import { saveEditedComponents } from '@/data/productCatalog'
 import { ozalitLeaderApproved } from '@/domain'
 import { buildChangeSummary } from '@/lib/spec-form-diff'
 import { openMultiPrint } from '@/lib/spec-form-print'
-import { VARIANTS } from '@/lib/spec-form-variants'
+import { VARIANTS, computeBaskiOnayLocked, isDemoAlreadyApproved } from '@/lib/spec-form-variants'
 import {
   fetchServerSnapshot,
   loadSaved,
@@ -56,7 +56,7 @@ import {
  * specVariantForStage, stampSpecSignature — are re-exported below, so every
  * existing `from '@/components/SpecFormDialog'` keeps working unchanged.
  */
-export { VARIANTS, specVariantForStage } from '@/lib/spec-form-variants'
+export { VARIANTS, specVariantForStage, computeBaskiOnayLocked, isDemoAlreadyApproved } from '@/lib/spec-form-variants'
 export { stampSpecSignature } from '@/lib/spec-form-storage'
 
 /* ------------------------------------------------------------------ */
@@ -167,6 +167,12 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const [receiving, setReceiving] = useState(false)
   const [receivedLocal, setReceivedLocal] = useState(false)
   const [confirmReceive, setConfirmReceive] = useState(false)
+  /* Baskı Onay approve-step edit override (see spec-form-variants.js's
+   * baski_onay docblock for the why). Defaults OFF so the form opens
+   * locked; the approver clicks "Düzenleyin" in the footer to unlock if
+   * they spot something that needs fixing before signing. Reset on every
+   * (re)open so a stale unlock from a previous project never carries over. */
+  const [baskiOnayEditOverride, setBaskiOnayEditOverride] = useState(false)
 
   // Matbaa "Başladım" gate (migration 048): once the printer has started
   // physical work, the leader/assigned designer can no longer silently save
@@ -189,8 +195,31 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
      snapshot stays read-only for everyone. */
   const authoringOrderOzalit =
     orderScoped && mode === 'advance' && order?.status === 'kontrol_edildi'
+  // Baskı Onay approve step: once the form has been prepared, the approver
+  // is signing what was prepared, not authoring. The variant's pure
+  // isReadOnly can't express that — `mode='approve'` covers both prepare
+  // and approve — so the dialog adds this gate on top. The override lets
+  // the approver opt back in to editing if a field really needs a fix
+  // before they sign. The formula is in spec-form-variants.js so it's a
+  // pure helper and can be tested without mounting this dialog.
+  const baskiOnayLocked = computeBaskiOnayLocked({
+    isBaskiOnayApproval,
+    baskiOnayPrepared,
+    editOverride: baskiOnayEditOverride,
+  })
+  // Demo form past the demo_onay gate: the signed round is a snapshot, not a
+  // draft. Locking here stops a designer (or anyone opening the form via
+  // mode='view') from silently editing an already-approved demo. mode='history'
+  // is already locked via variant.demo.isReadOnly; mode='advance' on a past-
+  // approval project isn't a normal flow but is locked too for safety.
+  const demoAlreadyApproved =
+    variant.kind === 'demo' && isDemoAlreadyApproved(project)
   const readOnly =
-    (variant.isReadOnly({ mode, user }) && !authoringOrderOzalit) || lockedByStart || lockedByFixPending
+    (variant.isReadOnly({ mode, user }) && !authoringOrderOzalit)
+    || baskiOnayLocked
+    || demoAlreadyApproved
+    || lockedByStart
+    || lockedByFixPending
   const printable = variant.canPrint({ user, project, readOnly })
   // The plain "Demo Formu" button (mode='view', no notify) always opens a
   // round that has ALREADY been sent: at demo_onay it's the sheet sitting with
@@ -400,6 +429,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     if (!open) return
     setReceivedLocal(false)
     setConfirmReceive(false)
+    setBaskiOnayEditOverride(false)
   }, [open, scopeId])
 
   async function handleReceiveOzalit() {
@@ -828,6 +858,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           onAdvance={handleAdvance}
           isBaskiOnayApproval={isBaskiOnayApproval}
           baskiOnayPrepared={baskiOnayPrepared}
+          baskiOnayEditOverride={baskiOnayEditOverride}
+          onToggleBaskiOnayEdit={() => setBaskiOnayEditOverride((v) => !v)}
           onPrepareBaskiOnay={handlePrepareBaskiOnay}
           needsOzalitReceive={needsOzalitReceive}
           ozalitAwaitingLeader={ozalitAwaitingLeader}

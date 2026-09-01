@@ -211,6 +211,48 @@ describe('orders-service — persistence diffing', () => {
     assert.match(sql, /SET version = version \+ 1/)
   })
 
+  it('does not rewrite an approval ledger the entity rebuilt in different order', async () => {
+    // The same scenario as above, but with a multi-entry ledger that the
+    // entity hands back as a NEW array in the OPPOSITE order — simulating
+    // a refactor (or an admin-script writeback) where the ledger is
+    // walked in a different order than the DB had it. Without
+    // `canonicalise`, `JSON.stringify(prev) !== JSON.stringify(next)` would
+    // fire a phantom diff; the orchestrator would then write the (semantically
+    // equal) column back, and the SQL-level OCC guard would trip a 409 for a
+    // no-op click whenever a concurrent writer bumped the row in the gap.
+    // After `canonicalise`, the diff is empty and the click is silently
+    // a no-op — the version bump alone is enough.
+    const ledger = [
+      { id: 'L2', role: 'team_leader', name: 'İkinci Lider', at: '2026-08-01T00:00:01.000Z' },
+      { id: 'L1', role: 'team_leader', name: 'Ayşenur', at: '2026-08-01T00:00:00.000Z' },
+    ]
+    const order = orderRow({
+      status: 'matbaa_onay',
+      matbaa_received: true,
+      assignee_ids: ['D1'],
+      matbaa_approvals: ledger,
+    })
+    const client = makeClient({ order, leaders: ['L1', 'L2'] })
+
+    // Drive the orchestrator with a `run hook that swaps the array order
+    // and returns a non-null event so the diff path runs. We bypass the
+    // public API on purpose — the natural entity call preserves insertion
+    // order, so this hand-crafted scenario is the only way to exercise the
+    // canonicalise backstop from a test.
+    await service.runOrderCommand('o-1', L1, {
+      run: (entity) => {
+        entity.matbaa_approvals = [...entity.matbaa_approvals].reverse()
+        return { type: 'phantom.diff' }
+      },
+    }, client)
+
+    const { sql } = updatePatch(client)
+    assert.doesNotMatch(sql, /matbaa_approvals = \$/,
+      'same-content / different-order ledger is not rewritten')
+    assert.match(sql, /SET version = version \+ 1/,
+      'the OCC counter still moves even when nothing else did')
+  })
+
   it('stringifies jsonb columns and casts them', async () => {
     const order = orderRow({ status: 'pending' })
     const client = makeClient({ order, users: { D1: { id: 'D1', role: 'designer', is_active: true } } })

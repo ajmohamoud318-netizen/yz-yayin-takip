@@ -41,6 +41,46 @@ function getTransport() {
 }
 
 /**
+ * Production safety: refuse to boot when SMTP_HOST is unset.
+ *
+ * When no SMTP transport is configured, `sendMail()` falls back to a
+ * console transport and logs the rendered message — and the rendered
+ * message carries the opaque token that lets the recipient set their
+ * password. In dev that's exactly what we want (copy the invite link
+ * out of the terminal). In production every invitation and reset link
+ * would land in `docker logs` for anyone with log access to read.
+ *
+ * Loud-fail at boot so the misconfig is obvious in `docker logs`
+ * rather than silently shipping tokens into the container log stream.
+ * Called from main() next to the SEED_ON_BOOT production guard so the
+ * two boot-time refusals live in the same place. Exported (not a
+ * module-load side effect) so tests can exercise each scenario
+ * without spawning a child process.
+ *
+ * The function reads `(smtpHost, nodeEnv)` with defaults sourced from
+ * the live config + env so the call site stays a bare
+ * `assertSafeMailConfig()`. Tests pass explicit values to drive each
+ * scenario — keeps the test pure-config (no env mutation, no
+ * config.js cache-busting dance) without changing the production
+ * behaviour.
+ */
+export function assertSafeMailConfig({
+  smtpHost = config.smtp.host,
+  nodeEnv = process.env.NODE_ENV,
+} = {}) {
+  if (!smtpHost && nodeEnv === 'production') {
+    // eslint-disable-next-line no-console
+    console.error(
+      '[server] SMTP_HOST is required in production. Without it, ' +
+      'invitation and reset links would be printed to stdout and ' +
+      'leak into container logs. Set SMTP_HOST (e.g. smtp.resend.com) ' +
+      'or run locally. Refusing to start.',
+    )
+    process.exit(1)
+  }
+}
+
+/**
  * Send an email. Returns `{ ok: true, info }` on success or
  * `{ ok: false, error }` on failure — never throws, so callers can keep
  * the invite flow alive even when the mail server is down.

@@ -23,6 +23,7 @@ const NAV_TARGETS = [
   { to: '/documents', label: 'Dökümanlar', icon: Files, roles: ['team_leader', 'designer', 'printer'] },
   { to: '/baski-receteleri', label: 'Baskı Reçeteleri', icon: FileText, roles: ['team_leader', 'designer'] },
   { to: '/approvals/demo', label: 'Onaylar', icon: BadgeCheck, roles: ['printer', 'team_leader', 'designer'] },
+  { to: '/matbaa-isleri', label: 'Matbaa İşleri', icon: Factory, roles: ['printer'] },
   { to: '/baski-listesi', label: 'Baskı Listesi', icon: Factory, roles: ['printer'] },
   { to: '/teslim-talepleri', label: 'Teslim Talepleri', icon: Truck, roles: ['printer'] },
   { to: '/teslim-onaylari', label: 'Teslim Onayları', icon: PackageCheck, roles: ['satis'] },

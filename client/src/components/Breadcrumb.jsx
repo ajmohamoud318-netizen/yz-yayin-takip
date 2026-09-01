@@ -3,6 +3,7 @@
 const PAGE_TITLES = [
   { match: (p) => p === '/', label: 'Genel Bakış' },
   { match: (p) => p.startsWith('/kanban'), label: 'İş Akışı' },
+  { match: (p) => p.startsWith('/matbaa-isleri'), label: 'Matbaa İşleri' },
   { match: (p) => p.startsWith('/approvals/siparis'), label: 'Baskı Teslimi' },
   { match: (p) => p.startsWith('/approvals'), label: 'Onaylar' },
   { match: (p) => p.startsWith('/team'), label: 'Ekip' },

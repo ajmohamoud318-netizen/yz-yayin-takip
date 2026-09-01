@@ -29,6 +29,7 @@ import {
   notifyOrderBaskiOnayPrepared,
 } from './notifications.js'
 import * as repo from './order-repository.js'
+import { canonicalise } from './deep-equal.js'
 
 // Columns `runOrderCommand` never diffs: the repository bumps `version` and
 // `updated_at` in SQL, and `payload` is immutable after creation.
@@ -38,6 +39,15 @@ const NON_DIFFED_COLUMNS = new Set(['version', 'updated_at', 'payload'])
  * The columns the entity actually changed, by comparing it against the row
  * it was built from. Objects and arrays are compared structurally because
  * the entity always replaces them wholesale rather than mutating in place.
+ *
+ * Equality is canonicalised on both object keys and array order (see
+ * `canonicalise` in `./deep-equal.js`). Without it, an entity that walked a
+ * multi-party matbaa approval ledger in a different order than the DB had
+ * it would report a phantom diff — and the SQL-level optimistic-concurrency
+ * guard would then refuse the write with a 409 for a no-op approve. The
+ * reference `prev === next` short-circuit above still handles the cheap
+ * "same array" case; canonicalise is the backstop for a new array reference
+ * that describes the same data.
  */
 function changedFields(before, entity) {
   const fields = {}
@@ -47,7 +57,7 @@ function changedFields(before, entity) {
     const next = entity[key]
     if (prev === next) continue
     if (prev && next && typeof prev === 'object' && typeof next === 'object'
-      && JSON.stringify(prev) === JSON.stringify(next)) continue
+      && JSON.stringify(canonicalise(prev)) === JSON.stringify(canonicalise(next))) continue
     fields[key] = next
   }
   return fields
@@ -519,3 +529,8 @@ export async function patchOrderSubtask(orderId, subtaskId, actor, body, client 
   }
   return client ? run(client) : withTx(run)
 }
+
+// Re-export `runOrderCommand` so the service tests can drive the orchestrator
+// with a custom `run` hook (mirrors `runProjectCommand` in
+// `project-service.js`). The production routes never call it directly.
+export { runOrderCommand }
