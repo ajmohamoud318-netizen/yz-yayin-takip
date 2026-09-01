@@ -22,7 +22,7 @@ import TalepSignDialog from '@/components/TalepSignDialog'
 import SiparisBaskiOnayFormDialog from '@/components/SiparisBaskiOnayFormDialog'
 import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import ProjectHistory from '@/components/ProjectHistory'
-import { canMarkDemoStarted, canMarkOzalitStarted, orderOzalitFormMode } from '@/domain'
+import { orderOzalitFormMode } from '@/domain'
 
 import { useProjectDetail } from '@/hooks/useProjectDetail'
 import ProjectDetailHeader from '@/components/ProjectDetailHeader'
@@ -56,10 +56,9 @@ export default function ProjectDetail() {
     ozalitRequestOrder, setOzalitRequestOrder,
     teslimConfirm, setTeslimConfirm,
     changeRequestOpen, setChangeRequestOpen, changeRequestNote, setChangeRequestNote, requestingChange,
-    receiving, reportingNotReceived, startingWork, cancellingRequest, respondingChange, processingEkranDemo,
+    receiving, reportingNotReceived, cancellingRequest, respondingChange, processingEkranDemo,
     historyWithAttempts,
     handleOrderSigned, handleOrderUpdated, handleOrderOzalitRequested, handleSiparisBaskiOnayApproved,
-    handleDemoStart, handleOzalitStart,
     handleRequestChange,
     confirmDeleteProject, onActionDone,
   } = d
@@ -200,8 +199,6 @@ export default function ProjectDetail() {
         viewDemoId={ozalitFormSnapshot}
         notifyOnSave={ozalitFormNotify}
         onDone={onActionDone}
-        onStartWork={canMarkOzalitStarted(user, project) ? async () => { await d.handleOzalitStart(); setOzalitFormOpen(false) } : undefined}
-        startingWork={startingWork}
       />
 
       <BaskiOnayFormDialog
@@ -221,8 +218,6 @@ export default function ProjectDetail() {
         viewAttemptLabel={demoFormRound}
         viewDemoId={demoFormSnapshot}
         notifyOnSave={demoFormNotify}
-        onStartWork={canMarkDemoStarted(user, project) ? async () => { await handleDemoStart(); setDemoFormOpen(false) } : undefined}
-        startingWork={startingWork}
         onDone={onActionDone}
       />
 
@@ -282,7 +277,7 @@ export default function ProjectDetail() {
         confirmLabel={d.teslimConfirmConfig?.confirmLabel}
         cancelLabel="Vazgeç"
         variant={d.teslimConfirmConfig?.variant}
-        busy={receiving || reportingNotReceived || startingWork || cancellingRequest || respondingChange || processingEkranDemo}
+        busy={receiving || reportingNotReceived || cancellingRequest || respondingChange || processingEkranDemo}
         onConfirm={() => d.teslimConfirmConfig?.onConfirm?.()}
       />
 

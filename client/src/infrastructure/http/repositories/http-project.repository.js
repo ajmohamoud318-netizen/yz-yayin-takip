@@ -119,6 +119,15 @@ export function createHttpProjectRepository(userRepo) {
           ? { subtaskAssignees }
           : {}),
         subtasks,
+        // Optional recipe shells (Ana / Kutu / Kılavuz) derived by
+        // NewProjectDialog from the leader's subtask selection. The server
+        // seeds them inside the same transaction as the project so the
+        // project lands on disk with its parça spec already attached.
+        // `normalizeProjectPayload` lets unknown top-level keys through via
+        // `...rest`, so `payload.productInfo` survives untouched.
+        ...(Array.isArray(payload.productInfo) && payload.productInfo.length > 0
+          ? { productInfo: payload.productInfo }
+          : {}),
       })
       cache.set(data.id, data)
       return data

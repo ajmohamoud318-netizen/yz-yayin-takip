@@ -43,6 +43,58 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10)
 }
 
+// When the leader ticks the Kutu and/or Kılavuz library subtasks at create
+// time, we want the project to land on disk with the matching recipe shells
+// already attached — otherwise the leader has to open Ürün Bilgileri right
+// after creation and add them by hand, every time.
+//
+// Derives the `components` array from the leader's subtask selection. The
+// skeleton is intentionally thin: each parça gets its `İŞİN ADI` row so it
+// prints with a title on its own page, and the inferred `kind` tag (main /
+// kutu / kilavuz / other) lets the reader tell them apart at a glance. The
+// leader fills the actual spec values (ebat, kağıt, vs.) in Ürün Bilgileri
+// once the project exists — that editor already lists these components by
+// the kind tag we set here.
+function deriveInitialProductInfo(title, subtasks) {
+  if (!title?.trim()) return null
+  const out = [
+    {
+      component: title.trim(),
+      kind: 'main',
+      date: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }),
+      // The page count for an İç Sayfalar-led project isn't fixed at create
+      // time — the designer adds / removes pages as the work surfaces, and the
+      // number on the recipe stays "auto" until the matbaa prints from it.
+      // Seeding the SAYFA SAYISI row in place is a single edit: the row sits
+      // right under İŞİN ADI (the title always leads), so the recipe prints
+      // and reads in the same order the leader expects from the seed library.
+      fields: [
+        { k: 'İŞİN ADI', v: title.trim() },
+        ...(subtasks.sayfalar ? [{ k: 'SAYFA SAYISI', v: 'auto' }] : []),
+        { k: 'ADET', v: '' },
+        { k: 'EBAT', v: '' },
+      ],
+    },
+  ]
+  if (subtasks.kutu) {
+    out.push({
+      component: 'Kutu Reçetesi',
+      kind: 'kutu',
+      date: '',
+      fields: [{ k: 'İŞİN ADI', v: 'Kutu Reçetesi' }],
+    })
+  }
+  if (subtasks.kilavuz) {
+    out.push({
+      component: 'Kılavuz Reçetesi',
+      kind: 'kilavuz',
+      date: '',
+      fields: [{ k: 'İŞİN ADI', v: 'Kılavuz Reçetesi' }],
+    })
+  }
+  return out
+}
+
 const emptySubtasks = () => SUBTASK_LIBRARY.reduce((acc, s) => ({ ...acc, [s.key]: false }), {})
 const emptySubtaskAssignees = () => SUBTASK_LIBRARY.reduce((acc, s) => ({ ...acc, [s.key]: '' }), {})
 
@@ -283,6 +335,13 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         stickerCount: subtasks.sticker ? Number(stickerCount) : undefined,
         subtaskAssignees: { ...subtaskAssignees, ...customAssignees },
         target_month: targetDate || defaultTargetDate(),
+        // Only sent on create, not edit. deriveInitialProductInfo returns the
+        // Ana Reçete shell plus the Kutu / Kılavuz shells the leader ticked
+        // in the library — the server seeds them in the same transaction as
+        // the project itself, so the project never lands without its
+        // matching parça spec. Edit-mode product_info changes go through
+        // Ürün Bilgileri (PUT /product-info/:id) instead.
+        ...(isEdit ? {} : { productInfo: deriveInitialProductInfo(title, subtasks) }),
       }
       let saved
       if (isEdit) {

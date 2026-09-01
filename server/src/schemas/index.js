@@ -502,6 +502,14 @@ const projectsCreate = {
         maxItems: 32,
         items: subtaskInput,
       },
+      // Optional: when the team leader picks the Kutu and/or Kılavuz
+      // library subtasks in NewProjectDialog, the SPA derives a matching
+      // skeleton (Ana Reçete + Kutu Reçetesi + Kılavuz Reçetesi) from the
+      // library and ships it here so the project lands on disk with its
+      // parça spec already attached. Reuses the same `productComponents`
+      // shape as PUT /product-info/:id so a leader who later edits the
+      // spec through Ürün Bilgileri sees the same fields.
+      productInfo: productComponents,
     },
   },
 }

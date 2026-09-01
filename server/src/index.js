@@ -2,6 +2,10 @@ import Fastify from 'fastify'
 import multipart from '@fastify/multipart'
 import cookie from '@fastify/cookie'
 import helmet from '@fastify/helmet'
+import { nanoid } from 'nanoid'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 import { authRoutes } from './routes/auth.js'
 import { userRoutes } from './routes/users.js'
 import { projectRoutes } from './routes/projects.js'
@@ -37,6 +41,18 @@ import { registerAuthDecorators } from './middleware/auth.js'
  *  • Translate HttpError → JSON response with the right status.
  *  • Graceful shutdown closes the pg pool.
  */
+
+// API version stamped on every response as `X-API-Version`. The SPA can
+// then warn (or fail) when it talks to a backend build it didn't expect —
+// catching deploy mismatches, rollbacks, and partial blue/green transitions
+// before users notice. Read from package.json at boot so a release bumps
+// the value with no code change; appended with the short git commit so
+// `docker logs` can immediately identify which revision answered.
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const pkg = JSON.parse(
+  readFileSync(resolve(__dirname, '..', 'package.json'), 'utf8'),
+)
+const API_VERSION = `${pkg.version}+${process.env.GIT_COMMIT?.slice(0, 7) ?? 'dev'}`
 
 export async function buildServer() {
   const fastify = Fastify({
@@ -79,6 +95,22 @@ export async function buildServer() {
     contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' },
     crossOriginEmbedderPolicy: false,
+  })
+
+  // Per-request correlation header. Every response carries `X-Request-Id`;
+  // a user reports "the save failed at 14:32" and you can `grep req_abc`
+  // in `docker logs` to see the exact request, route, and stack — without
+  // asking the user for a screenshot. Trusts an incoming X-Request-Id when
+  // one is present (a load balancer / proxy may already generate one and
+  // we want the ID to span the whole chain), otherwise mints a fresh one.
+  // `API_VERSION` is stamped on the same hook so the two response headers
+  // travel together and the SPA can correlate "what backend answered me"
+  // with "what request triggered it".
+  fastify.addHook('onRequest', async (request, reply) => {
+    const id = request.headers['x-request-id'] ?? `req_${nanoid(12)}`
+    request.id = id
+    reply.header('X-Request-Id', id)
+    reply.header('X-API-Version', API_VERSION)
   })
 
   // CORS — explicit allowlist (config.corsOrigins). Credentials are enabled

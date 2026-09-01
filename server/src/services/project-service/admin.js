@@ -17,6 +17,7 @@ import { withTx, getPool } from '../../db/pool.js'
 import { badRequest, conflict, notFound } from '../../domain/errors.js'
 import { ORDERABLE_STAGES, STAGE_LABELS } from '../../domain/stages.js'
 import { subtaskProgress } from '../../domain/progress.js'
+import { inferComponentKind } from '../product-info-capture.js'
 import {
   normaliseProjectTitle,
   isTitleConflictError,
@@ -67,6 +68,7 @@ export async function createProject(actor, body) {
   const {
     title, type, target_month, subtasks = [], pass_kind,
     assigned_to, assignees = [], subtaskAssignees = {},
+    productInfo = null,
   } = body
   const primaryAssignee = assigned_to ?? (Array.isArray(assignees) && assignees[0]) ?? null
 
@@ -114,6 +116,26 @@ export async function createProject(actor, body) {
       { progress },
       { expectedVersion: project.version },
     )
+    // Seed product_info alongside the project when the leader opted into
+    // the Kutu / Kılavuz library subtasks. NewProjectDialog derives the
+    // matching component shells from the subtask selection and ships them
+    // in `productInfo` so the project lands with its parça spec already
+    // attached — no separate PUT /product-info round-trip needed, and
+    // the upsert commits inside the same transaction so a half-seeded
+    // project can't enter the catalog. The backfill on GET (server/src/
+    // routes/product-info.js#withKind) makes sure any component the SPA
+    // forgot to tag still gets a `kind` on read.
+    if (Array.isArray(productInfo) && productInfo.length > 0) {
+      const stamped = productInfo.map((c) => ({
+        kind: inferComponentKind(c?.component),
+        ...c,
+      }))
+      await client.query(
+        `INSERT INTO product_info (project_id, components, updated_by, updated_at)
+         VALUES ($1, $2::jsonb, $3, NOW())`,
+        [project.id, JSON.stringify(stamped), actor.id],
+      )
+    }
     await logHistory(
       client,
       {

@@ -106,12 +106,69 @@ export function useProjectSubtasks(project, refetch, setProject, user, allUsers,
     const controller = new AbortController()
     inflightPagesRef.current.set(key, controller)
     setActivePage({ key, status: next })
+    // Optimistic flip — the chip's color is driven by
+    // `subtask.pages[i].status`, so without this the chip stays in its
+    // previous visual state until the server response lands. Same
+    // before-snapshot / revert-on-failure pattern handlePageAssign uses:
+    // the server returns the same shape we set here (after it recomputes
+    // pages_done / is_done on the subtask), so the post-await setProject
+    // merge is a no-op when the optimistic guess was right and a fix-up
+    // when it wasn't.
+    const before = project?.subtasks?.find((s) => s.id === sub.id)?.pages ?? null
+    setProject((prev) => {
+      if (!prev) return prev
+      const subs = (prev.subtasks ?? []).map((s) => {
+        if (s.id !== sub.id) return s
+        const nextPages = (s.pages ?? []).map((p) => {
+          if (p.i !== pageIndex) return p
+          const goingToDone = next === 'done'
+          return {
+            ...p,
+            status: next,
+            // done_by / done_at stamp on the done transition; cleared on
+            // the undo (done → pending) so the chip's owner color returns
+            // to the planned assignee instead of staying pinned to the
+            // previous finisher.
+            done_by: goingToDone ? user?.id ?? null : null,
+            done_by_name: goingToDone ? user?.name ?? null : null,
+            done_at: goingToDone ? new Date().toISOString() : null,
+          }
+        })
+        // Recompute the subtask-level counters so the header
+        // "X / Y tamamlandı" reflects the click before the server
+        // responds. The server returns these too, so this is just a
+        // faster path; the post-await merge reconciles any drift.
+        const total = Number(s.total_pages ?? nextPages.length)
+        const done = nextPages.filter((p) => p.status === 'done').length
+        return {
+          ...s,
+          pages: nextPages,
+          pages_done: done,
+          is_done: total > 0 && done === total,
+        }
+      })
+      return { ...prev, subtasks: subs }
+    })
     try {
       const { project: updated } = await api.setSubtaskPage(sub.id, pageIndex, next, { signal: controller.signal })
       if (updated) setProject((prev) => ({ ...prev, ...updated }))
     } catch (err) {
       // A cancel we triggered ourselves is not a user-facing failure.
       if (err?.name !== 'CanceledError' && !axios.isCancel(err)) {
+        // Revert the optimistic flip on a real failure. Mirror
+        // handlePageAssign: restore the affected `pages` slice and leave
+        // the rest of the project alone — another chip click may have
+        // moved those in the meantime and we shouldn't wipe them.
+        if (before) {
+          setProject((prev) => {
+            if (!prev) return prev
+            const subs = (prev.subtasks ?? []).map((s) => {
+              if (s.id !== sub.id) return s
+              return { ...s, pages: before }
+            })
+            return { ...prev, subtasks: subs }
+          })
+        }
         toast.error(err.message || 'Sayfa kaydedilemedi.')
       }
     } finally {
@@ -131,11 +188,56 @@ export function useProjectSubtasks(project, refetch, setProject, user, allUsers,
     const controller = new AbortController()
     inflightPagesRef.current.set(key, controller)
     setActivePage({ key, status: 'rework' })
+    // Optimistic flip — the chip moves to amber (rework) immediately and
+    // its rework_count ticks by one. Unlike handlePageClick, the rework
+    // transition keeps `done_by` / `done_by_name` / `done_at` so the
+    // leader can still see who last shipped the page before it bounced
+    // (PageChipGrid.ownerOf reads done_by for done pages and assigned_to
+    // otherwise; a rework chip is "otherwise" but the finisher's name
+    // stays in the tooltip / timeline).
+    const before = project?.subtasks?.find((s) => s.id === sub.id)?.pages ?? null
+    setProject((prev) => {
+      if (!prev) return prev
+      const subs = (prev.subtasks ?? []).map((s) => {
+        if (s.id !== sub.id) return s
+        const nextPages = (s.pages ?? []).map((p) => {
+          if (p.i !== pageIndex) return p
+          return {
+            ...p,
+            status: 'rework',
+            rework_count: (Number(p.rework_count ?? 0)) + 1,
+          }
+        })
+        // Recompute pages_done/is_done locally. A rework page counts as
+        // "not done" for pages_done — same as the server's COUNT(*) FILTER
+        // (WHERE status = 'done'). Keeping the client in lockstep avoids
+        // the header briefly showing X/Y + 1 done when it should show X/Y.
+        const total = Number(s.total_pages ?? nextPages.length)
+        const done = nextPages.filter((p) => p.status === 'done').length
+        return {
+          ...s,
+          pages: nextPages,
+          pages_done: done,
+          is_done: total > 0 && done === total,
+        }
+      })
+      return { ...prev, subtasks: subs }
+    })
     try {
       const { project: updated } = await api.setSubtaskPage(sub.id, pageIndex, 'rework', { signal: controller.signal })
       if (updated) setProject((prev) => ({ ...prev, ...updated }))
     } catch (err) {
       if (err?.name !== 'CanceledError' && !axios.isCancel(err)) {
+        if (before) {
+          setProject((prev) => {
+            if (!prev) return prev
+            const subs = (prev.subtasks ?? []).map((s) => {
+              if (s.id !== sub.id) return s
+              return { ...s, pages: before }
+            })
+            return { ...prev, subtasks: subs }
+          })
+        }
         toast.error(err.message || 'Revize kaydedilemedi.')
       }
     } finally {

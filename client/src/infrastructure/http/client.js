@@ -137,9 +137,35 @@ client.interceptors.response.use(
     // English and reads like a crash, so it gets replaced before it can reach a
     // toast or an error card.
     const offline = !err?.response
-    const message = offline
+    let message = offline
       ? 'Sunucuya ulaşılamadı. Bağlantını kontrol edip tekrar dene.'
       : err?.response?.data?.error ?? err?.response?.data?.message ?? err.message
+
+    // 429 — surface Retry-After. The auth/forgot-password rate limiter
+    // stamps this header on every rejection; replacing the generic Turkish
+    // message with one that names the exact wait time means the user
+    // doesn't have to guess, and a brute-force probe isn't tempted to
+    // keep hammering. Header is in seconds per RFC 9110 §10.2.3.
+    if (status === 429) {
+      const retryAfter = Number(err?.response?.headers?.['retry-after'])
+      if (Number.isFinite(retryAfter) && retryAfter > 0) {
+        message = retryAfter >= 60
+          ? `Çok fazla deneme. ${Math.ceil(retryAfter / 60)} dakika sonra tekrar deneyin.`
+          : `Çok fazla deneme. ${retryAfter} saniye sonra tekrar deneyin.`
+      } else {
+        message = 'Çok fazla deneme. Lütfen biraz sonra tekrar deneyin.'
+      }
+    }
+
+    // Correlation log: every failing request is logged with the same id the
+    // server stamps on its side. A user pastes a console screenshot, you
+    // grep `docker logs` for the id, and you see the route + stack that
+    // matched that exact click — no more "which save failed?" guessing.
+    const reqId = err?.response?.headers?.['x-request-id']
+    if (reqId) {
+      // eslint-disable-next-line no-console
+      console.warn(`[api] ${reqId} ${status ?? 'NETWORK'}: ${message}`)
+    }
 
     // A 401 from the API means the session/header is no longer accepted.
     // The right UX is to drop the cached credentials and bounce to the

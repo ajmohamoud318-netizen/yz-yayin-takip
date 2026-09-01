@@ -6,6 +6,40 @@
  * single source of truth for backend interaction. Cross-aggregate use
  * cases (orders, handovers) live here so they can compose repos
  * without the presentation layer having to know about them.
+ *
+ * ──────────────────────────────────────────────────────────────────────
+ * Response contract (read this before adding a new endpoint)
+ * ──────────────────────────────────────────────────────────────────────
+ *  • Each method returns the resource directly (no envelope).
+ *    `listProjects()` returns `{ id, title, … }[]`, not `{ ok, data }`.
+ *  • On failure, every method throws an Error with `.status`, `.code`,
+ *    and `.offline` attached (see `infrastructure/http/client.js`). The
+ *    caller never has to unwrap or branch on a body shape.
+ *  • Bulk endpoints may return `{ items, errors, meta }` (see
+ *    `importProjects` / `bulkAssignSubtaskPages`). The errors array
+ *    carries per-row failures that didn't trip the HTTP status — a
+ *    partial success is still a 2xx with the per-row detail inside.
+ *
+ * Error codes the UI can branch on:
+ *   bad_request | unauthorized | forbidden | not_found
+ *   | conflict  | gone         | internal_error
+ *
+ * Response headers worth knowing about:
+ *   X-Request-Id  — correlates a failed SPA click with the server log
+ *                   entry. Surfaced in the dev console as `[api] req_xxx
+ *                   409: ...`; grep the same id in `docker logs`.
+ *   X-API-Version — "<pkg.version>+<short-commit>". Lets the SPA detect
+ *                   a backend build it didn't expect (rollback, partial
+ *                   deploy).
+ *   Retry-After   — present on 429 responses (auth/forgot-password rate
+ *                   limits). The interceptor converts it to a Turkish
+ *                   "N dakika sonra tekrar deneyin" toast automatically.
+ *
+ * If you find yourself reaching for `try { … } catch { return null }`
+ * to make a method "never throw" — don't. The interceptor already turns
+ * a failure into a typed Error; callers should branch on `.status`
+ * (`.offline` for the network-only case) rather than swallowing it.
+ * ──────────────────────────────────────────────────────────────────────
  */
 import { createHttpAuthRepository } from '../infrastructure/http/repositories/http-auth.repository.js'
 import { createHttpUserRepository } from '../infrastructure/http/repositories/http-user.repository.js'

@@ -94,23 +94,21 @@ export default function HeaderActionRow({ d }) {
           {advanceLabel}
         </Button>
       )}
-      {/* Matbaa "Başladım" */}
+      {/* Matbaa "Başladım" — same lightweight confirm-dialog pattern as
+          MatbaaIsleri.jsx and Approvals.jsx. Opening the full Demo/Ozalit
+          Form dialog here used to make the ladder heavy: printer clicked
+          İşlemi Başlatın → the spec sheet popped up just to be dismissed
+          → they clicked it again inside to actually stamp the flag → then
+          the same form reopened on Teslim Edin. The form should only
+          appear once — at delivery. */}
       {canMarkDemoStarted(user, project) && (
-        <Button
-          size="sm"
-          onClick={() => { setDemoFormMode('view'); setDemoFormAttempt(null); setDemoFormNotify(false); setDemoFormOpen(true) }}
-          disabled={startingWork}
-        >
+        <Button size="sm" onClick={() => setTeslimConfirm('demo-start')} disabled={startingWork}>
           <CheckCircle2 className="h-4 w-4" />
           {startingWork ? 'İşleniyor…' : 'İşlemi Başlatın'}
         </Button>
       )}
       {canMarkOzalitStarted(user, project) && (
-        <Button
-          size="sm"
-          onClick={() => { setOzalitFormMode('view'); setOzalitFormAttempt(null); setOzalitFormNotify(false); setOzalitFormOpen(true) }}
-          disabled={startingWork}
-        >
+        <Button size="sm" onClick={() => setTeslimConfirm('ozalit-start')} disabled={startingWork}>
           <CheckCircle2 className="h-4 w-4" />
           {startingWork ? 'İşleniyor…' : 'İşlemi Başlatın'}
         </Button>

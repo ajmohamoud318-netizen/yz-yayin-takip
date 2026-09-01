@@ -328,6 +328,30 @@ export function useProjectDelivery(project, refetch, user) {
       variant: 'destructive',
       onConfirm: handleOzalitCancel,
     },
+    // The matbaa's "İşlemi Başlatın" gate on the project detail page used
+    // to open the whole spec-form dialog (HeaderActionRow.jsx). That made
+    // the two-step ladder heavy: the printer clicks İşlemi Başlatın → the
+    // full form pops up just to be dismissed → they click it again inside
+    // to actually stamp the flag → then the same form reopens on Teslim
+    // Edin. The lighter ConfirmDialog matches what MatbaaIsleri.jsx and
+    // Approvals.jsx already do, so the form appears exactly once — at
+    // delivery time. Same copy on both pages keeps the wording identical.
+    'demo-start': {
+      title: 'Demo çalışmasına başladınız mı?',
+      description:
+        'Bundan sonra ekip lideri veya tasarımcının iptal ya da düzenleme yapması, sizin onayınızı gerektiren bir değişiklik talebine dönüşür.',
+      confirmLabel: 'İşlemi Başlatın',
+      variant: 'success',
+      onConfirm: handleDemoStart,
+    },
+    'ozalit-start': {
+      title: 'Ozalit çalışmasına başladınız mı?',
+      description:
+        'Bundan sonra ekip lideri veya tasarımcının iptal ya da düzenleme yapması, sizin onayınızı gerektiren bir değişiklik talebine dönüşür.',
+      confirmLabel: 'İşlemi Başlatın',
+      variant: 'success',
+      onConfirm: handleOzalitStart,
+    },
     'demo-change-accept': {
       title: 'Değişiklik talebini kabul edin mi?',
       description: 'Ekip lideri veya tasarımcı artık demoyu iptal edebilir ya da düzenleyebilir.',
