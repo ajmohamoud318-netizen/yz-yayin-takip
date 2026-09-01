@@ -21,6 +21,13 @@
  * locks the demo once the project has moved past `demo_onay`/`cin_demo_onay`
  * — the demo is a signed snapshot at that point, not a draft. Mirrors the
  * Baskı Onay fix in shape; tested in the same file.
+ *
+ * Reject-to-matbaa (ApprovalDialog → SpecFormDialog with rejectContext) has
+ * the same shape — a dialog-level read-only gate on top of the variant's
+ * own role/mode rule — so it lives here too: the matbaa must receive the
+ * file exactly as they had it when they pressed "İşlemi Başlatın", and the
+ * leader reviewing on the way to the rejection button cannot be allowed to
+ * silently edit the snapshot out from under them.
  */
 
 import { describe, it, expect } from 'vitest'
@@ -28,6 +35,7 @@ import {
   VARIANTS,
   computeBaskiOnayLocked,
   isDemoAlreadyApproved,
+  isRejectToMatbaaReview,
 } from '@/components/SpecFormDialog'
 
 const leader = { id: 'u-lead', role: 'team_leader' }
@@ -158,5 +166,41 @@ describe('VARIANTS.demo.isReadOnly', () => {
     expect(VARIANTS.demo.isReadOnly({ mode: 'approve', user: leader })).toBe(false)
     expect(VARIANTS.demo.isReadOnly({ mode: 'advance', user: printer })).toBe(true)
     expect(VARIANTS.demo.isReadOnly({ mode: 'history', user: leader })).toBe(true)
+  })
+})
+
+describe('isRejectToMatbaaReview — locks the form on a reject-to-matbaa handoff', () => {
+  const ctx = { reason: 'yanlış dosya', target: 'matbaa' }
+
+  it('returns false when no rejectContext is passed (ordinary compose)', () => {
+    expect(isRejectToMatbaaReview(null)).toBe(false)
+    expect(isRejectToMatbaaReview(undefined)).toBe(false)
+  })
+
+  it('returns true the moment rejectContext is set, regardless of reason', () => {
+    // The matbaa gets the file as-is; the reason text only appears in the
+    // intro banner and the API call — it doesn't gate the read-only lock.
+    expect(isRejectToMatbaaReview(ctx)).toBe(true)
+    expect(isRejectToMatbaaReview({ reason: '', target: 'matbaa' })).toBe(true)
+  })
+
+  // Regression — the bug this helper exists to fix. The variant's pure
+  // rule returns false for a team leader at advance (the dialog used to
+  // take this as "editable") and handleAdvance's persistAfterStep then
+  // rewrote the round's snapshot on submit, so any accidental edit on the
+  // way to "Reddedin ve Gönderin" silently shipped a different file to
+  // the matbaa. The dialog's readOnly formula adds this lock on top.
+  it('flips the demo sheet to read-only for the team leader at demo_onay', () => {
+    const variantLocked = VARIANTS.demo.isReadOnly({ mode: 'advance', user: leader })
+    expect(variantLocked).toBe(false)
+    expect(isRejectToMatbaaReview(ctx)).toBe(true)
+  })
+
+  it('flips the ozalit sheet to read-only for the team leader at ozalit_onay', () => {
+    // Same variant rule for ozalit: a team leader at advance is allowed
+    // to author the ozalit request. Reject-to-matbaa overrides that.
+    const variantLocked = VARIANTS.ozalit.isReadOnly({ mode: 'advance', user: leader })
+    expect(variantLocked).toBe(false)
+    expect(isRejectToMatbaaReview(ctx)).toBe(true)
   })
 })

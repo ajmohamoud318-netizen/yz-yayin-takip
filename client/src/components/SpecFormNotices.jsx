@@ -39,13 +39,15 @@ export function SpecFormIntro({ authoringOrderOzalit, order, rejectContext }) {
       )}
 
       {/* Reject-to-matbaa review (ApprovalDialog hand-off) — the leader is
-          about to send this sheet back to matbaa for redelivery; make that
-          explicit and show the reason they just typed. */}
+          about to send this sheet back to matbaa for redelivery. The form is
+          read-only: the matbaa gets the file exactly as they had it when
+          they pressed "İşlemi Başlatın". Show the reason they just typed. */}
       {rejectContext && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
           <p className="font-semibold text-destructive">Matbaaya yeniden gönderilecek</p>
           <p className="mt-0.5 text-muted-foreground">
-            Göndermeden önce formu gözden geçirin. Red sebebi: <span className="italic">"{rejectContext.reason}"</span>
+            Form, matbaanın işleme başladığı haliyle yeniden gönderilecek — değişiklik yapılamaz.
+            Red sebebi: <span className="italic">"{rejectContext.reason}"</span>
           </p>
         </div>
       )}

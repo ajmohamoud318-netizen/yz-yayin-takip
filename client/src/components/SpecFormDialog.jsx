@@ -22,7 +22,7 @@ import { saveEditedComponents } from '@/data/productCatalog'
 import { ozalitLeaderApproved } from '@/domain'
 import { buildChangeSummary } from '@/lib/spec-form-diff'
 import { openMultiPrint } from '@/lib/spec-form-print'
-import { VARIANTS, computeBaskiOnayLocked, isDemoAlreadyApproved } from '@/lib/spec-form-variants'
+import { VARIANTS, computeBaskiOnayLocked, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
 import {
   fetchServerSnapshot,
   loadSaved,
@@ -56,7 +56,7 @@ import {
  * specVariantForStage, stampSpecSignature — are re-exported below, so every
  * existing `from '@/components/SpecFormDialog'` keeps working unchanged.
  */
-export { VARIANTS, specVariantForStage, computeBaskiOnayLocked, isDemoAlreadyApproved } from '@/lib/spec-form-variants'
+export { VARIANTS, specVariantForStage, computeBaskiOnayLocked, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
 export { stampSpecSignature } from '@/lib/spec-form-storage'
 
 /* ------------------------------------------------------------------ */
@@ -93,11 +93,14 @@ export { stampSpecSignature } from '@/lib/spec-form-storage'
  *   confirming they've begun physical work, instead of starting blind.
  * rejectContext — { reason, target } — used with mode='advance' when a
  *   team-leader reject-to-matbaa (ApprovalDialog) hands off here instead of
- *   submitting blind: the leader reviews/edits the existing sheet matbaa will
- *   redeliver, and THIS dialog's submit is what actually calls
+ *   submitting blind: THIS dialog's submit is what actually calls
  *   api.rejectProject (with the reason already collected), not advanceProject.
- *   Forces the saved sheet to load as-is (like a read-only viewer would)
- *   instead of the normal "fresh compose" reset for a new attempt.
+ *   The form is opened read-only — the leader reviews but cannot edit it —
+ *   and the saved snapshot is left untouched on submit, so the matbaa
+ *   receives exactly the file they had when they pressed "İşlemi Başlatın"
+ *   (any accidental edit here used to silently rewrite that snapshot and
+ *   ship a different file). The saved sheet still loads as-is (like a
+ *   read-only viewer would) instead of the normal "fresh compose" reset.
  */
 export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, order = null, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, rejectContext = null }) {
   const variant = VARIANTS[variantName]
@@ -236,6 +239,12 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     || demoAlreadyApproved
     || lockedByStart
     || lockedByFixPending
+    // Reject-to-matbaa: the form is opened so the leader can confirm the
+    // rejection after seeing the sheet, NOT so they can edit it. Any edit
+    // would ship to the matbaa as a different file than the one they
+    // started working from (handleAdvance writes the loaded payload back
+    // to the snapshot on submit). Lock it.
+    || isRejectToMatbaaReview(rejectContext)
   const printable = variant.canPrint({ user, project, readOnly })
   // The plain "Demo Formu" button (mode='view', no notify) always opens a
   // round that has ALREADY been sent: at demo_onay it's the sheet sitting with
@@ -525,7 +534,12 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    */
   async function handleAdvance(routeOverride = null) {
     if (!project) return
-    if (!requiredFilled()) return
+    // Reject-to-matbaa confirms the rejection without composing a new spec:
+    // the form is read-only and the saved snapshot stays untouched. A blank
+    // ADET in the original file is the matbaa's to deal with on redelivery,
+    // not the leader's to refuse — skip the required-field gate so the
+    // "Reddedin ve Gönderin" button stays enabled for a real re-delivery.
+    if (!rejectContext && !requiredFilled()) return
     setBusy(true)
     try {
       // When the printer (matbaa) is the one advancing, stamp the
@@ -575,7 +589,14 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         : rejectContext
           ? await api.rejectProject(project.id, rejectContext.reason, [], rejectContext.target)
           : await api.advanceProject(project.id)
-      await persistAfterStep(payload, { catalog: !authoringOrderOzalit })
+      // Reject-to-matbaa: the form is read-only and we're not composing a
+      // new spec, so the saved snapshot must stay exactly as the matbaa
+      // had it when they pressed İşlemi Başlatın. Skip the localStorage +
+      // server snapshot writes; the rejection transition is the only thing
+      // this click is doing.
+      if (!rejectContext) {
+        await persistAfterStep(payload, { catalog: !authoringOrderOzalit })
+      }
       if (!orderScoped) updateOne(updated)
       toast.success(
         rejectContext ? 'Reddedildi, matbaaya yeniden gönderildi.'

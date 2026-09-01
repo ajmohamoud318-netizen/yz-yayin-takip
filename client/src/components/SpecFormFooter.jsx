@@ -95,7 +95,11 @@ export default function SpecFormFooter({
       )}
       {mode === 'advance' && (
         <Button
-          disabled={busy || missingRequired.length > 0}
+          // Reject-to-matbaa confirms the rejection, not a new spec —
+          // missing required fields in the original file are the matbaa's
+          // problem on redelivery, not the leader's to refuse. Same
+          // exemption handleAdvance applies at the handler level.
+          disabled={busy || (!rejectContext && missingRequired.length > 0)}
           onClick={() => onAdvance(authoringOrderOzalit && order?.last_reject_type === 'designer' ? 'tasarimci_onay' : null)}
           variant={rejectContext ? 'destructive' : 'default'}
         >

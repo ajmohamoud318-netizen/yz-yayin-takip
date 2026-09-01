@@ -211,3 +211,22 @@ export function isDemoAlreadyApproved(project) {
   if (!project || !project.stage) return false
   return !DEMO_IN_PROGRESS_STAGES.has(project.stage)
 }
+
+/**
+ * Reject-to-matbaa handoff (ApprovalDialog → SpecFormDialog): the form is
+ * opened read-only so the leader reviews without risking an accidental edit
+ * that would silently rewrite the snapshot the matbaa is currently working
+ * from. The original copy said "the leader reviews/edits"; that turned out
+ * to be a footgun — `handleAdvance` writes the loaded payload back to the
+ * snapshot on submit, and a stray edit shipped a different file to the
+ * matbaa on the next round. Locking here keeps the rule "matbaa gets the
+ * file they had when they pressed İşlemi Başlatın" honest.
+ *
+ * Pure helper — testable without mounting the dialog.
+ *
+ * @param {null | { reason: string, target: string }} rejectContext
+ * @returns {boolean}
+ */
+export function isRejectToMatbaaReview(rejectContext) {
+  return !!rejectContext
+}

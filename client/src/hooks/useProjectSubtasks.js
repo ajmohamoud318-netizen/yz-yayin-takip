@@ -3,7 +3,7 @@ import axios from 'axios'
 import { toast } from 'sonner'
 
 import api from '@/api'
-import { isSubtaskDone, countsTowardProgress } from '@/domain/services/progress'
+import { isSubtaskDone, countsTowardProgress, subtaskProgress } from '@/domain/services/progress'
 
 /**
  * Owns every subtask/page mutation for the project detail page: toggling,
@@ -147,7 +147,17 @@ export function useProjectSubtasks(project, refetch, setProject, user, allUsers,
           is_done: total > 0 && done === total,
         }
       })
-      return { ...prev, subtasks: subs }
+      // Recompute project.progress from the optimistic subtask shape so
+      // the header bar (% İlerleme) ticks up the instant the chip flips,
+      // not on the server's next round-trip. Mirrors the server's
+      // `progressFor` minus the `STAGES_REQUIRING_FULL_PROGRESS` short-
+      // circuit (those stages freeze at 100 anyway, so chip clicks there
+      // can't change progress, and the server response will reconcile).
+      // Same `subtaskProgress` helper the server uses (client/src/domain
+      // /services/progress.js mirrors server/src/domain/progress.js), so
+      // the optimistic value matches what the route will write into the
+      // projects table.
+      return { ...prev, subtasks: subs, progress: subtaskProgress(subs) }
     })
     try {
       const { project: updated } = await api.setSubtaskPage(sub.id, pageIndex, next, { signal: controller.signal })
@@ -221,7 +231,10 @@ export function useProjectSubtasks(project, refetch, setProject, user, allUsers,
           is_done: total > 0 && done === total,
         }
       })
-      return { ...prev, subtasks: subs }
+      // Same optimistic project.progress recompute handlePageClick does —
+      // keep the header bar in lockstep with the chip flip instead of
+      // waiting on the server round-trip.
+      return { ...prev, subtasks: subs, progress: subtaskProgress(subs) }
     })
     try {
       const { project: updated } = await api.setSubtaskPage(sub.id, pageIndex, 'rework', { signal: controller.signal })
