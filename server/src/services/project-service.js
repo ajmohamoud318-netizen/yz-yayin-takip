@@ -21,7 +21,8 @@
  */
 
 import { withTx, getPool } from '../db/pool.js'
-import { notFound } from '../domain/errors.js'
+import { conflict, notFound } from '../domain/errors.js'
+import { isTitleConflictError } from '../domain/project-title.js'
 import { Project } from '../domain/entities/Project.js'
 import { assertNotLegacy } from '../domain/pipeline.js'
 import { canonicalise } from './deep-equal.js'
@@ -36,6 +37,7 @@ import {
   patchProject,
   deleteProject,
   restoreProject,
+  findProjectByTitle,
   listDeletedProjects,
   logHistory,
   reconcileOzalitApprovals,
@@ -317,7 +319,35 @@ export async function deleteProjectSoft(id, actor) {
 
 /** POST /api/projects/:id/restore — undo a soft delete (team_leader only). */
 export async function restoreProjectSoft(id) {
-  const restored = await restoreProject(id)
+  const restored = await withTx(async (client) => {
+    // The unique index only covers live rows, so a project in the bin
+    // releases its title — and someone may have taken it since. Bringing
+    // this one back as-is would land the duplicate that creation and
+    // renaming both refuse, so the same check runs here.
+    //
+    // Explicitly, rather than leaning on the index: restoring is the one
+    // path where the leader has no title field to fix, so a bare constraint
+    // violation would leave them with nothing to act on. This names the
+    // project standing in the way. Locking the deleted row first keeps a
+    // concurrent restore of a second bin entry with the same title from
+    // passing the check alongside us.
+    const { rows } = await client.query(
+      'SELECT title FROM projects WHERE id = $1 AND deleted_at IS NOT NULL FOR UPDATE',
+      [id],
+    )
+    if (!rows[0]) return null
+    const clash = await findProjectByTitle(client, rows[0].title)
+    if (clash) {
+      conflict(
+        `"${clash.title}" adında aktif bir proje var. Bu projeyi geri almadan önce diğerini yeniden adlandırın.`,
+      )
+    }
+    return restoreProject(client, id)
+  }).catch((err) => {
+    // Same clash, lost to a race between the check and the UPDATE.
+    if (!isTitleConflictError(err)) throw err
+    conflict('Bu projenin adı geri alınana kadar başka bir projeye verilmiş. Önce o projeyi yeniden adlandırın.')
+  })
   if (!restored) notFound('Silinmiş proje bulunamadı.')
   return restored
 }

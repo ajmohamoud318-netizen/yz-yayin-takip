@@ -14,11 +14,17 @@
  */
 
 import { withTx, getPool } from '../../db/pool.js'
-import { badRequest, notFound } from '../../domain/errors.js'
-import { ORDERABLE_STAGES } from '../../domain/stages.js'
+import { badRequest, conflict, notFound } from '../../domain/errors.js'
+import { ORDERABLE_STAGES, STAGE_LABELS } from '../../domain/stages.js'
 import { subtaskProgress } from '../../domain/progress.js'
 import {
+  normaliseProjectTitle,
+  isTitleConflictError,
+  titleConflictMessage,
+} from '../../domain/project-title.js'
+import {
   insertProject,
+  findProjectByTitle,
   getProjectForUpdate,
   patchProject,
   setProjectCatalogHidden,
@@ -26,6 +32,27 @@ import {
   logHistory,
 } from '../project-repository.js'
 import { notifyProjectCreated, notifyProductCatalogChanged } from '../notifications.js'
+
+/**
+ * Raise the 409 for a title that is already taken by `existing`.
+ * One place so the create, rename and import paths word it identically.
+ */
+function rejectTitleClash(existing) {
+  conflict(titleConflictMessage(existing.title, STAGE_LABELS[existing.stage]))
+}
+
+/**
+ * Translate the unique-title index's violation into that same 409.
+ *
+ * Reached only when the in-transaction check above and a concurrent
+ * writer's insert interleave — two leaders adding the same book at the
+ * same moment. Without this the race surfaces as a raw PG error and the
+ * leader gets "Beklenmeyen sunucu hatası" for an ordinary duplicate.
+ */
+const rethrowTitleConflict = (title) => (err) => {
+  if (isTitleConflictError(err)) conflict(titleConflictMessage(title))
+  throw err
+}
 
 /**
  * POST /api/projects — create a new project + its subtasks.
@@ -44,6 +71,12 @@ export async function createProject(actor, body) {
   const primaryAssignee = assigned_to ?? (Array.isArray(assignees) && assignees[0]) ?? null
 
   return withTx(async (client) => {
+    // Titles are the team's only handle on a project (domain/project-title.js),
+    // and a reprint reuses this row rather than opening a second one — so a
+    // title that already exists is a double entry, and we stop here rather
+    // than letting two identical rows into every list and picker.
+    const clash = await findProjectByTitle(client, title)
+    if (clash) rejectTitleClash(clash)
     const project = await insertProject(client, {
       title, type, target_month, pass_kind, assigned_to: primaryAssignee,
       created_by: actor.id,
@@ -97,7 +130,7 @@ export async function createProject(actor, body) {
     // same tx, so loadProjectAssignees (called inside the helper) sees them.
     await notifyProjectCreated(client, { project: updated, actor })
     return { ...updated, subtasks: subRows, history: [] }
-  })
+  }).catch(rethrowTitleConflict(title))
 }
 
 /**
@@ -109,8 +142,10 @@ export async function createProject(actor, body) {
  */
 export async function importLegacyProjects(actor, items, dryRun = false) {
   // Duplicate detection is on normalised title (case-insensitive, collapsed
-  // whitespace) against live projects AND within the batch itself.
-  const norm = (s) => String(s ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('tr-TR')
+  // whitespace) against live projects AND within the batch itself — the same
+  // key createProject rejects on, so a title can't enter through the batch
+  // door that the single-create door would have turned away.
+  const norm = normaliseProjectTitle
 
   const result = await withTx(async (client) => {
     const { rows: existingRows } = await client.query(
@@ -230,6 +265,13 @@ export async function patchProjectFields(id, actor, fields) {
   return withTx(async (client) => {
     const before = await getProjectForUpdate(client, id)
     if (!before) notFound('Proje bulunamadı.')
+    // Renaming onto another live project's title produces exactly the
+    // duplicate creation refuses, so it's refused too. Excludes this row so
+    // a no-op rename (or a pure casing fix) still goes through.
+    if (Object.prototype.hasOwnProperty.call(fields, 'title')) {
+      const clash = await findProjectByTitle(client, fields.title, { excludeId: id })
+      if (clash) rejectTitleClash(clash)
+    }
     // SQL-level OCC guard: pass the locked row's version so a concurrent
     // writer (admin script that doesn't go through the orchestrator,
     // future non-locking path) can't silently overwrite this admin edit.
@@ -276,7 +318,7 @@ export async function patchProjectFields(id, actor, fields) {
       )
     }
     return updated
-  })
+  }).catch(rethrowTitleConflict(fields.title))
 }
 
 /**

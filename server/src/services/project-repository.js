@@ -18,6 +18,7 @@
 import { getPool, withTx } from '../db/pool.js'
 import { nanoid } from 'nanoid'
 import { HttpError } from '../domain/errors.js'
+import { normaliseProjectTitle } from '../domain/project-title.js'
 
 const PROJECT_COLUMNS = `
   id, title, type, stage, assigned_to, created_by, target_month,
@@ -281,6 +282,33 @@ export async function getProjectForUpdate(client, id) {
      FROM projects WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, [id],
   )
   return rows[0] ? rowToProject(rows[0]) : null
+}
+
+/**
+ * The live project whose title normalises to the same key as `title`, or
+ * null. `excludeId` lets the rename path ignore the row it is editing.
+ *
+ * Compares in JS, not SQL. The unique index (migrations 063 + 064) keys on
+ * the same shape, but it can only reject — this returns the row, which is
+ * what lets the caller name the offending project instead of surfacing a
+ * bare constraint violation. `normaliseProjectTitle` is also marginally
+ * stricter (NFC, full Unicode whitespace), so it stays the authority.
+ *
+ * Scanning every live title is fine at this table's size — a publisher's
+ * pipeline, hundreds of rows at the outside — and importLegacyProjects
+ * already pulls the same set for the same reason. Callers run it inside the
+ * creating/renaming transaction so the read is ordered against concurrent
+ * writers by the row locks they hold; the index closes the remaining race.
+ */
+export async function findProjectByTitle(client, title, { excludeId = null } = {}) {
+  const key = normaliseProjectTitle(title)
+  if (!key) return null
+  const { rows } = await client.query(
+    `SELECT id, title, stage FROM projects
+      WHERE deleted_at IS NULL AND ($1::text IS NULL OR id <> $1)`,
+    [excludeId],
+  )
+  return rows.find((r) => normaliseProjectTitle(r.title) === key) ?? null
 }
 
 export async function listProjectHistory(client, projectId) {
@@ -554,8 +582,8 @@ export async function listDeletedProjects() {
   }))
 }
 
-export async function restoreProject(id) {
-  const { rows } = await getPool().query(
+export async function restoreProject(client, id) {
+  const { rows } = await client.query(
     `UPDATE projects
         SET deleted_at = NULL, deleted_by = NULL, deleted_by_name = NULL
       WHERE id = $1 AND deleted_at IS NOT NULL

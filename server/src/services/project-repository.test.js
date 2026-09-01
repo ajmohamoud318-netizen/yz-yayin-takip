@@ -10,7 +10,7 @@
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { loadProjectAssignees, assignSubtaskPage, resyncSubtaskPageAssignments, patchProject } from './project-repository.js'
+import { loadProjectAssignees, assignSubtaskPage, resyncSubtaskPageAssignments, patchProject, findProjectByTitle } from './project-repository.js'
 
 // Minimal in-memory pg client: each query() is matched on the WHERE clause
 // fragment so the same client can serve both the primary lookup and the
@@ -936,5 +936,71 @@ describe('patchProject JSONB columns', () => {
     const update = client.calls.find((c) => /^UPDATE projects/.test(c.sql.trim()))
     assert.doesNotMatch(update.sql, /::jsonb/, 'no cast belongs on scalar columns')
     assert.deepEqual(update.params, ['p-1', 'baski_onay', 100])
+  })
+})
+
+/**
+ * findProjectByTitle — the lookup behind the "no two projects with the same
+ * name" rule. It does the comparison in JS (Turkish-locale lowercase), so
+ * these assert the matching itself, not the SQL.
+ */
+function titleClient(rows) {
+  const calls = []
+  return {
+    calls,
+    async query(sql, params) {
+      calls.push({ sql: sql.trim(), params })
+      return { rows }
+    },
+  }
+}
+
+const LIVE = [
+  { id: 'p-1', title: 'Zeka Küpü', stage: 'tasarim' },
+  { id: 'p-2', title: '  IŞIK   Serisi ', stage: 'ozalit_onay' },
+  { id: 'p-3', title: 'Matematik 5', stage: 'tasarim' },
+]
+
+describe('findProjectByTitle', () => {
+  it('matches ignoring case, padding and repeated whitespace', async () => {
+    const hit = await findProjectByTitle(titleClient(LIVE), 'ışık serisi')
+    assert.equal(hit?.id, 'p-2')
+  })
+
+  it('matches a caps title typed without a Turkish keyboard', async () => {
+    const hit = await findProjectByTitle(titleClient(LIVE), 'MATEMATIK 5')
+    assert.equal(hit?.id, 'p-3', 'ASCII I must still find "Matematik 5"')
+  })
+
+  it('returns the stored row so the 409 can quote the real title', async () => {
+    const hit = await findProjectByTitle(titleClient(LIVE), 'zeka küpü')
+    assert.equal(hit.title, 'Zeka Küpü', 'the caller shows this, not what was typed')
+    assert.equal(hit.stage, 'tasarim')
+  })
+
+  it('returns null when nothing matches', async () => {
+    assert.equal(await findProjectByTitle(titleClient(LIVE), 'Matematik 6'), null)
+  })
+
+  it('skips the SQL entirely for a blank title', async () => {
+    // The schema already rejects '', and matching every untitled row
+    // against every other would be worse than useless.
+    const client = titleClient(LIVE)
+    assert.equal(await findProjectByTitle(client, '   '), null)
+    assert.equal(client.calls.length, 0)
+  })
+
+  it('excludes the row being renamed so a casing fix is not self-blocking', async () => {
+    const client = titleClient([])
+    await findProjectByTitle(client, 'Zeka Küpü', { excludeId: 'p-1' })
+    assert.equal(client.calls[0].params[0], 'p-1')
+    assert.match(client.calls[0].sql, /id <> \$1/)
+  })
+
+  it('scans only live rows — a soft-deleted project releases its title', async () => {
+    const client = titleClient([])
+    await findProjectByTitle(client, 'Zeka Küpü')
+    assert.match(client.calls[0].sql, /deleted_at IS NULL/)
+    assert.equal(client.calls[0].params[0], null, 'no exclusion on create')
   })
 })

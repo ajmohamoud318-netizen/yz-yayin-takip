@@ -1,10 +1,11 @@
 /** Subtask catalog used by NewProjectDialog. */
 export const SUBTASK_LIBRARY = [
   { key: 'kapak', label: 'Kapak' },
-  { key: 'kutu', label: 'Kutu' },
-  { key: 'ses', label: 'Ses' },
   { key: 'sayfalar', label: 'İç Sayfalar', kind: 'pages' },
+  { key: 'kutu', label: 'Kutu' },
+  { key: 'kilavuz', label: 'Kılavuz' },
   { key: 'sticker', label: 'Sticker' },
-  { key: 'yazilim', label: 'Yazılım' },
   { key: 'media', label: 'Media' },
+  { key: 'ses', label: 'Ses' },
+  { key: 'yazilim', label: 'Yazılım' },
 ]
