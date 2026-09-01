@@ -439,6 +439,14 @@ const productComponents = {
     properties: {
       component: { type: 'string', maxLength: 300 },
       date: { type: 'string', maxLength: 60 },
+      // Structured tag so the UI / printer workflow can group / label / link
+      // pieces without re-deriving from the component name string. `main` is
+      // the project's primary recipe; `kutu` and `kilavuz` cover the
+      // sibling-recipe pattern (3-parça bundle: cards + guide + box);
+      // `other` is the safe default for anything that doesn't match.
+      // Optional in the schema so legacy rows keep loading — readers
+      // backfill `kind` from the component name when it's missing.
+      kind: { type: 'string', enum: ['main', 'kutu', 'kilavuz', 'other'] },
       fields: {
         type: 'array',
         maxItems: 128,

@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import PromoteRecordDialog from '@/components/PromoteRecordDialog'
 import ProductSubtaskEditor from '@/components/ProductSubtaskEditor'
-import { SpecSheet, EditableSpecSheet } from '@/components/SpecSheet'
+import { SpecSheet, EditableSpecSheet, KindBadge, resolveKind } from '@/components/SpecSheet'
 import { saveComponentsForProject, primeProductInfoCache, getSeedData } from '@/data/productCatalog'
 
 /* ---- offline mirror (server is the source of truth) ---- */
@@ -283,6 +283,7 @@ function ProductCard({ project, comps, meta, open, onToggle, canEdit, editing, d
                         <Box className="h-3 w-3 text-primary" />
                         {c.component}
                       </span>
+                      <KindBadge kind={resolveKind(c)} className="text-[10px]" />
                       {editing && (
                         <button
                           type="button"

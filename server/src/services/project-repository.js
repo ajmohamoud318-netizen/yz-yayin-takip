@@ -288,7 +288,7 @@ export async function getProjectForUpdate(client, id) {
  * The live project whose title normalises to the same key as `title`, or
  * null. `excludeId` lets the rename path ignore the row it is editing.
  *
- * Compares in JS, not SQL. The unique index (migrations 063 + 064) keys on
+ * Compares in JS, not SQL. The unique index (migration 065) keys on
  * the same shape, but it can only reject — this returns the row, which is
  * what lets the caller name the offending project instead of surfacing a
  * bare constraint violation. `normaliseProjectTitle` is also marginally

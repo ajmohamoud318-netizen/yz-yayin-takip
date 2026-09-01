@@ -27,6 +27,34 @@
 const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
 
 /**
+ * Infer the structured `kind` tag for a parça from its display name. Lets
+ * demo/ozalit auto-capture and seed backfill land a sensible `kind` without
+ * the leader having to set it manually. The mapping mirrors the seed-data
+ * convention: a name containing "KUTU" is the box recipe, "KILAVUZ" the
+ * guide, anything else is `main` (the project's primary recipe).
+ *
+ * - "KUTU REÇETESİ" / "- KUTU" / "RİNGOO (6-99 YAŞ) - KUTU" → 'kutu'
+ * - "KILAVUZ" / "KILAVUZ REÇETESİ" → 'kilavuz'
+ * - everything else → 'main'  (single-recipe projects AND the first
+ *   component of a multi-recipe project; both render as the lead)
+ *
+ * `other` is reserved for components a leader explicitly tagged that way
+ * (or future kinds we don't yet auto-detect).
+ *
+ * @param   {string}  name
+ * @returns {'main'|'kutu'|'kilavuz'}
+ */
+export function inferComponentKind(name) {
+  const upper = up(String(name ?? ''))
+  if (!upper) return 'main'
+  // KILAVUZ must be checked before KUTU so the rare "KILAVUZ KUTUSU"
+  // (guide + box combo) is classified as kilavuz, not kutu.
+  if (upper.includes('KILAVUZ')) return 'kilavuz'
+  if (upper.includes('KUTU')) return 'kutu'
+  return 'main'
+}
+
+/**
  * ADET is the ordered quantity for one sipariş, prepended to the sheet from
  * the order (see client/src/data/orderAdet.js#buildAdetRows). It describes a
  * single print run, not the product — baking it into the catalog spec would
@@ -53,6 +81,7 @@ function fieldsFromRows(rows) {
 const toComponent = (name, rows) => ({
   component: name,
   date: '',
+  kind: inferComponentKind(name),
   fields: [{ k: 'İŞİN ADI', v: name }, ...fieldsFromRows(rows)],
 })
 

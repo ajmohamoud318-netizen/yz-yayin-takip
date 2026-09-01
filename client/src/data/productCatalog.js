@@ -27,6 +27,24 @@ export function getSeedData() {
 const LS_KEY = 'yz_product_info_overrides_v1'
 const clone = (x) => JSON.parse(JSON.stringify(x ?? []))
 
+// Mirror of server/src/services/product-info-capture.js#inferComponentKind.
+// Used to backfill `kind` on rows that came from localStorage / the offline
+// JSON seed (both predate the field). The server backfills on read, but
+// those code paths can still hand us an untagged row when the client is
+// offline or before hydrate has settled.
+const _up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
+function _inferKind(name) {
+  const upper = _up(name)
+  if (!upper) return 'main'
+  if (upper.includes('KILAVUZ')) return 'kilavuz'
+  if (upper.includes('KUTU')) return 'kutu'
+  return 'main'
+}
+function _withKind(comps) {
+  if (!Array.isArray(comps)) return []
+  return comps.map((c) => (c && typeof c === 'object' && c.kind) ? c : { ...c, kind: _inferKind(c?.component) })
+}
+
 // projectId -> components[]. Primed from the server by hydrateProductInfo().
 const serverCache = new Map()
 
@@ -52,7 +70,7 @@ function writeOverrides(next) {
 export function primeProductInfoCache(rows) {
   if (!Array.isArray(rows)) return
   for (const r of rows) {
-    if (r && r.project_id) serverCache.set(r.project_id, Array.isArray(r.components) ? r.components : [])
+    if (r && r.project_id) serverCache.set(r.project_id, _withKind(r.components))
   }
 }
 
@@ -104,8 +122,9 @@ export async function hydrateProductInfo(realProjectIds = []) {
     if (!realSet.has(pid)) continue          // real projects only
     if (serverCache.has(pid)) continue        // server already has it
     if (!Array.isArray(comps) || comps.length === 0) continue
-    serverCache.set(pid, comps)
-    backfills.push(api.saveProductInfo(pid, comps).catch(() => { /* keep the mirror */ }))
+    const backfilled = _withKind(comps)
+    serverCache.set(pid, backfilled)
+    backfills.push(api.saveProductInfo(pid, backfilled).catch(() => { /* keep the mirror */ }))
   }
   // Once the server is the confirmed source of truth (and any legacy specs
   // have been backfilled), rewrite the localStorage mirror to exactly what the
@@ -126,7 +145,9 @@ export function getComponentsForProject(projectId) {
   if (!projectId) return []
   if (serverCache.has(projectId)) return serverCache.get(projectId)
   const overrides = readOverrides()
-  return overrides[projectId] ?? _seed[projectId] ?? []
+  const fromOverrides = overrides[projectId]
+  if (fromOverrides !== undefined) return _withKind(fromOverrides)
+  return _withKind(_seed[projectId])
 }
 
 /**

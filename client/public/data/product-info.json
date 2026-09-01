@@ -36,7 +36,8 @@
           "k": "LAMİNASYON",
           "v": "Kapak dışı parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x2": [
@@ -96,7 +97,8 @@
           "k": "CIRTLAR",
           "v": "16 kanca, 8 halka 2 cm yuvarlak"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x3": [
@@ -136,7 +138,8 @@
           "k": "LAMİNASYON",
           "v": "Tüm basılı kısımlar mat selofon"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x4": [
@@ -180,7 +183,8 @@
           "k": "MALZEME 1",
           "v": "6 renk parmak boyama"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "PARMAK BOYAMA KİTABIM (3-6 YAŞ) - KUTU",
@@ -202,7 +206,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x5": [
@@ -246,7 +251,8 @@
           "k": "MALZEME",
           "v": "80 mm çapında stickerlı ayna"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x6": [
@@ -278,7 +284,8 @@
           "k": "LAMİNASYON",
           "v": "Ön arka parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "RİNGOO (6-99 YAŞ) - KILAVUZ",
@@ -304,7 +311,8 @@
           "k": "İÇ KAĞIT CİNSİ",
           "v": "130 gr mat kuşe"
         }
-      ]
+      ],
+      "kind": "kilavuz"
     },
     {
       "component": "RİNGOO (6-99 YAŞ) - KUTU",
@@ -342,7 +350,8 @@
           "k": "MALZEME",
           "v": "Zil"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x7": [
@@ -366,7 +375,8 @@
           "k": "ÜST KAĞIT CİNSİ",
           "v": "pp"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "POFİDİK PUZZLE ÇİFTLİK - KUTU",
@@ -388,7 +398,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x8": [
@@ -408,7 +419,8 @@
           "k": "SAYFA EBAT",
           "v": "220 mm x 220 mm yükseklik"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x9": [
@@ -452,7 +464,8 @@
           "k": "MALZEME 1",
           "v": "1 adet Kolay Kavrama Kalemi"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x10": [
@@ -508,7 +521,8 @@
           "k": "MALZEME 2",
           "v": "10 adet sayı tuşu"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "3-6 YAŞ İLKOKULA HAZIRLIK SETİ KUTU",
@@ -534,7 +548,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x11": [
@@ -586,7 +601,8 @@
           "k": "MALZEME - 5",
           "v": "Zeka Kutusu Seperatörü"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "KONUŞTURAN OYUNCAK (16-36 AY) KUTU",
@@ -612,7 +628,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x12": [
@@ -652,7 +669,8 @@
           "k": "LAMİNASYON",
           "v": "Kapak dışı parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "BİLSEM HAZIRLIK SETİ KUTU",
@@ -678,7 +696,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x13": [
@@ -738,7 +757,8 @@
           "k": "CIRTLAR",
           "v": "16 kanca, 8 halka 2 cm yuvarlak"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x14": [
@@ -778,7 +798,8 @@
           "k": "LAMİNASYON",
           "v": "Tüm basılı kısımlar parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x15": [
@@ -822,7 +843,8 @@
           "k": "MALZEME 1",
           "v": "Güvenli Makas"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x16": [
@@ -870,7 +892,8 @@
           "k": "MALZEME",
           "v": "5 farklı cins kumaş"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x17": [
@@ -902,7 +925,8 @@
           "k": "LAMİNASYON",
           "v": "Ön arka parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "RİNGOO BEBEK (2+ YAŞ) - KILAVUZ",
@@ -928,7 +952,8 @@
           "k": "İÇ KAĞIT CİNSİ",
           "v": "130 gr mat kuşe"
         }
-      ]
+      ],
+      "kind": "kilavuz"
     },
     {
       "component": "RİNGOO BEBEK (2+ YAŞ) - KUTU",
@@ -966,7 +991,8 @@
           "k": "MALZEME",
           "v": "Zil"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x18": [
@@ -990,7 +1016,8 @@
           "k": "ÜST KAĞIT CİNSİ",
           "v": "pp"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "POFİDİK PUZZLE ÇİFTLİK - KUTU",
@@ -1012,7 +1039,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x19": [
@@ -1056,7 +1084,8 @@
           "k": "STİCKER",
           "v": "400 mm x 200 mm ortaya harmanlanacak"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x20": [
@@ -1096,7 +1125,8 @@
           "k": "LAMİNASYON",
           "v": "Kapak dışı parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x21": [
@@ -1140,7 +1170,8 @@
           "k": "MALZEME 1",
           "v": "1 adet Kolay Kavrama Kalemi"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x22": [
@@ -1192,7 +1223,8 @@
           "k": "MALZEME 1",
           "v": "12 parça pentomino seti"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "5-8 YAŞ ZEKA VE DİKKAT GELİŞTİRME SETİ KUTU",
@@ -1218,7 +1250,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x23": [
@@ -1270,7 +1303,8 @@
           "k": "MALZEME - 5",
           "v": "Zeka Kutusu Seperatörü"
         }
-      ]
+      ],
+      "kind": "kutu"
     },
     {
       "component": "ZEKA KUTUSU (16-24 AY) KUTU",
@@ -1296,7 +1330,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x24": [
@@ -1336,7 +1371,8 @@
           "k": "LAMİNASYON",
           "v": "Kapak dışı parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x25": [
@@ -1396,7 +1432,8 @@
           "k": "CIRTLAR",
           "v": "9 kanca, 9 halka 2 cm kare"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x26": [
@@ -1432,7 +1469,8 @@
           "k": "CİLT",
           "v": "İplik dikiş"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x27": [
@@ -1472,7 +1510,8 @@
           "k": "LAMİNASYON",
           "v": "Kapak dışı parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x28": [
@@ -1528,7 +1567,8 @@
           "k": "MALZEME",
           "v": "15 mm x 75 mm halka kırmızı cırt, 10 mm x 10 mm kanca kırmızı cırt"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x29": [
@@ -1560,7 +1600,8 @@
           "k": "LAMİNASYON",
           "v": "Ön arka parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "RAPİDOO AİLE (3-99 YAŞ) - KILAVUZ",
@@ -1590,7 +1631,8 @@
           "k": "CİLT",
           "v": "1 kırımlı"
         }
-      ]
+      ],
+      "kind": "kilavuz"
     },
     {
       "component": "RAPİDOO AİLE (3-99 YAŞ) - KUTU",
@@ -1632,7 +1674,8 @@
           "k": "MALZEME",
           "v": "Zil"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x30": [
@@ -1664,7 +1707,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "MAGNET PUZZLE 12-36 AY BEBEK - KUTU",
@@ -1690,7 +1734,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x31": [
@@ -1734,7 +1779,8 @@
           "k": "STİCKER",
           "v": "420 mm x 300 mm ortaya harmanlanacak 2 yaprak"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x32": [
@@ -1778,7 +1824,8 @@
           "k": "MALZEME",
           "v": "1 adet Kolay Kavrama Kalemi"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x33": [
@@ -1822,7 +1869,8 @@
           "k": "MALZEME 1",
           "v": "12 li kontrol paneli"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "7-10 YAŞ ZEKA VE DİKKAT GELİŞTİRME SETİ KUTU",
@@ -1848,7 +1896,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x34": [
@@ -1900,7 +1949,8 @@
           "k": "MALZEME - 5",
           "v": "Zeka Kutusu Seperatörü"
         }
-      ]
+      ],
+      "kind": "kutu"
     },
     {
       "component": "ZEKA KUTUSU (2-4 YAŞ) KUTU",
@@ -1926,7 +1976,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x35": [
@@ -1986,7 +2037,8 @@
           "k": "CIRTLAR",
           "v": "22 kanca, 22 halka, 2 cm kare"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x36": [
@@ -2030,7 +2082,8 @@
           "k": "STİCKER",
           "v": "240 mm x 220 mm 1 sayfa en arkaya yapışacak x4"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x37": [
@@ -2070,7 +2123,8 @@
           "k": "LAMİNASYON",
           "v": "Kapak dışı parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x38": [
@@ -2126,7 +2180,8 @@
           "k": "MALZEME",
           "v": "15 mm x 75 mm halka kırmızı cırt, 10 mm x 10 mm kanca yeşil cırt"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x39": [
@@ -2154,7 +2209,8 @@
           "k": "LAMİNASYON",
           "v": "Ön arka parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "RAPİDOO (6-99 YAŞ) - KILAVUZ",
@@ -2184,7 +2240,8 @@
           "k": "CİLT",
           "v": "1 kırımlı"
         }
-      ]
+      ],
+      "kind": "kilavuz"
     },
     {
       "component": "RAPİDOO (6-99 YAŞ) - KUTU",
@@ -2226,7 +2283,8 @@
           "k": "MALZEME",
           "v": "Zil"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x40": [
@@ -2258,7 +2316,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "MAGNET PUZZLE 12-36 AY TAŞITLAR - KUTU",
@@ -2284,7 +2343,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x41": [
@@ -2328,7 +2388,8 @@
           "k": "STİCKER",
           "v": "330 mm x 235 cm yükseklik 4 sayfa sticker en arka sayfalar olarak harmanlanacak."
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x42": [
@@ -2372,7 +2433,8 @@
           "k": "MALZEME 1",
           "v": "1 adet Kolay Kavrama Kalemi"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x43": [
@@ -2416,7 +2478,8 @@
           "k": "MALZEME 1",
           "v": "12 parça pentomino seti"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "9-14 YAŞ ZEKA VE DİKKAT GELİŞTİRME SETİ KUTU",
@@ -2442,7 +2505,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x44": [
@@ -2494,7 +2558,8 @@
           "k": "MALZEME - 5",
           "v": "Zeka Kutusu Seperatörü"
         }
-      ]
+      ],
+      "kind": "kutu"
     },
     {
       "component": "ZEKA KUTUSU (4-6 YAŞ) KUTU",
@@ -2520,7 +2585,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x45": [
@@ -2572,7 +2638,8 @@
           "k": "CIRTLAR",
           "v": "128 kanca, 64 halka 1 cm kare"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x46": [
@@ -2616,7 +2683,8 @@
           "k": "MALZEME",
           "v": "8'li Rakamlı Kontrol Paneli"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "MINDOO-İNGİLİZCE ÖĞRENİYORUM KUTU",
@@ -2642,7 +2710,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x47": [
@@ -2682,7 +2751,8 @@
           "k": "LAMİNASYON",
           "v": "Kapak dışı parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x48": [
@@ -2738,7 +2808,8 @@
           "k": "MALZEME",
           "v": "15 mm x 75 mm halka kırmızı cırt, 10 mm x 10 mm kanca turuncu cırt"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x49": [
@@ -2770,7 +2841,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "MAGNET PUZZLE 2+ YAŞ - KUTU",
@@ -2796,7 +2868,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x50": [
@@ -2840,7 +2913,8 @@
           "k": "STİCKER",
           "v": "330 mm x 235 cm yükseklik 4 sayfa sticker en arka sayfalar olarak harmanlanacak."
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x51": [
@@ -2884,7 +2958,8 @@
           "k": "MALZEME 1",
           "v": "1 adet Kolay Kavrama Kalemi"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x52": [
@@ -2936,7 +3011,8 @@
           "k": "MALZEME 1",
           "v": "8 li figürlü panel"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "2-4 YAŞ ZEKA VE DİKKAT GELİŞTİRME SETİ KUTU",
@@ -2962,7 +3038,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x53": [
@@ -3014,7 +3091,8 @@
           "k": "MALZEME - 5",
           "v": "Zeka Kutusu Seperatörü"
         }
-      ]
+      ],
+      "kind": "kutu"
     },
     {
       "component": "PİKTO DİKKAT KUTUSU (3-6 YAŞ) KUTU",
@@ -3040,7 +3118,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x54": [
@@ -3092,7 +3171,8 @@
           "k": "CIRTLAR",
           "v": "128 kanca, 64 halka 1 cm kare"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x55": [
@@ -3132,7 +3212,8 @@
           "k": "LAMİNASYON",
           "v": "Tüm basılı kısımlar mat selofon"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "ZEKİ BEBEK KÜTÜPHANESİ KUTU",
@@ -3158,7 +3239,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt mat selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x56": [
@@ -3214,7 +3296,8 @@
           "k": "CEP",
           "v": "250 gr mat kuşe 35 x 50 tabakada 55 adet parlak selofon kaplı"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x57": [
@@ -3270,7 +3353,8 @@
           "k": "MALZEME",
           "v": "15 mm x 75 mm halka kırmızı cırt, 10 mm x 10 mm kanca mor cırt"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x58": [
@@ -3314,7 +3398,8 @@
           "k": "STİCKER",
           "v": "400 mm x 200 mm ortaya harmanlanacak"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x59": [
@@ -3358,7 +3443,8 @@
           "k": "MALZEME 1",
           "v": "1 adet Kolay Kavrama Kalemi"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x60": [
@@ -3410,7 +3496,8 @@
           "k": "MALZEME 1",
           "v": "8 li figürlü panel"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "3-6 YAŞ ZEKA VE DİKKAT GELİŞTİRME SETİ  KUTU",
@@ -3436,7 +3523,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x61": [
@@ -3488,7 +3576,8 @@
           "k": "MALZEME - 5",
           "v": "Zeka Kutusu Seperatörü"
         }
-      ]
+      ],
+      "kind": "kutu"
     },
     {
       "component": "MATEMATİK KUTUSU (3-6 YAŞ) KUTU",
@@ -3514,7 +3603,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x62": [
@@ -3566,7 +3656,8 @@
           "k": "CIRTLAR",
           "v": "128 kanca, 64 halka 1 cm kare"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x63": [
@@ -3626,7 +3717,8 @@
           "k": "CİLT",
           "v": "10 mm sarı spiral"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x64": [
@@ -3646,7 +3738,8 @@
           "k": "BASIM YERİ",
           "v": "ÇİN"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x65": [
@@ -3678,7 +3771,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "PUZZLELAB - RENK EŞLEŞTİRME - KUTU",
@@ -3704,7 +3798,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x66": [
@@ -3748,7 +3843,8 @@
           "k": "MALZEME 1",
           "v": "1 adet Kolay Kavrama Kalemi"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x67": [
@@ -3800,7 +3896,8 @@
           "k": "MALZEME - 5",
           "v": "Zeka Kutusu Seperatörü"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "TOPLAMA ÇIKARMA ÖĞRETEN OYUNCAK KUTU",
@@ -3826,7 +3923,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x68": [
@@ -3878,7 +3976,8 @@
           "k": "CIRTLAR",
           "v": "128 kanca, 64 halka 1 cm kare"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x69": [
@@ -3934,7 +4033,8 @@
           "k": "CEP",
           "v": "250 gr mat kuşe 35 x 50 tabakada 55 adet parlak selofon kaplı"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x70": [
@@ -3998,7 +4098,8 @@
           "k": "MALZEME",
           "v": "Yeşil stickerlı eva: 238 mm 213 mm"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x71": [
@@ -4042,7 +4143,8 @@
           "k": "MALZEME 1",
           "v": "1 adet Kolay Kavrama Kalemi"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x72": [
@@ -4098,7 +4200,8 @@
           "k": "MALZEME - 5",
           "v": "Zeka Kutusu Seperatörü"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "ÇARPMA ÖĞRETEN OYUNCAK KUTU",
@@ -4124,7 +4227,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x73": [
@@ -4176,7 +4280,8 @@
           "k": "CIRTLAR",
           "v": "128 kanca, 64 halka 1 cm kare"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x74": [
@@ -4220,7 +4325,8 @@
           "k": "KULP",
           "v": "Tek kulp ebadı:186 mm genişlik 70 mm yükseklik bıçaklı 345+345 hi bulk bristol. birbirine sıvamalı ve parlak selofonlu. 35 x 50 tabakada 11 adet tek yüz sığıyor. Baskı düz kırmızı renk tek yüz."
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x75": [
@@ -4268,7 +4374,8 @@
           "k": "BASIM YERİ",
           "v": "ÇİN ( ZT )"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x76": [
@@ -4312,7 +4419,8 @@
           "k": "MALZEME 1",
           "v": "1 adet Kolay Kavrama Kalemi"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x77": [
@@ -4368,7 +4476,8 @@
           "k": "MALZEME - 5",
           "v": "Zeka Kutusu Seperatörü"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "BÖLME ÖĞRETEN OYUNCAK KUTU",
@@ -4394,7 +4503,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x78": [
@@ -4450,7 +4560,8 @@
           "k": "MALZEME 1",
           "v": "1 adet Kolay Kavrama Kalemi"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x79": [
@@ -4494,7 +4605,8 @@
           "k": "KULP",
           "v": "Tek kulp ebadı:186 mm genişlik 70 mm yükseklik bıçaklı 345+345 hi bulk bristol. birbirine sıvamalı ve parlak selofonlu. 35 x 50 tabakada 11 adet tek yüz sığıyor. Baskı düz kırmızı renk tek yüz."
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x80": [
@@ -4550,7 +4662,8 @@
           "k": "BASIM YERİ",
           "v": "ÇİN (Smiki)"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x81": [
@@ -4626,7 +4739,8 @@
           "k": "EVA SIVAMA KEÇE",
           "v": "Siyah 1 mm keçe"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x82": [
@@ -4678,7 +4792,8 @@
           "k": "CIRTLAR",
           "v": "29 kanca, 58 halka 1 cm kare"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x83": [
@@ -4714,7 +4829,8 @@
           "k": "BASIM YERİ",
           "v": "ÇİN (Leleyu)"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x84": [
@@ -4790,7 +4906,8 @@
           "k": "EVA SIVAMA KEÇE",
           "v": "Siyah 1 mm keçe"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x85": [
@@ -4842,7 +4959,8 @@
           "k": "CIRTLAR",
           "v": "29 kanca, 58 halka 1 cm kare"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x86": [
@@ -4878,7 +4996,8 @@
           "k": "BASIM YERİ",
           "v": "ÇİN (Leleyu)"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x87": [
@@ -4906,7 +5025,8 @@
           "k": "CIRTLAR",
           "v": "18 kanca, 18 halka 2 cm kare"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "KEÇEMİNO ÇİFTLİK - KUTU",
@@ -4932,7 +5052,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x88": [
@@ -4996,7 +5117,8 @@
           "k": "BASIM YERİ",
           "v": "ÇİN (Smiki)"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x89": [
@@ -5024,7 +5146,8 @@
           "k": "CIRTLAR",
           "v": "18 kanca, 18 halka 2 cm kare"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "KEÇEMİNO HAYVANLAR ALEMİ - KUTU",
@@ -5050,7 +5173,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x90": [
@@ -5102,7 +5226,8 @@
           "k": "BASIM YERİ",
           "v": "ÇİN ( Smiki)"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x91": [
@@ -5130,7 +5255,8 @@
           "k": "CIRTLAR",
           "v": "18 kanca, 18 halka 2 cm kare"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "KEÇEMİNO DENİZ DÜNYASI - KUTU",
@@ -5156,7 +5282,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ],
   "p-x92": [
@@ -5172,7 +5299,8 @@
           "k": "SETTEKİ KİTAP SAYISI",
           "v": "2"
         }
-      ]
+      ],
+      "kind": "main"
     }
   ],
   "p-x93": [
@@ -5200,7 +5328,8 @@
           "k": "CIRTLAR",
           "v": "18 kanca, 18 halka 2 cm kare"
         }
-      ]
+      ],
+      "kind": "main"
     },
     {
       "component": "KEÇEMİNO TAŞITLAR - KUTU",
@@ -5226,7 +5355,8 @@
           "k": "LAMİNASYON",
           "v": "Üst kağıt parlak selofon"
         }
-      ]
+      ],
+      "kind": "kutu"
     }
   ]
 }

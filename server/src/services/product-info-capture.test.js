@@ -33,6 +33,7 @@ describe('componentsFromSpecPayload', () => {
       {
         component: 'KİTAP',
         date: '',
+        kind: 'main',
         fields: [
           { k: 'İŞİN ADI', v: 'KİTAP' },
           { k: 'EBAT', v: '19,5 x 27,5' },
@@ -42,6 +43,7 @@ describe('componentsFromSpecPayload', () => {
       {
         component: 'KUTU',
         date: '',
+        kind: 'kutu',
         fields: [
           { k: 'İŞİN ADI', v: 'KUTU' },
           { k: 'EBAT', v: '20 x 28 x 5' },

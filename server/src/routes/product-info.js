@@ -2,6 +2,29 @@ import { attachUser } from '../middleware/auth.js'
 import { forbidden, notFound } from '../domain/errors.js'
 import { getPool } from '../db/pool.js'
 import { schemas } from '../schemas/index.js'
+import { inferComponentKind } from '../services/product-info-capture.js'
+
+/**
+ * Make sure every component carries a structured `kind` tag. The field was
+ * added after rows had already been written, so a legacy row can still hold
+ * `{ component, date, fields }` without a `kind`. Backfilling on read is
+ * cheap (one pass per project) and keeps the UI / printer workflow able to
+ * rely on `comp.kind` without null-guards everywhere.
+ *
+ * Components with an explicit `kind` (including `'other'`) are left alone —
+ * the leader's choice always wins over the name-based heuristic.
+ *
+ * @param   {Array}  components
+ * @returns {Array}  same shape, with `kind` populated on every entry
+ */
+function withKind(components) {
+  if (!Array.isArray(components)) return []
+  return components.map((c) => {
+    if (!c || typeof c !== 'object') return c
+    if (c.kind) return c
+    return { ...c, kind: inferComponentKind(c.component) }
+  })
+}
 
 /**
  * Product info API (ürün bilgileri / parçalar).
@@ -27,7 +50,9 @@ export async function productInfoRoutes(fastify) {
          LEFT JOIN users u ON u.id = pi.updated_by
         ORDER BY pi.updated_at DESC`,
     )
-    return rows
+    // Backfill `kind` on the way out so the SPA never sees an untagged row.
+    // The on-disk JSONB isn't mutated — read-only normalization.
+    return rows.map((r) => ({ ...r, components: withKind(r.components) }))
   })
 
   fastify.get('/product-info/:projectId', async (request) => {
@@ -45,7 +70,7 @@ export async function productInfoRoutes(fastify) {
     if (rows.length === 0) {
       return { project_id: request.params.projectId, components: [], updated_by_name: null, updated_at: null }
     }
-    return rows[0]
+    return { ...rows[0], components: withKind(rows[0].components) }
   })
 
   // Upsert. The team leader owns this spec — it gates whether Sales can order

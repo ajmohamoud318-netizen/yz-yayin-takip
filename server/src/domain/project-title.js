@@ -28,7 +28,7 @@
  * gets a 409 asking for a different name. Catching real double entries is
  * worth that, and the leader can always adjust the title.
  *
- * Migration 064 indexes the same shape in SQL. This function stays the
+ * Migration 065 indexes the same shape in SQL. This function stays the
  * authority — it also folds NFC and the full Unicode space class, which the
  * index doesn't — so the index is a very close, slightly narrower backstop
  * whose whole job is the concurrent-insert race no in-process check sees.
@@ -45,7 +45,7 @@ export function normaliseProjectTitle(value) {
     .replace(/ı/g, 'i')
 }
 
-/** Unique index installed by migration 063, retightened by 064. */
+/** Unique index installed by migration 065. */
 export const TITLE_UNIQUE_INDEX = 'idx_projects_title_unique'
 
 /**

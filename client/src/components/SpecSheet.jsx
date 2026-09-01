@@ -1,4 +1,4 @@
-import { Box, Plus, X } from 'lucide-react'
+import { Box, BookOpen, GraduationCap, Layers, Plus, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
@@ -10,6 +10,44 @@ const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
  * `{ component, date, fields: [{k, v}] }` entry inside a project's
  * product_info.components array.
  */
+
+// Structured `kind` → human label + Tailwind classes for the badge.
+// `main` is the lead recipe (no badge by default — its position in the card
+// already says it's the primary); siblings render a small pill so the UI can
+// tell Kutu from Kılavuz from a generic parça at a glance.
+const KIND_META = {
+  main:    { label: 'Ana Reçete', icon: BookOpen,       cls: 'bg-primary/10 text-primary ring-primary/20' },
+  kutu:    { label: 'Kutu Reçetesi', icon: Box,         cls: 'bg-amber-50 text-amber-700 ring-amber-600/20' },
+  kilavuz: { label: 'Kılavuz Reçetesi', icon: GraduationCap, cls: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' },
+  other:   { label: 'Parça', icon: Layers,              cls: 'bg-muted text-muted-foreground ring-border' },
+}
+
+/** Resolve a component's `kind` — defaults to `main` for legacy rows that
+ *  haven't been backfilled yet (the server does this on read, but offline /
+ *  localStorage-only caches can still hand us an untagged row). */
+export function resolveKind(comp) {
+  if (comp && KIND_META[comp.kind]) return comp.kind
+  const upper = up(comp?.component)
+  if (upper.includes('KILAVUZ')) return 'kilavuz'
+  if (upper.includes('KUTU')) return 'kutu'
+  return 'main'
+}
+
+/**
+ * Inline kind badge — same chip the SpecSheet header renders, exposed for
+ * the surrounding card chrome (parça navigation pill, future baskı-reçete
+ * grouping, etc.) so every surface shows the same label, icon, and colour.
+ */
+export function KindBadge({ kind, className }) {
+  const meta = KIND_META[kind] ?? KIND_META.main
+  const Icon = meta.icon
+  return (
+    <span className={cn('inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1', meta.cls, className)}>
+      <Icon className="h-3 w-3" />
+      {meta.label}
+    </span>
+  )
+}
 
 /* ---------- read-only spec row (definition-list: key / value) ---------- */
 export function SheetRow({ label, value }) {
@@ -24,6 +62,10 @@ export function SheetRow({ label, value }) {
 /* ---------- read-only component spec sheet ---------- */
 export function SpecSheet({ comp }) {
   const fields = (comp.fields ?? []).filter((f) => f.v)
+  const kind = resolveKind(comp)
+  // The main recipe doesn't get a badge — the card header already labels it
+  // as the lead; a pill would just be visual noise on the most common case.
+  const showBadge = kind !== 'main'
   return (
     <div className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
       <div className="flex items-center gap-2.5 border-b bg-primary/[0.04] px-4 py-3">
@@ -31,6 +73,7 @@ export function SpecSheet({ comp }) {
           <Box className="h-3.5 w-3.5" />
         </span>
         <h3 className="min-w-0 flex-1 truncate text-[13px] font-bold uppercase tracking-wide text-foreground">{comp.component}</h3>
+        {showBadge && <KindBadge kind={kind} />}
         {comp.date && (
           <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
             {comp.date}
@@ -83,10 +126,12 @@ export function EditableSpecSheet({ comp, onChange }) {
   const setField = (i, patch) => onChange({ ...comp, fields: fields.map((f, idx) => (idx === i ? { ...f, ...patch } : f)) })
   const addField = () => onChange({ ...comp, fields: [...fields, { k: '', v: '' }] })
   const removeField = (i) => onChange({ ...comp, fields: fields.filter((_, idx) => idx !== i) })
+  const kind = resolveKind(comp)
+  const KindIcon = KIND_META[kind].icon
 
   return (
     <div className="overflow-hidden rounded-xl border border-primary/40 bg-card shadow-sm ring-1 ring-primary/10">
-      <div className="flex items-center gap-2.5 border-b bg-primary/[0.05] px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-2.5 border-b bg-primary/[0.05] px-4 py-2.5">
         <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
           <Box className="h-3.5 w-3.5" />
         </span>
@@ -96,6 +141,23 @@ export function EditableSpecSheet({ comp, onChange }) {
           placeholder="PARÇA ADI"
           className="min-w-0 flex-1 bg-transparent text-[13px] font-bold uppercase tracking-wide text-foreground outline-none placeholder:text-muted-foreground/50"
         />
+        {/* Structured tag dropdown. Lets the leader override the inferred
+            `main`/`kutu`/`kilavuz` without renaming the component — e.g. a
+            bespoke sticker sheet that shouldn't read as the lead recipe. */}
+        <label className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-background px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground ring-1 ring-border print:hidden">
+          <KindIcon className="h-3 w-3" />
+          <span className="sr-only">Parça türü</span>
+          <select
+            value={kind}
+            onChange={(e) => onChange({ ...comp, kind: e.target.value })}
+            className="bg-transparent text-[11px] font-semibold uppercase tracking-wide text-foreground outline-none"
+          >
+            <option value="main">Ana Reçete</option>
+            <option value="kutu">Kutu Reçetesi</option>
+            <option value="kilavuz">Kılavuz Reçetesi</option>
+            <option value="other">Parça</option>
+          </select>
+        </label>
       </div>
       <dl className="divide-y divide-border/50">
         {fields.map((f, i) => (
