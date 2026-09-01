@@ -64,10 +64,18 @@ const MIME = {
  *     talks to itself; if a third-party dep starts fetching something we
  *     didn't whitelist, CSP refuses it instead of letting it leak.
  *
- *   script-src 'self' 'wasm-unsafe-eval'
- *     Same-origin only. 'wasm-unsafe-eval' is scoped to WebAssembly —
- *     narrower than 'unsafe-eval', which would also re-enable JS eval().
- *     Required for any WASM-compiled module Vite ships in the future.
+ *   script-src 'self' 'wasm-unsafe-eval' https://static.cloudflareinsights.com
+ *     Same-origin only, plus the Cloudflare Browser Insights beacon script
+ *     that Cloudflare auto-injects at the edge (Speed → Optimization →
+ *     Content Optimization → Browser Insights). The page source never
+ *     references the script — it appears in the served HTML — so without
+ *     this allowance every /matbaa-isleri load (and every other page) logs
+ *     "Loading the script ... violates the following Content Security
+ *     Policy directive: script-src 'self' 'wasm-unsafe-eval'." and the
+ *     beacon is blocked, silently killing RUM. 'wasm-unsafe-eval' is
+ *     scoped to WebAssembly — narrower than 'unsafe-eval', which would
+ *     also re-enable JS eval(). Required for any WASM-compiled module Vite
+ *     ships in the future.
  *
  *   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com
  *     shadcn-ui / Radix inject inline `style="top: …; left: …"` for
@@ -92,10 +100,14 @@ const MIME = {
  *     lottie-react spawns its animation worker from a blob URL; same-origin
  *     `'self'` covers any explicit URL workers we add later.
  *
- *   connect-src 'self'
+ *   connect-src 'self' https://cloudflareinsights.com https://*.cloudflareinsights.com
  *     All XHR / fetch / EventSource traffic is same-origin (/api/*, /data/*).
  *     We intentionally do NOT add fcm.googleapis.com or push.apple.com —
  *     those are server-to-server endpoints, never reached from the browser.
+ *     The Cloudflare Insights domains are added because the beacon script
+ *     above posts its telemetry to cloudflareinsights.com via
+ *     navigator.sendBeacon — without this allowance every beacon POST is
+ *     refused by CSP and the RUM signal goes dark.
  *
  *   manifest-src 'self'
  *     /manifest.webmanifest is served from this origin. Locking to 'self'
@@ -139,12 +151,12 @@ const MIME = {
 function setSecurityHeaders(res) {
   const csp = [
     "default-src 'self'",
-    "script-src 'self' 'wasm-unsafe-eval'",
+    "script-src 'self' 'wasm-unsafe-eval' https://static.cloudflareinsights.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: blob:",
     "font-src 'self' data: https://fonts.gstatic.com",
     "worker-src 'self' blob:",
-    "connect-src 'self'",
+    "connect-src 'self' https://cloudflareinsights.com https://*.cloudflareinsights.com",
     "manifest-src 'self'",
     "base-uri 'self'",
     "form-action 'self'",

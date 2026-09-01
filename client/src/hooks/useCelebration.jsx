@@ -1,6 +1,13 @@
-import { createContext, useCallback, useContext, useState } from 'react'
-import CelebrationOverlay from '@/components/CelebrationOverlay'
+import { createContext, lazy, Suspense, useCallback, useContext, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+
+// Lazy-load the Lottie overlay so the 600+ KB of lottie-web only ships to a
+// browser that actually triggers a designer celebration. The overlay only
+// renders when `active` is non-null (see triggerCelebration below), so
+// <Suspense fallback={null}> never paints anything visible during the chunk
+// fetch — the trigger only happens on a designer milestone, and the overlay
+// itself draws on top of everything anyway.
+const CelebrationOverlay = lazy(() => import('@/components/CelebrationOverlay'))
 
 const CelebrationContext = createContext(null)
 
@@ -24,12 +31,14 @@ export function CelebrationProvider({ children }) {
     <CelebrationContext.Provider value={{ triggerCelebration }}>
       {children}
       {active && (
-        <CelebrationOverlay
-          key={active.key}
-          url={active.url}
-          durationMs={CELEBRATION_MS}
-          onComplete={() => setActive(null)}
-        />
+        <Suspense fallback={null}>
+          <CelebrationOverlay
+            key={active.key}
+            url={active.url}
+            durationMs={CELEBRATION_MS}
+            onComplete={() => setActive(null)}
+          />
+        </Suspense>
       )}
     </CelebrationContext.Provider>
   )

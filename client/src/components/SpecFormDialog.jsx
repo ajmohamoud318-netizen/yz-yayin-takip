@@ -195,6 +195,22 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
      snapshot stays read-only for everyone. */
   const authoringOrderOzalit =
     orderScoped && mode === 'advance' && order?.status === 'kontrol_edildi'
+  /* ── Baskı Onayı dual-approval (migration 045) ────────────────────────────
+   * One team leader PREPARES the form; a DIFFERENT team leader gives the
+   * actual "Baskı Onayı". The server is the source of truth for "different
+   * person" (it also lets a lone remaining leader self-approve rather than
+   * strand the project) — this dialog just switches which button it shows
+   * based on `baski_onay_prepared`, and lets a server error surface via toast
+   * on the rare self-approve-blocked click.
+   *
+   * Declared up here (not next to `readOnly`) because `baskiOnayLocked`,
+   * `SpecFormGates` and `SpecFormFooter` all read them, and JS const has no
+   * hoisting — referencing these from `baskiOnayLocked` two blocks below
+   * throws a Temporal Dead Zone error during render (minified as
+   * "Cannot access 'Ne' before initialization").
+   */
+  const isBaskiOnayApproval = mode === 'approve' && variantName === 'baski_onay'
+  const baskiOnayPrepared = !!project?.baski_onay_prepared
   // Baskı Onay approve step: once the form has been prepared, the approver
   // is signing what was prepared, not authoring. The variant's pure
   // isReadOnly can't express that — `mode='approve'` covers both prepare
@@ -411,17 +427,6 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    */
   const ozalitAwaitingLeader =
     isOzalitApproval && user?.role === 'designer' && !round.leaderApproved
-
-  /* ── Baskı Onayı dual-approval (migration 045) ────────────────────────────
-   * One team leader PREPARES the form; a DIFFERENT team leader gives the
-   * actual "Baskı Onayı". The server is the source of truth for "different
-   * person" (it also lets a lone remaining leader self-approve rather than
-   * strand the project) — this dialog just switches which button it shows
-   * based on `baski_onay_prepared`, and lets a server error surface via toast
-   * on the rare self-approve-blocked click.
-   */
-  const isBaskiOnayApproval = mode === 'approve' && variantName === 'baski_onay'
-  const baskiOnayPrepared = !!project?.baski_onay_prepared
 
   // Each (re)open starts from the project's own state — a stale local ack
   // would otherwise unlock the button for the next project opened.

@@ -21,6 +21,12 @@ const NotificationsContext = createContext(null)
 
 const POLL_MS = 15_000
 
+// Channel name for cross-tab sync of the notification feed. Two tabs of the
+// same user — same cookie session, same origin — open this channel and
+// refetch when the other posts. MUST match the listener-side name; a typo
+// silently routes messages to an empty channel.
+const NOTIFICATIONS_CHANNEL = 'yz:notifications'
+
 export function NotificationsProvider({ children }) {
   const { user } = useAuth()
   const [items, setItems] = useState([])
@@ -36,18 +42,41 @@ export function NotificationsProvider({ children }) {
   // only stopped when the user navigated away.
   const sseConnectedRef = useRef(false)
 
+  // Cross-tab BroadcastChannel. Opened inside the user-keyed effect below
+  // (so it is rebuilt on login/switch/logout) and referenced through a
+  // ref so the post helper — defined outside that effect — can fire
+  // messages without prop-drilling the channel instance. Falls back to a
+  // no-op when BroadcastChannel is unavailable (pre-15.4 iOS Safari);
+  // the existing SSE + 15 s poll keep the feed fresh in that case.
+  const channelRef = useRef(null)
+  const supportsBroadcast = typeof BroadcastChannel !== 'undefined'
+
+  const postNotificationsChanged = useCallback(() => {
+    // Coarse-grained "something changed" — /api/notifications is the
+    // single source of truth and the call is cheap. Refining by
+    // notificationId would let us avoid the round-trip when the only
+    // change is "this item got marked read", but the saving is small.
+    channelRef.current?.postMessage({ kind: 'notifications-changed' })
+  }, [])
+
   const refetch = useCallback(async () => {
     try {
       const { items: next, unread: nr, unseen: ns } = await api.listNotifications()
       setItems(next)
       setUnread(nr)
       setUnseen(ns)
+      // Tell sibling tabs the feed is stale so they refetch too. SSE is
+      // per-tab, so without this a tab that's just been backgrounded
+      // would only catch up on the next 15 s poll. Posting on every
+      // successful refetch keeps the cost small (one fire-and-forget
+      // message) and the latency near-instant.
+      postNotificationsChanged()
     } catch {
       /* transient — next tick retries */
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [postNotificationsChanged])
 
   const markRead = useCallback(async (id) => {
     // Reading implies seeing → flip both locally, then persist.
@@ -64,15 +93,19 @@ export function NotificationsProvider({ children }) {
       if (wasUnseen) setUnseen((u) => Math.max(0, u - 1))
       return next
     })
+    // Optimistic mutation — sibling tabs should see the same read state
+    // immediately, not on the next 15 s poll.
+    postNotificationsChanged()
     try { await api.markNotificationRead(id) } catch { /* reconciled on next poll */ }
-  }, [])
+  }, [postNotificationsChanged])
 
   const markAllRead = useCallback(async () => {
     setItems((prev) => prev.map((it) => ({ ...it, is_read: true, seen: true })))
     setUnread(0)
     setUnseen(0)
+    postNotificationsChanged()
     try { await api.markAllNotificationsRead() } catch { /* reconciled on next poll */ }
-  }, [])
+  }, [postNotificationsChanged])
 
   // Bell opened → clear the badge (seen) but keep per-item bold (is_read).
   const markSeen = useCallback(async () => {
@@ -82,10 +115,11 @@ export function NotificationsProvider({ children }) {
       return hadUnseen ? prev.map((it) => (it.seen ? it : { ...it, seen: true })) : prev
     })
     setUnseen(0)
+    if (hadUnseen) postNotificationsChanged()
     if (hadUnseen) {
       try { await api.markNotificationsSeen() } catch { /* reconciled on next poll */ }
     }
-  }, [])
+  }, [postNotificationsChanged])
 
   // In-process pub/sub so other components (ProjectDetail, Orders, etc.) can
   // subscribe to notification events and refetch their own data when a relevant
@@ -132,6 +166,21 @@ export function NotificationsProvider({ children }) {
     // the bell empty on cold start for sessions where "30 gün hatırla" was not
     // ticked (nothing is written to localStorage in that case).
     refetch()
+
+    // Cross-tab sync via BroadcastChannel. Opened AND listened on the same
+    // effect so the listener is removed in lockstep with `channel.close()`
+    // on unmount / user-switch / logout — a stale listener that kept a
+    // closure over a previous refetch would otherwise still call setState
+    // on an unmounted tree, or refetch against the wrong user's session.
+    // The channel name MUST match `NOTIFICATIONS_CHANNEL` on both ends.
+    let channel = null
+    if (supportsBroadcast) {
+      channel = new BroadcastChannel(NOTIFICATIONS_CHANNEL)
+      channelRef.current = channel
+      channel.addEventListener('message', () => {
+        refetch()
+      })
+    }
 
     // (Re-)opens the SSE stream. Called once on mount and again when the
     // tab returns to the foreground with the socket in a non-OPEN state
@@ -207,8 +256,12 @@ export function NotificationsProvider({ children }) {
       if (eventSource) eventSource.close()
       clearInterval(pollTimer)
       document.removeEventListener('visibilitychange', onVisibilityChange)
+      if (channel) {
+        channel.close()
+        channelRef.current = null
+      }
     }
-  }, [userId, refetch, dispatchToSubscribers])
+  }, [userId, refetch, dispatchToSubscribers, supportsBroadcast])
 
   const value = useMemo(() => ({
     items, unread, unseen, loading, refetch, markRead, markAllRead, markSeen, subscribe,

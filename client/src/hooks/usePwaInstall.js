@@ -40,6 +40,14 @@ export function initPwaInstall() {
     // Without preventDefault() the browser may show its own mini-infobar and
     // the event becomes unusable for a custom UI.
     event.preventDefault()
+    // NOTE: Chrome logs `Banner not shown: beforeinstallprompt event.preventDefault()
+    // called. The page must call beforeinstallprompt event.prompt() to show the
+    // banner.` at the moment preventDefault() runs. That message is informational,
+    // not an error — it's the standard DevTools log for the deferred-prompt
+    // pattern this hook uses (prevent now, prompt later when the user clicks).
+    // It disappears the moment a user actually clicks `promptInstall()` below;
+    // the only way to silence it before that is to call prompt() synchronously,
+    // which would lose the user-gesture gate and trigger Chrome's auto-suppress.
     deferredPrompt = event
     emit()
   })

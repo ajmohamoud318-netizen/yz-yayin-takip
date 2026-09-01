@@ -1,8 +1,14 @@
-import { createContext, useContext, useState, useCallback, useEffect, useMemo, createElement } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef, createElement } from 'react'
 import api from '@/api'
 import { useAuth } from './useAuth.js'
 import { useOnResume } from './useOnResume.js'
 import { hydrateProductInfo } from '@/data/productCatalog'
+
+// Channel name for cross-tab sync. Other tabs of the same origin (and same
+// user, by way of the cookie session) listen here; when one tab mutates the
+// project list, the others refetch. MUST match the name the listener opens,
+// or the broadcast silently lands on a different channel and is dropped.
+const PROJECTS_CHANNEL = 'yz:projects'
 
 const ProjectsContext = createContext(null)
 
@@ -15,6 +21,23 @@ export function ProjectsProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  // Cross-tab BroadcastChannel. Created inside the mount effect (so it is
+  // torn down on unmount / logout) but referenced through a ref so the
+  // post helpers below — which are defined outside that effect — can fire
+  // messages without prop-drilling the channel instance. `supportsBroadcast`
+  // is captured at module load: jsdom pre-22 and iOS Safari < 15.4 lack
+  // the API entirely, and we fall back to the existing 30 s interval.
+  const channelRef = useRef(null)
+  const supportsBroadcast = typeof BroadcastChannel !== 'undefined'
+
+  const postProjectsChanged = useCallback(() => {
+    // Coarse-grained "something changed" — refetching /api/projects is
+    // cheap, and refining by projectId/subtaskId is a follow-up if
+    // profiling ever says the saving is worth the branching. See the
+    // spec's note on case-by-case judgement.
+    channelRef.current?.postMessage({ kind: 'projects-changed' })
+  }, [])
+
   const refetch = useCallback(async () => {
     setError(null)
     try {
@@ -24,24 +47,32 @@ export function ProjectsProvider({ children }) {
       // localStorage specs) so the Demo/Ozalit forms and Ürün Bilgileri read
       // the shared, server-side spec rather than a per-browser override.
       hydrateProductInfo(data.map((p) => p.id))
+      // Tell sibling tabs the list is stale so they refetch too. Called
+      // only on success — a transient 5xx should not make other tabs
+      // hammer the same broken endpoint.
+      postProjectsChanged()
     } catch (e) {
       setError(e.message || 'Projeler yüklenemedi.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [postProjectsChanged])
 
   const updateOne = useCallback((updated) => {
     if (!updated?.id) return
     setProjects((prev) =>
       prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)),
     )
-  }, [])
+    // Optimistic merge path (advance, approve, assign, etc.). The mutation
+    // already happened locally; sibling tabs need the same nudge to fetch.
+    postProjectsChanged()
+  }, [postProjectsChanged])
 
   const addOne = useCallback((created) => {
     if (!created?.id) return
     setProjects((prev) => (prev.some((p) => p.id === created.id) ? prev : [...prev, created]))
-  }, [])
+    postProjectsChanged()
+  }, [postProjectsChanged])
 
   // Gate the first fetch on AUTH STATE, not on a token in localStorage.
   //
@@ -69,6 +100,25 @@ export function ProjectsProvider({ children }) {
       return
     }
 
+    // Cross-tab sync via BroadcastChannel. Opened AND listened on the same
+    // effect so the listener is removed in lockstep with `channel.close()`
+    // on unmount — a stale listener that kept a closure over a previous
+    // refetch would otherwise still call setState on an unmounted tree.
+    // The channel name MUST match `PROJECTS_CHANNEL` on both ends; a typo
+    // here silently routes messages to a channel no listener is on.
+    let channel = null
+    if (supportsBroadcast) {
+      channel = new BroadcastChannel(PROJECTS_CHANNEL)
+      channelRef.current = channel
+      // The message carries no payload yet: coarse-grained "something
+      // changed" → refetch the canonical /api/projects. Refining by
+      // projectId/subtaskId is a follow-up if profiling says the saving
+      // is worth the branching.
+      channel.addEventListener('message', () => {
+        refetch()
+      })
+    }
+
     refetch()
     // Skip ticks while the app is in the background. On iOS the timer is
     // frozen there anyway; on Android it just burns the phone's data plan
@@ -87,8 +137,12 @@ export function ProjectsProvider({ children }) {
     return () => {
       clearInterval(t)
       unsubscribe?.()
+      if (channel) {
+        channel.close()
+        channelRef.current = null
+      }
     }
-  }, [bootstrapping, isAuthenticated, refetch, updateOne])
+  }, [bootstrapping, isAuthenticated, refetch, updateOne, supportsBroadcast])
 
   // Refresh the moment the app is foregrounded.
   //

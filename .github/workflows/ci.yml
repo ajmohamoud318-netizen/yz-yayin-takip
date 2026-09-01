@@ -53,11 +53,29 @@ jobs:
         # mirrors.
         run: npm run test:server
 
-      - name: Test client (vitest)
+      - name: Test client (vitest + coverage floor)
         # Component, hook, and the client-side FSM-mirror suite. jsdom
         # environment (see client/vitest.config.js) — no live browser.
-        # ~235 tests, ~3s.
-        run: npm test
+        # ~235 tests, ~3s. Runs with --coverage because the threshold
+        # floor in vitest.config.js is a tripwire: a refactor that
+        # silently drops a domain branch (e.g. an unhandled pipeline
+        # status) would ship green if we only ran `npm test`. The lcov
+        # + json reports land in client/coverage/ for the upload step.
+        run: npm --workspace client run test:coverage
+
+      - name: Upload client coverage report
+        # Even though no badge/codecov is wired up, keeping the lcov as
+        # an artifact means a contributor can grab it from the Actions
+        # run and inspect uncovered lines without re-running locally.
+        # path is intentionally narrow — `node_modules` and dist aren't
+        # in there, but `client/coverage/` could grow over time.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-coverage
+          path: client/coverage
+          retention-days: 14
+          if-no-files-found: warn
 
       - name: Build client SPA (vite build)
         # Produces client/dist, which serve.cjs serves in production.
