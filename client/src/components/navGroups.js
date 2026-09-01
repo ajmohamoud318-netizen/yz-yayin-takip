@@ -20,6 +20,7 @@ import {
   Stamp,
   Target,
   Trash2,
+  Truck,
   UsersRound,
 } from 'lucide-react'
 
