@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import App from './App.jsx'
 import { AuthProvider } from './hooks/useAuth.js'
 import { ProjectsProvider } from './hooks/useProjectsStore.jsx'
@@ -64,6 +65,25 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
+    {/* Sonner mounts the toast container that every `toast.error/success(...)`
+        call resolves to. Mounted at the root (outside <ErrorBoundary> would
+        lose toasts on chunk failures; outside <BrowserRouter> would break
+        the SPA-relative positioning sonner uses for its portal). Position
+        is top-center so the message is visible above any open Dialog modal,
+        not hidden behind its backdrop. */}
+    <Toaster
+      position="top-center"
+      richColors
+      closeButton
+      duration={4000}
+      toastOptions={{
+        classNames: {
+          toast: 'rounded-lg shadow-lg',
+          title: 'text-sm font-medium',
+          description: 'text-xs opacity-90',
+        },
+      }}
+    />
     <ErrorBoundary>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
