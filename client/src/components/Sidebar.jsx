@@ -144,13 +144,27 @@ function SidebarSection({ collapsed, label, children }) {
 
 function NavBadge({ count, tone = 'default', active }) {
   if (!count) return null
-  const tones = {
-    default: active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
-    amber: 'bg-amber-100 text-amber-700',
-    pink: 'bg-fuchsia-100 text-fuchsia-700',
+  // "Look here" treatment (amber + pink tones in navGroups) → solid brand
+  // pill. Stays rose-burgundy (bg-primary) instead of an off-palette
+  // rose-500 so the badge colour always matches the rest of the chrome.
+  if (tone === 'amber' || tone === 'pink') {
+    return (
+      <span className="ml-auto inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-primary-foreground">
+        {count}
+      </span>
+    )
   }
+  // Context badge (default tone) → quiet cream pill, vivid rose-tinted
+  // when its row is active. `tabular-nums` keeps widths steady between
+  // 1- and 2-digit counts so the layout never twitches when a count
+  // bumps from 9 → 10.
   return (
-    <span className={cn('ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-semibold', tones[tone])}>
+    <span
+      className={cn(
+        'ml-auto inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
+        active ? 'bg-rose-100 text-primary' : 'bg-muted text-muted-foreground',
+      )}
+    >
       {count}
     </span>
   )
@@ -189,8 +203,12 @@ function SidebarNavItem({ item, collapsed, onNavigate }) {
               cn(
                 'relative flex h-9 w-full items-center justify-center rounded-md transition-colors',
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                // In collapsed (icon-only) mode there is no horizontal
+                // room for the left bar — fall back to a filled brand
+                // square with a white icon so the active item is still
+                // unambiguous at a glance.
                 isActive
-                  ? 'bg-primary/10 text-primary'
+                  ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                 highlight && !isActive && 'nav-pulse-glow nav-bounce text-foreground',
               )
@@ -223,10 +241,13 @@ function SidebarNavItem({ item, collapsed, onNavigate }) {
       onClick={onNavigate}
       className={({ isActive }) =>
         cn(
-          'group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
+          // The 3px left accent bar uses `before:` (absolute + inset of
+          // 4px/8px so it sits inside the rounded-md corner) so the row's
+          // text never shifts when the active state toggles.
+          'group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           isActive
-            ? 'bg-primary/10 text-primary'
+            ? 'bg-rose-50 font-semibold text-primary before:pointer-events-none before:absolute before:left-1 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-primary before:content-[""]'
             : 'text-muted-foreground hover:bg-muted hover:text-foreground',
           highlight && !isActive && 'nav-pulse-glow nav-bounce text-foreground',
         )
@@ -234,7 +255,7 @@ function SidebarNavItem({ item, collapsed, onNavigate }) {
     >
       {({ isActive }) => (
         <>
-          <Icon className="h-5 w-5" />
+          <Icon className={cn('h-5 w-5 shrink-0', isActive && 'text-primary')} />
           <span className="flex-1">{label}</span>
           <NavBadge count={badge} tone={badgeTone} active={isActive} />
         </>
@@ -256,14 +277,18 @@ function PeriodWidget({ satista, total }) {
     <button
       type="button"
       onClick={() => navigate('/kanban?stage=satista')}
-      className="group block w-full rounded-lg border border-primary/15 bg-primary/5 p-3 text-left transition-colors hover:border-primary/30 hover:bg-primary/[0.07] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="group block w-full rounded-lg border border-rose-200 bg-rose-50 p-3 text-left transition-colors hover:border-rose-300 hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="flex items-center justify-between">
         <div className="text-[10px] font-semibold uppercase tracking-wider text-primary">Bu Dönem</div>
-        <div className="font-mono text-[10px] font-medium tabular-nums text-primary transition-transform group-hover:translate-x-0.5">{pct}%</div>
+        <div className="font-mono text-[10px] font-semibold tabular-nums text-primary transition-transform group-hover:translate-x-0.5">{pct}%</div>
       </div>
       <div className="mt-1.5 text-xs font-medium text-foreground">Hedef: projeleri satışa çıkar</div>
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-background">
+      {/* Slightly thicker track that lives one step darker than the card
+          itself (rose-100 on rose-50) so the whole card reads as a single
+          monochromatic rose surface, and the percentage gets bolder so
+          the 67% lands as the eye-catch instead of the eyebrow. */}
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-rose-100/70">
         <div
           className="h-full rounded-full bg-primary transition-[width,filter] duration-500 ease-out group-hover:brightness-110"
           style={{ width: `${pct}%` }}

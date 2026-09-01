@@ -1,5 +1,4 @@
 import {
-  BadgeCheck,
   Boxes,
   Briefcase,
   CalendarDays,
@@ -8,14 +7,19 @@ import {
   ClipboardPlus,
   Columns3,
   Factory,
-  FileText,
+  FolderTree,
   LayoutDashboard,
   LayoutGrid,
+  ListChecks,
   Package,
   PackageCheck,
+  PackageOpen,
+  PrinterCheck,
+  ScrollText,
+  ShieldCheck,
+  Stamp,
   Target,
   Trash2,
-  Truck,
   UsersRound,
 } from 'lucide-react'
 
@@ -78,7 +82,7 @@ export function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, de
     {
       to: '/approvals/demo',
       label: 'Onaylar',
-      icon: BadgeCheck,
+      icon: ShieldCheck,
       badge: counts.demoApprovals + counts.ozalitApprovals + counts.baskiOnayApprovals,
       badgeTone: 'amber',
       highlight: counts.demoApprovals + counts.ozalitApprovals + counts.baskiOnayApprovals > 0,
@@ -87,7 +91,7 @@ export function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, de
     {
       to: '/approvals/baski-onay',
       label: 'Baskı Onayı',
-      icon: BadgeCheck,
+      icon: PrinterCheck,
       badge: counts.baskiOnayApprovals || undefined,
       badgeTone: 'amber',
       highlight: counts.baskiOnayApprovals > 0,
@@ -96,7 +100,7 @@ export function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, de
     {
       to: '/approvals/siparis',
       label: 'Baskı Teslimi',
-      icon: PackageCheck,
+      icon: Truck,
       badge: printerOrders,
       badgeTone: 'amber',
       highlight: printerOrders > 0,
@@ -105,7 +109,7 @@ export function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, de
     {
       to: '/approvals/ozalit',
       label: 'Ozalit Onayı',
-      icon: BadgeCheck,
+      icon: Stamp,
       badge: counts.designerOzalitApprovals || undefined,
       badgeTone: 'amber',
       highlight: counts.designerOzalitApprovals > 0,
@@ -132,7 +136,7 @@ export function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, de
     {
       to: '/baski-listesi',
       label: 'Baskı Listesi',
-      icon: Factory,
+      icon: ListChecks,
       badge: counts.production || undefined,
       badgeTone: 'amber',
       highlight: counts.production > 0,
@@ -141,7 +145,7 @@ export function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, de
     {
       to: '/teslim-talepleri',
       label: 'Teslim Talepleri',
-      icon: Truck,
+      icon: PackageOpen,
       badge: counts.handoverEligible || undefined,
       badgeTone: 'pink',
       highlight: counts.handoverEligible > 0,
@@ -161,9 +165,9 @@ export function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, de
   // ── Grup 3: Yönetim / kaynaklar ──────────────────────────────
   const resourceItems = [
     { to: '/team', label: 'Ekip', icon: UsersRound, roles: ['team_leader'] },
-    { to: '/documents', label: 'Dökümanlar', icon: FileText, roles: ['team_leader', 'designer', 'printer'] },
+    { to: '/documents', label: 'Dökümanlar', icon: FolderTree, roles: ['team_leader', 'designer', 'printer'] },
     { to: '/urun-bilgileri', label: 'Ürün Bilgileri', icon: Boxes, roles: ['team_leader', 'designer'] },
-    { to: '/baski-receteleri', label: 'Baskı Reçeteleri', icon: FileText, roles: ['team_leader', 'designer'] },
+    { to: '/baski-receteleri', label: 'Baskı Reçeteleri', icon: ScrollText, roles: ['team_leader', 'designer'] },
     { to: '/deleted-projects', label: 'Silinen Projeler', icon: Trash2, roles: ['team_leader'] },
     // Çalışma Defteri — behind WORK_LOG_ENABLED (client/src/lib/work-log.js).
     // Dropping the item is what keeps the feature off: WorkLogPill is the only
