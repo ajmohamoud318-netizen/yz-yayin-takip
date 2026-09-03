@@ -3,7 +3,6 @@ import { CheckSquare, FileText, Square } from 'lucide-react'
 import {
   FormSheet,
   FormSheetBlock,
-  FormSheetBlockTitle,
   FormSheetHead,
   SheetAddRow,
   SheetRow,
@@ -261,8 +260,22 @@ export default function SpecSheetBody({
                 />
               </div>
             )}
-            <FormSheetBlockTitle>{c.component}</FormSheetBlockTitle>
             <FormSheetBlock className="border-b-0">
+              {/* The parça names itself with an İŞİN ADI row, exactly as it
+                  does on paper (specPrint.js → formSection puts the same row
+                  at the top of every sheet it builds) and exactly as the
+                  no-parça body above does. It used to be a centred caption
+                  instead, which meant the parça blocks were the one place on
+                  this form where screen and print disagreed about what the
+                  sheet says.
+
+                  Read-only, and NOT one of `c.rows`: the name is the parça's
+                  identity — the id the selection, the catalog write-back and
+                  the print all key on — and renaming it belongs in Ürün
+                  Bilgileri, not here. It is also why the send gate counts two
+                  rows BESIDES this one (lib/spec-form-completeness.js): İŞİN
+                  ADI comes filled in and proves nothing about the spec. */}
+              <SheetRow label="İŞİN ADI" value={c.component} readOnly />
               {(c.rows ?? []).length === 0 && readOnly && (
                 <p className="py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
               )}

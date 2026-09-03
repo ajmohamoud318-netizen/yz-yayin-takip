@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button'
 import {
   FormSheet,
   FormSheetBlock,
-  FormSheetBlockTitle,
   FormSheetHead,
   SheetAddRow,
   SheetRow,
@@ -295,8 +294,11 @@ export default function SiparisBaskiOnayFormDialog({
       ) : (
         components.map((c, ci) => (
           <div key={c.id ?? c.component} className="border-b last:border-b-0">
-            <FormSheetBlockTitle>{c.component}</FormSheetBlockTitle>
             <FormSheetBlock className="border-b-0">
+              {/* Named by its own İŞİN ADI row, the way it prints and the way
+                  the project-side sheet does it (SpecSheetBody). Read-only:
+                  the parça's name is its identity, edited in Ürün Bilgileri. */}
+              <SheetRow label="İŞİN ADI" value={c.component} readOnly />
               {c.rows.map((r, ri) => (
                 <SheetSpecRow
                   key={r.id ?? ri}

@@ -104,14 +104,12 @@ export function FormSheetBlock({ className, children }) {
   return <div className={cn('border-b px-4 py-0.5 last:border-b-0', className)}>{children}</div>
 }
 
-/** Centred caption naming the block below it — a parça, mostly. */
-export function FormSheetBlockTitle({ children }) {
-  return (
-    <div className="border-b bg-muted/30 px-4 py-1.5 text-center text-[11px] font-bold uppercase tracking-widest text-foreground">
-      {children}
-    </div>
-  )
-}
+/* No FormSheetBlockTitle any more. A parça used to be introduced by a centred
+   caption carrying its name; it now names itself with an İŞİN ADI row, which
+   is what it does on paper (specPrint.js → formSection) and what the sheet's
+   own no-parça body has always done. The caption was the one place on this
+   form where screen and print disagreed about what the sheet says, and
+   keeping both would have printed the parça's name twice in a row. */
 
 /**
  * One künye line (LABEL : value) with a fixed label.
