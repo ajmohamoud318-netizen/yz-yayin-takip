@@ -72,6 +72,10 @@ export function useProjectDetail(id) {
   const [ozalitFormRound, setOzalitFormRound] = useState(null)
   const [ozalitFormSnapshot, setOzalitFormSnapshot] = useState(null)
   const [ozalitFormNotify, setOzalitFormNotify] = useState(false)
+  // Set true only when the matbaa's "İşlemi Başlatın" opens the dialog —
+  // mode='view' then carries the start-work button in its footer, so the
+  // printer reads the sheet before stamping ozalit_started.
+  const [ozalitFormStartWork, setOzalitFormStartWork] = useState(false)
 
   const [demoFormOpen, setDemoFormOpen] = useState(false)
   const [demoFormMode, setDemoFormMode] = useState('advance') // 'advance' | 'view' | 'history'
@@ -83,6 +87,9 @@ export function useProjectDetail(id) {
   // Set true only when the new "Formu Düzenleyin" button opens the dialog —
   // makes mode='view' Kaydet notify the matbaa instead of saving silently.
   const [demoFormNotify, setDemoFormNotify] = useState(false)
+  // Matbaa's "İşlemi Başlatın" — same review-then-start gate as the ozalit
+  // one above.
+  const [demoFormStartWork, setDemoFormStartWork] = useState(false)
 
   const [baskiOnayFormOpen, setBaskiOnayFormOpen] = useState(false)
   const [baskiOnayFormMode, setBaskiOnayFormMode] = useState('approve') // 'approve' | 'view'
@@ -301,6 +308,7 @@ export function useProjectDetail(id) {
     ozalitFormRound, setOzalitFormRound,
     ozalitFormSnapshot, setOzalitFormSnapshot,
     ozalitFormNotify, setOzalitFormNotify,
+    ozalitFormStartWork, setOzalitFormStartWork,
 
     demoFormOpen, setDemoFormOpen,
     demoFormMode, setDemoFormMode,
@@ -308,6 +316,7 @@ export function useProjectDetail(id) {
     demoFormRound, setDemoFormRound,
     demoFormSnapshot, setDemoFormSnapshot,
     demoFormNotify, setDemoFormNotify,
+    demoFormStartWork, setDemoFormStartWork,
 
     baskiOnayFormOpen, setBaskiOnayFormOpen,
     baskiOnayFormMode, setBaskiOnayFormMode,

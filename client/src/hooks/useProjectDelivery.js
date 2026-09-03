@@ -103,33 +103,39 @@ export function useProjectDelivery(project, refetch, user) {
     }
   }
 
+  // Both start handlers are called from inside the spec form (the printer
+  // presses İşlemi Başlatın in its footer, after reading the sheet), so they
+  // report whether the stamp landed — the caller closes the form only on
+  // success and leaves it open, with the error toast, otherwise.
   async function handleDemoStart() {
-    if (!project) return
+    if (!project) return false
     setStartingWork(true)
     try {
       await api.markDemoStarted(project.id)
       await refetch()
       toast.success('Demo çalışmasına başladığınız işaretlendi.')
+      return true
     } catch (err) {
       toast.error(err.message || 'İşlem tamamlanamadı.')
+      return false
     } finally {
       setStartingWork(false)
-      setTeslimConfirm(null)
     }
   }
 
   async function handleOzalitStart() {
-    if (!project) return
+    if (!project) return false
     setStartingWork(true)
     try {
       await api.markOzalitStarted(project.id)
       await refetch()
       toast.success('Ozalit çalışmasına başladığınız işaretlendi.')
+      return true
     } catch (err) {
       toast.error(err.message || 'İşlem tamamlanamadı.')
+      return false
     } finally {
       setStartingWork(false)
-      setTeslimConfirm(null)
     }
   }
 
@@ -328,30 +334,12 @@ export function useProjectDelivery(project, refetch, user) {
       variant: 'destructive',
       onConfirm: handleOzalitCancel,
     },
-    // The matbaa's "İşlemi Başlatın" gate on the project detail page used
-    // to open the whole spec-form dialog (HeaderActionRow.jsx). That made
-    // the two-step ladder heavy: the printer clicks İşlemi Başlatın → the
-    // full form pops up just to be dismissed → they click it again inside
-    // to actually stamp the flag → then the same form reopens on Teslim
-    // Edin. The lighter ConfirmDialog matches what MatbaaIsleri.jsx and
-    // Approvals.jsx already do, so the form appears exactly once — at
-    // delivery time. Same copy on both pages keeps the wording identical.
-    'demo-start': {
-      title: 'Demo çalışmasına başladınız mı?',
-      description:
-        'Bundan sonra ekip lideri veya tasarımcının iptal ya da düzenleme yapması, sizin onayınızı gerektiren bir değişiklik talebine dönüşür.',
-      confirmLabel: 'İşlemi Başlatın',
-      variant: 'success',
-      onConfirm: handleDemoStart,
-    },
-    'ozalit-start': {
-      title: 'Ozalit çalışmasına başladınız mı?',
-      description:
-        'Bundan sonra ekip lideri veya tasarımcının iptal ya da düzenleme yapması, sizin onayınızı gerektiren bir değişiklik talebine dönüşür.',
-      confirmLabel: 'İşlemi Başlatın',
-      variant: 'success',
-      onConfirm: handleOzalitStart,
-    },
+    // No 'demo-start' / 'ozalit-start' entry on purpose: the matbaa never
+    // starts work from a bare "emin misiniz?". İşlemi Başlatın opens the
+    // spec form (HeaderActionRow.jsx) and the flag is stamped from its
+    // footer, so the printer always sees what they are producing before
+    // they commit to it — and the same sheet again on Teslim Edin, which is
+    // what they hand over. MatbaaIsleri.jsx and Approvals.jsx do the same.
     'demo-change-accept': {
       title: 'Değişiklik talebini kabul edin mi?',
       description: 'Ekip lideri veya tasarımcı artık demoyu iptal edebilir ya da düzenleyebilir.',

@@ -18,7 +18,6 @@ import ApprovalDialog from '@/components/ApprovalDialog'
 import DemoFormDialog from '@/components/DemoFormDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import BaskiOnayFormDialog from '@/components/BaskiOnayFormDialog'
-import ConfirmDialog from '@/components/ConfirmDialog'
 import TalepSignDialog from '@/components/TalepSignDialog'
 import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
@@ -48,8 +47,9 @@ export default function Approvals({ tab = 'demo' }) {
   const [ekranBusyId, setEkranBusyId] = useState(null)
   // Matbaa "İşlemi Başlatın" — mirrors ProjectDetail's start-work gate so the
   // list and detail views enforce the same rule: Teslim Et stays hidden until
-  // the matbaa has flagged the work started.
-  const [startConfirm, setStartConfirm] = useState(null)
+  // the matbaa has flagged the work started. The flag is stamped from inside
+  // the spec form (opened read-only for the printer), never from a bare
+  // confirm — the printer has to see the sheet they're committing to.
   const [startingWork, setStartingWork] = useState(false)
 
   // Sipariş queue (printer's sign-off step: tasarimci_onay → matbaa_onay)
@@ -183,20 +183,23 @@ export default function Approvals({ tab = 'demo' }) {
     }
   }
 
-  async function handleStartWork() {
-    if (!startConfirm) return
+  async function handleStartWork(project, sub) {
+    if (!project) return
     setStartingWork(true)
     try {
-      const updated = startConfirm.sub === 'demo'
-        ? await api.markDemoStarted(startConfirm.project.id)
-        : await api.markOzalitStarted(startConfirm.project.id)
+      const updated = sub === 'demo'
+        ? await api.markDemoStarted(project.id)
+        : await api.markOzalitStarted(project.id)
       updateOne(updated)
-      toast.success(startConfirm.sub === 'demo' ? 'Demo çalışmasına başladığınız işaretlendi.' : 'Ozalit çalışmasına başladığınız işaretlendi.')
+      toast.success(sub === 'demo' ? 'Demo çalışmasına başladığınız işaretlendi.' : 'Ozalit çalışmasına başladığınız işaretlendi.')
+      // Close the sheet they started from — the row behind it flips to
+      // "Teslim Edin", which reopens the same form to deliver.
+      if (sub === 'demo') setDemoForm(null)
+      else setOzalitForm(null)
     } catch (err) {
       toast.error(err.message || 'İşlem tamamlanamadı.')
     } finally {
       setStartingWork(false)
-      setStartConfirm(null)
     }
   }
 
@@ -292,7 +295,12 @@ export default function Approvals({ tab = 'demo' }) {
               if (sub === 'demo') setDemoForm({ project: p, mode: 'advance' })
               else setOzalitForm({ project: p, mode: 'advance' })
             }}
-            onStartWork={() => setStartConfirm({ project: p, sub })}
+            onStartWork={() => {
+              // Review-then-start: the spec form opens (read-only for the
+              // printer) with "İşlemi Başlatın" in its footer.
+              if (sub === 'demo') setDemoForm({ project: p, mode: 'view', startWork: true })
+              else setOzalitForm({ project: p, mode: 'view', startWork: true })
+            }}
             onEkranRequest={() => handleEkranDemoRequest(p)}
             onEkranApprove={() => handleEkranDemoApprove(p)}
             onEkranReject={() => setEkranDemoRejectFor(p)}
@@ -366,6 +374,8 @@ export default function Approvals({ tab = 'demo' }) {
         onOpenChange={(v) => setDemoForm(v ? demoForm : null)}
         project={demoForm?.project}
         mode={demoForm?.mode ?? 'advance'}
+        onStartWork={demoForm?.startWork ? () => handleStartWork(demoForm.project, 'demo') : undefined}
+        startingWork={startingWork}
         onDone={onDone}
       />
       <OzalitFormDialog
@@ -373,6 +383,8 @@ export default function Approvals({ tab = 'demo' }) {
         onOpenChange={(v) => setOzalitForm(v ? ozalitForm : null)}
         project={ozalitForm?.project}
         mode={ozalitForm?.mode ?? 'approve'}
+        onStartWork={ozalitForm?.startWork ? () => handleStartWork(ozalitForm.project, 'ozalit') : undefined}
+        startingWork={startingWork}
         onDone={onDone}
       />
       <BaskiOnayFormDialog
@@ -387,16 +399,6 @@ export default function Approvals({ tab = 'demo' }) {
         onOpenChange={(v) => !v && setEkranDemoRejectFor(null)}
         project={ekranDemoRejectFor}
         onDone={() => setEkranDemoRejectFor(null)}
-      />
-      <ConfirmDialog
-        open={!!startConfirm}
-        onOpenChange={(v) => !v && setStartConfirm(null)}
-        title={startConfirm?.sub === 'demo' ? 'Demo çalışmasına başladınız mı?' : 'Ozalit çalışmasına başladınız mı?'}
-        description="Bundan sonra ekip lideri veya tasarımcının iptal ya da düzenleme yapması, sizin onayınızı gerektiren bir değişiklik talebine dönüşür."
-        confirmLabel="İşlemi Başlatın"
-        variant="success"
-        busy={startingWork}
-        onConfirm={handleStartWork}
       />
     </>
   )

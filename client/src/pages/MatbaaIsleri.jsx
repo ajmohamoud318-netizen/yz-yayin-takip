@@ -16,7 +16,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import DemoFormDialog from '@/components/DemoFormDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import TalepSignDialog from '@/components/TalepSignDialog'
-import ConfirmDialog from '@/components/ConfirmDialog'
 import {
   canRespondDemoChange, canRespondOzalitChange,
   canMarkDemoStarted, canMarkOzalitStarted,
@@ -55,11 +54,12 @@ export default function MatbaaIsleri() {
 
   // Demo / ozalit deliver dialogs. The dialog itself owns the spec sheet;
   // here we only hold the target project and which mode to open in.
-  const [demoForm, setDemoForm] = useState(null)   // { project, mode: 'advance' }
+  const [demoForm, setDemoForm] = useState(null)   // { project, mode, startWork? }
   const [ozalitForm, setOzalitForm] = useState(null)
-  // Matbaa "İşlemi Başlatın" — same confirm-dialog pattern Approvals.jsx uses
-  // so a stray tap doesn't lock the project into the started state.
-  const [startConfirm, setStartConfirm] = useState(null)
+  // Matbaa "İşlemi Başlatın" — the spec sheet itself is the confirmation.
+  // The button opens the form the printer is about to produce from, and the
+  // job starts from its footer, so nobody commits to a job they haven't
+  // read. Same rule on Approvals.jsx and the project detail header.
   const [startingWork, setStartingWork] = useState(false)
 
   // Sipariş queue (printer's sign-off step: tasarimci_onay → matbaa_onay).
@@ -114,22 +114,25 @@ export default function MatbaaIsleri() {
   // stamps `*_started = true` so the row's next state ("Teslim Edin") shows
   // up. Merge the response into the shared store so the card re-renders
   // with the new button label. Same pattern as Approvals.jsx:186-201.
-  async function handleStartWork() {
-    if (!startConfirm) return
+  async function handleStartWork(project, sub) {
+    if (!project) return
     setStartingWork(true)
     try {
-      const updated = startConfirm.sub === 'demo'
-        ? await api.markDemoStarted(startConfirm.project.id)
-        : await api.markOzalitStarted(startConfirm.project.id)
+      const updated = sub === 'demo'
+        ? await api.markDemoStarted(project.id)
+        : await api.markOzalitStarted(project.id)
       updateOne(updated)
-      toast.success(startConfirm.sub === 'demo'
+      toast.success(sub === 'demo'
         ? 'Demo çalışmasına başladığınız işaretlendi.'
         : 'Ozalit çalışmasına başladığınız işaretlendi.')
+      // Close the sheet they just started from — the row behind it flips to
+      // "Teslim Edin", which reopens the same form to deliver.
+      if (sub === 'demo') setDemoForm(null)
+      else setOzalitForm(null)
     } catch (err) {
       toast.error(err.message || 'İşlem tamamlanamadı.')
     } finally {
       setStartingWork(false)
-      setStartConfirm(null)
     }
   }
 
@@ -138,7 +141,7 @@ export default function MatbaaIsleri() {
   // Each pending row maps to one of four states, ordered by what the printer
   // physically does next:
   //   1. awaitingChange  → open project page (change needs project-level context)
-  //   2. !started        → confirm "İşlemi Başlatın"
+  //   2. !started        → open the spec form, start work from its footer
   //   3. started         → open the spec form to deliver
   //   4. (no row)        → row is gone, no card
   function pendingAction(sub, p) {
@@ -171,7 +174,10 @@ export default function MatbaaIsleri() {
         navigate(action.to)
         return
       case 'start':
-        setStartConfirm({ project: item, sub: item.__sub })
+        // Review-then-start: the same form opens read-only for the printer,
+        // with "İşlemi Başlatın" in its footer.
+        if (item.__sub === 'demo') setDemoForm({ project: item, mode: 'view', startWork: true })
+        else setOzalitForm({ project: item, mode: 'view', startWork: true })
         return
       case 'deliver':
         if (item.__sub === 'demo') setDemoForm({ project: item, mode: 'advance' })
@@ -335,6 +341,8 @@ export default function MatbaaIsleri() {
         onOpenChange={(v) => setDemoForm(v ? demoForm : null)}
         project={demoForm?.project}
         mode={demoForm?.mode ?? 'advance'}
+        onStartWork={demoForm?.startWork ? () => handleStartWork(demoForm.project, 'demo') : undefined}
+        startingWork={startingWork}
         onDone={() => setDemoForm(null)}
       />
       <OzalitFormDialog
@@ -342,6 +350,8 @@ export default function MatbaaIsleri() {
         onOpenChange={(v) => setOzalitForm(v ? ozalitForm : null)}
         project={ozalitForm?.project}
         mode={ozalitForm?.mode ?? 'advance'}
+        onStartWork={ozalitForm?.startWork ? () => handleStartWork(ozalitForm.project, 'ozalit') : undefined}
+        startingWork={startingWork}
         onDone={() => setOzalitForm(null)}
       />
       <TalepSignDialog
@@ -350,16 +360,6 @@ export default function MatbaaIsleri() {
         onOpenChange={(v) => !v && setSignOrder(null)}
         onSigned={handleOrderSigned}
         onUpdated={(updated) => setOrders((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)))}
-      />
-      <ConfirmDialog
-        open={!!startConfirm}
-        onOpenChange={(v) => !v && setStartConfirm(null)}
-        title={startConfirm?.sub === 'demo' ? 'Demo çalışmasına başladınız mı?' : 'Ozalit çalışmasına başladınız mı?'}
-        description="Bundan sonra ekip lideri veya tasarımcının iptal ya da düzenleme yapması, sizin onayınızı gerektiren bir değişiklik talebine dönüşür."
-        confirmLabel="İşlemi Başlatın"
-        variant="success"
-        busy={startingWork}
-        onConfirm={handleStartWork}
       />
     </>
   )

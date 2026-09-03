@@ -126,33 +126,15 @@ export default function SpecSheetBody({
         icon={FileText}
       />
 
-      {/* One continuous sheet: the job name, the rows the user added, then
-          the fixed rows as its foot — all on the same block so every rule
-          between them is the same hairline and the form reads as one
-          document, not as sections stacked on top of each other. */}
-      {!showsComponentCards && (
-        <FormSheetBlock className="bg-muted/10">
-          <SheetRow label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={onChange} readOnly={systemRowReadOnly} />
-          {customRows.map((r, i) => (
-            <SheetSpecRow
-              key={r.id}
-              label={r.label}
-              value={r.value}
-              onLabelChange={(v) => onUpdateCustomRow(r.id, 'label', v)}
-              onValueChange={(v) => onUpdateCustomRow(r.id, 'value', v)}
-              onRemove={() => onRemoveCustomRow(r.id)}
-              onMoveUp={customRows.length > 1 && i > 0 ? () => onMoveCustomRow(r.id, -1) : null}
-              onMoveDown={customRows.length > 1 && i < customRows.length - 1 ? () => onMoveCustomRow(r.id, 1) : null}
-              readOnly={readOnly || (hasLivePageCount && isSayfaSayisiRow(r.label))}
-            />
-          ))}
-          {!readOnly && <SheetAddRow onClick={onAddCustomRow} />}
-          {fixedKunyeRows}
-        </FormSheetBlock>
-      )}
-
       {/* Per-component picker — only when the project has product info.
-          Pure editing control: it never goes on paper. */}
+          Pure editing control: it never goes on paper.
+
+          It sits directly under the head, above everything it governs, in
+          BOTH states. Rendered after the no-parça block instead, it fell to
+          the foot of the sheet while nothing was selected and jumped to the
+          top the moment a box was ticked — on a phone, the control you just
+          used teleported a full scroll away and the whole form reflowed
+          under your thumb. */}
       {hasCatalog && !readOnly && (
         <div className="border-b bg-muted/20 px-4 py-3 print:hidden">
           <div className="mb-2 flex items-center justify-between">
@@ -178,7 +160,14 @@ export default function SpecSheetBody({
           </div>
           <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {catalogComponents.map((c) => {
-              const checked = selectedComponents.some((s) => s.id === c.id)
+              const onSheet = selectedComponents.find((s) => s.id === c.id)
+              const checked = !!onSheet
+              // Count what this parça carries ON THE SHEET once it is on it —
+              // the catalog is a shell on most projects ("0 satır") while the
+              // rows actually printed came from the saved sheet or from this
+              // form, and a picker saying 0 above a block showing rows reads
+              // as one of the two being wrong.
+              const rowCount = (onSheet ?? c).rows?.length ?? 0
               return (
                 <button
                   key={c.id}
@@ -192,7 +181,7 @@ export default function SpecSheetBody({
                     ? <CheckSquare className="h-4 w-4 shrink-0 text-primary" />
                     : <Square className="h-4 w-4 shrink-0 text-muted-foreground" />}
                   <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide">{c.component}</span>
-                  <span className="shrink-0 text-[10px] text-muted-foreground">{c.rows.length} satır</span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">{rowCount} satır</span>
                 </button>
               )
             })}
@@ -203,6 +192,31 @@ export default function SpecSheetBody({
             </p>
           )}
         </div>
+      )}
+
+      {/* One continuous sheet: the job name, the rows the user added, then
+          the fixed rows as its foot — all on the same block so every rule
+          between them is the same hairline and the form reads as one
+          document, not as sections stacked on top of each other. */}
+      {!showsComponentCards && (
+        <FormSheetBlock className="bg-muted/10">
+          <SheetRow label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={onChange} readOnly={systemRowReadOnly} />
+          {customRows.map((r, i) => (
+            <SheetSpecRow
+              key={r.id}
+              label={r.label}
+              value={r.value}
+              onLabelChange={(v) => onUpdateCustomRow(r.id, 'label', v)}
+              onValueChange={(v) => onUpdateCustomRow(r.id, 'value', v)}
+              onRemove={() => onRemoveCustomRow(r.id)}
+              onMoveUp={customRows.length > 1 && i > 0 ? () => onMoveCustomRow(r.id, -1) : null}
+              onMoveDown={customRows.length > 1 && i < customRows.length - 1 ? () => onMoveCustomRow(r.id, 1) : null}
+              readOnly={readOnly || (hasLivePageCount && isSayfaSayisiRow(r.label))}
+            />
+          ))}
+          {!readOnly && <SheetAddRow onClick={onAddCustomRow} />}
+          {fixedKunyeRows}
+        </FormSheetBlock>
       )}
 
       {/* Selected parçalar, stacked as blocks of the same sheet — one page

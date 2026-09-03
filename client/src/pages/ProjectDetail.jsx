@@ -48,8 +48,8 @@ export default function ProjectDetail() {
     user, isAssigned,
     setDialog, setProject, refetch,
     dialog, editOpen, setEditOpen, deleteOpen, setDeleteOpen, deleting,
-    ozalitFormOpen, setOzalitFormOpen, ozalitFormMode, ozalitFormAttempt, ozalitFormRound, ozalitFormSnapshot, ozalitFormNotify,
-    demoFormOpen, setDemoFormOpen, demoFormMode, demoFormAttempt, demoFormRound, demoFormSnapshot, demoFormNotify,
+    ozalitFormOpen, setOzalitFormOpen, ozalitFormMode, ozalitFormAttempt, ozalitFormRound, ozalitFormSnapshot, ozalitFormNotify, ozalitFormStartWork,
+    demoFormOpen, setDemoFormOpen, demoFormMode, demoFormAttempt, demoFormRound, demoFormSnapshot, demoFormNotify, demoFormStartWork,
     baskiOnayFormOpen, setBaskiOnayFormOpen, baskiOnayFormMode,
     ekranDemoRejectOpen, setEkranDemoRejectOpen,
     signOrder, setSignOrder, siparisBaskiOnayOrder, setSiparisBaskiOnayOrder,
@@ -191,13 +191,23 @@ export default function ProjectDetail() {
 
       <OzalitFormDialog
         open={ozalitFormOpen}
-        onOpenChange={(v) => { d.setOzalitFormOpen(v); if (!v) { d.setOzalitFormAttempt(null); d.setOzalitFormRound(null); d.setOzalitFormSnapshot(null); d.setOzalitFormNotify(false) } }}
+        onOpenChange={(v) => { d.setOzalitFormOpen(v); if (!v) { d.setOzalitFormAttempt(null); d.setOzalitFormRound(null); d.setOzalitFormSnapshot(null); d.setOzalitFormNotify(false); d.setOzalitFormStartWork(false) } }}
         project={project}
         mode={ozalitFormMode}
         viewAttempt={ozalitFormAttempt}
         viewAttemptLabel={ozalitFormRound}
         viewDemoId={ozalitFormSnapshot}
         notifyOnSave={ozalitFormNotify}
+        // Matbaa's "İşlemi Başlatın" opened this sheet: the footer stamps
+        // ozalit_started once they've read it. Closed only on success, so a
+        // failed stamp leaves them on the form with the error toast.
+        onStartWork={ozalitFormStartWork
+          ? async () => {
+            if (!await d.handleOzalitStart()) return
+            setOzalitFormOpen(false); d.setOzalitFormStartWork(false)
+          }
+          : undefined}
+        startingWork={d.startingWork}
         onDone={onActionDone}
       />
 
@@ -211,13 +221,21 @@ export default function ProjectDetail() {
 
       <DemoFormDialog
         open={demoFormOpen}
-        onOpenChange={(v) => { setDemoFormOpen(v); if (!v) { d.setDemoFormAttempt(null); d.setDemoFormRound(null); d.setDemoFormSnapshot(null); d.setDemoFormNotify(false) } }}
+        onOpenChange={(v) => { setDemoFormOpen(v); if (!v) { d.setDemoFormAttempt(null); d.setDemoFormRound(null); d.setDemoFormSnapshot(null); d.setDemoFormNotify(false); d.setDemoFormStartWork(false) } }}
         project={project}
         mode={demoFormMode}
         viewAttempt={demoFormAttempt}
         viewAttemptLabel={demoFormRound}
         viewDemoId={demoFormSnapshot}
         notifyOnSave={demoFormNotify}
+        // See the ozalit dialog above — same review-then-start gate.
+        onStartWork={demoFormStartWork
+          ? async () => {
+            if (!await d.handleDemoStart()) return
+            setDemoFormOpen(false); d.setDemoFormStartWork(false)
+          }
+          : undefined}
+        startingWork={d.startingWork}
         onDone={onActionDone}
       />
 

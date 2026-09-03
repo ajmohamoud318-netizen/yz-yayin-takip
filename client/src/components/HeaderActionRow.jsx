@@ -38,6 +38,7 @@ export default function HeaderActionRow({ d }) {
     respondingChange, processingEkranDemo, pendingRevize,
     setDialog, setTeslimConfirm,
     setDemoFormMode, setDemoFormAttempt, setDemoFormNotify, setDemoFormOpen,
+    setDemoFormStartWork, setOzalitFormStartWork,
     setOzalitFormMode, setOzalitFormAttempt, setOzalitFormNotify, setOzalitFormOpen,
     setBaskiOnayFormMode, setBaskiOnayFormOpen,
     setChangeRequestOpen, setEkranDemoRejectOpen,
@@ -94,21 +95,34 @@ export default function HeaderActionRow({ d }) {
           {advanceLabel}
         </Button>
       )}
-      {/* Matbaa "Başladım" — same lightweight confirm-dialog pattern as
-          MatbaaIsleri.jsx and Approvals.jsx. Opening the full Demo/Ozalit
-          Form dialog here used to make the ladder heavy: printer clicked
-          İşlemi Başlatın → the spec sheet popped up just to be dismissed
-          → they clicked it again inside to actually stamp the flag → then
-          the same form reopened on Teslim Edin. The form should only
-          appear once — at delivery. */}
+      {/* Matbaa "Başladım" — opens the spec sheet (read-only for the
+          printer) and the flag is stamped from its footer, never from a
+          bare confirm dialog. Whenever the matbaa is about to do work they
+          see the form first: once here, before they commit to producing
+          it, and again on Teslim Edin, which is what they hand over. Same
+          gate on MatbaaIsleri.jsx and Approvals.jsx. */}
       {canMarkDemoStarted(user, project) && (
-        <Button size="sm" onClick={() => setTeslimConfirm('demo-start')} disabled={startingWork}>
+        <Button
+          size="sm"
+          disabled={startingWork}
+          onClick={() => {
+            setDemoFormMode('view'); setDemoFormAttempt(null); setDemoFormNotify(false)
+            setDemoFormStartWork(true); setDemoFormOpen(true)
+          }}
+        >
           <CheckCircle2 className="h-4 w-4" />
           {startingWork ? 'İşleniyor…' : 'İşlemi Başlatın'}
         </Button>
       )}
       {canMarkOzalitStarted(user, project) && (
-        <Button size="sm" onClick={() => setTeslimConfirm('ozalit-start')} disabled={startingWork}>
+        <Button
+          size="sm"
+          disabled={startingWork}
+          onClick={() => {
+            setOzalitFormMode('view'); setOzalitFormAttempt(null); setOzalitFormNotify(false)
+            setOzalitFormStartWork(true); setOzalitFormOpen(true)
+          }}
+        >
           <CheckCircle2 className="h-4 w-4" />
           {startingWork ? 'İşleniyor…' : 'İşlemi Başlatın'}
         </Button>

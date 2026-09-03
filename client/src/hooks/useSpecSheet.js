@@ -5,6 +5,7 @@ import { getComponentsForProject, getComponentRows, primeProductInfoCache } from
 import { buildAdetRows, buildOrderAdetRows, loadOrderAdet } from '@/data/orderAdet'
 import { hasSpecContent, specWithDemoFallback } from '@/lib/spec-seed'
 import { resolveSayfaSayisiRows } from '@/lib/spec-form-resolve'
+import { hydrateComponent, inCatalogOrder } from '@/lib/spec-form-selection'
 import { liveTeslimat, withTeslimat } from '@/lib/teslimat'
 import { formatNumber } from '@/lib/utils'
 import { VARIANTS } from '@/lib/spec-form-variants'
@@ -71,6 +72,12 @@ export function useSpecSheet({
   // make, which is what lets a catalog that only arrives AFTER the load has
   // resolved still fill it in (see the adopt effect below).
   const selectionExplicit = useRef(false)
+  // Rows of parçalar taken OFF the sheet, kept so re-ticking one restores
+  // what the sheet knew rather than the catalog's usually-empty shell. See
+  // lib/spec-form-selection.js for why that matters (it is a save away from
+  // wiping the reçete). Reset on every load so one project's — or one
+  // round's — rows can never reappear on another's sheet.
+  const detachedRows = useRef(new Map())
 
   // Pull the authoritative spec from the server when the dialog opens. The
   // in-memory cache is normally primed at boot, but a project created on
@@ -103,6 +110,7 @@ export function useSpecSheet({
   useEffect(() => {
     if (!open || !project) return
     let cancelled = false
+    detachedRows.current = new Map()
 
     async function load() {
       setLiveAttemptNo(null)
@@ -331,6 +339,15 @@ export function useSpecSheet({
 
   /* ── Parça selection ──────────────────────────────────────────────────── */
 
+  // A parça joining the sheet, carrying the rows the sheet already knew about
+  // — a snapshot's, this session's edits, the resolved SAYFA SAYISI — and
+  // only falling back to the catalog's own rows (resolved the same way the
+  // load effect resolves them) for one that has never been on it.
+  const hydrate = (comp) => hydrateComponent(comp, {
+    remembered: detachedRows.current,
+    resolveRows: (rows) => resolveSayfaSayisiRows(rows, project),
+  })
+
   function toggleComponent(compId) {
     if (readOnly) return
     // From here on the selection is the user's, not the catalog's: a parça
@@ -338,7 +355,11 @@ export function useSpecSheet({
     selectionExplicit.current = true
     setSelectedComponents((prev) => {
       const exists = prev.find((c) => c.id === compId)
-      if (exists) return prev.filter((c) => c.id !== compId)
+      if (exists) {
+        // Remember its rows before it leaves the sheet (see detachedRows).
+        detachedRows.current.set(compId, exists.rows ?? [])
+        return prev.filter((c) => c.id !== compId)
+      }
       const fromCatalog = catalogComponents.find((c) => c.id === compId)
       if (!fromCatalog) return prev
       // Demo: İŞİN ADI is locked to the project title — never overwritten here.
@@ -346,13 +367,24 @@ export function useSpecSheet({
       if (variant.systemFieldsEditable && prev.length === 0) {
         setForm((f) => ({ ...f, isinAdi: fromCatalog.component }))
       }
-      return [...prev, fromCatalog]
+      // Catalog order, not tick order — the pages print in this order.
+      return inCatalogOrder([...prev, hydrate(fromCatalog)], catalogComponents)
     })
   }
   function selectAllComponents() {
     if (readOnly) return
     selectionExplicit.current = true
-    setSelectedComponents(catalogComponents)
+    setSelectedComponents((prev) => {
+      const onSheet = new Map(prev.map((c) => [c.id, c]))
+      return [
+        // A parça already on the sheet keeps the rows it has THERE; only the
+        // ones being added come from the catalog.
+        ...catalogComponents.map((c) => onSheet.get(c.id) ?? hydrate(c)),
+        // …and one the catalog no longer lists stays on the sheet instead of
+        // being dropped by a button that says "Tümünü Seç".
+        ...prev.filter((c) => !catalogComponents.some((k) => k.id === c.id)),
+      ]
+    })
     if (variant.systemFieldsEditable && catalogComponents[0]) {
       setForm((f) => ({ ...f, isinAdi: catalogComponents[0].component }))
     }
@@ -360,7 +392,12 @@ export function useSpecSheet({
   function clearComponents() {
     if (readOnly) return
     selectionExplicit.current = true
-    setSelectedComponents([])
+    setSelectedComponents((prev) => {
+      // "Hiçbiri" is a selection, not a delete: keep every row so ticking the
+      // parça again brings the sheet back as it was.
+      for (const c of prev) detachedRows.current.set(c.id, c.rows ?? [])
+      return []
+    })
   }
 
   /* ── The sheet's own added rows ───────────────────────────────────────── */
