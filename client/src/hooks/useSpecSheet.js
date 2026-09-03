@@ -4,6 +4,7 @@ import api from '@/api'
 import { getComponentsForProject, getComponentRows, primeProductInfoCache } from '@/data/productCatalog'
 import { buildAdetRows, buildOrderAdetRows, loadOrderAdet } from '@/data/orderAdet'
 import { hasSpecContent, specWithDemoFallback } from '@/lib/spec-seed'
+import { resolveSayfaSayisiRows } from '@/lib/spec-form-resolve'
 import { liveTeslimat, withTeslimat } from '@/lib/teslimat'
 import { formatNumber } from '@/lib/utils'
 import { VARIANTS } from '@/lib/spec-form-variants'
@@ -212,7 +213,15 @@ export function useSpecSheet({
         if (cancelled) return
         spec = specWithDemoFallback(data, fromFallback)
       }
-      const savedRows = spec?.customRows ?? []
+      // Resolve the SAYFA SAYISI row to the project's live total_pages. The
+      // page count is owned by project düzenleme (the "Toplam iç sayfa"
+      // input under the İç Sayfalar subtask) and the spec form displays it
+      // read-only, so the resolver always honours the subtask whenever it
+      // carries a positive total — replacing 'auto', any stale value, and
+      // any accidental override alike. Without a live count, the row is
+      // user-owned and passes through verbatim. See
+      // lib/spec-form-resolve.js for the pure helper and its tests.
+      const savedRows = resolveSayfaSayisiRows(spec?.customRows ?? [], project)
       if (variant.kind === 'baski_onay') {
         // ADET gets its own top-of-sheet field here instead of living as a
         // buried custom row — that row never actually rendered or printed
@@ -266,7 +275,15 @@ export function useSpecSheet({
       // null means never explicitly set — default to all catalog components checked.
       // [] means the user intentionally cleared them — respect that.
       const savedComponents = spec?.selectedComponents ?? null
-      setSelectedComponents(savedComponents ?? catalogComponents)
+      const baseComponents = savedComponents ?? catalogComponents
+      // Each parça carries its own rows; resolve SAYFA SAYISI placeholders on
+      // those too (same 'auto' shell, same substitution rule). Editing a
+      // resolved row back to 'auto' would round-trip through the snapshot —
+      // handleUpdateComponentRow writes r.value verbatim — so this stays a
+      // read-time concern and never touches the underlying product_info.
+      setSelectedComponents(
+        baseComponents.map((c) => ({ ...c, rows: resolveSayfaSayisiRows(c.rows, project) })),
+      )
     }
 
     load()

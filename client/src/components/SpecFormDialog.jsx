@@ -502,7 +502,27 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // read-only mode or for projects without a catalog.
   async function persistCatalogEdits() {
     if (readOnly || !catalogComponents.length || !selectedComponents?.length) return
-    try { await saveEditedComponents(project.id, selectedComponents) } catch { /* non-blocking */ }
+    // The SAYFA SAYISI row is owned by project düzenleme (the "Toplam iç
+    // sayfa" input) — the spec form renders it read-only and the resolver
+    // has already filled it with the live total_pages. Round-tripping it
+    // back into product_info here would freeze whatever the current count
+    // happens to be and sever the live link: next time a designer adds or
+    // removes pages, the recipe would still print the old number. Strip it
+    // from the write so product_info keeps the seeded 'auto' placeholder
+    // and the resolver stays authoritative. Without İç Sayfalar on the
+    // project, the row is user-owned and goes through untouched.
+    const livePageCount = (project?.subtasks ?? []).some(
+      (s) => s.kind === 'pages' && Number(s.total_pages) > 0,
+    )
+    const componentsToSave = livePageCount
+      ? selectedComponents.map((c) => ({
+          ...c,
+          rows: (c.rows ?? []).filter(
+            (r) => String(r.label ?? '').trim().toUpperCase() !== 'SAYFA SAYISI',
+          ),
+        }))
+      : selectedComponents
+    try { await saveEditedComponents(project.id, componentsToSave) } catch { /* non-blocking */ }
   }
 
   /**

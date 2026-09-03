@@ -9,6 +9,7 @@ import {
   SheetRow,
   SheetSpecRow,
 } from '@/components/FormSheet'
+import { projectHasLivePageCount } from '@/lib/spec-form-resolve'
 
 /**
  * The spec sheet itself — the document half of SpecFormDialog (slice: client
@@ -53,6 +54,16 @@ export default function SpecSheetBody({
   // the sheet there is no one job name for the künye to carry, since each
   // block names its own.
   const showsComponentCards = hasCatalog && selectedComponents.length > 0
+  // The SAYFA SAYISI row is owned by project düzenleme (the "Toplam iç sayfa"
+  // input under the İç Sayfalar subtask). When the project carries a live
+  // count, the spec form displays it read-only — the resolver in
+  // useSpecSheet has already substituted the live total_pages for the row's
+  // value, and locking here prevents anyone from typing an override that
+  // would round-trip back into product_info on save and sever the live link.
+  // A project without İç Sayfalar (or with no pages yet) keeps the row user-
+  // owned and editable.
+  const hasLivePageCount = projectHasLivePageCount(project)
+  const isSayfaSayisiRow = (label) => String(label ?? '').trim().toUpperCase() === 'SAYFA SAYISI'
 
   /* The fixed rows — the ones the form always carries, whoever filled it in:
      stamps the form writes about itself (who asked, when, who delivered, who
@@ -132,7 +143,7 @@ export default function SpecSheetBody({
               onRemove={() => onRemoveCustomRow(r.id)}
               onMoveUp={customRows.length > 1 && i > 0 ? () => onMoveCustomRow(r.id, -1) : null}
               onMoveDown={customRows.length > 1 && i < customRows.length - 1 ? () => onMoveCustomRow(r.id, 1) : null}
-              readOnly={readOnly}
+              readOnly={readOnly || (hasLivePageCount && isSayfaSayisiRow(r.label))}
             />
           ))}
           {!readOnly && <SheetAddRow onClick={onAddCustomRow} />}
@@ -216,7 +227,7 @@ export default function SpecSheetBody({
                   onRemove={() => onRemoveComponentRow(c.id, r.id)}
                   onMoveUp={(c.rows ?? []).length > 1 && i > 0 ? () => onMoveComponentRow(c.id, r.id, -1) : null}
                   onMoveDown={(c.rows ?? []).length > 1 && i < (c.rows ?? []).length - 1 ? () => onMoveComponentRow(c.id, r.id, 1) : null}
-                  readOnly={readOnly}
+                  readOnly={readOnly || (hasLivePageCount && isSayfaSayisiRow(r.label))}
                 />
               ))}
               {!readOnly && <SheetAddRow onClick={() => onAddComponentRow(c.id)} />}
