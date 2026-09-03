@@ -64,10 +64,8 @@ export default function CommandPalette({ open, onOpenChange }) {
     if (open) {
       setQuery('')
       setHighlight(0)
-      // Focus the input once the dialog animation has settled; doing it
-      // immediately can race Radix's focus-trap and lose the caret.
-      const id = requestAnimationFrame(() => inputRef.current?.focus())
-      return () => cancelAnimationFrame(id)
+      // Focus is handled by DialogContent's onOpenAutoFocus below, so this
+      // effect is now state-only.
     }
     return undefined
   }, [open])
@@ -138,8 +136,15 @@ export default function CommandPalette({ open, onOpenChange }) {
       <DialogContent
         className="motion-pop left-[50%] top-[20%] max-w-xl translate-x-[-50] gap-0 overflow-hidden p-0 sm:top-[25%]"
         onOpenAutoFocus={(e) => {
-          // Let our rAF focus the input instead of Radix's first focusable.
+          // Focus the input SYNCHRONOUSLY here instead of via rAF.
+          // Radix applies aria-hidden="true" to siblings BEFORE firing
+          // onOpenAutoFocus, so the previously-focused page element (e.g.
+          // the "Yeni Proje" topbar button) sat inside an aria-hidden
+          // subtree for one frame — Chrome logged a "focused descendant of
+          // aria-hidden" warning for it. preventDefault keeps Radix from
+          // racing us with its own auto-focus.
           e.preventDefault()
+          inputRef.current?.focus()
         }}
       >
         <div className="flex items-center gap-2 border-b px-3">
