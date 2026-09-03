@@ -52,8 +52,15 @@ export default function SpecSheetBody({
   const hasCatalog = catalogComponents.length > 0
   // Parça blocks replace the single İŞİN ADI + custom-rows body: with them on
   // the sheet there is no one job name for the künye to carry, since each
-  // block names its own.
-  const showsComponentCards = hasCatalog && selectedComponents.length > 0
+  // block names its own (and prints as that sheet's İŞİN ADI — see
+  // specPrint.buildFormSheet).
+  //
+  // What the sheet CARRIES decides this, not what the catalog still lists: a
+  // saved snapshot keeps its parçalar even if the project's Ürün Bilgileri
+  // was emptied since, and openMultiPrint prints them from that same
+  // selection. Gating on the catalog too made such a sheet fall back to the
+  // İŞİN ADI + custom-rows body on screen while still printing parça pages.
+  const showsComponentCards = selectedComponents.length > 0
   // The SAYFA SAYISI row is owned by project düzenleme (the "Toplam iç sayfa"
   // input under the İç Sayfalar subtask). When the project carries a live
   // count, the spec form displays it read-only — the resolver in
@@ -263,6 +270,21 @@ export default function SpecSheetBody({
               ))}
               {!readOnly && <SheetAddRow onClick={() => onAddComponentRow(c.id)} />}
             </FormSheetBlock>
+            {/* …and its own künye, for the same reason the head is repeated:
+                each parça leaves the printer as a STANDALONE sheet, and the
+                Yazdır button gives every one of them the stamps (İSTEM /
+                TESLİM / ONAY — specPrint.buildFormSheet passes the same
+                künye to every sheet it builds). The browser's own print put
+                them on the last page only, so the KUTU sheet went to the
+                matbaa with no record of who asked for it or when. On screen
+                this stays a single document: one künye, at the foot. The
+                last parça is followed by that real foot, so it is skipped
+                here rather than printing two. */}
+            {ci < selectedComponents.length - 1 && (
+              <div className="hidden border-t bg-muted/10 print:block">
+                <FormSheetBlock className="border-b-0">{fixedKunyeRows}</FormSheetBlock>
+              </div>
+            )}
           </div>
         ))}
 
