@@ -110,6 +110,14 @@ export default function SubtaskCard({
                         onAssign={(pageIndex, assignedTo) =>
                           onPageAssign(s, pageIndex, assignedTo)
                         }
+                        // Surface the subtask-level "Revize Edin" CTA
+                        // inside the chip grid. Without this, a pages
+                        // subtask flagged during a demo rejection has
+                        // no UI affordance to clear needs_revize, so
+                        // the project sits at tasarim forever and the
+                        // resubmit button stays disabled.
+                        onRevize={onRevize}
+                        revizing={toggling === s.id}
                       />
                     </div>
                   )

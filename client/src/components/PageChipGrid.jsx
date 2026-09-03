@@ -54,6 +54,8 @@ export default function PageChipGrid({
   onPageClick,
   onPageRework,
   onAssign,
+  onRevize,
+  revizing = false,
 }) {
   const [myPagesOnly, setMyPagesOnly] = useState(false)
   const total = Number(subtask.total_pages ?? 0)
@@ -117,9 +119,22 @@ export default function PageChipGrid({
       flagged && 'border-amber-300 bg-amber-50/50 ring-1 ring-inset ring-amber-300/60',
     )}>
       {flagged && (
-        <div className="mb-2 flex items-center gap-1.5 rounded-md border border-amber-300/70 bg-amber-100/70 px-2 py-1 text-[11px] font-medium text-amber-800">
-          <AlertTriangle className="h-3 w-3 shrink-0" />
-          Demo revize edildi — sayfaları kontrol edin
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5 rounded-md border border-amber-300/70 bg-amber-100/70 px-2 py-1 text-[11px] font-medium text-amber-800">
+          <span className="inline-flex items-center gap-1.5">
+            <AlertTriangle className="h-3 w-3 shrink-0" />
+            Demo revize edildi — sayfaları kontrol edin
+          </span>
+          {canEdit && onRevize && (
+            <button
+              type="button"
+              data-testid="pages-subtask-revize"
+              onClick={() => onRevize(subtask)}
+              disabled={revizing}
+              className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
+            >
+              {revizing ? 'Kaydediliyor…' : 'Revize Edin'}
+            </button>
+          )}
         </div>
       )}
       <div className="flex flex-wrap items-center justify-between gap-2 pb-2">

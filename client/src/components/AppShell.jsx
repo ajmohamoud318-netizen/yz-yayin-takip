@@ -323,7 +323,17 @@ export default function AppShell() {
         </main>
       </div>
 
-      <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
+      <NewProjectDialog
+        open={newProjectOpen}
+        onOpenChange={setNewProjectOpen}
+        // Drop the leader straight onto the project they just created —
+        // their first job is to fill in the spec (Ürün Bilgileri) and
+        // assign work, and that's where ProjectDetail lands them. Without
+        // this they would stay on whichever page the + button was pressed
+        // on (usually the dashboard or year-plan) and have to hunt the new
+        // row down in the list.
+        onCreated={(project) => navigate(`/projects/${project.id}`)}
+      />
 
       {/* Install + notification opt-in, offered on open instead of hidden in
           the bell dropdown. Self-hiding once both are done — see SetupSheet. */}

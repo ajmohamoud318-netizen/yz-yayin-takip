@@ -342,3 +342,142 @@ describe('PageChipGrid — leader assign popover', () => {
     await unmount({ root, host })
   })
 })
+
+// ---------------------------------------------------------------------------
+// Regression: "Revize Edin" button on a pages subtask in revision
+// ---------------------------------------------------------------------------
+//
+// A team leader can flag a pages ("İç Sayfalar") subtask for revision when
+// rejecting a demo. Until this fix, PageChipGrid rendered the warning banner
+// but no way for the designer to clear `needs_revize`, so the project sat
+// at tasarim with the resubmit button permanently disabled. The button now
+// lives next to the banner and is wired to the parent's onRevize callback
+// — the same callback SubtaskCard already threads through to the
+// non-pages branch.
+describe('PageChipGrid — pages subtask revize affordance', () => {
+  beforeEach(() => {
+    document.body.replaceChildren()
+  })
+
+  function flaggedSubtask(over = {}) {
+    return buildSubtask({ needs_revize: true, is_done: true, ...over })
+  }
+
+  it('renders the "Revize Edin" button when flagged and editable', async () => {
+    const onRevize = vi.fn()
+    const { root, host } = render({
+      subtask: flaggedSubtask(),
+      canEdit: true,
+      flagged: true,
+      user: { id: 'u-aylin', role: 'designer' },
+      isLeader: false,
+      designers: DESIGNERS,
+      onPageClick: vi.fn(),
+      onPageRework: vi.fn(),
+      onAssign: vi.fn(),
+      onRevize,
+    })
+    const btn = host.querySelector('[data-testid="pages-subtask-revize"]')
+    expect(btn).not.toBeNull()
+    expect(btn.textContent.trim()).toBe('Revize Edin')
+    expect(btn.disabled).toBe(false)
+    await unmount({ root, host })
+  })
+
+  it('calls onRevize with the subtask when the button is clicked', async () => {
+    const onRevize = vi.fn()
+    const sub = flaggedSubtask()
+    const { root, host } = render({
+      subtask: sub,
+      canEdit: true,
+      flagged: true,
+      user: { id: 'u-aylin', role: 'designer' },
+      isLeader: false,
+      designers: DESIGNERS,
+      onPageClick: vi.fn(),
+      onPageRework: vi.fn(),
+      onAssign: vi.fn(),
+      onRevize,
+    })
+    const btn = host.querySelector('[data-testid="pages-subtask-revize"]')
+    await fireClick(btn)
+    expect(onRevize).toHaveBeenCalledTimes(1)
+    expect(onRevize).toHaveBeenCalledWith(sub)
+    await unmount({ root, host })
+  })
+
+  it('shows "Kaydediliyor…" and disables the button while revizing', async () => {
+    const onRevize = vi.fn()
+    const { root, host } = render({
+      subtask: flaggedSubtask(),
+      canEdit: true,
+      flagged: true,
+      revizing: true,
+      user: { id: 'u-aylin', role: 'designer' },
+      isLeader: false,
+      designers: DESIGNERS,
+      onPageClick: vi.fn(),
+      onPageRework: vi.fn(),
+      onAssign: vi.fn(),
+      onRevize,
+    })
+    const btn = host.querySelector('[data-testid="pages-subtask-revize"]')
+    expect(btn.textContent.trim()).toBe('Kaydediliyor…')
+    expect(btn.disabled).toBe(true)
+    await unmount({ root, host })
+  })
+
+  it('hides the button when canEdit is false', async () => {
+    const onRevize = vi.fn()
+    const { root, host } = render({
+      subtask: flaggedSubtask(),
+      canEdit: false,
+      flagged: true,
+      user: { id: 'u-aylin', role: 'designer' },
+      isLeader: false,
+      designers: DESIGNERS,
+      onPageClick: vi.fn(),
+      onPageRework: vi.fn(),
+      onAssign: vi.fn(),
+      onRevize,
+    })
+    expect(host.querySelector('[data-testid="pages-subtask-revize"]')).toBeNull()
+    await unmount({ root, host })
+  })
+
+  it('hides the button when the parent did not provide onRevize', async () => {
+    const { root, host } = render({
+      subtask: flaggedSubtask(),
+      canEdit: true,
+      flagged: true,
+      user: { id: 'u-aylin', role: 'designer' },
+      isLeader: false,
+      designers: DESIGNERS,
+      onPageClick: vi.fn(),
+      onPageRework: vi.fn(),
+      onAssign: vi.fn(),
+      // no onRevize → button must NOT render so legacy callers keep their
+      // pre-fix behaviour (banner-only, no action affordance)
+    })
+    expect(host.querySelector('[data-testid="pages-subtask-revize"]')).toBeNull()
+    await unmount({ root, host })
+  })
+
+  it('hides the button when the subtask is not flagged', async () => {
+    const onRevize = vi.fn()
+    const { root, host } = render({
+      subtask: buildSubtask(),
+      canEdit: true,
+      flagged: false,
+      user: { id: 'u-aylin', role: 'designer' },
+      isLeader: false,
+      designers: DESIGNERS,
+      onPageClick: vi.fn(),
+      onPageRework: vi.fn(),
+      onAssign: vi.fn(),
+      onRevize,
+    })
+    expect(host.querySelector('[data-testid="pages-subtask-revize"]')).toBeNull()
+    await unmount({ root, host })
+  })
+})

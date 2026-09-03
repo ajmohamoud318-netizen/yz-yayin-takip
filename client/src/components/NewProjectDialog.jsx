@@ -370,15 +370,21 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         saved = await api.updateProject(project.id, payload)
         updateOne(saved)
         toast.success('Proje güncellendi.')
-        onUpdated?.(saved)
       } else {
         saved = await api.createProject(payload)
         addOne(saved)
         toast.success('Proje oluşturuldu.')
-        onCreated?.(saved)
         reset()
       }
+      // Close the dialog BEFORE firing onCreated / onUpdated. The leader's
+      // `onCreated` handler (AppShell) navigates to /projects/:id — if we
+      // fired the callback first, the dialog's exit animation would briefly
+      // overlay the new detail page. Closing first lets the dialog dismiss
+      // cleanly while the route changes underneath, so the leader lands on
+      // the freshly created project with no flash of the form.
       onOpenChange(false)
+      if (isEdit) onUpdated?.(saved)
+      else onCreated?.(saved)
       // Auto-assign gesture fires once after the project is saved. Held in
       // state (`pagesBulkAssign`) until the save settles, then handed to the
       // bulk-assign route using the İç Sayfalar subtask id from the freshly
