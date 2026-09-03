@@ -23,6 +23,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  kilavuzComponentName,
+  kilavuzTemplateFields,
+  kutuComponentName,
+  kutuTemplateFields,
+} from '@/data/parcaTemplates'
 import { useAuth } from '@/hooks/useAuth'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { cn, initials } from '@/lib/utils'
@@ -77,34 +83,35 @@ function deriveInitialProductInfo(title, subtasks) {
     },
   ]
   // A parça is named after the product it belongs to, not after its type:
-  // the lead parça carries the project title as-is, and the siblings take it
-  // with the Turkish possessive — "Ringoo" → "Ringoo Kutusu" / "Ringoo
-  // Kılavuzu". A type-only name told the matbaa which KIND of sheet they were
-  // holding but not which JOB it belonged to, and every project in the
-  // catalog owned a parça by that same name. The kind tag below (and the
-  // badge it drives) is what says "this is the box" — the name says whose
-  // box it is.
+  // the lead parça carries the project title as-is and the siblings suffix it
+  // with the part — "Ringoo" → "Ringoo KUTU". A type-only name told the matbaa
+  // which KIND of sheet they were holding but not which JOB it belonged to,
+  // and every project in the catalog owned a parça by that same name. The kind
+  // tag below (and the badge it drives) is what says "this is the box" — the
+  // name says whose box it is.
   //
-  // Both suffixed names still infer their own kind from the name alone
-  // (KUTUSU contains KUTU, KILAVUZU contains KILAVUZ), so a row that reaches
-  // a reader without its `kind` — an offline cache, a legacy import — is
-  // still classified correctly.
+  // Both suffixed names still infer their own kind from the name alone, so a
+  // row that reaches a reader without its `kind` — an offline cache, a legacy
+  // import — is still classified correctly.
+  //
+  // Unlike the lead parça, both siblings have fields that are known before
+  // anyone opens them, so each lands seeded with the catalog's template for
+  // its kind (see data/parcaTemplates) — the labels down the left, every
+  // value blank — instead of an İŞİN ADI and nothing else.
   if (subtasks.kutu) {
-    const name = `${title.trim()} Kutusu`
     out.push({
-      component: name,
+      component: kutuComponentName(title),
       kind: 'kutu',
       date: '',
-      fields: [{ k: 'İŞİN ADI', v: name }],
+      fields: kutuTemplateFields(title),
     })
   }
   if (subtasks.kilavuz) {
-    const name = `${title.trim()} Kılavuzu`
     out.push({
-      component: name,
+      component: kilavuzComponentName(title),
       kind: 'kilavuz',
       date: '',
-      fields: [{ k: 'İŞİN ADI', v: name }],
+      fields: kilavuzTemplateFields(title),
     })
   }
   return out

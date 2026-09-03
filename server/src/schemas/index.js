@@ -504,12 +504,13 @@ const projectsCreate = {
       },
       // Optional: when the team leader picks the Kutu and/or Kılavuz
       // library subtasks in NewProjectDialog, the SPA derives a matching
-      // skeleton (the project title as the lead parça, plus "<title>
-      // Kutusu" / "<title> Kılavuzu") from the library and ships it here
-      // so the project lands on disk with its
-      // parça spec already attached. Reuses the same `productComponents`
-      // shape as PUT /product-info/:id so a leader who later edits the
-      // spec through Ürün Bilgileri sees the same fields.
+      // skeleton (the project title as the lead parça, plus "<title> KUTU"
+      // / "<title> KILAVUZ") from the library and ships it here so the
+      // project lands on disk with its parça spec already attached. Both
+      // siblings arrive carrying their template's field NAMES with empty
+      // values — `v` has no minLength for exactly that reason. Reuses the same
+      // `productComponents` shape as PUT /product-info/:id so a leader who
+      // later edits the spec through Ürün Bilgileri sees the same fields.
       productInfo: productComponents,
     },
   },

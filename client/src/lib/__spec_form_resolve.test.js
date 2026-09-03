@@ -90,6 +90,31 @@ describe('resolveSayfaSayisiRows', () => {
   })
 })
 
+describe('resolveSayfaSayisiRows — parça scoping', () => {
+  // The KILAVUZ template ships a SAYFA SAYISI row that counts the GUIDE's
+  // pages. Substituting the set's İç Sayfalar total into it (and locking the
+  // row, see SpecSheetBody) left a two-page guide claiming to be 32 pages.
+  const rows = [row('SETTEKİ KİTAP SAYISI', '1'), row('SAYFA SAYISI', '2')]
+
+  it('leaves a kılavuz parça to count its own pages', () => {
+    expect(resolveSayfaSayisiRows(rows, projectWith(32), 'kilavuz')).toEqual(rows)
+  })
+
+  it('leaves kutu and other siblings alone too', () => {
+    expect(resolveSayfaSayisiRows(rows, projectWith(32), 'kutu')).toEqual(rows)
+    expect(resolveSayfaSayisiRows(rows, projectWith(32), 'other')).toEqual(rows)
+  })
+
+  it('still substitutes on the main parça, and on a caller that names no kind', () => {
+    expect(resolveSayfaSayisiRows(rows, projectWith(32), 'main')[1].value).toBe('32')
+    expect(resolveSayfaSayisiRows(rows, projectWith(32))[1].value).toBe('32')
+  })
+
+  it('normalises a null row list for a sibling the same way it does for main', () => {
+    expect(resolveSayfaSayisiRows(null, projectWith(32), 'kilavuz')).toEqual([])
+  })
+})
+
 describe('projectHasLivePageCount', () => {
   it('is true when a pages subtask carries a positive total_pages', () => {
     expect(projectHasLivePageCount({ subtasks: [{ kind: 'pages', total_pages: 48 }] })).toBe(true)

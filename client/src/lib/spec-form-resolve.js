@@ -19,11 +19,22 @@ import { formatNumber } from '@/lib/utils'
  * passed through as-is, so a manual value survives and stays editable in the
  * spec form.
  *
+ * `kind` is the PARÇA this row belongs to, and only the `main` one is the
+ * product whose interior İç Sayfalar counts. A sibling's SAYFA SAYISI is its
+ * own: the KILAVUZ template ships that row because a guide is a small booklet
+ * with its own two or four pages, and substituting the set's 32 into it — then
+ * locking the row, see SpecSheetBody.hasLivePageCount — left the leader
+ * looking at a guide that claimed to be as long as the book and no way to say
+ * otherwise. Defaults to 'main' so the project-level sheet (no parça blocks,
+ * customRows only) keeps behaving exactly as before.
+ *
  * @param {Array<{label?: string, value?: any}>} rows
  * @param {{ subtasks?: Array<{ kind?: string, total_pages?: number|string }> } | null | undefined} project
+ * @param {'main'|'kutu'|'kilavuz'|'other'} [kind]
  * @returns {Array<{label?: string, value?: any}>}
  */
-export function resolveSayfaSayisiRows(rows, project) {
+export function resolveSayfaSayisiRows(rows, project, kind = 'main') {
+  if (kind !== 'main') return rows ?? []
   const pagesSubtask = (project?.subtasks ?? []).find((s) => s.kind === 'pages')
   const pagesTotal = pagesSubtask && Number(pagesSubtask.total_pages) > 0
     ? Number(pagesSubtask.total_pages)
@@ -47,6 +58,10 @@ export function resolveSayfaSayisiRows(rows, project) {
 /**
  * Whether the project has a live page count that should drive the SAYFA SAYISI
  * row. True iff there is a pages subtask with a positive total_pages.
+ *
+ * Callers must still check the parça: this answers a question about the
+ * PROJECT, and only the `main` parça's SAYFA SAYISI is the count it describes
+ * (see resolveSayfaSayisiRows above).
  */
 export function projectHasLivePageCount(project) {
   return (project?.subtasks ?? []).some(

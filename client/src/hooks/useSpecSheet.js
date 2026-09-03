@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import api from '@/api'
 import { getComponentsForProject, getComponentRows, primeProductInfoCache } from '@/data/productCatalog'
+import { parcaKind } from '@/data/parcaTemplates'
 import { buildAdetRows, buildOrderAdetRows, loadOrderAdet } from '@/data/orderAdet'
 import { hasSpecContent, specWithDemoFallback } from '@/lib/spec-seed'
 import { resolveSayfaSayisiRows } from '@/lib/spec-form-resolve'
@@ -101,6 +102,10 @@ export function useSpecSheet({
     () => getComponentsForProject(project?.id).map((c) => ({
       id: c.component,                 // component name is the stable id
       component: c.component,
+      // Carried so the leader's own tag (the Parça türü dropdown in Ürün
+      // Bilgileri) outranks what the name would imply — a sticker sheet
+      // deliberately tagged `kilavuz` has to be read as one here too.
+      kind: parcaKind(c),
       rows: getComponentRows(c),
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -299,8 +304,13 @@ export function useSpecSheet({
       // resolved row back to 'auto' would round-trip through the snapshot —
       // handleUpdateComponentRow writes r.value verbatim — so this stays a
       // read-time concern and never touches the underlying product_info.
+      //
+      // The parça's own kind decides whether it is substituted at all: a
+      // KILAVUZ counts its own pages, not the book's. `parcaKind` falls back
+      // to the name for a snapshot saved before the field existed, so an old
+      // sheet classifies the same way a fresh one does.
       setSelectedComponents(
-        baseComponents.map((c) => ({ ...c, rows: resolveSayfaSayisiRows(c.rows, project) })),
+        baseComponents.map((c) => ({ ...c, rows: resolveSayfaSayisiRows(c.rows, project, parcaKind(c)) })),
       )
     }
 
@@ -332,7 +342,7 @@ export function useSpecSheet({
     setSelectedComponents((prev) => (
       prev.length > 0
         ? prev
-        : catalogComponents.map((c) => ({ ...c, rows: resolveSayfaSayisiRows(c.rows, project) }))
+        : catalogComponents.map((c) => ({ ...c, rows: resolveSayfaSayisiRows(c.rows, project, parcaKind(c)) }))
     ))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, catalogComponents])
@@ -345,7 +355,7 @@ export function useSpecSheet({
   // load effect resolves them) for one that has never been on it.
   const hydrate = (comp) => hydrateComponent(comp, {
     remembered: detachedRows.current,
-    resolveRows: (rows) => resolveSayfaSayisiRows(rows, project),
+    resolveRows: (rows) => resolveSayfaSayisiRows(rows, project, parcaKind(comp)),
   })
 
   function toggleComponent(compId) {

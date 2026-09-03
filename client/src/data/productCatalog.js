@@ -14,6 +14,7 @@
 // `hydrateProductInfo()` fills the cache from the server ahead of time and
 // pre-loads the JSON seed so synchronous reads can fall back to it.
 import api from '@/api'
+import { inferParcaKind } from '@/data/parcaTemplates'
 
 // Lazy-loaded seed data — starts empty, populated by loadSeed() during
 // hydrateProductInfo(). Replaces the old static import of productInfo.js.
@@ -27,22 +28,15 @@ export function getSeedData() {
 const LS_KEY = 'yz_product_info_overrides_v1'
 const clone = (x) => JSON.parse(JSON.stringify(x ?? []))
 
-// Mirror of server/src/services/product-info-capture.js#inferComponentKind.
-// Used to backfill `kind` on rows that came from localStorage / the offline
-// JSON seed (both predate the field). The server backfills on read, but
-// those code paths can still hand us an untagged row when the client is
-// offline or before hydrate has settled.
-const _up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
-function _inferKind(name) {
-  const upper = _up(name)
-  if (!upper) return 'main'
-  if (upper.includes('KILAVUZ')) return 'kilavuz'
-  if (upper.includes('KUTU')) return 'kutu'
-  return 'main'
-}
+// Backfill `kind` on rows that came from localStorage / the offline JSON seed
+// (both predate the field). The server backfills on read, but those code paths
+// can still hand us an untagged row when the client is offline or before
+// hydrate has settled. The rule itself lives in data/parcaTemplates so this,
+// components/SpecSheet and the spec form can never disagree about what a
+// given parça is.
 function _withKind(comps) {
   if (!Array.isArray(comps)) return []
-  return comps.map((c) => (c && typeof c === 'object' && c.kind) ? c : { ...c, kind: _inferKind(c?.component) })
+  return comps.map((c) => (c && typeof c === 'object' && c.kind) ? c : { ...c, kind: inferParcaKind(c?.component) })
 }
 
 // projectId -> components[]. Primed from the server by hydrateProductInfo().
@@ -215,15 +209,24 @@ export function getComponentRows(component) {
   const rows = []
   let i = 0
   for (const f of component.fields ?? []) {
-    if (!f || !f.v) continue
+    if (!f) continue
+    // A row earns its place with a LABEL or a value, not with a value alone.
+    // Requiring the value dropped every field a parça declares but nobody has
+    // filled in yet — the KUTU template's four rows, the Ana Parça's seeded
+    // ADET / EBAT — so a freshly created project opened its demo form with an
+    // empty parça block and the leader retyped the field names the seed had
+    // just written. saveEditedComponents keeps label-only rows on the way back
+    // out, so this is the read side finally agreeing with the write side.
+    // Genuinely blank rows (both halves empty) are still skipped.
+    if (!String(f.k ?? '').trim() && !String(f.v ?? '').trim()) continue
     // İŞİN ADI is the component's title — the caller renders it as the header,
     // so it must not also appear as a spec row (that duplicated it on the
     // printed sheet and in the on-screen cards).
     if (String(f.k ?? '').toLocaleUpperCase('tr-TR') === 'İŞİN ADI') continue
     rows.push({
       id: `seed-${i++}-${Math.random().toString(36).slice(2, 8)}`,
-      label: f.k,
-      value: f.v,
+      label: f.k ?? '',
+      value: f.v ?? '',
     })
   }
   return rows

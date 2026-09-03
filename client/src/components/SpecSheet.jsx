@@ -1,4 +1,5 @@
-import { Box, BookOpen, GraduationCap, Layers, Plus, X } from 'lucide-react'
+import { Box, BookOpen, ChevronDown, ChevronUp, GraduationCap, Layers, Plus, X } from 'lucide-react'
+import { parcaKind } from '@/data/parcaTemplates'
 import { cn } from '@/lib/utils'
 
 const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
@@ -17,7 +18,7 @@ const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
 // tell Kutu from Kılavuz from a generic parça at a glance.
 //
 // The labels name the PART, not the document: the parça is already called
-// "<ürün> Kutusu" (NewProjectDialog#deriveInitialProductInfo), so a chip
+// "<ürün> KUTU" (NewProjectDialog#deriveInitialProductInfo), so a chip
 // reading "Kutu Reçetesi" next to it said the same word twice and called the
 // thing a reçete on a sheet that is a form.
 const KIND_META = {
@@ -29,14 +30,10 @@ const KIND_META = {
 
 /** Resolve a component's `kind` — defaults to `main` for legacy rows that
  *  haven't been backfilled yet (the server does this on read, but offline /
- *  localStorage-only caches can still hand us an untagged row). */
-export function resolveKind(comp) {
-  if (comp && KIND_META[comp.kind]) return comp.kind
-  const upper = up(comp?.component)
-  if (upper.includes('KILAVUZ')) return 'kilavuz'
-  if (upper.includes('KUTU')) return 'kutu'
-  return 'main'
-}
+ *  localStorage-only caches can still hand us an untagged row). One rule,
+ *  in data/parcaTemplates, so the badge on this card and the spec form's
+ *  own reading of the same parça can never diverge. */
+export const resolveKind = parcaKind
 
 /**
  * Inline kind badge — same chip the SpecSheet header renders, exposed for
@@ -59,14 +56,22 @@ export function SheetRow({ label, value }) {
   return (
     <div className="grid grid-cols-[minmax(6.5rem,10rem)_1fr] gap-x-4 px-4 py-2.5 transition-colors hover:bg-primary/[0.025]">
       <dt className="pt-px text-[11px] font-semibold uppercase leading-snug tracking-wide text-muted-foreground">{up(label)}</dt>
-      <dd className="whitespace-pre-wrap text-[13px] font-medium leading-snug text-foreground tabular-nums">{value}</dd>
+      {/* A declared-but-empty field is content: the KUTU template puts its
+          four labels on a new box with nothing beside them yet, and hiding the
+          value half would leave a row that looks broken rather than unfilled. */}
+      <dd className="whitespace-pre-wrap text-[13px] font-medium leading-snug text-foreground tabular-nums">
+        {value || <span className="text-muted-foreground/50">—</span>}
+      </dd>
     </div>
   )
 }
 
 /* ---------- read-only component spec sheet ---------- */
 export function SpecSheet({ comp }) {
-  const fields = (comp.fields ?? []).filter((f) => f.v)
+  // A row survives on a label alone — the template's unfilled fields are what
+  // the leader is meant to see and go fill in. Only rows with neither half
+  // (a "Satır Ekle" nobody typed into) are dropped.
+  const fields = (comp.fields ?? []).filter((f) => String(f?.k ?? '').trim() || String(f?.v ?? '').trim())
   const kind = resolveKind(comp)
   // The main recipe doesn't get a badge — the card header already labels it
   // as the lead; a pill would just be visual noise on the most common case.
@@ -96,9 +101,24 @@ export function SpecSheet({ comp }) {
 
 /* ---------- editable spec row ---------- */
 const cellInput = 'w-full bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/50'
-export function EditableSheetRow({ label, value, onLabel, onValue, onRemove }) {
+const ROW_TOOL_BTN = 'grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground/60 transition active:scale-90 disabled:pointer-events-none disabled:opacity-25 print:hidden'
+
+/**
+ * `onMoveUp` / `onMoveDown` reorder the row; a row at either end passes null
+ * for the direction it cannot go and that arrow renders disabled rather than
+ * disappearing, so every row keeps the same tool width and the value column
+ * does not jitter as rows move. Same treatment as the demo/ozalit form's
+ * SheetSpecRow (components/FormSheet.jsx) — the two editors sit over the same
+ * product_info rows, so reordering has to be possible in both.
+ *
+ * The tools are always visible. They used to fade in on `group-hover`, which
+ * on a phone — where this app is actually used — meant no visible way to
+ * delete a row at all.
+ */
+export function EditableSheetRow({ label, value, onLabel, onValue, onRemove, onMoveUp, onMoveDown }) {
+  const canReorder = Boolean(onMoveUp || onMoveDown)   // a lone row has nowhere to go
   return (
-    <div className="group/row grid grid-cols-[minmax(6.5rem,10rem)_1fr_auto] items-center gap-x-3 px-4 py-1.5 transition-colors hover:bg-primary/[0.025]">
+    <div className="grid grid-cols-[minmax(6.5rem,10rem)_1fr_auto] items-center gap-x-3 px-4 py-1.5 transition-colors hover:bg-primary/[0.025]">
       <input
         value={label}
         onChange={(e) => onLabel(e.target.value)}
@@ -113,14 +133,38 @@ export function EditableSheetRow({ label, value, onLabel, onValue, onRemove }) {
         aria-label="Alan değeri"
         className={cn(cellInput, 'font-medium text-foreground')}
       />
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label="Satırı sil"
-        className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground/50 opacity-0 transition active:scale-90 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100 print:hidden"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
+      <div className="flex items-center print:hidden">
+        {canReorder && (
+          <>
+            <button
+              type="button"
+              onClick={onMoveUp ?? undefined}
+              disabled={!onMoveUp}
+              aria-label="Satırı yukarı taşıyın"
+              className={cn(ROW_TOOL_BTN, 'hover:bg-primary/10 hover:text-foreground')}
+            >
+              <ChevronUp className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onMoveDown ?? undefined}
+              disabled={!onMoveDown}
+              aria-label="Satırı aşağı taşıyın"
+              className={cn(ROW_TOOL_BTN, 'hover:bg-primary/10 hover:text-foreground')}
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="Satırı sil"
+          className={cn(ROW_TOOL_BTN, 'hover:bg-destructive/10 hover:text-destructive')}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   )
 }
@@ -131,6 +175,18 @@ export function EditableSpecSheet({ comp, onChange }) {
   const setField = (i, patch) => onChange({ ...comp, fields: fields.map((f, idx) => (idx === i ? { ...f, ...patch } : f)) })
   const addField = () => onChange({ ...comp, fields: [...fields, { k: '', v: '' }] })
   const removeField = (i) => onChange({ ...comp, fields: fields.filter((_, idx) => idx !== i) })
+  // Order is meaning on a sheet the matbaa reads top to bottom — the KUTU
+  // template lands as EBAT → ÜST KAĞIT → ALT KAĞIT → LAMİNASYON and a leader
+  // who adds a row (or seeds one from a different template) has to be able to
+  // put it where it belongs instead of only at the end.
+  const moveField = (i, dir) => {
+    const to = i + dir
+    if (to < 0 || to >= fields.length) return
+    const next = [...fields]
+    const [row] = next.splice(i, 1)
+    next.splice(to, 0, row)
+    onChange({ ...comp, fields: next })
+  }
   const kind = resolveKind(comp)
   const KindIcon = KIND_META[kind].icon
 
@@ -173,6 +229,8 @@ export function EditableSpecSheet({ comp, onChange }) {
             onLabel={(v) => setField(i, { k: v })}
             onValue={(v) => setField(i, { v })}
             onRemove={() => removeField(i)}
+            onMoveUp={fields.length > 1 && i > 0 ? () => moveField(i, -1) : null}
+            onMoveDown={fields.length > 1 && i < fields.length - 1 ? () => moveField(i, 1) : null}
           />
         ))}
       </dl>

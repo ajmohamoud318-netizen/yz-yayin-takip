@@ -9,6 +9,7 @@ import {
   SheetRow,
   SheetSpecRow,
 } from '@/components/FormSheet'
+import { parcaKind } from '@/data/parcaTemplates'
 import { projectHasLivePageCount } from '@/lib/spec-form-resolve'
 
 /**
@@ -69,7 +70,13 @@ export default function SpecSheetBody({
   // would round-trip back into product_info on save and sever the live link.
   // A project without İç Sayfalar (or with no pages yet) keeps the row user-
   // owned and editable.
+  //
+  // The lock follows the substitution, so it is scoped the same way: only the
+  // `main` parça's SAYFA SAYISI is the count İç Sayfalar owns. A KILAVUZ has
+  // its own — two pages inside a 32-page set — and locking that row left it
+  // showing the book's number with no way to correct it.
   const hasLivePageCount = projectHasLivePageCount(project)
+  const livePageCountLocks = (comp) => hasLivePageCount && parcaKind(comp) === 'main'
   const isSayfaSayisiRow = (label) => String(label ?? '').trim().toUpperCase() === 'SAYFA SAYISI'
 
   /* The fixed rows — the ones the form always carries, whoever filled it in:
@@ -265,7 +272,7 @@ export default function SpecSheetBody({
                   onRemove={() => onRemoveComponentRow(c.id, r.id)}
                   onMoveUp={(c.rows ?? []).length > 1 && i > 0 ? () => onMoveComponentRow(c.id, r.id, -1) : null}
                   onMoveDown={(c.rows ?? []).length > 1 && i < (c.rows ?? []).length - 1 ? () => onMoveComponentRow(c.id, r.id, 1) : null}
-                  readOnly={readOnly || (hasLivePageCount && isSayfaSayisiRow(r.label))}
+                  readOnly={readOnly || (livePageCountLocks(c) && isSayfaSayisiRow(r.label))}
                 />
               ))}
               {!readOnly && <SheetAddRow onClick={() => onAddComponentRow(c.id)} />}
