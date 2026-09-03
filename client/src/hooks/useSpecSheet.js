@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import api from '@/api'
 import { getComponentsForProject, getComponentRows, primeProductInfoCache } from '@/data/productCatalog'
@@ -65,6 +65,12 @@ export function useSpecSheet({
   // Bumped once the server spec has been fetched for this project, so the
   // catalog memo below recomputes with fresh data even on a cold cache.
   const [catalogVersion, setCatalogVersion] = useState(0)
+  // Whether the parça selection on screen was decided by anything other than
+  // the catalog default — a snapshot that recorded one, or the user touching
+  // the picker. While this is false the selection is still the catalog's to
+  // make, which is what lets a catalog that only arrives AFTER the load has
+  // resolved still fill it in (see the adopt effect below).
+  const selectionExplicit = useRef(false)
 
   // Pull the authoritative spec from the server when the dialog opens. The
   // in-memory cache is normally primed at boot, but a project created on
@@ -119,6 +125,9 @@ export function useSpecSheet({
           )
           : emptyForm(variant, project, user))
         setCustomRows(snap?.customRows ?? [])
+        // History shows the sheet as it was saved: whatever parçalar that
+        // snapshot carried, and no others. Never the catalog's default.
+        selectionExplicit.current = true
         setSelectedComponents(snap?.selectedComponents ?? [])
         return
       }
@@ -275,6 +284,7 @@ export function useSpecSheet({
       // null means never explicitly set — default to all catalog components checked.
       // [] means the user intentionally cleared them — respect that.
       const savedComponents = spec?.selectedComponents ?? null
+      selectionExplicit.current = savedComponents !== null
       const baseComponents = savedComponents ?? catalogComponents
       // Each parça carries its own rows; resolve SAYFA SAYISI placeholders on
       // those too (same 'auto' shell, same substitution rule). Editing a
@@ -294,10 +304,38 @@ export function useSpecSheet({
     // the same value.
   }, [open, scopeId, viewAttempt, viewDemoId])
 
+  // The catalog can arrive AFTER the load above has resolved. A project
+  // created moments ago isn't in the product-info cache: that cache is primed
+  // by the projects refetch (useProjectsStore), and creating a project merges
+  // the new row into the store without refetching, so the server-seeded
+  // product_info never reaches this browser until a reload. The load then ran
+  // with an empty catalog and selected nothing — and its deps deliberately
+  // exclude catalogComponents, because re-running the whole load would throw
+  // away every edit made since the dialog opened.
+  //
+  // So adopt the default here instead: only while the selection is still the
+  // catalog's to make, and only when nothing is selected yet, so a user's own
+  // deselection stands. Without this, the first demo form opened on a
+  // brand-new project came up with every parça UNCHECKED and fell back to the
+  // single İŞİN ADI body — the leader had to tick the parçalar the project
+  // was just created with.
+  useEffect(() => {
+    if (!open || selectionExplicit.current || catalogComponents.length === 0) return
+    setSelectedComponents((prev) => (
+      prev.length > 0
+        ? prev
+        : catalogComponents.map((c) => ({ ...c, rows: resolveSayfaSayisiRows(c.rows, project) }))
+    ))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, catalogComponents])
+
   /* ── Parça selection ──────────────────────────────────────────────────── */
 
   function toggleComponent(compId) {
     if (readOnly) return
+    // From here on the selection is the user's, not the catalog's: a parça
+    // they unticked must not come back when the catalog settles.
+    selectionExplicit.current = true
     setSelectedComponents((prev) => {
       const exists = prev.find((c) => c.id === compId)
       if (exists) return prev.filter((c) => c.id !== compId)
@@ -313,6 +351,7 @@ export function useSpecSheet({
   }
   function selectAllComponents() {
     if (readOnly) return
+    selectionExplicit.current = true
     setSelectedComponents(catalogComponents)
     if (variant.systemFieldsEditable && catalogComponents[0]) {
       setForm((f) => ({ ...f, isinAdi: catalogComponents[0].component }))
@@ -320,6 +359,7 @@ export function useSpecSheet({
   }
   function clearComponents() {
     if (readOnly) return
+    selectionExplicit.current = true
     setSelectedComponents([])
   }
 

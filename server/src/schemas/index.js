@@ -504,7 +504,7 @@ const projectsCreate = {
       },
       // Optional: when the team leader picks the Kutu and/or Kılavuz
       // library subtasks in NewProjectDialog, the SPA derives a matching
-      // skeleton (the project title as the ana reçete, plus "<title>
+      // skeleton (the project title as the lead parça, plus "<title>
       // Kutusu" / "<title> Kılavuzu") from the library and ships it here
       // so the project lands on disk with its
       // parça spec already attached. Reuses the same `productComponents`

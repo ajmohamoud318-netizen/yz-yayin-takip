@@ -12,13 +12,18 @@ const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
  */
 
 // Structured `kind` → human label + Tailwind classes for the badge.
-// `main` is the lead recipe (no badge by default — its position in the card
+// `main` is the lead parça (no badge by default — its position in the card
 // already says it's the primary); siblings render a small pill so the UI can
 // tell Kutu from Kılavuz from a generic parça at a glance.
+//
+// The labels name the PART, not the document: the parça is already called
+// "<ürün> Kutusu" (NewProjectDialog#deriveInitialProductInfo), so a chip
+// reading "Kutu Reçetesi" next to it said the same word twice and called the
+// thing a reçete on a sheet that is a form.
 const KIND_META = {
-  main:    { label: 'Ana Reçete', icon: BookOpen,       cls: 'bg-primary/10 text-primary ring-primary/20' },
-  kutu:    { label: 'Kutu Reçetesi', icon: Box,         cls: 'bg-amber-50 text-amber-700 ring-amber-600/20' },
-  kilavuz: { label: 'Kılavuz Reçetesi', icon: GraduationCap, cls: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' },
+  main:    { label: 'Ana Parça', icon: BookOpen,        cls: 'bg-primary/10 text-primary ring-primary/20' },
+  kutu:    { label: 'Kutu', icon: Box,                  cls: 'bg-amber-50 text-amber-700 ring-amber-600/20' },
+  kilavuz: { label: 'Kılavuz', icon: GraduationCap,     cls: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20' },
   other:   { label: 'Parça', icon: Layers,              cls: 'bg-muted text-muted-foreground ring-border' },
 }
 
@@ -152,9 +157,9 @@ export function EditableSpecSheet({ comp, onChange }) {
             onChange={(e) => onChange({ ...comp, kind: e.target.value })}
             className="bg-transparent text-[11px] font-semibold uppercase tracking-wide text-foreground outline-none"
           >
-            <option value="main">Ana Reçete</option>
-            <option value="kutu">Kutu Reçetesi</option>
-            <option value="kilavuz">Kılavuz Reçetesi</option>
+            <option value="main">Ana Parça</option>
+            <option value="kutu">Kutu</option>
+            <option value="kilavuz">Kılavuz</option>
             <option value="other">Parça</option>
           </select>
         </label>

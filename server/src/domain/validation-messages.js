@@ -170,9 +170,9 @@ const ENUM_LABELS = {
     check: 'Kontrol',
     pages: 'Sayfalar',
     'sticker-count': 'Sticker',
-    main: 'Ana Reçete',
-    kutu: 'Kutu Reçetesi',
-    kilavuz: 'Kılavuz Reçetesi',
+    main: 'Ana Parça',
+    kutu: 'Kutu',
+    kilavuz: 'Kılavuz',
     other: 'Diğer',
   },
   status: {
