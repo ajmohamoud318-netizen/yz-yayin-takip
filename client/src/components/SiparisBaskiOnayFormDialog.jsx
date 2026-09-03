@@ -286,31 +286,38 @@ export default function SiparisBaskiOnayFormDialog({
     <FormSheet>
       <FormSheetHead title="Baskı Onay Formu" subtitle={bookTitle} icon={ShoppingCart} />
 
-      {/* One block per parça — each of these prints as its own sheet. A
-          product whose catalog hasn't loaded still gets one block (see the
-          load effect), so this empty state is the no-order case only. */}
+      {/* One card per parça — each of these prints as its own sheet, and side
+          by side on screen so the count is simply visible (same layout and the
+          same reasons as the project-side sheet, SpecSheetBody). A product
+          whose catalog hasn't loaded still gets one block (see the load
+          effect), so this empty state is the no-order case only. */}
       {components.length === 0 ? (
         <p className="px-4 py-4 text-center text-xs text-muted-foreground">Bu ürün için bilgi yok.</p>
       ) : (
-        components.map((c, ci) => (
-          <div key={c.id ?? c.component} className="border-b last:border-b-0">
-            <FormSheetBlock className="border-b-0">
+        <div className="grid grid-cols-1 gap-3 border-b bg-muted/20 p-3 sm:grid-cols-2 print:block print:gap-0 print:border-0 print:bg-transparent print:p-0">
+        {components.map((c, ci) => (
+          <div key={c.id ?? c.component} className="overflow-hidden rounded-lg border bg-white print:rounded-none print:border-0">
+            {/* Its own block so the tint runs edge to edge inside the card
+                without negative margins knocking the row's columns out of
+                line with the ones below — see SpecSheetBody. */}
+            <FormSheetBlock className="bg-muted/40 px-3 print:bg-transparent">
               {/* Named by its own İŞİN ADI row, the way it prints and the way
-                  the project-side sheet does it (SpecSheetBody). Read-only:
-                  the parça's name is its identity, edited in Ürün Bilgileri.
-                  Tinted, and marked "PARÇA n/N", so blocks scrolling as one
-                  document still read as the separate sheets they print as. */}
+                  the project-side sheet does it. Read-only: the parça's name
+                  is its identity, edited in Ürün Bilgileri. */}
               <SheetRow
                 label="İŞİN ADI"
                 value={c.component}
                 readOnly
-                className="bg-muted/40 font-semibold print:bg-transparent print:font-normal"
+                className="font-semibold print:font-normal"
                 badge={components.length > 1 ? (
-                  <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground ring-1 ring-border">
+                  // Stacked only; side by side the cards speak for themselves.
+                  <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground ring-1 ring-border sm:hidden">
                     Parça {ci + 1}/{components.length}
                   </span>
                 ) : null}
               />
+            </FormSheetBlock>
+            <FormSheetBlock className="border-b-0 px-3">
               {c.rows.map((r, ri) => (
                 <SheetSpecRow
                   key={r.id ?? ri}
@@ -334,7 +341,8 @@ export default function SiparisBaskiOnayFormDialog({
               )}
             </FormSheetBlock>
           </div>
-        ))
+        ))}
+        </div>
       )}
 
       {/* Künye — the four fields the matbaa actually prints from, plus the

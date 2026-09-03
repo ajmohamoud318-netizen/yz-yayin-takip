@@ -236,14 +236,41 @@ export default function SpecSheetBody({
         </FormSheetBlock>
       )}
 
-      {/* Selected parçalar, stacked as blocks of the same sheet — one page
-          each on paper, scrolled as one continuous document on screen. Edits
-          here flow back to Ürün Bilgileri on save. With no catalog, or
+      {/* The editor learns this from the picker's own line ("… 3 ayrı form
+          oluşturulur"), which is part of an editing control and so never
+          renders for the matbaa — the one reader who has to know how many
+          sheets are coming. Same fact, in the same place, for them. */}
+      {showsComponentCards && readOnly && selectedComponents.length > 1 && (
+        <p className="border-b bg-muted/20 px-4 py-2 text-center text-[10px] text-muted-foreground print:hidden">
+          Bu form <strong>{selectedComponents.length}</strong> parçadan oluşur — her parça kendi sayfasında basılır.
+        </p>
+      )}
+
+      {/* Selected parçalar — one page each on paper, side by side on screen.
+          Edits here flow back to Ürün Bilgileri on save. With no catalog, or
           nothing selected, there are no parça blocks and the added rows above
-          are the sheet's whole spec. */}
-      {showsComponentCards &&
-        selectedComponents.map((c, ci) => (
-          <div key={c.id} className="border-b last:border-b-0" {...(ci > 0 ? { 'data-print-page': '' } : {})}>
+          are the sheet's whole spec.
+
+          They used to stack, and a matbaa opening a three-parça sheet read one
+          long column of rows under identical hairlines with no way to tell
+          whether they were holding one job or three. Beside each other, the
+          count is simply visible. Two columns and no more: this dialog is
+          max-w-2xl, so a third would leave each card near 200px and fold
+          "SETTEKİ KİTAP SAYISI" into four lines. One column below `sm`, since
+          this app is used on phones first.
+
+          `print:block` puts the stack back for paper, where the cards are not
+          a layout at all — each parça is a separate PAGE, headed and signed on
+          its own (the two blocks inside handle that), and the card chrome
+          would only print a box around it. */}
+      {showsComponentCards && (
+        <div className="grid grid-cols-1 gap-3 border-b bg-muted/20 p-3 sm:grid-cols-2 print:block print:gap-0 print:border-0 print:bg-transparent print:p-0">
+          {selectedComponents.map((c, ci) => (
+          <div
+            key={c.id}
+            className="overflow-hidden rounded-lg border bg-white print:rounded-none print:border-0"
+            {...(ci > 0 ? { 'data-print-page': '' } : {})}
+          >
             {/* Every parça starts a new page when the browser prints this
                 sheet (index.css → [data-print-page]), so a continuation page
                 needs the form's own head again — otherwise the KUTU sheet
@@ -260,7 +287,14 @@ export default function SpecSheetBody({
                 />
               </div>
             )}
-            <FormSheetBlock className="border-b-0">
+            {/* The name gets a block of its own so the tint can run edge to
+                edge inside the card. It cannot simply be the first row of the
+                block below with a background on it: a row bleeding out of its
+                block needs negative margins, which widen its grid by the
+                padding and shift its 36% label column — and with it the colon
+                and the rule down the value column — out of line with every
+                row underneath. Two blocks, same padding, same columns. */}
+            <FormSheetBlock className="bg-muted/40 px-3 print:bg-transparent">
               {/* The parça names itself with an İŞİN ADI row, exactly as it
                   does on paper (specPrint.js → formSection puts the same row
                   at the top of every sheet it builds) and exactly as the
@@ -276,25 +310,25 @@ export default function SpecSheetBody({
                   rows BESIDES this one (lib/spec-form-completeness.js): İŞİN
                   ADI comes filled in and proves nothing about the spec.
 
-                  It doubles as the block's head on screen: tinted and set in
-                  the same weight as its label, with a "PARÇA n/N" marker, so
-                  three parçalar scrolling as one document still read as three
-                  sheets. The matbaa opens this read-only and cannot use the
-                  picker above to count them — running the blocks together
-                  under identical hairlines left them unable to tell whether
-                  they were holding one job or three. Both the tint and the
-                  marker are screen-only; on paper the page break says it. */}
+                  It doubles as the card's head on screen: tinted, and set in
+                  the same weight as its label. Both are screen-only — on paper
+                  the page break and the repeated form head do this job. */}
               <SheetRow
                 label="İŞİN ADI"
                 value={c.component}
                 readOnly
-                className="bg-muted/40 font-semibold print:bg-transparent print:font-normal"
+                className="font-semibold print:font-normal"
                 badge={selectedComponents.length > 1 ? (
-                  <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground ring-1 ring-border">
+                  // Only while the cards are stacked. Side by side you can
+                  // simply see that there are three, and at ~270px a card has
+                  // no width to spare for a pill saying so.
+                  <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground ring-1 ring-border sm:hidden">
                     Parça {ci + 1}/{selectedComponents.length}
                   </span>
                 ) : null}
               />
+            </FormSheetBlock>
+            <FormSheetBlock className="border-b-0 px-3">
               {(c.rows ?? []).length === 0 && readOnly && (
                 <p className="py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
               )}
@@ -336,21 +370,13 @@ export default function SpecSheetBody({
               </div>
             )}
           </div>
-        ))}
+          ))}
+        </div>
+      )}
 
       {showsComponentCards && !readOnly && (
         <p className="px-4 py-2 text-[10px] text-muted-foreground print:hidden">
           Buradaki düzenlemeler Ürün Bilgileri'ne de kaydedilir.
-        </p>
-      )}
-
-      {/* The editor learns this from the picker's own line ("… 3 ayrı form
-          oluşturulur"), which is part of an editing control and so never
-          reaches the matbaa — the one reader who has to know how many sheets
-          are coming. Same fact, stated where they can see it. */}
-      {showsComponentCards && readOnly && selectedComponents.length > 1 && (
-        <p className="border-t px-4 py-2 text-center text-[10px] text-muted-foreground print:hidden">
-          Bu form <strong>{selectedComponents.length}</strong> parçadan oluşur — her parça kendi sayfasında basılır.
         </p>
       )}
 
