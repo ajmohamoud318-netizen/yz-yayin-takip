@@ -13,8 +13,3 @@
 ALTER TABLE projects
   ADD COLUMN IF NOT EXISTS ozalit_requested   BOOLEAN     NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS reject_target      TEXT;
-
--- NOTE: last_reject_type / last_reject_target are added in migration 018.
--- They were briefly added here, but this migration had already been applied
--- in production, and the runner skips already-applied IDs — so the edit never
--- ran. Adding new columns always needs a NEW migration file.
