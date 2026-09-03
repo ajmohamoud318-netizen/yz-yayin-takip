@@ -22,6 +22,7 @@ export default function SpecFormFooter({
   readOnly,
   printable,
   missingRequired,
+  incompleteSpec,
   onClose,
   onPrint,
   onSave,
@@ -57,6 +58,10 @@ export default function SpecFormFooter({
           disabled={
             busy
             || missingRequired.length > 0
+            // Only the save that SHIPS the sheet (notifyEdit) answers to the
+            // completeness gate — a plain Kaydet parks a draft, which is
+            // exactly what a leader working through the template needs.
+            || (!!notifyEdit && incompleteSpec?.length > 0)
             // Once the diff is known to be empty, the matbaa notification
             // is meaningless; the handleSave guard catches the race where
             // someone clicks before this state lands.
@@ -87,7 +92,7 @@ export default function SpecFormFooter({
         <Button
           type="button"
           variant="outline"
-          disabled={busy || missingRequired.length > 0}
+          disabled={busy || missingRequired.length > 0 || incompleteSpec?.length > 0}
           onClick={() => onAdvance('ekran_onay')}
         >
           {busy ? 'Gönderiliyor…' : 'Ekran Onayı İsteyin'}
@@ -99,7 +104,11 @@ export default function SpecFormFooter({
           // missing required fields in the original file are the matbaa's
           // problem on redelivery, not the leader's to refuse. Same
           // exemption handleAdvance applies at the handler level.
-          disabled={busy || (!rejectContext && missingRequired.length > 0)}
+          //
+          // incompleteSpec arrives already scoped to a composer on a
+          // Demo / Ozalit sheet, so it needs no exemption of its own —
+          // it is empty everywhere the gate should not apply.
+          disabled={busy || (!rejectContext && missingRequired.length > 0) || incompleteSpec?.length > 0}
           onClick={() => onAdvance(authoringOrderOzalit && order?.last_reject_type === 'designer' ? 'tasarimci_onay' : null)}
           variant={rejectContext ? 'destructive' : 'default'}
         >

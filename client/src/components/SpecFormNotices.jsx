@@ -145,6 +145,7 @@ export function SpecFormGates({
   lockedByFixPending,
   onStartWork,
   missingRequired,
+  incompleteSpec,
 }) {
   return (
     <>
@@ -290,6 +291,23 @@ export function SpecFormGates({
           (VARIANTS.ozalit.isReadOnly), so a blank field is the matbaa's to fix
           and the leader would otherwise face a disabled Onaylayın with nothing
           explaining it. */}
+      {/* The Demo / Ozalit send gate — parçalar still carrying their empty
+          template. Named per parça, because on a three-parça job the block
+          that needs work can be a screen away on a phone. Only ever non-empty
+          for someone composing the sheet (SpecFormDialog), so there is no
+          read-only branch to write here. */}
+      {incompleteSpec?.length > 0 && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 shrink-0" />
+            <span>Form boş satırlarla gönderilemez. Doldurun ya da satırı silin:</span>
+          </div>
+          <ul className="mt-1.5 list-disc space-y-0.5 pl-9">
+            {incompleteSpec.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+        </div>
+      )}
+
       {missingRequired.length > 0 && (!readOnly || isOzalitApproval) && (
         <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
           <FileText className="h-4 w-4 shrink-0" />

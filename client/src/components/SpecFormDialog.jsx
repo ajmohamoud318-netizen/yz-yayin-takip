@@ -17,6 +17,7 @@ import SpecSheetBody from '@/components/SpecSheetBody'
 import { useAuth } from '@/hooks/useAuth'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { useDesignerCelebration } from '@/hooks/useCelebration'
+import { incompleteSpecBlocks } from '@/lib/spec-form-completeness'
 import { useSpecSheet } from '@/hooks/useSpecSheet'
 import { saveEditedComponents } from '@/data/productCatalog'
 import { ozalitLeaderApproved } from '@/domain'
@@ -347,16 +348,34 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // write path below refuses while it is non-empty, and the footer disables
   // its actions with the reason spelled out rather than only toasting on click.
   //
-  // The blocks are what the sheet's ADET rows live on: the selected parçalar,
-  // or the single custom-row body a project with no catalog falls back to.
-  const missingRequired = missingRequiredFields(
-    variant,
-    form,
-    selectedComponents.length > 0 ? selectedComponents : [{ component: form.isinAdi, rows: customRows }],
-  )
+  // `specBlocks` is what carries the sheet's spec: the selected parçalar, or
+  // the single custom-row body a project with no catalog falls back to. Both
+  // the ADET gate and the completeness gate below read it.
+  const specBlocks = selectedComponents.length > 0
+    ? selectedComponents
+    : [{ component: form.isinAdi, rows: customRows }]
+  const missingRequired = missingRequiredFields(variant, form, specBlocks)
   function requiredFilled() {
     if (missingRequired.length === 0) return true
     toast.error(`${missingRequired.join(' ve ')} boş bırakılamaz.`)
+    return false
+  }
+
+  /**
+   * The Demo / Ozalit send gate: a sheet may not be REQUESTED while its
+   * parçalar are still the empty template (see lib/spec-form-completeness.js).
+   *
+   * Only for someone composing the sheet. The matbaa delivering it is
+   * read-only and could not fix an incomplete spec if it wanted to, and
+   * "Reddedin ve Gönderin" confirms a rejection rather than composing
+   * anything — the same two exemptions the required-field gate makes.
+   */
+  const incompleteSpec = variant.requiresFilledSpec && !readOnly && !rejectContext
+    ? incompleteSpecBlocks(specBlocks)
+    : []
+  function specFilled() {
+    if (incompleteSpec.length === 0) return true
+    toast.error(`Form boş satırlarla gönderilemez — ${incompleteSpec[0]}.`)
     return false
   }
   // Saves go back to the slot the sheet was READ from, not blindly to
@@ -567,6 +586,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     // not the leader's to refuse — skip the required-field gate so the
     // "Reddedin ve Gönderin" button stays enabled for a real re-delivery.
     if (!rejectContext && !requiredFilled()) return
+    if (!specFilled()) return
     setBusy(true)
     try {
       // When the printer (matbaa) is the one advancing, stamp the
@@ -720,6 +740,12 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     // Applies to the plain save too: a draft parked with a blank ADET /
     // BASIM YERİ is exactly what the next reader picks up and sends on.
     if (!requiredFilled()) return
+    // The completeness gate is about SENDING, so a plain Kaydet stays open —
+    // a leader parks a half-filled ozalit and comes back to it, and blocking
+    // that would make the templates worse than the blank sheet they replaced.
+    // `notifyEdit` is the save that ships the revised sheet to the matbaa
+    // (the "Gönderilen Demoyu/Ozaliti Düzenleyin" path), and that is a send.
+    if (notifyEdit && !specFilled()) return
     // Guard the "Gönderilen Demoyu/Ozaliti Düzenleyin" path against an empty
     // submit. Opening this dialog and pressing Kaydet without editing used to
     // write a history row and notify the matbaa with nothing to review — every
@@ -888,6 +914,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           lockedByFixPending={lockedByFixPending}
           onStartWork={onStartWork}
           missingRequired={missingRequired}
+          incompleteSpec={incompleteSpec}
         />
 
         <SpecFormFooter
@@ -899,6 +926,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           readOnly={readOnly}
           printable={printable}
           missingRequired={missingRequired}
+          incompleteSpec={incompleteSpec}
           onClose={() => onOpenChange(false)}
           onPrint={handlePrint}
           onSave={handleSave}

@@ -39,6 +39,12 @@ export const VARIANTS = {
     celebrateOnAdvance: true,
     // Kaydet in 'view' mode is not additionally gated on readOnly.
     saveRequiresEditable: false,
+    // A demo is REQUESTED from the matbaa, so the sheet has to say something
+    // before it goes. Parçalar arrive templated — names down the left, values
+    // empty — which made a sheet of pure placeholders perfectly sendable. See
+    // lib/spec-form-completeness.js. Saving a half-filled draft stays fine;
+    // this gates the send only.
+    requiresFilledSpec: true,
     // Matbaa (printer) may view, sign, and forward the demo but must never
     // alter the spec the designer/leader prepared — lock every field for them.
     // History snapshots are read-only for everyone.
@@ -67,6 +73,8 @@ export const VARIANTS = {
     restoreSavedOnEdit: true,
     celebrateOnAdvance: false,
     saveRequiresEditable: true,
+    // Same bar as the demo: the ozalit is sent to the matbaa to be printed.
+    requiresFilledSpec: true,
     // Only the team leader authors the ozalit spec. Everyone else views it:
     //   • the matbaa (printer) receives, signs, and forwards it — never edits;
     //   • the designer can open it (e.g. from Baskı Onayı) but must not
