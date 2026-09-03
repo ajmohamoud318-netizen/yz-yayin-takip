@@ -341,19 +341,26 @@ export function canCancelOzalitRequest(user, project) {
  * There is exactly one team_leader account in practice, so this removes the
  * race entirely rather than just narrowing it. Cancel and the plain view
  * form are unaffected — designers keep those.
+ *
+ * The auto-reject (matbaa re-delivery) round is NOT excluded here: every
+ * round that's actually editable at this stage is one the leader asked for
+ * OR explicitly bumped via a held-demo re-send. Gating the button on the
+ * server-side `last_reject_target='matbaa'` flag hides it for every demo on
+ * the project whose last reject went to matbaa — even after the matbaa
+ * delivered, the leader approved, the designer sent a fresh demo, etc.
+ * The flag clears on every round-consuming transition, but a stale column
+ * on a long-lived row trips the gate on rounds that haven't been touched
+ * since. Instead, the server refuses the edit at write time (computeDemo-
+ * Edit, computeOzalitEdit) with a clear Turkish message, and the dialog
+ * opens read-only if the leader came in through the reject-to-matbaa
+ * handoff itself — see SpecFormDialog's `isRejectToMatbaaReview`. Clicking
+ * this button on an auto-round lands the leader on a server 400 instead of
+ * a silent rewrite.
  */
 export function canEditSentDemoRequest(user, project) {
   if (!project) return false
   if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') return false
   if (project.demo_started) return false
-  // Reject-to-matbaa created this round automatically — the design is
-  // unchanged, the matbaa gets the file exactly as they had it when they
-  // pressed "İşlemi Başlatın", and the leader has no business silently
-  // editing it. Want a change? Cancel the request, or reject-to-designer
-  // with revize — both are explicit, not silent. The flag is cleared by
-  // every transition that "consumes" the round (resend, cancel, …),
-  // so a fresh, manually-created request on the next iteration is fine.
-  if (project.last_reject_target === 'matbaa') return false
   return user?.role === 'team_leader'
 }
 
@@ -363,10 +370,6 @@ export function canEditSentOzalitRequest(user, project) {
   // Liveness, not `ozalit_requested` — see isOzalitRoundLive. Cancel keeps the
   // stricter flag on purpose; correcting a sheet the matbaa holds does not.
   if (!isOzalitRoundLive(project) || project.ozalit_started) return false
-  // Same auto-reject lock as the demo twin above. Mirrors computeOzalitEdit's
-  // server guard so a stale client or hand-crafted call can't bypass the UI
-  // and silently ship a different file.
-  if (project.last_reject_target === 'matbaa') return false
   return user?.role === 'team_leader'
 }
 

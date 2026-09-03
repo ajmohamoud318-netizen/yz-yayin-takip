@@ -23,6 +23,7 @@ import { meetingRoutes } from './routes/meetings.js'
 import { config } from './config.js'
 import { assertSafeMailConfig } from './services/mail.js'
 import { HttpError } from './domain/errors.js'
+import { translateValidationErrors } from './domain/validation-messages.js'
 import { up as migrateUp } from './services/migrate.js'
 import { closePool } from './db/pool.js'
 import {
@@ -168,6 +169,34 @@ export async function buildServer() {
     if (err instanceof HttpError) {
       reply.code(err.status)
       return { error: err.message, code: err.code }
+    }
+    // Fastify v5 raises FST_ERR_VALIDATION for every Ajv failure (body,
+    // querystring, params, headers). The default response carries the raw
+    // Ajv message ("body must NOT have additional properties",
+    // "body/stage must be equal to one of the allowed values") which is
+    // English and doesn't name the offending field — unreadable in a
+    // Turkish toast. Translate every issue into a user-friendly message
+    // and surface them under `issues` so the SPA can either show the first
+    // as a toast or, later, render per-field errors inline. The original
+    // `error` stays as the first message so existing clients that read
+    // `response.data.error` don't change behaviour.
+    if (err.code === 'FST_ERR_VALIDATION' && Array.isArray(err.validation)) {
+      const issues = translateValidationErrors(err.validation, err.validationContext)
+      const first = issues[0]
+      // `info` not `error` — a 4xx from a known client mistake is expected
+      // traffic, not a server fault. Keeps production logs from drowning
+      // in 400s while still letting `docker logs | grep validation` find them.
+      request.log.info({
+        validationContext: err.validationContext ?? 'body',
+        issues,
+      }, 'request validation failed')
+      reply.code(400)
+      return {
+        error: first.message,
+        code: 'validation_failed',
+        validationContext: err.validationContext ?? 'body',
+        issues,
+      }
     }
     const code = err.status ?? err.statusCode
     if (code && code >= 400 && code < 500) {

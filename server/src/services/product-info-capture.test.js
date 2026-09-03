@@ -14,6 +14,7 @@ import {
   componentsFromSpecPayload,
   mergeComponents,
   captureProductInfoFromSpec,
+  inferComponentKind,
 } from './product-info-capture.js'
 
 const row = (label, value) => ({ label, value })
@@ -333,5 +334,48 @@ describe('captureProductInfoFromSpec', () => {
     })
     await captureProductInfoFromSpec(client, { project, actor })
     assert.equal(client.writes[0].components[0].fields[1].v, 'ozalit value')
+  })
+})
+
+/* ---------------------------------------------------------------- *
+ *  inferComponentKind — the kind-tagging helper                      *
+ * ---------------------------------------------------------------- */
+
+// The leader's product_info payload (and the demo/ozalit auto-capture's
+// output) flows through this helper to land a structured `kind` on every
+// component. The server uses the same helper to backfill legacy rows on
+// read, so all three surfaces — write, capture, GET — classify a given
+// name identically. The name-based heuristic is brittle enough that
+// locking these expectations down is worth its own block.
+describe('inferComponentKind', () => {
+  it('classifies the project title (no KUTU / KILAVUZ) as `main`', () => {
+    assert.equal(inferComponentKind('RİNGOO (6-99 YAŞ)'), 'main')
+    assert.equal(inferComponentKind('POFİDİK PUZZLE ÇİFTLİK'), 'main')
+    assert.equal(inferComponentKind(''), 'main')
+  })
+
+  it('classifies a box recipe by the "KUTU" suffix', () => {
+    assert.equal(inferComponentKind('KUTU REÇETESİ'), 'kutu')
+    assert.equal(inferComponentKind('RİNGOO - KUTU'), 'kutu')
+    assert.equal(inferComponentKind('POFİDİK PUZZLE ÇİFTLİK - KUTU'), 'kutu')
+  })
+
+  it('classifies a guide recipe by the "KILAVUZ" suffix', () => {
+    assert.equal(inferComponentKind('KILAVUZ REÇETESİ'), 'kilavuz')
+    assert.equal(inferComponentKind('RİNGOO - KILAVUZ'), 'kilavuz')
+    assert.equal(inferComponentKind('ÖĞRETMEN KILAVUZU'), 'kilavuz')
+  })
+
+  it('prefers KILAVUZ over KUTU when the name contains both', () => {
+    // "KILAVUZ KUTUSU" (the guide's own box) must classify as kilavuz so the
+    // leader's tag matches the parça they're actually describing.
+    assert.equal(inferComponentKind('KILAVUZ KUTUSU'), 'kilavuz')
+  })
+
+  it('is locale-aware (İ vs i collapse to the same class)', () => {
+    assert.equal(inferComponentKind('kutu'), 'kutu')
+    assert.equal(inferComponentKind('KUTU'), 'kutu')
+    assert.equal(inferComponentKind('kilavuz'), 'kilavuz')
+    assert.equal(inferComponentKind('KILAVUZ'), 'kilavuz')
   })
 })

@@ -45,7 +45,13 @@ const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
  * @returns {'main'|'kutu'|'kilavuz'}
  */
 export function inferComponentKind(name) {
-  const upper = up(String(name ?? ''))
+  // Plain `.toUpperCase()` rather than `toLocaleUpperCase('tr-TR')`: the
+  // latter turns a lowercase 'i' into a dotted 'İ', so a name written
+  // 'kilavuz' would never match the `'KILAVUZ'` substring probe below.
+  // We don't need Turkish-aware case folding here — only the two keywords
+  // we look for, which are already ASCII letters in the seed data and
+  // every project name the leader has typed so far.
+  const upper = String(name ?? '').toUpperCase()
   if (!upper) return 'main'
   // KILAVUZ must be checked before KUTU so the rare "KILAVUZ KUTUSU"
   // (guide + box combo) is classified as kilavuz, not kutu.

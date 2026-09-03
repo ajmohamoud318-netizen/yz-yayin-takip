@@ -297,9 +297,9 @@ describe('demo/ozalit "Başladım" gate + cancel + change-request (migration 048
   it('re-delivery round (reject_target=matbaa) still gives the leader a way to act', () => {
     const redelivery = { stage: 'ozalit_teslim', ozalit_requested: false, reject_target: 'matbaa', assignees }
     expect(isOzalitRoundLive(redelivery)).toBe(true)
-    // Before the matbaa starts: a FRESH re-delivery (no last_reject_target
-    // marker) lets the leader correct the sheet directly. The
-    // last_reject_target=matbaa gate is tested separately below.
+    // The leader can edit-and-notify on any non-started, live round — the
+    // server refuses the auto-reject case at write time (transitions.auto-
+    // reject-edit.test.js) so we don't gate the button here.
     expect(canEditSentOzalitRequest(AYSE, redelivery)).toBe(true)
     // After they start: edit closes, change-request opens — never both shut.
     const started = { ...redelivery, ozalit_started: true }
@@ -308,46 +308,6 @@ describe('demo/ozalit "Başladım" gate + cancel + change-request (migration 048
     // Cancel stays gated on a real pending request: this round WAS delivered
     // and rejected, so "nothing was delivered" doesn't apply to it.
     expect(canCancelOzalitRequest(AYSE, redelivery)).toBe(false)
-  })
-
-  // Auto-reject-to-matbaa gate: when a reject-to-matbaa creates the round
-  // (last_reject_target set), the design is unchanged — the matbaa gets back
-  // the file they had when they pressed "İşlemi Başlatın". A silent
-  // edit-and-notify would ship a different file, so the gate closes
-  // "Gönderilen Demoyu/Ozaliti Düzenleyin" until the round is consumed.
-  // Server-side: computeDemoEdit / computeOzalitEdit enforce the same rule
-  // against stale clients / hand-crafted API calls (transitions.auto-reject-
-  // edit.test.js pins both halves).
-  it('canEditSentDemoRequest refuses an auto-created round (last_reject_target=matbaa)', () => {
-    const autoRound = {
-      stage: 'demo_teslim', demo_started: false, demo_attempt: 6,
-      last_reject_target: 'matbaa', last_reject_type: 'demo', last_reject_reason: 'yanlış dosya',
-    }
-    expect(canEditSentDemoRequest(AYSE, autoRound)).toBe(false)
-    // The ÇİN mirror follows the same field — same gate, same outcome.
-    expect(canEditSentDemoRequest(AYSE, { ...autoRound, stage: 'cin_demo_teslim' })).toBe(false)
-    // A "matbaa didn't deliver" bounce is also auto — same gate.
-    expect(canEditSentDemoRequest(AYSE, { ...autoRound, reject_target: 'matbaa' })).toBe(false)
-    // Stale flag cleared by the next transition: edit opens back up.
-    expect(canEditSentDemoRequest(AYSE, { ...autoRound, last_reject_target: null })).toBe(true)
-    // Reject-to-designer does NOT lock the round — the design WILL change.
-    expect(canEditSentDemoRequest(AYSE, { ...autoRound, last_reject_target: 'designer' })).toBe(true)
-  })
-
-  it('canEditSentOzalitRequest refuses an auto-created round (last_reject_target=matbaa)', () => {
-    const autoRound = {
-      stage: 'ozalit_teslim', ozalit_requested: false, ozalit_started: false,
-      reject_target: 'matbaa',
-      last_reject_target: 'matbaa', last_reject_type: 'ozalit', last_reject_reason: 'yanlış dosya',
-      assignees,
-    }
-    expect(isOzalitRoundLive(autoRound)).toBe(true)   // the round IS live
-    expect(canEditSentOzalitRequest(AYSE, autoRound)).toBe(false) // …but not editable
-    // Once the round has been consumed (matbaa delivered, cancel, resend,
-    // …) the marker is cleared and the gate opens.
-    expect(canEditSentOzalitRequest(AYSE, { ...autoRound, last_reject_target: null })).toBe(true)
-    // Reject-to-designer — same field, different value — does NOT lock.
-    expect(canEditSentOzalitRequest(AYSE, { ...autoRound, last_reject_target: 'designer' })).toBe(true)
   })
 
   it('an ozalit nobody requested exposes no leader actions either', () => {
