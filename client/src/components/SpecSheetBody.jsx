@@ -205,13 +205,30 @@ export default function SpecSheetBody({
         </div>
       )}
 
-      {/* Selected parçalar, stacked as blocks of the same sheet — each one
-          prints as its own page. Edits here flow back to Ürün Bilgileri on
-          save. With no catalog, or nothing selected, there are no parça
-          blocks and the added rows above are the sheet's whole spec. */}
+      {/* Selected parçalar, stacked as blocks of the same sheet — one page
+          each on paper, scrolled as one continuous document on screen. Edits
+          here flow back to Ürün Bilgileri on save. With no catalog, or
+          nothing selected, there are no parça blocks and the added rows above
+          are the sheet's whole spec. */}
       {showsComponentCards &&
-        selectedComponents.map((c) => (
-          <div key={c.id} className="border-b last:border-b-0">
+        selectedComponents.map((c, ci) => (
+          <div key={c.id} className="border-b last:border-b-0" {...(ci > 0 ? { 'data-print-page': '' } : {})}>
+            {/* Every parça starts a new page when the browser prints this
+                sheet (index.css → [data-print-page]), so a continuation page
+                needs the form's own head again — otherwise the KUTU sheet
+                comes out of the printer as a bare block title belonging to no
+                form and no job. The Yazdır button heads each parça sheet the
+                same way (lib/specPrint.js → formSection); this keeps the two
+                print paths producing the same document. */}
+            {ci > 0 && (
+              <div className="hidden print:block">
+                <FormSheetHead
+                  title={variant.title}
+                  subtitle={project.title}
+                  attemptLabel={`${shownAttemptNo}. ${variant.attemptUpper}`}
+                />
+              </div>
+            )}
             <FormSheetBlockTitle>{c.component}</FormSheetBlockTitle>
             <FormSheetBlock className="border-b-0">
               {(c.rows ?? []).length === 0 && readOnly && (

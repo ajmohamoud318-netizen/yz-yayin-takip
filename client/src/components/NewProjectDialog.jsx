@@ -76,20 +76,35 @@ function deriveInitialProductInfo(title, subtasks) {
       ],
     },
   ]
+  // A parça is named after the product it belongs to, not after its type:
+  // the ana reçete carries the project title as-is, and the siblings take it
+  // with the Turkish possessive — "Ringoo" → "Ringoo Kutusu" / "Ringoo
+  // Kılavuzu". A bare "Kutu Reçetesi" told the matbaa which KIND of sheet
+  // they were holding but not which JOB it belonged to, and every project in
+  // the catalog owned a parça by that same name. The kind tag below (and the
+  // badge it drives) is what says "this is the box recipe" — the name says
+  // whose box it is.
+  //
+  // Both suffixed names still infer their own kind from the name alone
+  // (KUTUSU contains KUTU, KILAVUZU contains KILAVUZ), so a row that reaches
+  // a reader without its `kind` — an offline cache, a legacy import — is
+  // still classified correctly.
   if (subtasks.kutu) {
+    const name = `${title.trim()} Kutusu`
     out.push({
-      component: 'Kutu Reçetesi',
+      component: name,
       kind: 'kutu',
       date: '',
-      fields: [{ k: 'İŞİN ADI', v: 'Kutu Reçetesi' }],
+      fields: [{ k: 'İŞİN ADI', v: name }],
     })
   }
   if (subtasks.kilavuz) {
+    const name = `${title.trim()} Kılavuzu`
     out.push({
-      component: 'Kılavuz Reçetesi',
+      component: name,
       kind: 'kilavuz',
       date: '',
-      fields: [{ k: 'İŞİN ADI', v: 'Kılavuz Reçetesi' }],
+      fields: [{ k: 'İŞİN ADI', v: name }],
     })
   }
   return out

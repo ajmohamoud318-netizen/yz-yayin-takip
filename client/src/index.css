@@ -538,4 +538,15 @@ html.font-creative * {
   .print-block {
     break-inside: avoid;
   }
+
+  /* One parça per page, matching the Yazdır button's own document (see
+     lib/specPrint.js, which page-breaks between sheets). The spec form
+     promises the user "her parça kendi sayfasında"; without this the
+     browser's own print ran all of them together on one sheet and only
+     the button kept the promise. Marked on every parça block AFTER the
+     first (SpecSheetBody), so break-BEFORE — break-after on the last one
+     would eject a blank final page. */
+  [data-print-page] {
+    break-before: page;
+  }
 }
