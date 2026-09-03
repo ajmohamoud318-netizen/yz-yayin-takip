@@ -25,6 +25,8 @@ import {
 import {
   KILAVUZ_TEMPLATE_LABELS,
   KUTU_TEMPLATE_LABELS,
+  MAIN_TEMPLATE_LABELS,
+  mainTemplateFields,
   kilavuzComponentName,
   kilavuzTemplateFields,
   kutuComponentName,
@@ -82,6 +84,44 @@ describe('parcaKind', () => {
     expect(parcaKind({ component: 'Ringoo' })).toBe('main')
     expect(parcaKind({ component: 'STICKER', kind: 'nonsense' })).toBe('main')
     expect(parcaKind(null)).toBe('main')
+  })
+})
+
+describe('ANA PARÇA template', () => {
+  it('leads with SAYFA SAYISI and carries no ADET', () => {
+    // ADET is one print run's quantity, and product-info-capture strips it
+    // back out of the catalog — a seeded ADET row only ever vanished later.
+    expect(MAIN_TEMPLATE_LABELS[0]).toBe('SAYFA SAYISI')
+    expect(MAIN_TEMPLATE_LABELS).not.toContain('ADET')
+    expect(MAIN_TEMPLATE_LABELS).toEqual([
+      'SAYFA SAYISI',
+      'SETTEKİ KİTAP SAYISI',
+      'SAYFA EBAT',
+      'İÇ KAĞIT CİNSİ',
+      'KAPAK KAĞIT CİNSİ',
+      'CİLT',
+      'LAMİNASYON',
+    ])
+  })
+
+  it('takes the job title as-is — only the siblings name their part', () => {
+    expect(mainTemplateFields('  Ringoo ')[0]).toEqual({ k: 'İŞİN ADI', v: 'Ringoo' })
+  })
+
+  it('seeds every value blank when the project has no İç Sayfalar subtask', () => {
+    const fields = mainTemplateFields('Ringoo')
+    expect(fields.slice(1).every((f) => f.v === '')).toBe(true)
+  })
+
+  it("seeds the 'auto' placeholder into SAYFA SAYISI, and only there", () => {
+    const fields = mainTemplateFields('Ringoo', { pageCountValue: 'auto' })
+    expect(fields.find((f) => f.k === 'SAYFA SAYISI')).toEqual({ k: 'SAYFA SAYISI', v: 'auto' })
+    expect(fields.filter((f) => f.v === 'auto')).toHaveLength(1)
+  })
+
+  it('reaches the form as seven rows, İŞİN ADI rendered as the header instead', () => {
+    const rows = getComponentRows({ component: 'Ringoo', fields: mainTemplateFields('Ringoo') })
+    expect(rows.map((r) => r.label)).toEqual(MAIN_TEMPLATE_LABELS)
   })
 })
 

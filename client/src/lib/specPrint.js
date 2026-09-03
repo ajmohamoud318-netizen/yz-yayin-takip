@@ -36,8 +36,10 @@ const FORM_TITLES = {
 export function buildFormKunye({ form, kind }) {
   const pairs = []
   if (kind === 'baski_onay') {
+    // No ADET pair: it prints inside each parça's spec table, under that
+    // parça's SAYFA SAYISI, so a multi-parça job carries a different quantity
+    // on each sheet instead of one number for all of them.
     pairs.push(
-      ['ADET', form?.baskiOnayAdet ?? ''],
       ['TARİH', form?.baskiOnayTarihi ?? ''],
       ['BASIM YERİ', form?.basimYeri ?? ''],
       ['HAZIRLAYAN', form?.baskiOnayHazirlayan ?? ''],

@@ -163,10 +163,16 @@ export function SheetRow({ label, name, value, onChange, readOnly, required = fa
  * controls keep the same width on every row and the value column does not
  * jitter as rows move. With neither handler (a lone row) the arrows are left
  * out altogether and only the remove button takes space.
+ *
+ * `required` gives the value cell the same red wash SheetRow uses while it is
+ * blank — the Baskı Onay Formu's ADET row is a spec row now, and a sheet that
+ * may not go out with it empty has to say so where the gap is, not only in a
+ * footer a scroll away on a phone.
  */
-export function SheetSpecRow({ label, value, onLabelChange, onValueChange, onRemove, onMoveUp, onMoveDown, readOnly }) {
+export function SheetSpecRow({ label, value, onLabelChange, onValueChange, onRemove, onMoveUp, onMoveDown, readOnly, required = false }) {
   const canReorder = !readOnly && (onMoveUp || onMoveDown)
   const hasTools = !readOnly && (canReorder || onRemove)
+  const missing = required && !String(value ?? '').trim()
   return (
     <div className={hasTools ? SHEET_ROW_TOOLS : SHEET_ROW}>
       {readOnly ? (
@@ -181,15 +187,16 @@ export function SheetSpecRow({ label, value, onLabelChange, onValueChange, onRem
         />
       )}
       <span className={SHEET_COLON}>:</span>
-      <div className={SHEET_VALUE_CELL}>
+      <div className={cn(SHEET_VALUE_CELL, missing && !readOnly && 'bg-destructive/5')}>
         {readOnly ? (
           <span className={SHEET_VALUE_TEXT}>{value || '—'}</span>
         ) : (
           <AutoField
             value={value}
             onChange={(e) => onValueChange?.(e.target.value)}
-            placeholder="Değer"
+            placeholder={missing ? 'Zorunlu' : 'Değer'}
             aria-label="Alan değeri"
+            className={cn(missing && 'placeholder:text-destructive/60')}
           />
         )}
       </div>

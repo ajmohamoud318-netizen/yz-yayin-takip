@@ -3,12 +3,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import api from '@/api'
 import { getComponentsForProject, getComponentRows, primeProductInfoCache } from '@/data/productCatalog'
 import { parcaKind } from '@/data/parcaTemplates'
-import { buildAdetRows, buildOrderAdetRows, loadOrderAdet } from '@/data/orderAdet'
+import { loadOrderAdet } from '@/data/orderAdet'
+import { adetForComponent, withAdetRow } from '@/lib/spec-form-adet'
 import { hasSpecContent, specWithDemoFallback } from '@/lib/spec-seed'
 import { resolveSayfaSayisiRows } from '@/lib/spec-form-resolve'
 import { hydrateComponent, inCatalogOrder } from '@/lib/spec-form-selection'
 import { liveTeslimat, withTeslimat } from '@/lib/teslimat'
-import { formatNumber } from '@/lib/utils'
 import { VARIANTS } from '@/lib/spec-form-variants'
 import {
   emptyForm,
@@ -110,6 +110,31 @@ export function useSpecSheet({
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [project?.id, catalogVersion]
+  )
+
+  /* ADET — the quantity of this print run, and the one row a sheet gets from
+     outside the catalog.
+
+     It shows on the Baskı Onay Formu and nowhere earlier: that is the gate
+     where the number is finally known. Where it comes from depends on the
+     pipeline. A sipariş carries the quantity the sales team raised it for, per
+     parça, right on the order. A project has no order of its own, so it falls
+     back to the last one stored for this title (localStorage, most recent
+     only) and otherwise arrives blank for the leader to type — in the same
+     pass as BASIM YERİ.
+
+     Either way the leader's own correction wins on reopen: withAdetRow fills a
+     blank row and never overwrites a filled one. `legacy` is what a sheet
+     approved BEFORE ADET moved off the künye still carries in baskiOnayAdet. */
+  const isBaskiOnay = !!variant.requiresAdet
+  const orderForAdet = useMemo(
+    () => (!isBaskiOnay ? null : (orderScoped ? order : loadOrderAdet(project?.id))),
+    [isBaskiOnay, orderScoped, order, project?.id],
+  )
+  const withAdet = (comp, legacy = '') => (
+    isBaskiOnay
+      ? { ...comp, rows: withAdetRow(comp.rows, adetForComponent(comp.component, orderForAdet) || legacy) }
+      : comp
   )
 
   useEffect(() => {
@@ -244,29 +269,12 @@ export function useSpecSheet({
       // user-owned and passes through verbatim. See
       // lib/spec-form-resolve.js for the pure helper and its tests.
       const savedRows = resolveSayfaSayisiRows(spec?.customRows ?? [], project)
-      if (variant.kind === 'baski_onay') {
-        // ADET gets its own top-of-sheet field here instead of living as a
-        // buried custom row — that row never actually rendered or printed
-        // once a project had a catalog (buildSpecRows / the parça cards both
-        // skip customRows once parçalar are selected). Prefer a live sipariş
-        // order's quantity; on a project's first pass (no order placed yet)
-        // fall back to whatever ADET the borrowed ozalit sheet carried, then
-        // drop that row so it isn't shown twice.
-        let adetValue = data?.form?.[variant.adetField]
+
+      // What a sheet approved before ADET moved off the künye still carries.
+      const legacyAdet = isBaskiOnay ? String(data?.form?.baskiOnayAdet ?? '').trim() : ''
+
+      if (isBaskiOnay) {
         let rowsForCustom = savedRows
-        if (!adetValue) {
-          // Renamed off `order` — that's the sipariş prop now.
-          const lastOrder = loadOrderAdet(project.id)
-          adetValue = lastOrder?.quantity ? formatNumber(lastOrder.quantity) : ''
-          if (!adetValue) {
-            const idx = savedRows.findIndex((r) => r.label?.toUpperCase().startsWith('ADET'))
-            if (idx !== -1) {
-              adetValue = savedRows[idx].value
-              rowsForCustom = savedRows.filter((_, i) => i !== idx)
-            }
-          }
-        }
-        if (adetValue) setForm((f) => ({ ...f, [variant.adetField]: adetValue }))
         // BASIM YERİ has no live source to fall back on — no press is recorded
         // anywhere on the project — but the borrowed ozalit/demo sheet can
         // still carry one as a leftover custom row (pre-restructure forms had
@@ -283,16 +291,19 @@ export function useSpecSheet({
           }
         }
         if (basimValue) setForm((f) => ({ ...f, [variant.locationField]: basimValue }))
-        setCustomRows(rowsForCustom)
+        // A sheet with no catalog has no parça blocks, so its custom rows ARE
+        // the spec and the ADET row belongs among them. `legacyAdet` is what a
+        // sheet approved before ADET moved off the künye still carries in
+        // baskiOnayAdet — lifted onto the rows so an old sheet reopens showing
+        // the quantity it was approved with.
+        setCustomRows(withAdetRow(rowsForCustom, adetForComponent(null, orderForAdet) || legacyAdet))
       } else {
-        const hasAdet = savedRows.some((r) => r.label?.toUpperCase().startsWith('ADET'))
-        // A sipariş carries the ordered quantity on the order itself, so its
-        // sheet reads it straight off the row. buildAdetRows is the project
-        // pipeline's fallback: localStorage, keyed by project, most recent
-        // order only — invisible on every other browser, and silently
-        // clobbered by the next order on the same title.
-        const adetRows = orderScoped ? buildOrderAdetRows(order) : buildAdetRows(project.id)
-        setCustomRows(hasAdet ? savedRows : [...adetRows, ...savedRows])
+        // No ADET before Baskı Onayı. On the project pipeline the number
+        // doesn't exist yet — nobody has ordered anything — and on a sipariş
+        // it isn't the ozalit's business. It used to be prepended here as a
+        // custom row that then never rendered anyway: the parça blocks replace
+        // customRows the moment a project has a catalog.
+        setCustomRows(savedRows)
       }
       // null means never explicitly set — default to all catalog components checked.
       // [] means the user intentionally cleared them — respect that.
@@ -310,7 +321,7 @@ export function useSpecSheet({
       // to the name for a snapshot saved before the field existed, so an old
       // sheet classifies the same way a fresh one does.
       setSelectedComponents(
-        baseComponents.map((c) => ({ ...c, rows: resolveSayfaSayisiRows(c.rows, project, parcaKind(c)) })),
+        baseComponents.map((c) => withAdet({ ...c, rows: resolveSayfaSayisiRows(c.rows, project, parcaKind(c)) }, legacyAdet)),
       )
     }
 
@@ -342,7 +353,7 @@ export function useSpecSheet({
     setSelectedComponents((prev) => (
       prev.length > 0
         ? prev
-        : catalogComponents.map((c) => ({ ...c, rows: resolveSayfaSayisiRows(c.rows, project, parcaKind(c)) }))
+        : catalogComponents.map((c) => withAdet({ ...c, rows: resolveSayfaSayisiRows(c.rows, project, parcaKind(c)) }))
     ))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, catalogComponents])
@@ -353,10 +364,10 @@ export function useSpecSheet({
   // — a snapshot's, this session's edits, the resolved SAYFA SAYISI — and
   // only falling back to the catalog's own rows (resolved the same way the
   // load effect resolves them) for one that has never been on it.
-  const hydrate = (comp) => hydrateComponent(comp, {
+  const hydrate = (comp) => withAdet(hydrateComponent(comp, {
     remembered: detachedRows.current,
     resolveRows: (rows) => resolveSayfaSayisiRows(rows, project, parcaKind(comp)),
-  })
+  }))
 
   function toggleComponent(compId) {
     if (readOnly) return

@@ -10,6 +10,7 @@ import {
   SheetSpecRow,
 } from '@/components/FormSheet'
 import { parcaKind } from '@/data/parcaTemplates'
+import { isAdetLabel } from '@/lib/spec-form-adet'
 import { projectHasLivePageCount } from '@/lib/spec-form-resolve'
 
 /**
@@ -78,6 +79,10 @@ export default function SpecSheetBody({
   const hasLivePageCount = projectHasLivePageCount(project)
   const livePageCountLocks = (comp) => hasLivePageCount && parcaKind(comp) === 'main'
   const isSayfaSayisiRow = (label) => String(label ?? '').trim().toUpperCase() === 'SAYFA SAYISI'
+  // ADET is a spec row on the Baskı Onay Formu — one per parça, under its
+  // SAYFA SAYISI — and the sheet may not go out with any of them blank. Every
+  // other sheet carries no ADET row at all, so nothing to mark there.
+  const isRequiredRow = (label) => !!variant.requiresAdet && isAdetLabel(label)
 
   /* The fixed rows — the ones the form always carries, whoever filled it in:
      stamps the form writes about itself (who asked, when, who delivered, who
@@ -86,19 +91,9 @@ export default function SpecSheetBody({
      the caller decides where in it they land. */
   const fixedKunyeRows = (
     <>
-      {/* ADET — dedicated field on the Baskı Onay Formu, auto-filled from a
-          live sipariş order or the borrowed ozalit sheet (see the load
-          effect); the leader can still correct it. */}
-      {variant.adetField && (
-        <SheetRow
-          label={variant.adetLabel}
-          name={variant.adetField}
-          value={form[variant.adetField] ?? ''}
-          onChange={onChange}
-          readOnly={readOnly}
-          required
-        />
-      )}
+      {/* ADET is not here: it belongs to the PARÇA, under its SAYFA SAYISI,
+          because a sipariş can order 5.000 books in 2.500 boxes and the künye
+          has room for one number. See lib/spec-form-adet.js. */}
       {/* İSTEM rows are shown to every role — the matbaa needs to know who
           requested the demo/ozalit and when, not just its own delivery stamp. */}
       <SheetRow label={variant.dateLabel} name={variant.dateField} value={form[variant.dateField]} onChange={onChange} readOnly={systemRowReadOnly} />
@@ -226,6 +221,7 @@ export default function SpecSheetBody({
               onMoveUp={customRows.length > 1 && i > 0 ? () => onMoveCustomRow(r.id, -1) : null}
               onMoveDown={customRows.length > 1 && i < customRows.length - 1 ? () => onMoveCustomRow(r.id, 1) : null}
               readOnly={readOnly || (hasLivePageCount && isSayfaSayisiRow(r.label))}
+              required={isRequiredRow(r.label)}
             />
           ))}
           {!readOnly && <SheetAddRow onClick={onAddCustomRow} />}
@@ -273,6 +269,7 @@ export default function SpecSheetBody({
                   onMoveUp={(c.rows ?? []).length > 1 && i > 0 ? () => onMoveComponentRow(c.id, r.id, -1) : null}
                   onMoveDown={(c.rows ?? []).length > 1 && i < (c.rows ?? []).length - 1 ? () => onMoveComponentRow(c.id, r.id, 1) : null}
                   readOnly={readOnly || (livePageCountLocks(c) && isSayfaSayisiRow(r.label))}
+                  required={isRequiredRow(r.label)}
                 />
               ))}
               {!readOnly && <SheetAddRow onClick={() => onAddComponentRow(c.id)} />}

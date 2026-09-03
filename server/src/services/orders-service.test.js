@@ -601,6 +601,47 @@ describe('orders-service — baskı onay', () => {
     assert.equal(client.matching(/UPDATE order_requests/).length, 0)
   })
 
+  // ADET moved onto the parça blocks: an order for 5.000 books in 2.500 boxes
+  // has two quantities, and the single top-level field could hold one. The
+  // legacy field still satisfies the gate for sheets saved before the move
+  // (the case just above), but a modern sheet answers with its rows.
+  const block = (component, adet) => ({
+    component,
+    rows: [{ label: 'SAYFA SAYISI', value: '32' }, { label: 'ADET', value: adet }],
+  })
+
+  it('accepts a sheet whose quantity lives on the parça rows, with no top-level adet', async () => {
+    const client = makeClient({ order: preparedRow(), leaders: bothLeaders })
+    const result = await service.approveBaskiOnayForm('o-1', L1, {
+      components: [block('Ringoo', '5.000'), block('Ringoo KUTU', '2.500')],
+      tarih: '2026-09-01', basimYeri: 'İstanbul', hazirlayan: 'Ayşenur',
+    }, client)
+    assert.equal(result.status, 'onaylandi')
+  })
+
+  it('refuses when one parça is left without a quantity', async () => {
+    const client = makeClient({ order: preparedRow(), leaders: bothLeaders })
+    await assert.rejects(
+      () => service.approveBaskiOnayForm('o-1', L1, {
+        components: [block('Ringoo', '5.000'), block('Ringoo KUTU', '')],
+        tarih: '2026-09-01', basimYeri: 'İstanbul', hazirlayan: 'Ayşenur',
+      }, client),
+      /zorunludur/,
+    )
+    assert.equal(client.matching(/UPDATE order_requests/).length, 0)
+  })
+
+  it('refuses a sheet whose blocks carry no ADET row at all', async () => {
+    const client = makeClient({ order: preparedRow(), leaders: bothLeaders })
+    await assert.rejects(
+      () => service.approveBaskiOnayForm('o-1', L1, {
+        components: [{ component: 'Ringoo', rows: [{ label: 'SAYFA SAYISI', value: '32' }] }],
+        tarih: '2026-09-01', basimYeri: 'İstanbul', hazirlayan: 'Ayşenur',
+      }, client),
+      /zorunludur/,
+    )
+  })
+
   it('prepare stamps the maker half without touching the project', async () => {
     const order = orderRow({ status: 'siparis_baski_onay' })
     const client = makeClient({

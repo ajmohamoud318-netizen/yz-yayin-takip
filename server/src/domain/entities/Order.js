@@ -17,6 +17,7 @@
 
 import { ORDER_STEP_NEXT, ORDER_STEP_OWNER, ORDER_REJECT_TARGETS } from '../orders.js'
 import { badRequest, conflict, forbidden } from '../errors.js'
+import { everyBlockHasAdet } from '../adet.js'
 
 /**
  * Multi-party matbaa_onay approval. Every active team leader AND every
@@ -688,10 +689,20 @@ export class Order {
    * prints from, so neither half of the maker-checker pair may leave them
    * blank — the preparer because the checker would be signing an incomplete
    * sheet, the approver because that sheet is the final snapshot.
+   *
+   * ADET is checked on the PARÇA blocks, one row per block. An order for 5.000
+   * books in 2.500 boxes has two quantities and the old single `adet` field
+   * could hold one of them, so the client had been cramming both into a string
+   * ("Kitap: 5.000, Kutu: 2.500") that passed this check while telling the
+   * matbaa nothing per sheet. A sheet saved before that move carries no ADET
+   * rows at all, so the legacy field still counts when the blocks say nothing.
    */
   static _assertBaskiOnayFormComplete(form) {
-    const { adet, tarih, basimYeri, hazirlayan } = form ?? {}
-    if (![adet, tarih, basimYeri, hazirlayan].every((v) => v?.trim())) {
+    const { components, adet, tarih, basimYeri, hazirlayan } = form ?? {}
+    if (![tarih, basimYeri, hazirlayan].every((v) => v?.trim())) {
+      badRequest('Adet, tarih, basım yeri ve hazırlayan alanları zorunludur.')
+    }
+    if (!everyBlockHasAdet(components) && !adet?.trim()) {
       badRequest('Adet, tarih, basım yeri ve hazırlayan alanları zorunludur.')
     }
   }

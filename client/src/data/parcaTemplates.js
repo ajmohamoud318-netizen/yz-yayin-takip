@@ -42,6 +42,31 @@ export function parcaKind(comp) {
   return inferParcaKind(comp?.component)
 }
 
+/** The row whose value the İç Sayfalar subtask owns — see mainTemplateFields. */
+export const SAYFA_SAYISI_LABEL = 'SAYFA SAYISI'
+
+/**
+ * The lead parça — the product itself. Everything a book declares, and the
+ * only template whose SAYFA SAYISI is the count project düzenleme owns (the
+ * "Toplam iç sayfa" input); lib/spec-form-resolve substitutes the live total
+ * into this row and no sibling's.
+ *
+ * ADET is deliberately absent. It is the quantity of ONE print run, not a fact
+ * about the product — the Baskı Onay Formu gives it a dedicated field and
+ * server/src/services/product-info-capture.js strips it back out of the
+ * catalog on every capture, so seeding it here only produced a row that
+ * silently vanished the first time a sheet was saved.
+ */
+export const MAIN_TEMPLATE_LABELS = [
+  SAYFA_SAYISI_LABEL,
+  'SETTEKİ KİTAP SAYISI',
+  'SAYFA EBAT',
+  'İÇ KAĞIT CİNSİ',
+  'KAPAK KAĞIT CİNSİ',
+  'CİLT',
+  'LAMİNASYON',
+]
+
 export const KUTU_TEMPLATE_LABELS = [
   'KUTU AÇIK EBAT',
   'ÜST KAĞIT CİNSİ',
@@ -77,6 +102,24 @@ const templateFields = (name, labels) => [
   { k: 'İŞİN ADI', v: name },
   ...labels.map((k) => ({ k, v: '' })),
 ]
+
+/**
+ * The lead parça's template. Its name is the job itself — no suffix; the
+ * siblings are the ones that have to say which part they are.
+ *
+ * `pageCountValue` is the one row this cannot fill in blind. A project with
+ * the İç Sayfalar subtask seeds the established 'auto' placeholder, which the
+ * spec form resolves to the live total on the way to screen; a project without
+ * one has no live source, so the row is the leader's like any other and starts
+ * empty.
+ */
+export function mainTemplateFields(title, { pageCountValue = '' } = {}) {
+  const name = String(title ?? '').trim()
+  return [
+    { k: 'İŞİN ADI', v: name },
+    ...MAIN_TEMPLATE_LABELS.map((k) => ({ k, v: k === SAYFA_SAYISI_LABEL ? pageCountValue : '' })),
+  ]
+}
 
 /** The KUTU template as product_info `fields` — İŞİN ADI first, then blanks. */
 export function kutuTemplateFields(title) {

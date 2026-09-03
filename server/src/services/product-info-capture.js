@@ -24,6 +24,8 @@
  * running this twice (or after a manual edit) can't destroy anyone's work.
  */
 
+import { isAdetLabel } from '../domain/adet.js'
+
 const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
 
 /**
@@ -60,13 +62,6 @@ export function inferComponentKind(name) {
   return 'main'
 }
 
-/**
- * ADET is the ordered quantity for one sipariş, prepended to the sheet from
- * the order (see client/src/data/orderAdet.js#buildAdetRows). It describes a
- * single print run, not the product — baking it into the catalog spec would
- * make the next order inherit the previous run's quantity.
- */
-const isAdetLabel = (label) => up(label).startsWith('ADET')
 
 /** Spec rows → product_info `fields`, dropping the rows that don't belong. */
 function fieldsFromRows(rows) {

@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 
 import api from '@/api'
 import { getComponentsForProject, getComponentRows } from '@/data/productCatalog'
+import { adetForComponent, isAdetLabel, missingAdetLabel, withAdetRow } from '@/lib/spec-form-adet'
 import { buildFormSheet, printSpecSheets } from '@/lib/specPrint'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
@@ -25,7 +26,7 @@ import {
   DialogTitle,
   DIALOG_MOBILE_SHEET,
 } from '@/components/ui/dialog'
-import { cn, formatNumber } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 const deepClone = (x) => JSON.parse(JSON.stringify(x ?? []))
 
@@ -60,7 +61,6 @@ export default function SiparisBaskiOnayFormDialog({
 }) {
   const { user } = useAuth()
   const [components, setComponents] = useState([])
-  const [adet, setAdet] = useState('')
   const [tarih, setTarih] = useState('')
   const [basimYeri, setBasimYeri] = useState('')
   const [hazirlayan, setHazirlayan] = useState('')
@@ -112,17 +112,32 @@ export default function SiparisBaskiOnayFormDialog({
     // bleed into a different order's approve view.
     setBaskiOnayEditOverride(false)
     const saved = order.baski_onay_form
+    // ADET, per parça, straight off the order the sales team raised — this
+    // side never has to guess. `withAdetRow` puts it under the parça's SAYFA
+    // SAYISI and leaves a filled row alone, so a leader's correction survives
+    // a reopen; `saved.adet` is what a sheet approved before ADET moved off
+    // the künye carries, lifted onto the rows so it still reads back.
+    const withAdet = (c) => ({ ...c, rows: withAdetRow(c.rows, adetForComponent(c.component, order) || (saved?.adet ?? '')) })
     if (saved?.components?.length) {
-      setComponents(deepClone(saved.components))
+      setComponents(deepClone(saved.components).map(withAdet))
     } else {
       const catalog = getComponentsForProject(order.project_id).map((c) => ({
         id: c.component,
         component: c.component,
         rows: getComponentRows(c),
       }))
-      setComponents(catalog)
+      // A sipariş cannot be raised without ürün bilgileri (pipeline.js
+      // #assertOrderable), but this dialog reads the catalog out of a
+      // synchronous local cache that may simply not be primed yet. It used to
+      // render "Bu ürün için bilgi yok." and nothing else — and now that ADET
+      // lives on the blocks, a sheet with no block would have nowhere to carry
+      // the quantity and could never be approved. One block named after the
+      // product, exactly as the project side falls back to its custom rows.
+      const blocks = catalog.length > 0
+        ? catalog
+        : [{ id: order.project_title ?? order.id, component: (order.project_title ?? '').replace(/ \/ /g, ' '), rows: [] }]
+      setComponents(blocks.map(withAdet))
     }
-    setAdet(saved?.adet ?? defaultAdet(order))
     setTarih(saved?.tarih ?? new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }))
     setBasimYeri(saved?.basimYeri ?? '')
     setHazirlayan(saved?.hazirlayan ?? user?.name ?? '')
@@ -167,7 +182,7 @@ export default function SiparisBaskiOnayFormDialog({
   function currentPayload() {
     return {
       components: components.map((c) => ({ component: c.component, rows: c.rows })),
-      adet, tarih, basimYeri, hazirlayan,
+      tarih, basimYeri, hazirlayan,
     }
   }
 
@@ -177,7 +192,6 @@ export default function SiparisBaskiOnayFormDialog({
   function handlePrint() {
     if (!isReadOnly && !requiredFilled()) return
     const form = {
-      baskiOnayAdet: adet,
       baskiOnayTarihi: tarih,
       basimYeri,
       baskiOnayHazirlayan: hazirlayan,
@@ -198,7 +212,7 @@ export default function SiparisBaskiOnayFormDialog({
    */
   function missingRequired() {
     return [
-      !adet.trim() && 'ADET',
+      missingAdetLabel(components),
       !tarih.trim() && 'TARİH',
       !basimYeri.trim() && 'BASIM YERİ',
       !hazirlayan.trim() && 'HAZIRLAYAN',
@@ -270,7 +284,9 @@ export default function SiparisBaskiOnayFormDialog({
     <FormSheet>
       <FormSheetHead title="Baskı Onay Formu" subtitle={bookTitle} icon={ShoppingCart} />
 
-      {/* One block per parça — each of these prints as its own sheet. */}
+      {/* One block per parça — each of these prints as its own sheet. A
+          product whose catalog hasn't loaded still gets one block (see the
+          load effect), so this empty state is the no-order case only. */}
       {components.length === 0 ? (
         <p className="px-4 py-4 text-center text-xs text-muted-foreground">Bu ürün için bilgi yok.</p>
       ) : (
@@ -289,6 +305,7 @@ export default function SiparisBaskiOnayFormDialog({
                   onMoveUp={c.rows.length > 1 && ri > 0 ? () => moveRow(ci, ri, -1) : null}
                   onMoveDown={c.rows.length > 1 && ri < c.rows.length - 1 ? () => moveRow(ci, ri, 1) : null}
                   readOnly={isReadOnly}
+                  required={isAdetLabel(r.label)}
                 />
               ))}
               {!isReadOnly && <SheetAddRow onClick={() => addRow(ci)} />}
@@ -302,7 +319,10 @@ export default function SiparisBaskiOnayFormDialog({
           on paper (specPrint.js): the parça spec is what the sheet is FOR, and
           the rows the form fills in about itself close it. */}
       <FormSheetBlock className="bg-muted/10">
-        <SheetRow label="ADET" name="adet" value={adet} onChange={(e) => setAdet(e.target.value)} readOnly={isReadOnly} required />
+        {/* No ADET here — it is a row inside each parça block above, under that
+            parça's SAYFA SAYISI, so an order for 5.000 books in 2.500 boxes
+            prints the right number on each sheet instead of one string reading
+            "Kitap: 5.000, Kutu: 2.500". See lib/spec-form-adet.js. */}
         <SheetRow label="TARİH" name="tarih" value={tarih} onChange={(e) => setTarih(e.target.value)} readOnly={isReadOnly} required />
         <SheetRow label="BASIM YERİ" name="basimYeri" value={basimYeri} onChange={(e) => setBasimYeri(e.target.value)} readOnly={isReadOnly} required />
         <SheetRow label="HAZIRLAYAN" name="hazirlayan" value={hazirlayan} onChange={(e) => setHazirlayan(e.target.value)} readOnly={isReadOnly} required />
@@ -393,10 +413,4 @@ export default function SiparisBaskiOnayFormDialog({
   )
 }
    
-function defaultAdet(order) {
-  const items = Array.isArray(order.items) ? order.items : []
-  if (items.length > 1) {
-    return items.map((it) => `${it.name}: ${formatNumber(it.quantity)}`).join(', ')
-  }
-  return order.quantity != null ? formatNumber(order.quantity) : ''
-}
+

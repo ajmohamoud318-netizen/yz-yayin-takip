@@ -121,11 +121,20 @@ export const VARIANTS = {
     personField: 'baskiOnayHazirlayan',
     dateLabel:   'BASKI ONAY TARİHİ',
     personLabel: 'HAZIRLAYAN',
-    // Dedicated fields (unlike demo/ozalit's buried ADET custom row, which
-    // never rendered or printed once a project had a catalog — see the load
-    // effect below for the fallback chain that fills adetField).
-    adetField:     'baskiOnayAdet',
-    adetLabel:     'ADET',
+    // BASIM YERİ is a fact about the sheet, so it stays a künye field.
+    //
+    // ADET is not, and no longer has one. It is the quantity of a single print
+    // run and a sipariş can order 5.000 books in 2.500 boxes — one field at the
+    // top of the sheet could say only one of those numbers, and the sipariş
+    // dialog had resorted to cramming them into a string ("Kitap: 500, Kutu:
+    // 250"). It is now a row inside each parça's own spec block, under SAYFA
+    // SAYISI, where the matbaa reads it. See lib/spec-form-adet.js.
+    //
+    // `requiresAdet` says this is the sheet that must carry one — every block
+    // on it, before it may be sent. It is also what puts the row there in the
+    // first place (useSpecSheet), so a Demo or Ozalit sheet has no ADET row to
+    // demand and never fails the check for lacking one.
+    requiresAdet: true,
     locationField: 'basimYeri',
     locationLabel: 'BASIM YERİ',
     attemptField: 'baski_onay_attempt',

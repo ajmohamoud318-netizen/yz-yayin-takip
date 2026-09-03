@@ -346,7 +346,14 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // Empty for every variant but baski_onay — see missingRequiredFields. Each
   // write path below refuses while it is non-empty, and the footer disables
   // its actions with the reason spelled out rather than only toasting on click.
-  const missingRequired = missingRequiredFields(variant, form)
+  //
+  // The blocks are what the sheet's ADET rows live on: the selected parçalar,
+  // or the single custom-row body a project with no catalog falls back to.
+  const missingRequired = missingRequiredFields(
+    variant,
+    form,
+    selectedComponents.length > 0 ? selectedComponents : [{ component: form.isinAdi, rows: customRows }],
+  )
   function requiredFilled() {
     if (missingRequired.length === 0) return true
     toast.error(`${missingRequired.join(' ve ')} boş bırakılamaz.`)

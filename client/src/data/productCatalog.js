@@ -15,6 +15,7 @@
 // pre-loads the JSON seed so synchronous reads can fall back to it.
 import api from '@/api'
 import { inferParcaKind } from '@/data/parcaTemplates'
+import { isAdetLabel } from '@/lib/spec-form-adet'
 
 // Lazy-loaded seed data — starts empty, populated by loadSeed() during
 // hydrateProductInfo(). Replaces the old static import of productInfo.js.
@@ -253,6 +254,13 @@ export async function saveEditedComponents(projectId, edited) {
       { k: 'İŞİN ADI', v: name },
       ...(e.rows ?? [])
         .filter((r) => (r.label ?? '').trim() || (r.value ?? '').trim())
+        // ADET is one print run's quantity, not a fact about the product —
+        // writing it here would make the next sipariş inherit the previous
+        // run's number. The server drops it on capture for the same reason
+        // (services/product-info-capture.js#isAdetLabel); this is the edit
+        // path saying so too, since a Baskı Onay Formu now carries an ADET row
+        // inside every parça block.
+        .filter((r) => !isAdetLabel(r.label))
         .map((r) => ({ k: r.label ?? '', v: r.value ?? '' })),
     ]
     if (byName.has(name)) {

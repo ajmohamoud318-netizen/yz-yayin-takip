@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import PromoteRecordDialog from '@/components/PromoteRecordDialog'
 import ProductSubtaskEditor from '@/components/ProductSubtaskEditor'
 import { SpecSheet, EditableSpecSheet, KindBadge, resolveKind } from '@/components/SpecSheet'
+import { mainTemplateFields } from '@/data/parcaTemplates'
 import { saveComponentsForProject, primeProductInfoCache, getSeedData } from '@/data/productCatalog'
 
 /* ---- offline mirror (server is the source of truth) ---- */
@@ -467,11 +468,12 @@ export default function UrunBilgileri() {
     const newComp = {
       component: title,
       date: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }),
-      fields: [
-        { k: 'İŞİN ADI', v: title },
-        { k: 'ADET', v: '' },
-        { k: 'EBAT', v: '' },
-      ],
+      // Same template the New Project dialog seeds the lead parça with, so a
+      // product created from this page and one created with its project are
+      // the same document. No page count to seed here — this page knows the
+      // title, not the project's subtasks — and the spec form substitutes the
+      // live İç Sayfalar total regardless of what the row was seeded with.
+      fields: mainTemplateFields(title),
     }
     setOverrides((prev) => ({ ...prev, [projectId]: [newComp] }))
     setMeta((prev) => ({ ...prev, [projectId]: { updated_by_name: user?.name ?? null, updated_at: new Date().toISOString() } }))

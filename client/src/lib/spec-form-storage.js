@@ -13,6 +13,7 @@
  */
 
 import api from '@/api'
+import { missingAdetLabel } from '@/lib/spec-form-adet'
 import { VARIANTS } from '@/lib/spec-form-variants'
 
 /* ------------------------------------------------------------------ */
@@ -39,7 +40,11 @@ const OLD_FIELD_LABELS = {
 
 function knownFields(variant) {
   const fields = ['isinAdi', variant.dateField, variant.personField, 'teslimEdenKisi', 'teslimTarihi', 'teslimAlanKisi', 'onaylayanKisi', 'matbaaYetkilisi']
-  if (variant.adetField) fields.push(variant.adetField)
+  // baskiOnayAdet is read but no longer written: ADET moved onto the parça
+  // rows (lib/spec-form-adet.js) and this keeps the number a sheet approved
+  // BEFORE that move readable, so useSpecSheet can lift it onto those rows
+  // instead of showing an approved sheet with a blank quantity.
+  fields.push('baskiOnayAdet')
   if (variant.locationField) fields.push(variant.locationField)
   return new Set(fields)
 }
@@ -308,14 +313,24 @@ export function emptyForm(variant, project, user) {
  * ADET and BASIM YERİ are the two facts the matbaa physically prints from, and
  * this sheet is the last gate before baskıda — a sheet that goes out with
  * either one blank is a sheet nobody can print. Nothing on the path used to
- * check, so both could (and did) ship empty. Only the baski_onay variant
- * declares these fields, so every other variant gets an empty list.
+ * check, so both could (and did) ship empty.
+ *
+ * BASIM YERİ is a künye field and checked as one. ADET is not: it lives on the
+ * parça rows now, one per block, so the check walks whatever carries the
+ * sheet's spec — `blocks`, the selected parçalar or the single custom-row body
+ * a project with no catalog falls back to. Only the baski_onay variant sets
+ * `requiresAdet` / `locationField`, so every other variant still gets an empty
+ * list however its blocks look — a Demo sheet legitimately carries no ADET row
+ * at all, and must not be held back for it.
  */
-export function missingRequiredFields(variant, form) {
-  return [
-    [variant.adetField, variant.adetLabel],
-    [variant.locationField, variant.locationLabel],
-  ]
-    .filter(([field]) => field && !String(form?.[field] ?? '').trim())
-    .map(([, label]) => label)
+export function missingRequiredFields(variant, form, blocks = null) {
+  const missing = []
+  if (variant.requiresAdet && blocks) {
+    const adet = missingAdetLabel(blocks)
+    if (adet) missing.push(adet)
+  }
+  if (variant.locationField && !String(form?.[variant.locationField] ?? '').trim()) {
+    missing.push(variant.locationLabel)
+  }
+  return missing
 }

@@ -28,6 +28,7 @@ import {
   kilavuzTemplateFields,
   kutuComponentName,
   kutuTemplateFields,
+  mainTemplateFields,
 } from '@/data/parcaTemplates'
 import { useAuth } from '@/hooks/useAuth'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
@@ -68,18 +69,17 @@ function deriveInitialProductInfo(title, subtasks) {
       component: title.trim(),
       kind: 'main',
       date: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }),
-      // The page count for an İç Sayfalar-led project isn't fixed at create
-      // time — the designer adds / removes pages as the work surfaces, and the
-      // number on the recipe stays "auto" until the matbaa prints from it.
-      // Seeding the SAYFA SAYISI row in place is a single edit: the row sits
-      // right under İŞİN ADI (the title always leads), so the recipe prints
-      // and reads in the same order the leader expects from the seed library.
-      fields: [
-        { k: 'İŞİN ADI', v: title.trim() },
-        ...(subtasks.sayfalar ? [{ k: 'SAYFA SAYISI', v: 'auto' }] : []),
-        { k: 'ADET', v: '' },
-        { k: 'EBAT', v: '' },
-      ],
+      // The lead parça gets its template like the siblings do (see
+      // data/parcaTemplates) — the seven things a book declares, labels down
+      // the left and every value the leader's to fill.
+      //
+      // SAYFA SAYISI is the exception and leads the list: on an İç Sayfalar-led
+      // project the count isn't fixed at create time — the designer adds and
+      // removes pages as the work surfaces — so the row is seeded with the
+      // "auto" placeholder the spec form resolves to the live total on its way
+      // to screen. Without that subtask there is nothing to resolve and the row
+      // starts empty like its neighbours.
+      fields: mainTemplateFields(title, { pageCountValue: subtasks.sayfalar ? 'auto' : '' }),
     },
   ]
   // A parça is named after the product it belongs to, not after its type:
