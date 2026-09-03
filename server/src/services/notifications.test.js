@@ -416,7 +416,7 @@ test('"Ozalit Başladım" tells the leader + assigned designers', async () => {
  *  transaction as the status change that called it. The whole advance rolls
  *  back and the client gets a bare 500.
  *
- *  ORDER_STEP_TONE carried 'violet' for siparis_baski_onay and did exactly
+ *  ORDER_STEP_TONE carried 'violet' for baski_onayi_bekleniyor and did exactly
  *  that to every advance into that step. Nothing caught it because `emit`
  *  short-circuits when the actor is the only recipient, so a dev DB with one
  *  team leader never reaches the INSERT — the actor below is deliberately in
@@ -428,8 +428,8 @@ const ALLOWED_TONES = ['amber', 'green', 'rose', 'blue', 'pink']
 
 test('every order step emits a tone the notifications CHECK accepts', async () => {
   const steps = [
-    'pending', 'goruldu', 'tasarimci_onay', 'ekran_onay',
-    'matbaa_onay', 'siparis_baski_onay', 'onaylandi',
+    'atama_bekleniyor', 'tasarimciya_atandi', 'matbaa_ozalit_yapiyor', 'ekran_onayinda',
+    'imza_bekleniyor', 'baski_onayi_bekleniyor', 'baskida',
   ]
   for (const newStatus of steps) {
     const client = fakeClient()

@@ -79,16 +79,16 @@ export async function productInfoRoutes(fastify) {
   //
   // The one exception is the designer doing THIS project's baskı check:
   // TalepSignDialog opens a spec editor for a designer while their order sits
-  // at 'goruldu' (isDesignerStep → canEditSpec) and stamps "ürün bilgileri
+  // at 'tasarimciya_atandi' (isDesignerStep → canEditSpec) and stamps "ürün bilgileri
   // güncellendi" onto the sign note. Without this branch that write 403'd,
   // and because saveComponentsForProject treats a failure as "offline" the
   // edit silently survived in the designer's own localStorage mirror and
   // nowhere else — the audit trail claimed a change the server never saw.
   //
-  // 'kontrol_edildi' (migration 054) is the second half of that same
+  // 'kontroller_tamam' (migration 054) is the second half of that same
   // designer's turn: the Ozalit Üretim Formu they submit to request the
   // ozalit writes its parça rows straight back here (persistCatalogEdits).
-  // Both steps, one owner — leaving it at 'goruldu' alone put the silent
+  // Both steps, one owner — leaving it at 'tasarimciya_atandi' alone put the silent
   // failure above right back, one step later.
   //
   // Deliberately narrow: the designer must be on that order's own
@@ -106,7 +106,7 @@ export async function productInfoRoutes(fastify) {
       const { rowCount } = await getPool().query(
         `SELECT 1 FROM order_requests
           WHERE project_id = $1
-            AND status IN ('goruldu', 'kontrol_edildi')
+            AND status IN ('tasarimciya_atandi', 'kontroller_tamam')
             AND assignee_ids @> $2::jsonb
           LIMIT 1`,
         [projectId, JSON.stringify([request.user.id])],

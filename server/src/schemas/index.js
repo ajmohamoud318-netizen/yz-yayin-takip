@@ -808,7 +808,7 @@ const subtasksPagePatch = {
     additionalProperties: false,
     required: ['status'],
     properties: {
-      status: { type: 'string', enum: ['pending', 'done', 'rework'] },
+      status: { type: 'string', enum: ['atama_bekleniyor', 'done', 'rework'] },
     },
   },
 }
@@ -1020,12 +1020,12 @@ const ordersAdvance = {
         items: { type: 'string', minLength: 1, maxLength: 64 },
       },
       expectedVersion: { type: ['integer', 'null'], minimum: 0 },
-      // Only meaningful when the order is at 'kontrol_edildi' — the
+      // Only meaningful when the order is at 'kontroller_tamam' — the
       // designer's ozalit-request step (migration 054) — on a RESUBMIT
       // (order.last_reject_type === 'designer'). The route 400s if this is
       // sent on a first submission, at any other step, or omitted on a
       // resubmit.
-      route: { type: 'string', enum: ['tasarimci_onay', 'ekran_onay'] },
+      route: { type: 'string', enum: ['matbaa_ozalit_yapiyor', 'ekran_onayinda'] },
     },
   },
 }
@@ -1090,7 +1090,7 @@ const ordersOzalitChangeRequest = {
   },
 }
 
-// Save-draft (PATCH) and approve (POST) for the siparis_baski_onay
+// Save-draft (PATCH) and approve (POST) for the baski_onayi_bekleniyor
 // print-spec form share this shape — approve additionally requires
 // adet/tarih/basimYeri/hazirlayan to be non-empty, enforced by the route (not
 // `required` here) so a draft save can be partial.

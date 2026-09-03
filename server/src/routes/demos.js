@@ -85,9 +85,9 @@ export async function demoRoutes(fastify) {
       // the round and reopens this path.
       if (request.user.role !== 'printer') {
         if (order) {
-          // The sipariş's own round lives at tasarimci_onay (migration 051),
+          // The sipariş's own round lives at matbaa_ozalit_yapiyor (migration 051),
           // with the same flag under a different name.
-          if (order.ozalit_started && order.status === 'tasarimci_onay') {
+          if (order.ozalit_started && order.status === 'matbaa_ozalit_yapiyor') {
             badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
           }
         } else {

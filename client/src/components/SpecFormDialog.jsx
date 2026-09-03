@@ -191,14 +191,14 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // no silent way to make the fix without the matbaa being told.
   const lockedByFixPending = mode === 'view' && !notifyOnSave && round.fixPending
   /* The one sipariş step whose sheet the DESIGNER writes: "Ozalit İsteyin"
-     (order status 'kontrol_edildi', migration 054). VARIANTS.ozalit locks
+     (order status 'kontroller_tamam', migration 054). VARIANTS.ozalit locks
      designers out because on the project pipeline the team leader is the
      author of that sheet — here the designer IS the requester, and this form
      is the request. Every other order step still arrives read-only for them
-     (the matbaa's teslim, the leader's matbaa_onay approve), and a history
+     (the matbaa's teslim, the leader's imza_bekleniyor approve), and a history
      snapshot stays read-only for everyone. */
   const authoringOrderOzalit =
-    orderScoped && mode === 'advance' && order?.status === 'kontrol_edildi'
+    orderScoped && mode === 'advance' && order?.status === 'kontroller_tamam'
   /* ── Baskı Onayı dual-approval (migration 045) ────────────────────────────
    * One team leader PREPARES the form; a DIFFERENT team leader gives the
    * actual "Baskı Onayı". The server is the source of truth for "different
@@ -574,8 +574,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    * `routeOverride` is the sipariş resubmit choice: once an order has bounced
    * back to the designer (order.last_reject_type === 'designer'), the ozalit
    * request may go to the matbaa for another physical proof (the default,
-   * 'tasarimci_onay') or to the team leader as a digital Ekran Onayı
-   * ('ekran_onay'). The server refuses a route on a first submission, so it
+   * 'matbaa_ozalit_yapiyor') or to the team leader as a digital Ekran Onayı
+   * ('ekran_onayinda'). The server refuses a route on a first submission, so it
    * is only ever sent when the footer actually offered the choice.
    */
   async function handleAdvance(routeOverride = null) {
@@ -615,16 +615,16 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       }
       // The one write that must go BEFORE the transition, not after it. The
       // reçete is the designer's to edit because of the step they are ON
-      // (kontrol_edildi — see PUT /product-info's designer window), and this
+      // (kontroller_tamam — see PUT /product-info's designer window), and this
       // advance is what ends that step. Posted afterwards, like every other
       // path here does it, it would arrive against an order already at
-      // tasarimci_onay and take a 403 that saveComponentsForProject swallows
+      // matbaa_ozalit_yapiyor and take a 403 that saveComponentsForProject swallows
       // as "offline": the parça edits would ship on the sheet and silently
       // never reach Baskı Reçeteleri. A refused advance leaves a reçete edit
       // the designer was entitled to make either way.
       if (authoringOrderOzalit) await persistCatalogEdits()
-      // A sipariş's ozalit walks its own step machine (goruldu →
-      // tasarimci_onay → matbaa_onay), but the click, the stamps and the
+      // A sipariş's ozalit walks its own step machine (tasarimciya_atandi →
+      // matbaa_ozalit_yapiyor → imza_bekleniyor), but the click, the stamps and the
       // sheet it writes are the project pipeline's. expectedVersion carries
       // the order's optimistic lock so a second signer can't be silently
       // overwritten — the same guard TalepSignDialog uses.
@@ -652,7 +652,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           // been printed yet, and says nothing at all about the Ekran Onayı
           // route this same button can take on a resubmit.
           : authoringOrderOzalit
-            ? routeOverride === 'ekran_onay'
+            ? routeOverride === 'ekran_onayinda'
               ? 'Ekran onayı istendi, ekip liderine gönderildi.'
               : 'Ozalit istendi, matbaaya gönderildi.'
             : variant.advanceToast(project),
@@ -681,7 +681,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       // Stamp the real approver at the moment approval actually happens —
       // this is the only point where "onaylayanKisi" should get a value.
       const approvedForm = { ...form, onaylayanKisi: user?.name ?? '' }
-      // matbaa_onay is the sipariş's ozalit_onay: multi-party, leader-first,
+      // imza_bekleniyor is the sipariş's ozalit_onay: multi-party, leader-first,
       // and it rides the same /advance route one vote at a time — so a click
       // here doesn't always complete the round (see the toast below).
       const updated = orderScoped

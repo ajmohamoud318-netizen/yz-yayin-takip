@@ -13,7 +13,7 @@ export function createHttpOrderRepository() {
     async findOpenByProject(projectId) {
       const all = await httpClient.get('/order-requests')
       return (all.data ?? []).find(
-        (o) => o.project_id === projectId && o.status !== 'onaylandi' && o.status !== 'rejected',
+        (o) => o.project_id === projectId && o.status !== 'baskida' && o.status !== 'rejected',
       ) ?? null
     },
     // Mark a delivered matbaa ozalit "Teslim Alındı" — the gate before the
@@ -35,14 +35,14 @@ export function createHttpOrderRepository() {
       const { data } = await httpClient.patch(`/order-requests/${orderId}/subtasks/${subtaskId}`, patch)
       return data
     },
-    // Save a draft of the siparis_baski_onay print-spec form without
+    // Save a draft of the baski_onayi_bekleniyor print-spec form without
     // advancing — the form snapshot lives on order_requests.baski_onay_form
     // (migration 046), not the shared demos table.
     async saveOrderBaskiOnayForm(id, body) {
       const { data } = await httpClient.patch(`/order-requests/${id}/baski-onay-form`, body)
       return data
     },
-    // Mark the siparis_baski_onay form "hazırlandı" (migration 060, maker
+    // Mark the baski_onayi_bekleniyor form "hazırlandı" (migration 060, maker
     // half): saves the sheet and hands it to another team leader. Does NOT
     // advance the order — approveOrderBaskiOnayForm does that, and refuses
     // the preparer while any other leader is active.
@@ -50,7 +50,7 @@ export function createHttpOrderRepository() {
       const { data } = await httpClient.post(`/order-requests/${id}/baski-onay-prepare`, body)
       return data
     },
-    // Approve the siparis_baski_onay form — saves the final snapshot AND
+    // Approve the baski_onayi_bekleniyor form — saves the final snapshot AND
     // advances the order to onaylandi in one action.
     async approveOrderBaskiOnayForm(id, body) {
       const { data } = await httpClient.post(`/order-requests/${id}/baski-onay-approve`, body)
@@ -58,7 +58,7 @@ export function createHttpOrderRepository() {
     },
     // Full parity with the main pipeline's demo/ozalit started/cancel/edit/
     // change-request flow (migrations 048/049), scoped to the order's own
-    // ozalit round delivered at tasarimci_onay — see order-transitions.js.
+    // ozalit round delivered at matbaa_ozalit_yapiyor — see order-transitions.js.
     async startOrderOzalit(id) {
       const { data } = await httpClient.post(`/order-requests/${id}/ozalit-start`, {})
       return data

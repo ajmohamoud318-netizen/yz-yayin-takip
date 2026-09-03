@@ -135,7 +135,7 @@ describe('useProjectsStore cross-tab BroadcastChannel sync', () => {
     mount()
 
     await act(async () => {
-      store.updateOne({ id: 'p-1', stage: 'onaylandi' })
+      store.updateOne({ id: 'p-1', stage: 'baskida' })
     })
 
     // Drain the postMessage queue before asserting on what the peer saw.
@@ -149,7 +149,7 @@ describe('useProjectsStore cross-tab BroadcastChannel sync', () => {
     // Two distinct responses so we can tell the mount-time fetch from the
     // listener-triggered fetch by the call count.
     api.listProjects.mockResolvedValueOnce([])
-    api.listProjects.mockResolvedValueOnce([{ id: 'p-1', stage: 'onaylandi' }])
+    api.listProjects.mockResolvedValueOnce([{ id: 'p-1', stage: 'baskida' }])
 
     mount()
     // Mount triggers the initial fetch.

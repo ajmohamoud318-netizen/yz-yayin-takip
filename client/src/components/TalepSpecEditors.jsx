@@ -135,7 +135,7 @@ function SubtaskEditor({ subtasks, onChange }) {
 
 /**
  * Alt görevler, collapsed behind their own header with the revize count on it
- * — the designer's first job at the 'goruldu' check step.
+ * — the designer's first job at the 'tasarimciya_atandi' check step.
  */
 export function SubtaskPanel({ subtasks, onChange, open, onToggle }) {
   const revizeCount = subtasks.filter((s) => s.needs_revize).length

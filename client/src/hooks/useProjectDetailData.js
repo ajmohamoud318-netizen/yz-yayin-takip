@@ -31,7 +31,7 @@ export function useProjectDetailData(id) {
   const [signOrder, setSignOrder] = useState(null)
   // Distinct from baskiOnayFormOpen — that's the final production-gate
   // "Baskı Onayı" (BaskiOnayFormDialog), unrelated to a sipariş order's own
-  // "Baskı Onayı" step (siparis_baski_onay), which needs its own form dialog
+  // "Baskı Onayı" step (baski_onayi_bekleniyor), which needs its own form dialog
   // (SiparisBaskiOnayFormDialog) before it can advance — see canActOnOrder.
   const [siparisBaskiOnayOrder, setSiparisBaskiOnayOrder] = useState(null)
   // The designer's ozalit-request step — this page already holds the project,
@@ -86,14 +86,14 @@ export function useProjectDetailData(id) {
 
   function handleSiparisBaskiOnayApproved(updated) {
     setProjectOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)))
-    if (updated.status !== 'siparis_baski_onay') setSiparisBaskiOnayOrder(null)
+    if (updated.status !== 'baski_onayi_bekleniyor') setSiparisBaskiOnayOrder(null)
   }
 
   function openOrderAction(order) {
-    if (order.status === 'siparis_baski_onay') setSiparisBaskiOnayOrder(order)
+    if (order.status === 'baski_onayi_bekleniyor') setSiparisBaskiOnayOrder(order)
     // "Ozalit İsteyin" (migration 054) opens the order's own Ozalit Üretim
     // Formu — sending that sheet IS the request, so there's no sign dialog.
-    else if (order.status === 'kontrol_edildi') setOzalitRequestOrder(order)
+    else if (order.status === 'kontroller_tamam') setOzalitRequestOrder(order)
     else setSignOrder(order)
   }
 

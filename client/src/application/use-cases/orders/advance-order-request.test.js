@@ -20,17 +20,17 @@ describe('advanceOrderRequest', () => {
   })
 
   it('PATCHes /order-requests/:id/advance with the notes and returns the data', async () => {
-    httpClient.patch.mockResolvedValueOnce({ data: { id: 'or-1', status: 'goruldu' } })
+    httpClient.patch.mockResolvedValueOnce({ data: { id: 'or-1', status: 'tasarimciya_atandi' } })
     const advance = makeAdvanceOrderRequest()
     const result = await advance('or-1', { notes: 'hızlıca ilerleyin' })
     expect(httpClient.patch).toHaveBeenCalledWith('/order-requests/or-1/advance', {
       notes: 'hızlıca ilerleyin',
     })
-    expect(result).toEqual({ id: 'or-1', status: 'goruldu' })
+    expect(result).toEqual({ id: 'or-1', status: 'tasarimciya_atandi' })
   })
 
   it('defaults notes to an empty string when omitted', async () => {
-    httpClient.patch.mockResolvedValueOnce({ data: { id: 'or-2', status: 'goruldu' } })
+    httpClient.patch.mockResolvedValueOnce({ data: { id: 'or-2', status: 'tasarimciya_atandi' } })
     const advance = makeAdvanceOrderRequest()
     await advance('or-2', {})
     expect(httpClient.patch).toHaveBeenCalledWith('/order-requests/or-2/advance', { notes: '' })

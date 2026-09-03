@@ -238,8 +238,8 @@ export default function ProjectDetailHeader({ d }) {
             <OrderProgressStepper
               key={o.id}
               order={o}
-              sold={sold && o.status === 'onaylandi'}
-              handoverPending={handoverPending && o.status === 'onaylandi'}
+              sold={sold && o.status === 'baskida'}
+              handoverPending={handoverPending && o.status === 'baskida'}
               canAct={canActOnOrder(user, o, fallbackProjectIds)}
               onAct={() => openOrderAction(o)}
             />

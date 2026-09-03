@@ -104,14 +104,14 @@ export function useProjectDetail(id) {
   // Orders worth showing their own tracker for: any still-active one, plus
   // (until the project actually sells) the single most recently approved
   // order — otherwise its tracker would vanish the instant it hits
-  // 'onaylandi', even though it hasn't reached 'Satışta' yet.
+  // 'baskida', even though it hasn't reached 'Satışta' yet.
   const sold = project?.stage === 'satista'
-  const handoverPending = data.projectHandover?.status === 'pending'
+  const handoverPending = data.projectHandover?.status === 'atama_bekleniyor'
   const trackedOrders = useMemo(() => {
     const active = data.projectOrders.filter(isActiveOrder)
     if (sold) return active
     const lastApproved = data.projectOrders
-      .filter((o) => o.status === 'onaylandi')
+      .filter((o) => o.status === 'baskida')
       .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0]
     return lastApproved ? [...active, lastApproved] : active
   }, [data.projectOrders, sold])

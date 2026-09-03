@@ -52,7 +52,7 @@ export default function Approvals({ tab = 'demo' }) {
   // confirm — the printer has to see the sheet they're committing to.
   const [startingWork, setStartingWork] = useState(false)
 
-  // Sipariş queue (printer's sign-off step: tasarimci_onay → matbaa_onay)
+  // Sipariş queue (printer's sign-off step: matbaa_ozalit_yapiyor → imza_bekleniyor)
   const [orders, setOrders] = useState([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [signOrder, setSignOrder] = useState(null)
@@ -70,11 +70,11 @@ export default function Approvals({ tab = 'demo' }) {
     if (!isPrinter || tab !== 'siparis') return
     setOrdersLoading(true)
     api.listOrderRequests()
-      .then((reqs) => setOrders(reqs.filter((r) => r.status === 'tasarimci_onay')))
+      .then((reqs) => setOrders(reqs.filter((r) => r.status === 'matbaa_ozalit_yapiyor')))
       .finally(() => setOrdersLoading(false))
   }, [isPrinter, tab])
 
-  // A tasarimci_onay push/bell tap lands here with ?order=<id> — the printer
+  // A matbaa_ozalit_yapiyor push/bell tap lands here with ?order=<id> — the printer
   // works form-first, so open TalepSignDialog straight away instead of
   // leaving them to find the right card's "Teslim Edin" button. Strip the
   // param once consumed so a later re-render (or the dialog re-opening after
@@ -141,7 +141,7 @@ export default function Approvals({ tab = 'demo' }) {
   }
 
   // The printer's "İşlemi Başlatın" (and a change-request accept/decline)
-  // don't move the order out of tasarimci_onay — they only flip flags the
+  // don't move the order out of matbaa_ozalit_yapiyor — they only flip flags the
   // dialog itself gates on: Teslim Edin stays hidden until ozalit_started.
   // Without this handler the matbaa pressed Başlatın, got the toast, and the
   // button never appeared — `signOrder` is a snapshot and this page loads its

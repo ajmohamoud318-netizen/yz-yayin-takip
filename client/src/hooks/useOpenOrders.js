@@ -17,7 +17,7 @@ export function useOpenOrdersByProject() {
       if (cancelled) return
       const map = new Map()
       for (const r of reqs) {
-        if (r.status === 'onaylandi' || r.status === 'rejected') continue
+        if (r.status === 'baskida' || r.status === 'rejected') continue
         map.set(r.project_id, r)
       }
       setByProject(map)

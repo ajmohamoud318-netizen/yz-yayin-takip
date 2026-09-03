@@ -23,12 +23,12 @@ const LEADER_ACTION_STEPS = ORDER_LEADER_ACTION_STEPS
 
 const STATUS_BADGE = {
   pending:             'bg-amber-50 text-amber-700 border-amber-200',
-  goruldu:             'bg-blue-50 text-blue-700 border-blue-200',
-  kontrol_edildi:      'bg-blue-50 text-blue-700 border-blue-200',
-  tasarimci_onay:      'bg-indigo-50 text-indigo-700 border-indigo-200',
+  tasarimciya_atandi:             'bg-blue-50 text-blue-700 border-blue-200',
+  kontroller_tamam:      'bg-blue-50 text-blue-700 border-blue-200',
+  matbaa_ozalit_yapiyor:      'bg-indigo-50 text-indigo-700 border-indigo-200',
   ekran_onay:          'bg-cyan-50 text-cyan-700 border-cyan-200',
-  matbaa_onay:         'bg-violet-50 text-violet-700 border-violet-200',
-  siparis_baski_onay:  'bg-purple-50 text-purple-700 border-purple-200',
+  imza_bekleniyor:         'bg-violet-50 text-violet-700 border-violet-200',
+  baski_onayi_bekleniyor:  'bg-purple-50 text-purple-700 border-purple-200',
   onaylandi:           'bg-emerald-50 text-emerald-700 border-emerald-200',
 }
 
@@ -70,12 +70,12 @@ export default function SiparisTalepleri() {
     setSignReject(false)
   }
 
-  // siparis_baski_onay approve closes the form dialog itself and reports
+  // baski_onayi_bekleniyor approve closes the form dialog itself and reports
   // back here (mirrors handleSigned) — a bare PATCH /advance can't move
   // this step, it requires the dedicated form-fill-then-approve routes.
   function handleBaskiOnayApproved(updated) {
     setRequests((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)))
-    if (updated.status !== 'siparis_baski_onay') setBaskiOnayOrder(null)
+    if (updated.status !== 'baski_onayi_bekleniyor') setBaskiOnayOrder(null)
   }
 
   // "Teslim Alındı" closes its own (compact) dialog — this just keeps the
@@ -91,8 +91,8 @@ export default function SiparisTalepleri() {
   const filtered = requests.filter((r) => {
     if (tab === 'all') return true
     if (tab === 'action') return LEADER_ACTION_STEPS.has(r.status)
-    if (tab === 'progress') return ['goruldu', 'kontrol_edildi', 'tasarimci_onay'].includes(r.status)
-    if (tab === 'done') return r.status === 'onaylandi'
+    if (tab === 'progress') return ['tasarimciya_atandi', 'kontroller_tamam', 'matbaa_ozalit_yapiyor'].includes(r.status)
+    if (tab === 'done') return r.status === 'baskida'
     return r.status === tab
   })
 
@@ -190,22 +190,22 @@ function RequestCard({ request, onSign, onReject, onOzalit, onBaskiOnay }) {
   const statusLabel = ORDER_STEP_LABELS[request.status] ?? request.status
   const items = normalizeItems(request.items, request.quantity)
   const needsLeaderAction = LEADER_ACTION_STEPS.has(request.status)
-  // Only matbaa_onay / ekran_onay offer a reject route (see ORDER_REJECT_TO) —
+  // Only imza_bekleniyor / ekran_onay offer a reject route (see ORDER_REJECT_TO) —
   // show the quick "Reddet" shortcut only there; other leader-action steps
-  // (pending, siparis_baski_onay) keep the Ozalit Formu quick-view instead.
+  // (pending, baski_onayi_bekleniyor) keep the Ozalit Formu quick-view instead.
   const canRejectHere = !!ORDER_REJECT_TO[request.status]
-  // siparis_baski_onay has no bare "click to advance" action — it needs the
+  // baski_onayi_bekleniyor has no bare "click to advance" action — it needs the
   // print-spec form filled in first, so it opens a different dialog
   // (SiparisBaskiOnayFormDialog) than every other leader-action step.
-  const isBaskiOnayStep = request.status === 'siparis_baski_onay'
+  const isBaskiOnayStep = request.status === 'baski_onayi_bekleniyor'
 
   const date = request.created_at
     ? new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(request.created_at))
     : '—'
 
-  // matbaa_onay is multi-party now — a single click here is one vote, not
+  // imza_bekleniyor is multi-party now — a single click here is one vote, not
   // necessarily the final one (see TalepSignDialog's isMatbaaOnayStep note).
-  const actionLabel = request.status === 'pending'
+  const actionLabel = request.status === 'atama_bekleniyor'
     ? 'Tasarımcıya Aktarın'
     : isBaskiOnayStep
       ? 'Baskı Onay Formu'
@@ -285,13 +285,13 @@ function RequestCard({ request, onSign, onReject, onOzalit, onBaskiOnay }) {
                 <Button
                   size="sm"
                   variant="default"
-                  className={cn(request.status === 'pending' && 'bg-amber-500 text-white shadow-sm hover:bg-amber-600')}
+                  className={cn(request.status === 'atama_bekleniyor' && 'bg-amber-500 text-white shadow-sm hover:bg-amber-600')}
                   onClick={(e) => { e.stopPropagation(); (isBaskiOnayStep ? onBaskiOnay : onSign)() }}
                 >
                   {actionLabel}
                 </Button>
               )}
-              {request.status === 'onaylandi' && (
+              {request.status === 'baskida' && (
                 <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
                   <CheckCircle2 className="h-3.5 w-3.5" />
                   Tamamlandı

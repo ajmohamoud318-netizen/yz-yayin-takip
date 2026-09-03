@@ -35,12 +35,12 @@ export default function MyProjects() {
   const [typeFilter, setTypeFilter] = useState('all')
   const [stageGroup, setStageGroup] = useState('all')
 
-  // Sipariş queue: orders on this designer's own steps ('goruldu',
-  // 'kontrol_edildi') for projects assigned to them
+  // Sipariş queue: orders on this designer's own steps ('tasarimciya_atandi',
+  // 'kontroller_tamam') for projects assigned to them
   const [siparisQueue, setSiparisQueue] = useState([])
   const [signOrder, setSignOrder] = useState(null)
   // The order's own Ozalit Üretim Formu, opened to BE SENT at the
-  // 'kontrol_edildi' step (migration 054). The project is fetched rather than
+  // 'kontroller_tamam' step (migration 054). The project is fetched rather than
   // taken from `mine` — a legacy product's order can sit here without its
   // project being in this designer's pipeline list.
   const [ozalitFor, setOzalitFor] = useState(null) // { order, project }
@@ -86,8 +86,8 @@ export default function MyProjects() {
   useEffect(() => {
     if (user?.role !== 'designer') return
     api.listOrderRequests().then((reqs) => {
-      // Designer signs orders at 'goruldu' and 'kontrol_edildi' — their two
-      // steps (migration 054) — and at 'matbaa_onay' until they've added
+      // Designer signs orders at 'tasarimciya_atandi' and 'kontroller_tamam' — their two
+      // steps (migration 054) — and at 'imza_bekleniyor' until they've added
       // their own approval to the multi-party ledger (see /siparis-onay's
       // identical filter — must match exactly). Check the order's own
       // assignee_ids first (authoritative — see isOrderAssignedToDesigner),
@@ -95,8 +95,8 @@ export default function MyProjects() {
       // before assignee_ids was populated.
       const relevant = reqs.filter((r) => {
         if (!isOrderAssignedToDesigner(r, user?.id, myProjectIds)) return false
-        if (r.status === 'goruldu' || r.status === 'kontrol_edildi') return true
-        if (r.status === 'matbaa_onay') {
+        if (r.status === 'tasarimciya_atandi' || r.status === 'kontroller_tamam') return true
+        if (r.status === 'imza_bekleniyor') {
           return !(r.matbaa_approvals ?? []).some((a) => a.id === user?.id)
         }
         return false
@@ -106,10 +106,10 @@ export default function MyProjects() {
   }, [user?.id, user?.role, myProjectIds])
 
   function handleOrderSigned(updated) {
-    // The checks step advances to 'kontrol_edildi', which is still this
+    // The checks step advances to 'kontroller_tamam', which is still this
     // designer's — keep that row and let its button flip to "Ozalit İsteyin"
     // instead of dropping it out of the queue.
-    if (updated.status === 'kontrol_edildi') {
+    if (updated.status === 'kontroller_tamam') {
       setSiparisQueue((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)))
     } else {
       setSiparisQueue((prev) => prev.filter((r) => r.id !== updated.id))
@@ -361,17 +361,17 @@ function SiparisOrderRow({ order, onSign, onOzalitRequest }) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const items = normalizeItems(order.items, order.quantity)
-  const isMatbaaOnay = order.status === 'matbaa_onay'
+  const isMatbaaOnay = order.status === 'imza_bekleniyor'
   // "Ozalit İsteyin" opens the order's own ozalit sheet to be filled in and
   // sent (migration 054) — not the sign dialog every other step uses.
-  const isOzalitRequest = order.status === 'kontrol_edildi'
-  // matbaa_onay has two distinct sub-steps: the ozalit must be marked
+  const isOzalitRequest = order.status === 'kontroller_tamam'
+  // imza_bekleniyor has two distinct sub-steps: the ozalit must be marked
   // received before anyone can approve it, and once received, approval is
   // leader-first — a designer can't approve until a team leader has (see
   // canApproveMatbaaOnayNow). Label the button for whichever action is
   // actually next, and hide "Onayla" entirely rather than show a dead-end
   // button a designer's click will just bounce off.
-  const signLabel = order.status === 'goruldu'
+  const signLabel = order.status === 'tasarimciya_atandi'
     ? 'Kontrolleri Yapın'
     : isOzalitRequest
       ? 'Ozalit İsteyin'

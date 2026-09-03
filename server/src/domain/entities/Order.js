@@ -20,9 +20,9 @@ import { badRequest, conflict, forbidden } from '../errors.js'
 import { everyBlockHasAdet } from '../adet.js'
 
 /**
- * Multi-party matbaa_onay approval. Every active team leader AND every
+ * Multi-party imza_bekleniyor approval. Every active team leader AND every
  * assigned designer must sign before the order advances to the next
- * print-approval gate (siparis_baski_onay). Leader-first: a designer can
+ * print-approval gate (baski_onayi_bekleniyor). Leader-first: a designer can
  * only counter-sign a proof a leader has already accepted. Same shape as
  * the main pipeline's `computeOzalitOnayApproval` (transitions.js).
  *
@@ -72,7 +72,7 @@ function computeMatbaaOnayApproval(order, actor, ctx) {
   return {
     order: { matbaa_approvals: [] },
     advanced: true,
-    history: { step: 'siparis_baski_onay', note: 'Matbaa onayı tamamlandı, baskı onayına gönderildi' },
+    history: { step: 'baski_onayi_bekleniyor', note: 'Matbaa onayı tamamlandı, baskı onayına gönderildi' },
   }
 }
 
@@ -96,28 +96,28 @@ export class Order {
 
   /**
    * Project-timeline note for an order advance, mirroring the long
-   * `next === 'goruldu' ? ... : next === 'kontrol_edildi' ? ...` ladder
+   * `next === 'tasarimciya_atandi' ? ... : next === 'kontroller_tamam' ? ...` ladder
    * that used to live inline in routes/orders.js. Kept here because
    * it's a property of the FSM, not of the persistence layer.
    */
   _advanceProjectNote(next) {
     switch (next) {
-      case 'goruldu': return 'Baskı tasarımcıya aktarıldı'
-      case 'kontrol_edildi': return 'Tasarımcı kontrolleri yapıldı'
-      case 'tasarimci_onay': return 'Ozalit istendi, matbaaya gönderildi'
-      case 'ekran_onay': return 'Baskı ekran onayına gönderildi'
-      case 'matbaa_onay': return 'Matbaa teslimi yapıldı'
-      case 'siparis_baski_onay': return 'Baskı onay formuna gönderildi'
+      case 'tasarimciya_atandi': return 'Baskı tasarımcıya aktarıldı'
+      case 'kontroller_tamam': return 'Tasarımcı kontrolleri yapıldı'
+      case 'matbaa_ozalit_yapiyor': return 'Ozalit istendi, matbaaya gönderildi'
+      case 'ekran_onayinda': return 'Baskı ekran onayına gönderildi'
+      case 'imza_bekleniyor': return 'Matbaa teslimi yapıldı'
+      case 'baski_onayi_bekleniyor': return 'Baskı onay formuna gönderildi'
       default: return `Baskı adımı: ${next}`
     }
   }
 
   /**
    * Advance through the workflow FSM. Handles every branch:
-   *   - siparis_baski_onay refusal (must use the dedicated approve route)
-   *   - kontrol_edildi resubmit route choice ('tasarimci_onay' | 'ekran_onay')
-   *   - matbaa_onay multi-party approval (leader-first, gated on receipt)
-   *   - tasarimci_onay gates (ozalit_started, no pending change request)
+   *   - baski_onayi_bekleniyor refusal (must use the dedicated approve route)
+   *   - kontroller_tamam resubmit route choice ('matbaa_ozalit_yapiyor' | 'ekran_onayinda')
+   *   - imza_bekleniyor multi-party approval (leader-first, gated on receipt)
+   *   - matbaa_ozalit_yapiyor gates (ozalit_started, no pending change request)
    *   - ORDER_STEP_OWNER role check for flat steps
    *   - pending step assignees validation (presence only — service
    *     validates ids / roles / is_active against the DB)
@@ -128,10 +128,10 @@ export class Order {
    * @param {object} actor — request.user (id, name, role)
    * @param {object} ctx
    * @param {string} [ctx.notes]
-   * @param {string[]} [ctx.assignees] — required when status === 'pending'
+   * @param {string[]} [ctx.assignees] — required when status === 'atama_bekleniyor'
    * @param {number} [ctx.expectedVersion]
-   * @param {string} [ctx.route] — 'tasarimci_onay' | 'ekran_onay' on resubmit
-   * @param {string[]} [ctx.teamLeaderIds] — active leader ids for matbaa_onay
+   * @param {string} [ctx.route] — 'matbaa_ozalit_yapiyor' | 'ekran_onayinda' on resubmit
+   * @param {string[]} [ctx.teamLeaderIds] — active leader ids for imza_bekleniyor
    * @param {string[]} [ctx.designerIds] — order assignee ids
    */
   advance(actor, ctx = {}) {
@@ -144,9 +144,9 @@ export class Order {
     this._assertAssigneesPresent(ctx.assignees)
 
     // Whether THIS click completes the round. Always true for a flat step;
-    // for matbaa_onay only once every required approver has signed.
+    // for imza_bekleniyor only once every required approver has signed.
     const advancing = matbaaInfo ? matbaaInfo.advanced : true
-    const wasPending = this.status === 'pending'
+    const wasPending = this.status === 'atama_bekleniyor'
 
     this._applyAdvance({
       next, advancing, wasPending, clearResubmitFlag, matbaaInfo, assignees: ctx.assignees,
@@ -167,20 +167,20 @@ export class Order {
   /**
    * Where this advance lands, and whether it consumes the resubmit flag.
    *
-   * siparis_baski_onay is refused outright — it has its own
-   * form-fill-then-approve command. From kontrol_edildi the destination is a
-   * fixed 'tasarimci_onay' on a first submission; only on a RESUBMIT (a prior
+   * baski_onayi_bekleniyor is refused outright — it has its own
+   * form-fill-then-approve command. From kontroller_tamam the destination is a
+   * fixed 'matbaa_ozalit_yapiyor' on a first submission; only on a RESUBMIT (a prior
    * reject-to-designer set last_reject_type) may the designer choose between
    * another physical ozalit and a digital Ekran Onayı.
    */
   _resolveAdvanceTarget(route) {
-    if (this.status === 'siparis_baski_onay') {
+    if (this.status === 'baski_onayi_bekleniyor') {
       badRequest('Bu adımda ilerlemek için baskı onay formunu doldurup onaylamalısınız.')
     }
     let next = ORDER_STEP_NEXT[this.status]
     if (!next) badRequest('Bu talep zaten tamamlandı.')
 
-    if (this.status !== 'kontrol_edildi') {
+    if (this.status !== 'kontroller_tamam') {
       if (route != null) badRequest('Onay seçimi yalnızca ozalit isteme adımında yapılabilir.')
       return { next, clearResubmitFlag: false }
     }
@@ -193,7 +193,7 @@ export class Order {
       }
       next = route
     }
-    // Cleared whenever the order leaves kontrol_edildi at all, resubmit or
+    // Cleared whenever the order leaves kontroller_tamam at all, resubmit or
     // not: the flag only ever needs to survive for the one click it gates.
     return { next, clearResubmitFlag: true }
   }
@@ -201,12 +201,12 @@ export class Order {
   /**
    * Role and state gates for this step.
    *
-   * matbaa_onay is multi-party (every active team leader AND every assigned
+   * imza_bekleniyor is multi-party (every active team leader AND every assigned
    * designer, leader-first) and returns its approval tally; every other step
    * is a flat single-owner advance and returns null.
    */
   _authorizeAdvance(actor, ctx) {
-    if (this.status === 'matbaa_onay') {
+    if (this.status === 'imza_bekleniyor') {
       return computeMatbaaOnayApproval(this, actor, {
         teamLeaderIds: ctx.teamLeaderIds ?? [],
         designerIds: ctx.designerIds ?? [],
@@ -216,10 +216,10 @@ export class Order {
     if (owner && actor.role !== owner) {
       forbidden('Bu adımı yalnızca ilgili rol imzalayabilir.')
     }
-    // tasarimci_onay is the printer's ozalit round: it must have been
+    // matbaa_ozalit_yapiyor is the printer's ozalit round: it must have been
     // started, with no change request left hanging, before it can be
     // delivered.
-    if (this.status === 'tasarimci_onay') {
+    if (this.status === 'matbaa_ozalit_yapiyor') {
       if (this.ozalit_change_requested_at != null) {
         badRequest('Bekleyen bir değişiklik talebi var, önce kabul veya reddedin.')
       }
@@ -235,7 +235,7 @@ export class Order {
    * the ids against the user table needs the DB, so the service does it.
    */
   _assertAssigneesPresent(assignees) {
-    if (this.status !== 'pending') return
+    if (this.status !== 'atama_bekleniyor') return
     if (!Array.isArray(assignees) || assignees.length === 0) {
       badRequest('Tasarımcı seçmeden talebi aktaramazsın.')
     }
@@ -254,7 +254,7 @@ export class Order {
    * Build the domain event. Runs after the mutations above, so the
    * notification's assignee fallback reads the freshly-set roster.
    *
-   * A matbaa_onay click that does NOT complete the round gets its own
+   * A imza_bekleniyor click that does NOT complete the round gets its own
    * partial-approval timeline entry and pings only whoever still owes an
    * approval; the round-completing click falls through to the generic
    * advance entry instead.
@@ -304,7 +304,7 @@ export class Order {
 
   /**
    * Mark a delivered matbaa ozalit "Teslim Alındı" — the gate before the
-   * multi-party matbaa_onay approval. Idempotent: acknowledging twice
+   * multi-party imza_bekleniyor approval. Idempotent: acknowledging twice
    * returns `null` so the service short-circuits the write + notify.
    *
    * @param {object} actor
@@ -318,7 +318,7 @@ export class Order {
     if (!isLeader && !isAssignedDesigner) {
       badRequest('Teslim almayı yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
     }
-    if (this.status !== 'matbaa_onay') {
+    if (this.status !== 'imza_bekleniyor') {
       badRequest('Teslim alma yalnızca matbaa onay aşamasında yapılabilir.')
     }
     if (this.matbaa_received) return null // idempotent
@@ -342,7 +342,7 @@ export class Order {
 
   /**
    * Counterpart to receiveMatbaaOzalit: the physical proof never arrived.
-   * Sends the order back to tasarimci_onay for re-delivery, wipes the
+   * Sends the order back to matbaa_ozalit_yapiyor for re-delivery, wipes the
    * partial approval ledger and any change-request state, and bumps
    * ozalit_attempt (new sipariş ozalit round — migration 053).
    * ozalit_started is kept: the work was done, the delivery wasn't.
@@ -354,7 +354,7 @@ export class Order {
     if (!isLeader && !isAssignedDesigner) {
       badRequest('Bu işlemi yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
     }
-    if (this.status !== 'matbaa_onay') {
+    if (this.status !== 'imza_bekleniyor') {
       badRequest('Bu işlem yalnızca matbaa onay aşamasında yapılabilir.')
     }
     if (this.matbaa_received) {
@@ -362,7 +362,7 @@ export class Order {
     }
 
     const now = new Date().toISOString()
-    this.status = 'tasarimci_onay'
+    this.status = 'matbaa_ozalit_yapiyor'
     this.matbaa_received = false
     this.matbaa_received_by = null
     this.matbaa_received_at = null
@@ -388,7 +388,7 @@ export class Order {
         event: 'order_matbaa_not_received', action: 'system',
         note: 'Matbaa teslimi alınamadı, matbaaya geri gönderildi',
       }],
-      notification: { kind: 'transition', destination: 'tasarimci_onay' },
+      notification: { kind: 'transition', destination: 'matbaa_ozalit_yapiyor' },
     })
   }
 
@@ -400,7 +400,7 @@ export class Order {
     if (actor?.role !== 'printer') {
       badRequest('Bu işlemi yalnızca matbaa yapabilir.')
     }
-    if (this.status !== 'tasarimci_onay') {
+    if (this.status !== 'matbaa_ozalit_yapiyor') {
       badRequest('Bu işlem yalnızca ozalit matbaa aşamasında yapılabilir.')
     }
     if (this.ozalit_started) return null
@@ -428,10 +428,10 @@ export class Order {
 
   /**
    * Team leader cancels a pending (not-yet-started) ozalit outright —
-   * back to goruldu, no attempt bump (nothing was delivered).
+   * back to tasarimciya_atandi, no attempt bump (nothing was delivered).
    */
   cancelOzalit(actor) {
-    if (this.status !== 'tasarimci_onay') {
+    if (this.status !== 'matbaa_ozalit_yapiyor') {
       badRequest('İptal yalnızca ozalit matbaa sürecindeyken yapılabilir.')
     }
     if (actor?.role !== 'team_leader') {
@@ -441,7 +441,7 @@ export class Order {
       badRequest('Matbaa ozalit çalışmasına başladı, doğrudan iptal edilemez, değişiklik isteyin.')
     }
 
-    this.status = 'goruldu'
+    this.status = 'tasarimciya_atandi'
     this.ozalit_started = false
     this.ozalit_started_at = null
     this.ozalit_started_by = null
@@ -475,7 +475,7 @@ export class Order {
    *   demos snapshot row it inserts in the same tx; null when no payload
    */
   editOzalit(actor, ctx = {}) {
-    if (this.status !== 'tasarimci_onay') {
+    if (this.status !== 'matbaa_ozalit_yapiyor') {
       badRequest('Bildirim yalnızca ozalit matbaa sürecindeyken yapılabilir.')
     }
     if (actor?.role !== 'team_leader') {
@@ -506,7 +506,7 @@ export class Order {
    * when a change request is already pending.
    */
   requestOzalitChange(actor, { note } = {}) {
-    if (this.status !== 'tasarimci_onay') {
+    if (this.status !== 'matbaa_ozalit_yapiyor') {
       badRequest('Bu işlem yalnızca ozalit matbaa aşamasında yapılabilir.')
     }
     if (actor?.role !== 'team_leader') {
@@ -667,7 +667,7 @@ export class Order {
   }
 
   /**
-   * Shared gate for the two commands that EDIT the siparis_baski_onay sheet
+   * Shared gate for the two commands that EDIT the baski_onayi_bekleniyor sheet
    * (save draft, prepare): only a team leader, only at that step. Pulled out
    * because the maker half (migration 060) would otherwise have copied it.
    *
@@ -679,7 +679,7 @@ export class Order {
     if (actor?.role !== 'team_leader') {
       forbidden('Baskı onay formunu yalnızca ekip lideri düzenleyebilir.')
     }
-    if (this.status !== 'siparis_baski_onay') {
+    if (this.status !== 'baski_onayi_bekleniyor') {
       badRequest('Baskı onay formu yalnızca bu aşamada düzenlenebilir.')
     }
   }
@@ -708,7 +708,7 @@ export class Order {
   }
 
   /**
-   * Save a draft of the siparis_baski_onay print-spec form. No
+   * Save a draft of the baski_onayi_bekleniyor print-spec form. No
    * timeline log, no notification — this is a partial-friendly save.
    */
   saveBaskiOnayForm(actor, form) {
@@ -735,12 +735,12 @@ export class Order {
   }
 
   /**
-   * Prepare the siparis_baski_onay form — the MAKER half of the maker-checker
+   * Prepare the baski_onayi_bekleniyor form — the MAKER half of the maker-checker
    * pair (migration 060), mirroring the project pipeline's
    * `computeBaskiOnayPrepare` (domain/transitions.js).
    *
    * Saves the sheet AND stamps it "hazırlandı". Deliberately does NOT advance
-   * the order: it stays at siparis_baski_onay until a team leader approves,
+   * the order: it stays at baski_onayi_bekleniyor until a team leader approves,
    * and `approveBaskiOnayForm` additionally requires that leader to be a
    * DIFFERENT person whenever there is another active one.
    *
@@ -790,7 +790,7 @@ export class Order {
   }
 
   /**
-   * Approve the siparis_baski_onay form — the CHECKER half. Saves the
+   * Approve the baski_onayi_bekleniyor form — the CHECKER half. Saves the
    * final snapshot AND flips the order to onaylandi. Project stage
    * flip (forward-only to baskida) is the service's job, not the
    * entity's, because it touches a different aggregate.
@@ -812,7 +812,7 @@ export class Order {
     if (actor?.role !== 'team_leader') {
       forbidden('Baskı onayını yalnızca ekip lideri verebilir.')
     }
-    if (this.status !== 'siparis_baski_onay') {
+    if (this.status !== 'baski_onayi_bekleniyor') {
       badRequest('Bu işlem yalnızca baskı onay aşamasında yapılabilir.')
     }
     if (!this.baski_onay_prepared) {
@@ -835,7 +835,7 @@ export class Order {
       approved_at: now,
     }
     this.baski_onay_form = finalForm
-    this.status = 'onaylandi'
+    this.status = 'baskida'
     // Consumed — a re-run of this gate must be prepared afresh rather than
     // inherit a stamp from the round that just closed (mirrors migration 045's
     // reset on the project side).
@@ -848,7 +848,7 @@ export class Order {
     return this._record({
       type: 'order.approved',
       orderHistory: {
-        step: 'onaylandi',
+        step: 'baskida',
         note: notes ? `${notes} · Baskı onaylandı` : 'Baskı onaylandı',
       },
       projectHistories: [{

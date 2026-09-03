@@ -10,14 +10,14 @@ import { cn, formatNumber } from '@/lib/utils'
 
 const STATUS_BADGE = {
   pending:        'bg-amber-50 text-amber-700 border-amber-200',
-  goruldu:        'bg-blue-50 text-blue-700 border-blue-200',
-  kontrol_edildi: 'bg-blue-50 text-blue-700 border-blue-200',
-  tasarimci_onay: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  matbaa_onay:    'bg-violet-50 text-violet-700 border-violet-200',
+  tasarimciya_atandi:        'bg-blue-50 text-blue-700 border-blue-200',
+  kontroller_tamam: 'bg-blue-50 text-blue-700 border-blue-200',
+  matbaa_ozalit_yapiyor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  imza_bekleniyor:    'bg-violet-50 text-violet-700 border-violet-200',
   onaylandi:      'bg-emerald-50 text-emerald-700 border-emerald-200',
 }
 
-const STEP_ORDER = ['pending', 'goruldu', 'kontrol_edildi', 'tasarimci_onay', 'matbaa_onay', 'onaylandi']
+const STEP_ORDER = ['atama_bekleniyor', 'tasarimciya_atandi', 'kontroller_tamam', 'matbaa_ozalit_yapiyor', 'imza_bekleniyor', 'baskida']
 
 export default function SiparisListesi() {
   const { user } = useAuth()
@@ -32,7 +32,7 @@ export default function SiparisListesi() {
       .finally(() => setLoading(false))
   }, [user?.id])
 
-  const pendingCount = requests.filter((r) => r.status === 'pending').length
+  const pendingCount = requests.filter((r) => r.status === 'atama_bekleniyor').length
 
   if (loading) {
     return (

@@ -23,9 +23,9 @@ import {
 // once (concurrent sipariş orders on the same product are allowed), so this
 // page shows one stepper per active order rather than assuming there's only
 // ever one.
-export const isActiveOrder = (o) => o.status !== 'onaylandi' && o.status !== 'rejected'
+export const isActiveOrder = (o) => o.status !== 'baskida' && o.status !== 'rejected'
 
-// The order's own status only ever reaches 'onaylandi' (Üretimde) — what
+// The order's own status only ever reaches 'baskida' (Üretimde) — what
 // happens after that (Matbaa requesting handover, Satış confirming it) is
 // real project/handover state, not a status this order will ever carry.
 // Appending it here as two derived steps is what lets the tracker keep
@@ -35,7 +35,7 @@ export const DISPLAY_ORDER_STEP_LABELS = {
   ...ORDER_STEP_LABELS,
   // Short form: the stepper gives each step ~40px at 390px, and "Kontrol
   // Edildi" is only ever read next to the steps around it.
-  kontrol_edildi: 'Kontrol',
+  kontroller_tamam: 'Kontrol',
   teslim_bekleniyor: 'Teslim Bekleniyor',
   satista: 'Satışta',
 }
@@ -43,21 +43,21 @@ export const DISPLAY_ORDER_STEP_LABELS = {
 // Mirrors the per-page action labels in MyProjects/SiparisOnay/SiparisTalepleri
 // (each only ever renders one of these for its own role's queue) — collected
 // here since this page shows a project's orders to whichever role opens it.
-// matbaa_onay reads as "Onaylayın" here too so the leader sees the same
+// imza_bekleniyor reads as "Onaylayın" here too so the leader sees the same
 // verb they saw in the queue card; the receipt gate ("Teslim Alındı" /
 // "Teslim Alınamadı") is presented inside the dialog when matbaa_received
 // is still false, before the approval click — see TalepSignDialog's
-// matbaa_onay handling. This keeps the detail page in lock-step with
+// imza_bekleniyor handling. This keeps the detail page in lock-step with
 // SiparisTalepleri so a leader who lands here from the queue doesn't see
 // the action verb flip under their feet.
 const ORDER_ACTION_LABELS = {
   pending: 'Tasarımcıya Aktarın',
-  goruldu: 'Kontrolleri Yapın',
-  kontrol_edildi: 'Ozalit İsteyin',
-  tasarimci_onay: 'Teslim Edin',
+  tasarimciya_atandi: 'Kontrolleri Yapın',
+  kontroller_tamam: 'Ozalit İsteyin',
+  matbaa_ozalit_yapiyor: 'Teslim Edin',
   ekran_onay: 'Onaylayın',
-  matbaa_onay: 'Onaylayın',
-  siparis_baski_onay: 'Baskı Onay Formu',
+  imza_bekleniyor: 'Onaylayın',
+  baski_onayi_bekleniyor: 'Baskı Onay Formu',
 }
 export function orderActionLabel(order) {
   return ORDER_ACTION_LABELS[order.status] ?? 'Onaylayın'

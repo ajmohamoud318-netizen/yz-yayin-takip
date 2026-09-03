@@ -32,8 +32,8 @@ const deepClone = (x) => JSON.parse(JSON.stringify(x ?? []))
 
 /**
  * The order-side "Baskı Onay Formu" — the final print-spec gate
- * (`siparis_baski_onay`) a sipariş lands on once its ozalit round (physical
- * matbaa_onay OR digital ekran_onay) is fully approved. A team leader
+ * (`baski_onayi_bekleniyor`) a sipariş lands on once its ozalit round (physical
+ * imza_bekleniyor OR digital ekran_onay) is fully approved. A team leader
  * corrects the per-parça specs and the ADET/tarih/basım yeri/hazırlayan
  * fields, then approves in one action — no maker-checker, no reject flow,
  * mirroring the main pipeline's baski_onay "edit instead of reject" rule.
@@ -95,14 +95,14 @@ export default function SiparisBaskiOnayFormDialog({
   const isApproverStep =
     mode === 'approve'
     && user?.role === 'team_leader'
-    && order?.status === 'siparis_baski_onay'
+    && order?.status === 'baski_onayi_bekleniyor'
   const baskiOnayLocked =
     isApproverStep && baskiOnayPrepared && !baskiOnayEditOverride
 
   const isReadOnly =
     mode === 'view'
     || user?.role !== 'team_leader'
-    || order?.status !== 'siparis_baski_onay'
+    || order?.status !== 'baski_onayi_bekleniyor'
     || baskiOnayLocked
   const isOpen = inline || open
 
@@ -244,7 +244,7 @@ export default function SiparisBaskiOnayFormDialog({
 
   /**
    * Maker half: saves the sheet and stamps it "hazırlandı". Does NOT advance
-   * the order — it stays at siparis_baski_onay until a leader approves.
+   * the order — it stays at baski_onayi_bekleniyor until a leader approves.
    */
   async function handlePrepare() {
     if (!requiredFilled()) return

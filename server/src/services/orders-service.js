@@ -118,7 +118,7 @@ async function dispatchNotification(client, { notification, order, project, acto
         ...base, teamLeaderIds: notification.teamLeaderIds ?? [],
       })
     case 'finalApproved':
-      return notifyOrderTransition(client, { ...base, newStatus: 'onaylandi', requesterId })
+      return notifyOrderTransition(client, { ...base, newStatus: 'baskida', requesterId })
     default:
       return undefined
   }
@@ -257,7 +257,7 @@ export async function createOrder(actor, { projectId, payload = {}, items = [], 
     })
     await repo.snapshotProjectSubtasks(client, order.id, projectId)
     await repo.insertOrderHistory(client, {
-      orderId: order.id, step: 'pending', signedById: actor.id, note: notes ?? '',
+      orderId: order.id, step: 'atama_bekleniyor', signedById: actor.id, note: notes ?? '',
     })
     await logHistory(client, {
       project_id: projectId,
@@ -267,9 +267,9 @@ export async function createOrder(actor, { projectId, payload = {}, items = [], 
       event: 'order_request',
       note: 'Baskı talebi oluşturuldu',
     }, actor)
-    // New talep at 'pending' → the team leader must act on it.
+    // New talep at 'atama_bekleniyor' → the team leader must act on it.
     await notifyOrderTransition(client, {
-      order, project, newStatus: 'pending', actor, requesterId: order.requested_by,
+      order, project, newStatus: 'atama_bekleniyor', actor, requesterId: order.requested_by,
     })
     return order
   })
@@ -279,7 +279,7 @@ export async function createOrder(actor, { projectId, payload = {}, items = [], 
  * PATCH /api/order-requests/:id/advance.
  *
  * The entity owns the FSM; this loads the two things it can't see for
- * itself — the active team leader set for a multi-party matbaa_onay round,
+ * itself — the active team leader set for a multi-party imza_bekleniyor round,
  * and whether the chosen assignees are real, active designers.
  */
 export async function advanceOrder(orderId, actor, {
@@ -292,10 +292,10 @@ export async function advanceOrder(orderId, actor, {
 
   return runOrderCommand(orderId, actor, {
     async prepare({ client, row }) {
-      const wasPending = row.status === 'pending'
-      // The active leader set is only consulted by a multi-party matbaa_onay
+      const wasPending = row.status === 'atama_bekleniyor'
+      // The active leader set is only consulted by a multi-party imza_bekleniyor
       // round, so it stays unqueried for every other step.
-      if (row.status !== 'matbaa_onay') return { wasPending }
+      if (row.status !== 'imza_bekleniyor') return { wasPending }
       return {
         wasPending,
         teamLeaderIds: await repo.activeTeamLeaderIds(client),
@@ -311,7 +311,7 @@ export async function advanceOrder(orderId, actor, {
       designerIds: ctx.designerIds ?? [],
     }),
     async after({ client, ctx }) {
-      // Only the pending → goruldu handoff carries assignees. Validated
+      // Only the pending → tasarimciya_atandi handoff carries assignees. Validated
       // after the entity's state/role gates so a caller sees the same error
       // the route used to produce, and inside the transaction so a bad id
       // rolls the whole advance back.
@@ -477,7 +477,7 @@ export async function approveBaskiOnayForm(orderId, actor, {
   components, adet, tarih, basimYeri, hazirlayan, notes = '',
 } = {}, client = null) {
   return runOrderCommand(orderId, actor, {
-    // Unlike matbaa_onay this is unconditional: the maker-checker gate
+    // Unlike imza_bekleniyor this is unconditional: the maker-checker gate
     // (migration 060) consults the active leader set on every approve, since
     // that count is exactly what decides whether the preparer may self-approve.
     prepare: async ({ client }) => ({ teamLeaderIds: await repo.activeTeamLeaderIds(client) }),

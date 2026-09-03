@@ -20,59 +20,59 @@ describe('order workflow step graph', () => {
       expect(ORDER_STEP_NEXT[ORDER_STEP_PATH_DEFAULT[i]]).toBe(ORDER_STEP_PATH_DEFAULT[i + 1])
     }
   })
-  it('the ekran_onay branch is valid from ekran_onay onward', () => {
-    // kontrol_edildi's default ORDER_STEP_NEXT is tasarimci_onay; the
-    // ekran_onay branch is an explicit server-side override on resubmit, not
-    // reflected in the map — this only checks the segment FROM ekran_onay on.
-    expect(ORDER_STEP_NEXT.ekran_onay).toBe('siparis_baski_onay')
-    expect(ORDER_STEP_NEXT.siparis_baski_onay).toBe('onaylandi')
+  it('the ekran_onay branch is valid from ekran_onayinda onward', () => {
+    // kontroller_tamam's default ORDER_STEP_NEXT is matbaa_ozalit_yapiyor; the
+    // ekran_onayinda branch is an explicit server-side override on resubmit, not
+    // reflected in the map — this only checks the segment FROM ekran_onayinda on.
+    expect(ORDER_STEP_NEXT.ekran_onayinda).toBe('baski_onayi_bekleniyor')
+    expect(ORDER_STEP_NEXT.baski_onayi_bekleniyor).toBe('baskida')
   })
   it("the designer's turn is two steps: the checks, then the ozalit request", () => {
     // Migration 054. Both belong to the same owner, and the request step is
     // what the resubmit route choice hangs off — see the server's /advance.
-    expect(ORDER_STEP_NEXT.goruldu).toBe('kontrol_edildi')
-    expect(ORDER_STEP_NEXT.kontrol_edildi).toBe('tasarimci_onay')
-    expect(ORDER_STEP_OWNER.kontrol_edildi).toBe(ORDER_STEP_OWNER.goruldu)
+    expect(ORDER_STEP_NEXT.tasarimciya_atandi).toBe('kontroller_tamam')
+    expect(ORDER_STEP_NEXT.kontroller_tamam).toBe('matbaa_ozalit_yapiyor')
+    expect(ORDER_STEP_OWNER.kontroller_tamam).toBe(ORDER_STEP_OWNER.tasarimciya_atandi)
   })
-  it('the final step (onaylandi) has no next', () => {
-    expect(ORDER_STEP_NEXT.onaylandi).toBeUndefined()
+  it('the final step (baskida) has no next', () => {
+    expect(ORDER_STEP_NEXT.baskida).toBeUndefined()
   })
-  it('every actionable step has a labelled owner (onaylandi is terminal — no owner needed)', () => {
+  it('every actionable step has a labelled owner (baskida is terminal — no owner needed)', () => {
     for (const step of ORDER_STEPS) {
-      if (step === 'onaylandi') continue
+      if (step === 'baskida') continue
       expect(ORDER_STEP_OWNER[step]).toBeTruthy()
     }
   })
   it('owners match the documented role routing', () => {
-    expect(ORDER_STEP_OWNER.pending).toBe('team_leader')
-    expect(ORDER_STEP_OWNER.goruldu).toBe('designer')
-    expect(ORDER_STEP_OWNER.tasarimci_onay).toBe('printer')
-    expect(ORDER_STEP_OWNER.ekran_onay).toBe('team_leader')
-    expect(ORDER_STEP_OWNER.matbaa_onay).toBe('team_leader')
+    expect(ORDER_STEP_OWNER.atama_bekleniyor).toBe('team_leader')
+    expect(ORDER_STEP_OWNER.tasarimciya_atandi).toBe('designer')
+    expect(ORDER_STEP_OWNER.matbaa_ozalit_yapiyor).toBe('printer')
+    expect(ORDER_STEP_OWNER.ekran_onayinda).toBe('team_leader')
+    expect(ORDER_STEP_OWNER.imza_bekleniyor).toBe('team_leader')
   })
-  it('matbaa_onay rejection routes mirror main-pipeline ozalit choices', () => {
-    expect(ORDER_REJECT_TARGETS.matbaa_onay.matbaa).toBe('tasarimci_onay')
-    expect(ORDER_REJECT_TARGETS.matbaa_onay.designer).toBe('goruldu')
+  it('imza_bekleniyor rejection routes mirror main-pipeline ozalit choices', () => {
+    expect(ORDER_REJECT_TARGETS.imza_bekleniyor.matbaa).toBe('matbaa_ozalit_yapiyor')
+    expect(ORDER_REJECT_TARGETS.imza_bekleniyor.designer).toBe('tasarimciya_atandi')
   })
-  it('ekran_onay only offers a designer reject route, never matbaa', () => {
-    expect(ORDER_REJECT_TARGETS.ekran_onay.designer).toBe('goruldu')
-    expect(ORDER_REJECT_TARGETS.ekran_onay.matbaa).toBeUndefined()
+  it('ekran_onayinda only offers a designer reject route, never matbaa', () => {
+    expect(ORDER_REJECT_TARGETS.ekran_onayinda.designer).toBe('tasarimciya_atandi')
+    expect(ORDER_REJECT_TARGETS.ekran_onayinda.matbaa).toBeUndefined()
   })
-  it('default reject target is matbaa re-delivery, or designer for ekran_onay', () => {
-    expect(ORDER_REJECT_TO.matbaa_onay).toBe('tasarimci_onay')
-    expect(ORDER_REJECT_TO.ekran_onay).toBe('goruldu')
+  it('default reject target is matbaa re-delivery, or designer for ekran_onayinda', () => {
+    expect(ORDER_REJECT_TO.imza_bekleniyor).toBe('matbaa_ozalit_yapiyor')
+    expect(ORDER_REJECT_TO.ekran_onayinda).toBe('tasarimciya_atandi')
   })
 })
 
 describe('orderStepPath', () => {
-  it('defaults to the tasarimci_onay/matbaa_onay path', () => {
-    expect(orderStepPath({ status: 'matbaa_onay', order_history: [] })).toEqual(ORDER_STEP_PATH_DEFAULT)
+  it('defaults to the matbaa_ozalit_yapiyor / imza_bekleniyor path', () => {
+    expect(orderStepPath({ status: 'imza_bekleniyor', order_history: [] })).toEqual(ORDER_STEP_PATH_DEFAULT)
   })
-  it('detects the ekran_onay branch from current status', () => {
-    expect(orderStepPath({ status: 'ekran_onay', order_history: [] })).toEqual(ORDER_STEP_PATH_EKRAN_ONAY)
+  it('detects the ekran_onayinda branch from current status', () => {
+    expect(orderStepPath({ status: 'ekran_onayinda', order_history: [] })).toEqual(ORDER_STEP_PATH_EKRAN_ONAY)
   })
-  it('detects the ekran_onay branch from history after completion', () => {
-    const order = { status: 'onaylandi', order_history: [{ step: 'ekran_onay' }] }
+  it('detects the ekran_onayinda branch from history after completion', () => {
+    const order = { status: 'baskida', order_history: [{ step: 'ekran_onayinda' }] }
     expect(orderStepPath(order)).toEqual(ORDER_STEP_PATH_EKRAN_ONAY)
   })
   it('is safe with a missing order', () => {
@@ -163,8 +163,8 @@ describe('canActOnOrder (ProjectDetail — any role viewing any order)', () => {
   const OKTAY = { id: 'u-oktay', role: 'printer' }
   const ESRA = { id: 'u-esra', role: 'satis' }
 
-  it('pending, ekran_onay, and siparis_baski_onay are team-leader-only', () => {
-    for (const status of ['pending', 'ekran_onay', 'siparis_baski_onay']) {
+  it('atama_bekleniyor, ekran_onayinda, and baski_onayi_bekleniyor are team-leader-only', () => {
+    for (const status of ['atama_bekleniyor', 'ekran_onayinda', 'baski_onayi_bekleniyor']) {
       const order = { id: 'o-1', status }
       expect(canActOnOrder(AYSE, order)).toBe(true)
       expect(canActOnOrder(AYLIN, order)).toBe(false)
@@ -172,29 +172,29 @@ describe('canActOnOrder (ProjectDetail — any role viewing any order)', () => {
     }
   })
 
-  it('tasarimci_onay is printer-only', () => {
-    const order = { id: 'o-1', status: 'tasarimci_onay' }
+  it('matbaa_ozalit_yapiyor is printer-only', () => {
+    const order = { id: 'o-1', status: 'matbaa_ozalit_yapiyor' }
     expect(canActOnOrder(OKTAY, order)).toBe(true)
     expect(canActOnOrder(AYSE, order)).toBe(false)
     expect(canActOnOrder(AYLIN, order)).toBe(false)
   })
 
-  it('goruldu is only actionable by the assigned designer', () => {
-    const order = { id: 'o-1', status: 'goruldu', assignee_ids: ['u-aylin'] }
+  it('tasarimciya_atandi is only actionable by the assigned designer', () => {
+    const order = { id: 'o-1', status: 'tasarimciya_atandi', assignee_ids: ['u-aylin'] }
     expect(canActOnOrder(AYLIN, order)).toBe(true)
     expect(canActOnOrder(NUR, order)).toBe(false)
     expect(canActOnOrder(AYSE, order)).toBe(false)
   })
 
-  it('kontrol_edildi is the same designer\'s second step, same assignment rule', () => {
-    const order = { id: 'o-1', status: 'kontrol_edildi', assignee_ids: ['u-aylin'] }
+  it('kontroller_tamam is the same designer\'s second step, same assignment rule', () => {
+    const order = { id: 'o-1', status: 'kontroller_tamam', assignee_ids: ['u-aylin'] }
     expect(canActOnOrder(AYLIN, order)).toBe(true)
     expect(canActOnOrder(NUR, order)).toBe(false)
     expect(canActOnOrder(AYSE, order)).toBe(false)
   })
 
-  it('the assigned designer opens the ozalit sheet to SEND it at kontrol_edildi', () => {
-    const order = { id: 'o-1', status: 'kontrol_edildi', assignee_ids: ['u-aylin'] }
+  it('the assigned designer opens the ozalit sheet to SEND it at kontroller_tamam', () => {
+    const order = { id: 'o-1', status: 'kontroller_tamam', assignee_ids: ['u-aylin'] }
     expect(orderOzalitFormMode(order, AYLIN)).toBe('advance')
     // Everyone else only reads it — the request is the designer's to make.
     expect(orderOzalitFormMode(order, NUR)).toBe('view')
@@ -202,36 +202,36 @@ describe('canActOnOrder (ProjectDetail — any role viewing any order)', () => {
     expect(orderOzalitFormMode(order, OKTAY)).toBe('view')
   })
 
-  it('goruldu falls back to project assignment for legacy orders', () => {
-    const order = { id: 'o-1', project_id: 'p-1', status: 'goruldu', assignee_ids: [] }
+  it('tasarimciya_atandi falls back to project assignment for legacy orders', () => {
+    const order = { id: 'o-1', project_id: 'p-1', status: 'tasarimciya_atandi', assignee_ids: [] }
     expect(canActOnOrder(AYLIN, order, new Set(['p-1']))).toBe(true)
     expect(canActOnOrder(AYLIN, order, new Set())).toBe(false)
   })
 
-  it('matbaa_onay: either the leader or the assigned designer can clear the receipt gate', () => {
-    const order = { id: 'o-1', status: 'matbaa_onay', assignee_ids: ['u-aylin'], matbaa_received: false }
+  it('imza_bekleniyor: either the leader or the assigned designer can clear the receipt gate', () => {
+    const order = { id: 'o-1', status: 'imza_bekleniyor', assignee_ids: ['u-aylin'], matbaa_received: false }
     expect(canActOnOrder(AYSE, order)).toBe(true)
     expect(canActOnOrder(AYLIN, order)).toBe(true)
     expect(canActOnOrder(NUR, order)).toBe(false)
     expect(canActOnOrder(OKTAY, order)).toBe(false)
   })
 
-  it('matbaa_onay: once received, approval is leader-first', () => {
-    const received = { id: 'o-1', status: 'matbaa_onay', assignee_ids: ['u-aylin'], matbaa_received: true, matbaa_approvals: [] }
+  it('imza_bekleniyor: once received, approval is leader-first', () => {
+    const received = { id: 'o-1', status: 'imza_bekleniyor', assignee_ids: ['u-aylin'], matbaa_received: true, matbaa_approvals: [] }
     expect(canActOnOrder(AYSE, received)).toBe(true)
     expect(canActOnOrder(AYLIN, received)).toBe(false)
     const leaderSigned = { ...received, matbaa_approvals: [{ id: 'u-ayse', role: 'team_leader' }] }
     expect(canActOnOrder(AYLIN, leaderSigned)).toBe(true)
   })
 
-  it('onaylandi and rejected are terminal — nobody owes an action', () => {
-    expect(canActOnOrder(AYSE, { id: 'o-1', status: 'onaylandi' })).toBe(false)
+  it('baskida and rejected are terminal — nobody owes an action', () => {
+    expect(canActOnOrder(AYSE, { id: 'o-1', status: 'baskida' })).toBe(false)
     expect(canActOnOrder(AYSE, { id: 'o-1', status: 'rejected' })).toBe(false)
   })
 
   it('is safe with missing user, missing order, or an unrelated role', () => {
-    expect(canActOnOrder(undefined, { id: 'o-1', status: 'pending' })).toBe(false)
+    expect(canActOnOrder(undefined, { id: 'o-1', status: 'atama_bekleniyor' })).toBe(false)
     expect(canActOnOrder(AYSE, undefined)).toBe(false)
-    expect(canActOnOrder(ESRA, { id: 'o-1', status: 'pending' })).toBe(false)
+    expect(canActOnOrder(ESRA, { id: 'o-1', status: 'atama_bekleniyor' })).toBe(false)
   })
 })

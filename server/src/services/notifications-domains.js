@@ -69,41 +69,41 @@ export async function notifyMeetingCreated(client, { meeting, actor }) {
 
 const ORDER_STEP_BODY = {
   pending: 'Yeni baskı talebi, onayınızı bekliyor',
-  goruldu: 'Baskı kontrolünüzü bekliyor',
-  kontrol_edildi: 'Baskı kontrolleri tamam, ozalit formunu gönderin',
-  tasarimci_onay: 'Baskı ozalit isteniyor',
+  tasarimciya_atandi: 'Baskı kontrolünüzü bekliyor',
+  kontroller_tamam: 'Baskı kontrolleri tamam, ozalit formunu gönderin',
+  matbaa_ozalit_yapiyor: 'Baskı ozalit isteniyor',
   ekran_onay: 'Ekran onayı bekleniyor',
-  siparis_baski_onay: 'Baskı onay formu bekleniyor',
+  baski_onayi_bekleniyor: 'Baskı onay formu bekleniyor',
 }
 const ORDER_STEP_LINK = {
   pending: '/siparis-talepleri',
-  goruldu: '/siparis-onay',
-  kontrol_edildi: '/siparis-onay',
-  tasarimci_onay: '/approvals/siparis',
+  tasarimciya_atandi: '/siparis-onay',
+  kontroller_tamam: '/siparis-onay',
+  matbaa_ozalit_yapiyor: '/approvals/siparis',
   ekran_onay: '/siparis-talepleri',
-  siparis_baski_onay: '/siparis-talepleri',
+  baski_onayi_bekleniyor: '/siparis-talepleri',
 }
 // Every value here MUST be one of notifications.tone's five allowed values
 // (migration 022: amber/green/rose/blue/pink). A tone outside that set fails
 // the CHECK constraint inside `emit`, which rolls back the WHOLE advance
 // transaction — the order silently refuses to move and the client sees a bare
 // 500. 'violet' sat here and did exactly that to every advance into
-// siparis_baski_onay (the completing matbaa_onay approval and every ekran_onay
+// baski_onayi_bekleniyor (the completing imza_bekleniyor approval and every ekran_onay
 // approval). It only ever fired in production because `emit` short-circuits
 // when the actor is the sole recipient — a single-team-leader dev DB never
 // reaches the INSERT.
 //
-// siparis_baski_onay is amber for the same reason its project-pipeline twin
+// baski_onayi_bekleniyor is amber for the same reason its project-pipeline twin
 // `baski_onay_pending` is: it's a step that owes someone an action.
 const ORDER_STEP_TONE = {
-  pending: 'amber', goruldu: 'green', kontrol_edildi: 'green',
-  tasarimci_onay: 'blue', ekran_onay: 'blue', siparis_baski_onay: 'amber',
+  pending: 'amber', tasarimciya_atandi: 'green', kontroller_tamam: 'green',
+  matbaa_ozalit_yapiyor: 'blue', ekran_onay: 'blue', baski_onayi_bekleniyor: 'amber',
 }
 
 /**
  * A sipariş (order) moved to `newStatus`. Notify whoever must act on that
  * step. `onaylandi` is terminal → the sales requester is told it's approved.
- * `assigneeIds` are the designers assigned to THIS order (so the 'goruldu'
+ * `assigneeIds` are the designers assigned to THIS order (so the 'tasarimciya_atandi'
  * step pings the right designers, not every designer).
  */
 export async function notifyOrderTransition(client, {
@@ -113,7 +113,7 @@ export async function notifyOrderTransition(client, {
   const base = { actorId: actor?.id, title, projectId: order?.project_id ?? project?.id, orderId: order?.id,
     event: { type: 'order.transition', aggregateId: order?.id } }
 
-  if (newStatus === 'onaylandi') {
+  if (newStatus === 'baskida') {
     return emit(client, {
       ...base, recipientIds: [requesterId], type: 'order_approved', tone: 'green',
       body: 'Talebiniz onaylandı, üretime alındı', link: '/siparis-talebi',
@@ -127,7 +127,7 @@ export async function notifyOrderTransition(client, {
   // emits (unlike that one) because the two audiences land on different
   // pages here — leaders review from /siparis-talepleri, designers from
   // /siparis-onay.
-  if (newStatus === 'matbaa_onay') {
+  if (newStatus === 'imza_bekleniyor') {
     const leaders = await activeUserIdsByRole(client, 'team_leader')
     const a = await emit(client, {
       ...base, recipientIds: leaders, type: 'matbaa_receipt_pending', tone: 'amber',
@@ -148,13 +148,13 @@ export async function notifyOrderTransition(client, {
     ? assigneeIds
     : await activeUserIdsByRole(client, owner)
 
-  // tasarimci_onay is the printer's own sign-off step. The queue at
+  // matbaa_ozalit_yapiyor is the printer's own sign-off step. The queue at
   // /approvals/siparis normally makes them tap a card's "Teslim Edin" button
   // before TalepSignDialog opens; the printer works form-first, so the tap
   // should land straight in the form instead. Carrying the order id lets
   // Approvals.jsx open it on arrival — every other step's link is a plain
   // list page its owner (leader/designer) is expected to triage first.
-  const link = newStatus === 'tasarimci_onay' && order?.id
+  const link = newStatus === 'matbaa_ozalit_yapiyor' && order?.id
     ? `/approvals/siparis?order=${order.id}`
     : (ORDER_STEP_LINK[newStatus] ?? '/siparis-talepleri')
 
@@ -186,12 +186,12 @@ export async function notifyOrderRejected(client, { order, project, actor, reque
  * leader-first: acknowledging the proof unblocks the team leaders, and the
  * order's assigned designers counter-sign after one of them approves
  * (computeMatbaaOnayApproval). Split into two emits since the audiences land
- * on different pages (see notifyOrderTransition's matbaa_onay case above).
+ * on different pages (see notifyOrderTransition's imza_bekleniyor case above).
  */
 /**
  * Full parity with the main pipeline's demo/ozalit started/cancel/edit/
  * change-request notifications (migration 048/049), scoped to the order's
- * own ozalit round (tasarimci_onay). Only team_leader can cancel/edit/
+ * own ozalit round (matbaa_ozalit_yapiyor). Only team_leader can cancel/edit/
  * request a change on this side (see domain/entities/Order.js), so — unlike the
  * main pipeline's leader+designer pings — these only ever target leaders.
  */

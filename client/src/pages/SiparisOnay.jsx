@@ -52,10 +52,10 @@ export default function SiparisOnay() {
     if (!isOrderAssignedToDesigner(r, user?.id, myProjectIds)) return false
     // The designer's two steps (migration 054): the checks, then the ozalit
     // request. Both are theirs, so both stay in the queue.
-    if (r.status === 'goruldu' || r.status === 'kontrol_edildi') return true
-    // matbaa_onay is multi-party — stay in the queue until THIS designer has
+    if (r.status === 'tasarimciya_atandi' || r.status === 'kontroller_tamam') return true
+    // imza_bekleniyor is multi-party — stay in the queue until THIS designer has
     // approved, even if a leader already has.
-    if (r.status === 'matbaa_onay') {
+    if (r.status === 'imza_bekleniyor') {
       return !(r.matbaa_approvals ?? []).some((a) => a.id === user?.id)
     }
     return false
@@ -70,7 +70,7 @@ export default function SiparisOnay() {
   function handleSigned(updated) {
     // Merge, then re-apply the queue rule rather than dropping the row
     // outright: signing the checks step advances the order to
-    // 'kontrol_edildi', which is still this designer's — the card has to
+    // 'kontroller_tamam', which is still this designer's — the card has to
     // stay and flip its button to "Ozalit İsteyin" (same shape as
     // handleOzalitDone below).
     setOrders((prev) => prev
@@ -170,21 +170,21 @@ function DesignerOrderCard({ order, onSign, onOzalit }) {
     : '—'
 
   // Find the görüldü step to show who signed it
-  const gorulduStep = (order.order_history ?? []).find((h) => h.step === 'goruldu')
-  // matbaa_onay is a different action from the designer's own two steps —
+  const tasarimciya_atandiStep = (order.order_history ?? []).find((h) => h.step === 'tasarimciya_atandi')
+  // imza_bekleniyor is a different action from the designer's own two steps —
   // here they approve a delivered ozalit, not edit the spec or request one.
-  const isMatbaaOnay = order.status === 'matbaa_onay'
+  const isMatbaaOnay = order.status === 'imza_bekleniyor'
   // "Ozalit İsteyin" — the designer's second step, which opens the ozalit
   // sheet itself (mode 'advance', see orderOzalitFormMode) instead of the
   // sign dialog.
-  const isOzalitRequest = order.status === 'kontrol_edildi'
+  const isOzalitRequest = order.status === 'kontroller_tamam'
   // Leader-first: once the ozalit is received, a designer can't approve
   // until a team leader already has (see canApproveMatbaaOnayNow). Hide
   // "Onayla" rather than show a button that just bounces off the dialog's
   // own gate.
-  const signLabel = order.status === 'goruldu'
+  const signLabel = order.status === 'tasarimciya_atandi'
     ? 'Kontrolleri Yapın'
-    : order.status === 'kontrol_edildi'
+    : order.status === 'kontroller_tamam'
       ? 'Ozalit İsteyin'
       : !order.matbaa_received ? 'Teslim Alın' : 'Onaylayın'
   const canAct = !isMatbaaOnay || !order.matbaa_received || canApproveMatbaaOnayNow(user, order)
@@ -238,10 +238,10 @@ function DesignerOrderCard({ order, onSign, onOzalit }) {
               <p className="text-xs text-muted-foreground">Not: {order.notes}</p>
             )}
 
-            {gorulduStep && (
+            {tasarimciya_atandiStep && (
               <p className="text-xs text-blue-600">
-                ✓ {gorulduStep.signed_by_name} tarafından görüldü
-                {gorulduStep.notes ? `, "${gorulduStep.notes}"` : ''}
+                ✓ {tasarimciya_atandiStep.signed_by_name} tarafından görüldü
+                {tasarimciya_atandiStep.notes ? `, "${tasarimciya_atandiStep.notes}"` : ''}
               </p>
             )}
           </div>
@@ -250,7 +250,7 @@ function DesignerOrderCard({ order, onSign, onOzalit }) {
             <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[11px]">
               {isMatbaaOnay
                 ? 'Matbaa Onayı Bekliyor'
-                : order.status === 'kontrol_edildi' ? 'Ozalit İsteği Bekliyor' : 'Onay Bekliyor'}
+                : order.status === 'kontroller_tamam' ? 'Ozalit İsteği Bekliyor' : 'Onay Bekliyor'}
             </Badge>
             <div className="flex flex-wrap justify-end gap-1.5">
               {/* At the request step the primary button opens this very sheet

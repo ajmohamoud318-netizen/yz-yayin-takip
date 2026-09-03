@@ -34,7 +34,7 @@ function orderRow(overrides = {}) {
   return {
     id: 'o-1',
     project_id: 'p-1',
-    status: 'pending',
+    status: 'atama_bekleniyor',
     requested_by: 'S1',
     payload: { items: [{ name: 'Kapak' }], quantity: 500, notes: 'acele' },
     assignee_ids: [],
@@ -170,7 +170,7 @@ function timeline(client) {
 
 describe('orders-service — persistence diffing', () => {
   it('writes only the columns the entity changed, and lets SQL own version/updated_at', async () => {
-    const order = orderRow({ status: 'matbaa_onay', assignee_ids: ['D1'] })
+    const order = orderRow({ status: 'imza_bekleniyor', assignee_ids: ['D1'] })
     const client = makeClient({ order })
 
     await service.receiveMatbaaOzalit('o-1', L1, client)
@@ -194,10 +194,10 @@ describe('orders-service — persistence diffing', () => {
   })
 
   it('still bumps version when a command changes no column at all', async () => {
-    // Re-approving an already-signed matbaa_onay round: the ledger is
+    // Re-approving an already-signed imza_bekleniyor round: the ledger is
     // unchanged, but the optimistic-concurrency counter must still move.
     const order = orderRow({
-      status: 'matbaa_onay',
+      status: 'imza_bekleniyor',
       matbaa_received: true,
       assignee_ids: ['D1'],
       matbaa_approvals: [{ id: 'L1', role: 'team_leader', name: 'Ayşenur', at: '2026-08-01T00:00:00.000Z' }],
@@ -227,7 +227,7 @@ describe('orders-service — persistence diffing', () => {
       { id: 'L1', role: 'team_leader', name: 'Ayşenur', at: '2026-08-01T00:00:00.000Z' },
     ]
     const order = orderRow({
-      status: 'matbaa_onay',
+      status: 'imza_bekleniyor',
       matbaa_received: true,
       assignee_ids: ['D1'],
       matbaa_approvals: ledger,
@@ -254,7 +254,7 @@ describe('orders-service — persistence diffing', () => {
   })
 
   it('stringifies jsonb columns and casts them', async () => {
-    const order = orderRow({ status: 'pending' })
+    const order = orderRow({ status: 'atama_bekleniyor' })
     const client = makeClient({ order, users: { D1: { id: 'D1', role: 'designer', is_active: true } } })
 
     await service.advanceOrder('o-1', L1, { assignees: ['D1'] }, client)
@@ -267,7 +267,7 @@ describe('orders-service — persistence diffing', () => {
 
 describe('orders-service — idempotent no-ops', () => {
   it('short-circuits a repeat "Teslim Alındı" with no write, no history, no notify', async () => {
-    const order = orderRow({ status: 'matbaa_onay', matbaa_received: true, assignee_ids: ['D1'] })
+    const order = orderRow({ status: 'imza_bekleniyor', matbaa_received: true, assignee_ids: ['D1'] })
     const client = makeClient({ order })
 
     const result = await service.receiveMatbaaOzalit('o-1', L1, client)
@@ -282,7 +282,7 @@ describe('orders-service — idempotent no-ops', () => {
   })
 
   it('short-circuits a repeat "Başladım"', async () => {
-    const order = orderRow({ status: 'tasarimci_onay', ozalit_started: true })
+    const order = orderRow({ status: 'matbaa_ozalit_yapiyor', ozalit_started: true })
     const client = makeClient({ order })
 
     const result = await service.startOzalit('o-1', printer, client)
@@ -295,7 +295,7 @@ describe('orders-service — idempotent no-ops', () => {
 describe('orders-service — advance', () => {
   it('validates assignees against the DB on the pending handoff', async () => {
     const client = makeClient({
-      order: orderRow({ status: 'pending' }),
+      order: orderRow({ status: 'atama_bekleniyor' }),
       users: { D1: { id: 'D1', role: 'designer', is_active: true } },
     })
     await service.advanceOrder('o-1', L1, { assignees: ['D1'] }, client)
@@ -304,7 +304,7 @@ describe('orders-service — advance', () => {
 
   it('rejects a non-designer assignee', async () => {
     const client = makeClient({
-      order: orderRow({ status: 'pending' }),
+      order: orderRow({ status: 'atama_bekleniyor' }),
       users: { L2: { id: 'L2', role: 'team_leader', is_active: true } },
     })
     await assert.rejects(
@@ -315,7 +315,7 @@ describe('orders-service — advance', () => {
 
   it('rejects a passive designer', async () => {
     const client = makeClient({
-      order: orderRow({ status: 'pending' }),
+      order: orderRow({ status: 'atama_bekleniyor' }),
       users: { D1: { id: 'D1', role: 'designer', is_active: false } },
     })
     await assert.rejects(
@@ -325,7 +325,7 @@ describe('orders-service — advance', () => {
   })
 
   it('rejects an unknown assignee id', async () => {
-    const client = makeClient({ order: orderRow({ status: 'pending' }), users: {} })
+    const client = makeClient({ order: orderRow({ status: 'atama_bekleniyor' }), users: {} })
     await assert.rejects(
       () => service.advanceOrder('o-1', L1, { assignees: ['nope'] }, client),
       /Tasarımcı bulunamadı: nope/,
@@ -334,7 +334,7 @@ describe('orders-service — advance', () => {
 
   it('logs the transfer then the advance on the project timeline', async () => {
     const client = makeClient({
-      order: orderRow({ status: 'pending' }),
+      order: orderRow({ status: 'atama_bekleniyor' }),
       users: { D1: { id: 'D1', role: 'designer', is_active: true } },
     })
     await service.advanceOrder('o-1', L1, { assignees: ['D1'] }, client)
@@ -347,22 +347,22 @@ describe('orders-service — advance', () => {
     assert.equal(rows[1].to_stage, 'satista', 'an order advance never moves the project')
   })
 
-  it('does not consult the active leader set outside matbaa_onay', async () => {
-    const client = makeClient({ order: orderRow({ status: 'goruldu' }) })
+  it('does not consult the active leader set outside imza_bekleniyor', async () => {
+    const client = makeClient({ order: orderRow({ status: 'tasarimciya_atandi' }) })
     await service.advanceOrder('o-1', D1, {}, client)
     assert.equal(client.matching(/role = 'team_leader' AND is_active = TRUE/).length, 0)
   })
 
-  it('loads active leaders for a matbaa_onay round and logs a partial approval', async () => {
+  it('loads active leaders for a imza_bekleniyor round and logs a partial approval', async () => {
     const order = orderRow({
-      status: 'matbaa_onay', matbaa_received: true, assignee_ids: ['D1'],
+      status: 'imza_bekleniyor', matbaa_received: true, assignee_ids: ['D1'],
     })
     const client = makeClient({ order, leaders: ['L1', 'L2'] })
 
     const result = await service.advanceOrder('o-1', L1, {}, client)
 
     assert.equal(client.matching(/role = 'team_leader' AND is_active = TRUE/).length, 1)
-    assert.equal(result.status, 'matbaa_onay', 'a partial approval does not advance')
+    assert.equal(result.status, 'imza_bekleniyor', 'a partial approval does not advance')
     const rows = timeline(client)
     assert.deepEqual(rows.map((r) => r.event), ['order_matbaa_approve'])
     assert.match(rows[0].note, /2 onay daha bekleniyor/)
@@ -371,7 +371,7 @@ describe('orders-service — advance', () => {
   it('advances and clears the ledger once every approver has signed', async () => {
     // L1 already signed; L2's click completes the round.
     const order = orderRow({
-      status: 'matbaa_onay',
+      status: 'imza_bekleniyor',
       matbaa_received: true,
       assignee_ids: [],
       matbaa_approvals: [{ id: 'L1', role: 'team_leader', name: 'Ayşenur', at: '2026-08-01T00:00:00.000Z' }],
@@ -380,7 +380,7 @@ describe('orders-service — advance', () => {
 
     const result = await service.advanceOrder('o-1', L2, {}, client)
 
-    assert.equal(result.status, 'siparis_baski_onay')
+    assert.equal(result.status, 'baski_onayi_bekleniyor')
     const { patch } = updatePatch(client)
     assert.equal(patch.matbaa_approvals, '[]', 'ledger reset for the next round')
     assert.deepEqual(timeline(client).map((r) => r.event), ['order_advance'])
@@ -388,7 +388,7 @@ describe('orders-service — advance', () => {
   })
 
   it('surfaces the version conflict as a 409 before touching anything', async () => {
-    const client = makeClient({ order: orderRow({ status: 'goruldu', version: 7 }) })
+    const client = makeClient({ order: orderRow({ status: 'tasarimciya_atandi', version: 7 }) })
     await assert.rejects(
       () => service.advanceOrder('o-1', D1, { expectedVersion: 3 }, client),
       (err) => {
@@ -412,7 +412,7 @@ describe('orders-service — advance', () => {
     // The fake client simulates the race by returning 0 rows from the
     // UPDATE — exactly what the real DB does when the WHERE clause's
     // version no longer matches.
-    const order = orderRow({ status: 'goruldu', version: 7 })
+    const order = orderRow({ status: 'tasarimciya_atandi', version: 7 })
     const client = makeClient({ order })
     const baseQuery = client.query
     client.query = async (sql, params = []) => {
@@ -446,13 +446,13 @@ describe('orders-service — advance', () => {
     // the locked row, so the guard is in effect on every command. A future
     // refactor that drops the WHERE clause silently re-introduces the race
     // this work was meant to close.
-    const order = orderRow({ status: 'goruldu', version: 7 })
+    const order = orderRow({ status: 'tasarimciya_atandi', version: 7 })
     const client = makeClient({ order })
 
     await service.advanceOrder('o-1', D1, {}, client)
 
     const call = client.one(/UPDATE order_requests/)
-    // For a `goruldu → kontrol_edildi` advance the only field the entity
+    // For a `tasarimciya_atandi → kontroller_tamam` advance the only field the entity
     // writes is `status` (no `assignee_ids` flip on a non-pending step),
     // so the SET clause carries one $N column and the WHERE version guard
     // sits at $N+1. params: [$1=id, $2=status, $3=expectedVersion].
@@ -462,8 +462,8 @@ describe('orders-service — advance', () => {
     assert.match(call.sql, /version = version \+ 1/)
   })
 
-  it('refuses a bare advance at siparis_baski_onay', async () => {
-    const client = makeClient({ order: orderRow({ status: 'siparis_baski_onay' }) })
+  it('refuses a bare advance at baski_onayi_bekleniyor', async () => {
+    const client = makeClient({ order: orderRow({ status: 'baski_onayi_bekleniyor' }) })
     await assert.rejects(
       () => service.advanceOrder('o-1', L1, {}, client),
       /baskı onay formunu doldurup onaylamalısınız/,
@@ -481,7 +481,7 @@ describe('orders-service — advance', () => {
 
 describe('orders-service — reject', () => {
   it('names the flagged alt görev TITLES in the timeline note, not their ids', async () => {
-    const order = orderRow({ status: 'matbaa_onay', assignee_ids: ['D1'] })
+    const order = orderRow({ status: 'imza_bekleniyor', assignee_ids: ['D1'] })
     const client = makeClient({ order, revizeTitles: ['Kapak', 'İç Sayfalar'] })
 
     await service.rejectOrder('o-1', L1, {
@@ -499,7 +499,7 @@ describe('orders-service — reject', () => {
   })
 
   it('does not flag subtasks on a matbaa-target rejection', async () => {
-    const order = orderRow({ status: 'matbaa_onay' })
+    const order = orderRow({ status: 'imza_bekleniyor' })
     const client = makeClient({ order })
 
     await service.rejectOrder('o-1', L1, {
@@ -512,7 +512,7 @@ describe('orders-service — reject', () => {
 
   it('wipes the receipt gate and bumps the ozalit round', async () => {
     const order = orderRow({
-      status: 'matbaa_onay',
+      status: 'imza_bekleniyor',
       matbaa_received: true,
       matbaa_received_by: 'Ayşenur',
       matbaa_approvals: [{ id: 'L1' }],
@@ -526,7 +526,7 @@ describe('orders-service — reject', () => {
     }, client)
 
     const { patch } = updatePatch(client)
-    assert.equal(result.status, 'tasarimci_onay')
+    assert.equal(result.status, 'matbaa_ozalit_yapiyor')
     assert.equal(patch.matbaa_received, false)
     assert.equal(patch.matbaa_approvals, '[]')
     assert.equal(patch.ozalit_started, false)
@@ -542,7 +542,7 @@ describe('orders-service — baskı onay', () => {
   // Migration 060: approve is the CHECKER half, so every approve test starts
   // from a sheet another leader already prepared. L2 prepares, L1 signs.
   const preparedRow = (overrides = {}) => orderRow({
-    status: 'siparis_baski_onay',
+    status: 'baski_onayi_bekleniyor',
     baski_onay_prepared: true,
     baski_onay_prepared_by: 'L2',
     baski_onay_prepared_by_name: 'İkinci Lider',
@@ -561,7 +561,7 @@ describe('orders-service — baskı onay', () => {
 
     const result = await service.approveBaskiOnayForm('o-1', L1, approvedForm, client)
 
-    assert.equal(result.status, 'onaylandi')
+    assert.equal(result.status, 'baskida')
     const stageWrite = client.one(/UPDATE projects SET/)
     assert.equal(stageWrite.params[1], 'baskida')
     const rows = timeline(client)
@@ -582,7 +582,7 @@ describe('orders-service — baskı onay', () => {
 
     const result = await service.approveBaskiOnayForm('o-1', L1, approvedForm, client)
 
-    assert.equal(result.status, 'onaylandi')
+    assert.equal(result.status, 'baskida')
     assert.equal(client.matching(/UPDATE projects SET/).length, 0, 'stage left alone')
     const rows = timeline(client)
     assert.equal(rows.length, 1)
@@ -616,7 +616,7 @@ describe('orders-service — baskı onay', () => {
       components: [block('Ringoo', '5.000'), block('Ringoo KUTU', '2.500')],
       tarih: '2026-09-01', basimYeri: 'İstanbul', hazirlayan: 'Ayşenur',
     }, client)
-    assert.equal(result.status, 'onaylandi')
+    assert.equal(result.status, 'baskida')
   })
 
   it('refuses when one parça is left without a quantity', async () => {
@@ -643,7 +643,7 @@ describe('orders-service — baskı onay', () => {
   })
 
   it('prepare stamps the maker half without touching the project', async () => {
-    const order = orderRow({ status: 'siparis_baski_onay' })
+    const order = orderRow({ status: 'baski_onayi_bekleniyor' })
     const client = makeClient({
       order, leaders: bothLeaders,
       project: { id: 'p-1', stage: 'baski_onay', type: 'TR', title: 'Kitap' },
@@ -651,7 +651,7 @@ describe('orders-service — baskı onay', () => {
 
     const result = await service.prepareBaskiOnayForm('o-1', L2, approvedForm, client)
 
-    assert.equal(result.status, 'siparis_baski_onay', 'prepare must not advance the order')
+    assert.equal(result.status, 'baski_onayi_bekleniyor', 'prepare must not advance the order')
     assert.equal(result.baski_onay_prepared, true)
     assert.equal(result.baski_onay_prepared_by, 'L2')
     assert.equal(client.matching(/UPDATE projects SET/).length, 0, 'project stage untouched')
@@ -680,11 +680,11 @@ describe('orders-service — baskı onay', () => {
     })
 
     const result = await service.approveBaskiOnayForm('o-1', L1, approvedForm, client)
-    assert.equal(result.status, 'onaylandi')
+    assert.equal(result.status, 'baskida')
   })
 
   it('saves a draft quietly — no history row, no timeline, no notification', async () => {
-    const order = orderRow({ status: 'siparis_baski_onay' })
+    const order = orderRow({ status: 'baski_onayi_bekleniyor' })
     const client = makeClient({ order })
 
     await service.saveBaskiOnayForm('o-1', L1, {
@@ -699,7 +699,7 @@ describe('orders-service — baskı onay', () => {
   })
 
   it('refuses a draft save from anyone but a team leader', async () => {
-    const client = makeClient({ order: orderRow({ status: 'siparis_baski_onay' }) })
+    const client = makeClient({ order: orderRow({ status: 'baski_onayi_bekleniyor' }) })
     await assert.rejects(
       () => service.saveBaskiOnayForm('o-1', D1, { components: [] }, client),
       (err) => { assert.equal(err.status, 403); return true },
@@ -709,7 +709,7 @@ describe('orders-service — baskı onay', () => {
 
 describe('orders-service — ozalit round', () => {
   it('writes the sheet snapshot and tags the history row with its demo id', async () => {
-    const order = orderRow({ status: 'tasarimci_onay', ozalit_attempt: 1 })
+    const order = orderRow({ status: 'matbaa_ozalit_yapiyor', ozalit_attempt: 1 })
     const client = makeClient({ order })
     // insertDemoSnapshot RETURNINGs the inserted row.
     const baseQuery = client.query
@@ -732,7 +732,7 @@ describe('orders-service — ozalit round', () => {
   })
 
   it('rolls the snapshot back by refusing before any write when the round has started', async () => {
-    const order = orderRow({ status: 'tasarimci_onay', ozalit_started: true })
+    const order = orderRow({ status: 'matbaa_ozalit_yapiyor', ozalit_started: true })
     const client = makeClient({ order })
     await assert.rejects(
       () => service.editOzalit('o-1', L1, { payload: { components: [] } }, client),
@@ -743,7 +743,7 @@ describe('orders-service — ozalit round', () => {
 
   it('clears the change request on accept and marks a fix owed', async () => {
     const order = orderRow({
-      status: 'tasarimci_onay',
+      status: 'matbaa_ozalit_yapiyor',
       ozalit_started: true,
       ozalit_change_requested_at: '2026-08-02T00:00:00.000Z',
       ozalit_change_requested_by: 'L1',
@@ -760,7 +760,7 @@ describe('orders-service — ozalit round', () => {
 
   it('leaves the round started when the change is declined', async () => {
     const order = orderRow({
-      status: 'tasarimci_onay',
+      status: 'matbaa_ozalit_yapiyor',
       ozalit_started: true,
       ozalit_change_requested_at: '2026-08-02T00:00:00.000Z',
     })
@@ -775,7 +775,7 @@ describe('orders-service — ozalit round', () => {
 
   it('sends a lost proof back to the matbaa with a fresh round', async () => {
     const order = orderRow({
-      status: 'matbaa_onay',
+      status: 'imza_bekleniyor',
       assignee_ids: ['D1'],
       matbaa_approvals: [{ id: 'L1' }],
       ozalit_started: true,
@@ -785,7 +785,7 @@ describe('orders-service — ozalit round', () => {
 
     const result = await service.markMatbaaNotReceived('o-1', L1, client)
 
-    assert.equal(result.status, 'tasarimci_onay')
+    assert.equal(result.status, 'matbaa_ozalit_yapiyor')
     const { patch } = updatePatch(client)
     assert.equal(patch.ozalit_attempt, 2)
     assert.equal(patch.matbaa_approvals, '[]')
@@ -841,7 +841,7 @@ describe('orders-service — subtask patch', () => {
 
 describe('orders-service — list', () => {
   it('flattens payload and hydrates history + subtasks', async () => {
-    const row = orderRow({ status: 'goruldu' })
+    const row = orderRow({ status: 'tasarimciya_atandi' })
     const db = {
       async query(sql) {
         if (/FROM order_requests o/.test(sql)) {
@@ -850,7 +850,7 @@ describe('orders-service — list', () => {
         if (/FROM order_history oh/.test(sql)) {
           return {
             rows: [{
-              step: 'pending', notes: 'acele', signed_by_id: 'S1', demo_id: null,
+              step: 'atama_bekleniyor', notes: 'acele', signed_by_id: 'S1', demo_id: null,
               signed_by_name: 'Esra', signed_by_role: 'satis', created_at: 'T0',
             }],
           }

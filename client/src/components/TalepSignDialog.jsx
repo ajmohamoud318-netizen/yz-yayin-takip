@@ -43,7 +43,7 @@ import { ProductInfoPanel, SubtaskPanel } from '@/components/TalepSpecEditors'
  *  - `TalepMiniPipeline.jsx`  — the step strip
  *  - `TalepSpecEditors.jsx`   — alt görevler / Ürün Bilgileri editors + panels
  *  - `TalepRejectForm.jsx`    — route, revize picker, reason
- *  - `TalepOzalitPanel.jsx`   — the tasarimci_onay round + receipt banner
+ *  - `TalepOzalitPanel.jsx`   — the matbaa_ozalit_yapiyor round + receipt banner
  *  - `hooks/useOrderOzalitRound.js` — every action on that round
  *  - `data/orderSubtasks.js`  — persisting the designer's Revize flags
  */
@@ -91,14 +91,14 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   const { user } = useAuth()
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
-  // Designer step 1 of 2 (status 'goruldu', migration 054) — "Kontrolleri
+  // Designer step 1 of 2 (status 'tasarimciya_atandi', migration 054) — "Kontrolleri
   // Yapın": alt görevler + ürün bilgileri. Step 2 ("Ozalit İsteyin", status
-  // 'kontrol_edildi') isn't this dialog at all: it opens the Ozalit Üretim
+  // 'kontroller_tamam') isn't this dialog at all: it opens the Ozalit Üretim
   // Formu, and that form's own submit advances the order.
-  const isDesignerStep = user?.role === 'designer' && order?.status === 'goruldu'
+  const isDesignerStep = user?.role === 'designer' && order?.status === 'tasarimciya_atandi'
   // Team leader can also correct the spec while approving the ozalit round
-  // (matbaa_onay), the digital Ekran Onayı, or — before the matbaa has
-  // started work — the pending tasarimci_onay delivery itself (migration
+  // (imza_bekleniyor), the digital Ekran Onayı, or — before the matbaa has
+  // started work — the pending matbaa_ozalit_yapiyor delivery itself (migration
   // 051's cancel/edit window; once started, direct editing is refused and
   // the request-change flow further down takes over instead). Same as the
   // main project pipeline's own Ozalit form, where the team leader may
@@ -106,8 +106,8 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   // view-only at these steps, same as on the main pipeline.
   const canEditSpec =
     isDesignerStep ||
-    (user?.role === 'team_leader' && (order?.status === 'matbaa_onay' || order?.status === 'ekran_onay')) ||
-    (user?.role === 'team_leader' && order?.status === 'tasarimci_onay' && !order?.ozalit_started)
+    (user?.role === 'team_leader' && (order?.status === 'imza_bekleniyor' || order?.status === 'ekran_onayinda')) ||
+    (user?.role === 'team_leader' && order?.status === 'matbaa_ozalit_yapiyor' && !order?.ozalit_started)
   // The resubmit-after-reject choice (another physical ozalit vs. a digital
   // Ekran Onayı) used to live here. It moved one step forward with migration
   // 054, onto the Ozalit Üretim Formu that now makes the request — see
@@ -128,7 +128,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   const [revizeIds, setRevizeIds] = useState([])
   const [rejectSubtasks, setRejectSubtasks] = useState([])
   // Assign step (pending → görüldü): team leader picks the designer(s) for the check.
-  const isAssignStep = user?.role === 'team_leader' && order?.status === 'pending'
+  const isAssignStep = user?.role === 'team_leader' && order?.status === 'atama_bekleniyor'
   // Only the team leader can reject, and only at a step that offers a route.
   // Declared up here (not next to the other derived labels below) because the
   // reject-picker effect depends on it, and effects must run before this
@@ -147,7 +147,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   const noCatalogChanges = JSON.stringify(comps) === originalRef.current
 
   /* Every action on the order's ozalit round — the printer's start/answer,
-     the leader's cancel/edit/request-change, and the matbaa_onay receipt
+     the leader's cancel/edit/request-change, and the imza_bekleniyor receipt
      gate. See hooks/useOrderOzalitRound.js. */
   const {
     ozalitBusy, changeNote, setChangeNote,
@@ -165,7 +165,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
       setEditorOpen(false)
       if (isDesignerStep) {
         // Subtasks first (open); product info collapsed until needed.
-        // Team-leader steps (matbaa_onay/ekran_onay) don't touch alt
+        // Team-leader steps (imza_bekleniyor/ekran_onay) don't touch alt
         // görevler here — only the designer's own review step does.
         setSubsOpen(true)
         // This order's own alt görevler snapshot (order_subtasks) — already
@@ -246,13 +246,13 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   const nextLabel = ORDER_STEP_LABELS[nextStep] ?? 'Onayla'
   const currentStepLabel = ORDER_STEP_LABELS[order.status] ?? order.status
 
-  // matbaa_onay is multi-party, leader-first — full parity with the main
+  // imza_bekleniyor is multi-party, leader-first — full parity with the main
   // pipeline's ozalit_onay gate (see domain/constants/orders.js). Nobody can
   // approve until the delivered proof is "Teslim Alındı", and a designer only
   // counter-signs once a team leader has. A click here never claims finality
   // ("Son Onay") — the client can't see the full required-approver set, only
   // whether ITS OWN vote clears; the server decides when the round is done.
-  const isMatbaaOnayStep = order.status === 'matbaa_onay'
+  const isMatbaaOnayStep = order.status === 'imza_bekleniyor'
   const isAssignedMatbaaDesigner =
     user?.role === 'designer' && (order.assignee_ids ?? []).includes(user?.id)
   const canActOnMatbaaOnay = isMatbaaOnayStep && (user?.role === 'team_leader' || isAssignedMatbaaDesigner)
@@ -264,10 +264,10 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
 
   // Full parity with the main pipeline's demo/ozalit started/cancel/edit/
   // change-request flow (migrations 048/049), scoped to the order's own
-  // ozalit round delivered at tasarimci_onay (migration 051). Team-leader
+  // ozalit round delivered at matbaa_ozalit_yapiyor (migration 051). Team-leader
   // only, same restriction as the main pipeline (avoids two people racing
   // to edit/notify the same sent request).
-  const isTasarimciOnayStep = order.status === 'tasarimci_onay'
+  const isTasarimciOnayStep = order.status === 'matbaa_ozalit_yapiyor'
   const ozalitStarted = !!order.ozalit_started
   const ozalitChangePending = order.ozalit_change_requested_at != null
   const ozalitFixPending = !!order.ozalit_fix_pending
@@ -282,9 +282,9 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   // trigger button that opened this dialog — no "İmzala" wording, no pen icon.
   const actionLabel = isAssignStep
     ? 'Tasarımcıya Aktarın'
-    : order.status === 'tasarimci_onay'
+    : order.status === 'matbaa_ozalit_yapiyor'
       ? 'Teslim Edin'
-      : order.status === 'ekran_onay'
+      : order.status === 'ekran_onayinda'
         ? 'Onaylayın'
       : isMatbaaOnayStep
         ? 'Onaylayın'
@@ -363,7 +363,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
       // The advance passed the version check, so the edits it described in
       // `signNotes` may now be committed.
       for (const write of pendingWrites) await write()
-      // A matbaa_onay click doesn't always complete the round — the client
+      // A imza_bekleniyor click doesn't always complete the round — the client
       // can't tell in advance whether its own vote is the last one needed
       // (see the note above actionLabel), so it checks the server's answer.
       if (isMatbaaOnayStep && updated.status === order.status) {
@@ -432,7 +432,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     onOpenChange(false)
   }
 
-  // matbaa_onay's receipt gate has exactly one useful action before receipt
+  // imza_bekleniyor's receipt gate has exactly one useful action before receipt
   // is acknowledged — the approve button stays disabled until then, and
   // rejecting the ozalit only makes sense once it's actually been seen. So
   // skip the full approval form (cart summary, pipeline, signature, notes —
@@ -521,8 +521,8 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
             />
           )}
 
-          {/* Designer at goruldu, team leader approving matbaa_onay/
-              ekran_onay, or team leader at a not-yet-started tasarimci_onay:
+          {/* Designer at tasarimciya_atandi, team leader approving imza_bekleniyor/
+              ekran_onay, or team leader at a not-yet-started matbaa_ozalit_yapiyor:
               edit the product spec (collapsed by default) — mirrors the main
               pipeline's Ozalit form, where the team leader may correct the
               spec right up through approval. */}
@@ -634,7 +634,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
                   {saving ? 'Reddediliyor…' : 'Reddi Onaylayın'}
                 </Button>
               ) : (
-                // tasarimci_onay belongs to the printer — a team leader viewing
+                // matbaa_ozalit_yapiyor belongs to the printer — a team leader viewing
                 // it only ever gets the cancel/edit/change-request actions
                 // above, never this generic advance button. And same as the
                 // main pipeline's demo/ozalit Teslim Et: hidden for the

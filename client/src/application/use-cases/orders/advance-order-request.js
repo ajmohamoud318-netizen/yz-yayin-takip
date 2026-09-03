@@ -16,9 +16,9 @@ export function makeAdvanceOrderRequest() {
     // what an earlier `{ notes }`-only body caused on every transfer, even
     // though the team leader had picked designers in the dialog.
     //
-    // `route` is REQUIRED on a goruldu resubmit (order.last_reject_type ===
-    // 'designer') — the designer's choice between 'tasarimci_onay' (another
-    // physical ozalit) and 'ekran_onay' (digital, team-leader-only). The
+    // `route` is REQUIRED on a tasarimciya_atandi resubmit (order.last_reject_type ===
+    // 'designer') — the designer's choice between 'matbaa_ozalit_yapiyor' (another
+    // physical ozalit) and 'ekran_onayinda' (digital, team-leader-only). The
     // server 400s if it's sent on a first submission or omitted on a resubmit.
     //
     // `actor` is deliberately NOT forwarded — the signer is read from the

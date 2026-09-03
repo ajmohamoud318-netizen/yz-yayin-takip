@@ -93,7 +93,7 @@ export default function SpecFormFooter({
           type="button"
           variant="outline"
           disabled={busy || missingRequired.length > 0 || incompleteSpec?.length > 0}
-          onClick={() => onAdvance('ekran_onay')}
+          onClick={() => onAdvance('ekran_onayinda')}
         >
           {busy ? 'Gönderiliyor…' : 'Ekran Onayı İsteyin'}
         </Button>
@@ -109,7 +109,7 @@ export default function SpecFormFooter({
           // Demo / Ozalit sheet, so it needs no exemption of its own —
           // it is empty everywhere the gate should not apply.
           disabled={busy || (!rejectContext && missingRequired.length > 0) || incompleteSpec?.length > 0}
-          onClick={() => onAdvance(authoringOrderOzalit && order?.last_reject_type === 'designer' ? 'tasarimci_onay' : null)}
+          onClick={() => onAdvance(authoringOrderOzalit && order?.last_reject_type === 'designer' ? 'matbaa_ozalit_yapiyor' : null)}
           variant={rejectContext ? 'destructive' : 'default'}
         >
           <Send className="h-4 w-4" />

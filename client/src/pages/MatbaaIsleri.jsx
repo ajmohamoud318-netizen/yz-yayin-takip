@@ -62,7 +62,7 @@ export default function MatbaaIsleri() {
   // read. Same rule on Approvals.jsx and the project detail header.
   const [startingWork, setStartingWork] = useState(false)
 
-  // Sipariş queue (printer's sign-off step: tasarimci_onay → matbaa_onay).
+  // Sipariş queue (printer's sign-off step: matbaa_ozalit_yapiyor → imza_bekleniyor).
   // Same filter Approvals.jsx:73 uses — one rule, one place.
   useEffect(() => {
     let cancelled = false
@@ -70,7 +70,7 @@ export default function MatbaaIsleri() {
     api.listOrderRequests()
       .then((reqs) => {
         if (cancelled) return
-        setOrders(reqs.filter((r) => r.status === 'tasarimci_onay'))
+        setOrders(reqs.filter((r) => r.status === 'matbaa_ozalit_yapiyor'))
       })
       .catch(() => { /* transient — next tick retries */ })
       .finally(() => { if (!cancelled) setOrdersLoading(false) })
