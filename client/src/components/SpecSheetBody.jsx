@@ -9,7 +9,7 @@ import {
   SheetRow,
   SheetSpecRow,
 } from '@/components/FormSheet'
-import { parcaKind } from '@/data/parcaTemplates'
+import { missingTemplateLabels, parcaKind } from '@/data/parcaTemplates'
 import { isAdetLabel } from '@/lib/spec-form-adet'
 import { projectHasLivePageCount } from '@/lib/spec-form-resolve'
 
@@ -224,7 +224,15 @@ export default function SpecSheetBody({
               required={isRequiredRow(r.label)}
             />
           ))}
-          {!readOnly && <SheetAddRow onClick={onAddCustomRow} />}
+          {/* With no parça blocks these rows ARE the product's own sheet, so
+              the lead parça's template is what they can be missing. */}
+          {!readOnly && (
+            <SheetAddRow
+              onClick={() => onAddCustomRow()}
+              suggestions={missingTemplateLabels('main', customRows)}
+              onAddSuggestion={onAddCustomRow}
+            />
+          )}
           {fixedKunyeRows}
         </FormSheetBlock>
       )}
@@ -272,7 +280,13 @@ export default function SpecSheetBody({
                   required={isRequiredRow(r.label)}
                 />
               ))}
-              {!readOnly && <SheetAddRow onClick={() => onAddComponentRow(c.id)} />}
+              {!readOnly && (
+                <SheetAddRow
+                  onClick={() => onAddComponentRow(c.id)}
+                  suggestions={missingTemplateLabels(parcaKind(c), c.rows)}
+                  onAddSuggestion={(label) => onAddComponentRow(c.id, label)}
+                />
+              )}
             </FormSheetBlock>
             {/* …and its own künye, for the same reason the head is repeated:
                 each parça leaves the printer as a STANDALONE sheet, and the

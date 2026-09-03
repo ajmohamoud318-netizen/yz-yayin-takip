@@ -423,8 +423,11 @@ export function useSpecSheet({
 
   /* ── The sheet's own added rows ───────────────────────────────────────── */
 
-  function addCustomRow() {
-    setCustomRows((prev) => [...prev, { id: Date.now() + Math.random(), label: '', value: '' }])
+  // `label` pre-names the row: the sheet offers a parça's missing template
+  // lines as chips (FormSheet#SheetAddRow), so putting a deleted one back is a
+  // tap instead of retyping it. Omitted, this is the plain blank row.
+  function addCustomRow(label = '') {
+    setCustomRows((prev) => [...prev, { id: Date.now() + Math.random(), label, value: '' }])
   }
   function updateCustomRow(id, field, val) {
     setCustomRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: val } : r)))
@@ -451,12 +454,12 @@ export function useSpecSheet({
       ),
     )
   }
-  function addComponentRow(compId) {
+  function addComponentRow(compId, label = '') {
     setSelectedComponents((prev) =>
       prev.map((c) =>
         c.id !== compId
           ? c
-          : { ...c, rows: [...(c.rows ?? []), { id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, label: '', value: '' }] },
+          : { ...c, rows: [...(c.rows ?? []), { id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, label, value: '' }] },
       ),
     )
   }

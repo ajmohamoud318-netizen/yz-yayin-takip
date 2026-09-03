@@ -251,17 +251,39 @@ export function SheetSpecRow({ label, value, onLabelChange, onValueChange, onRem
  * it — on the künye it sits between the added rows and the fixed ones, and
  * without the rule those two groups would run together. Last in a block it
  * drops the rule, exactly like a row.
+ *
+ * `suggestions` are the parça's own template rows that aren't on the block
+ * right now (data/parcaTemplates#missingTemplateLabels). Deleting a template
+ * line is how the author clears the send gate for a field this job doesn't
+ * have — so putting them back has to be a tap. They render as chips rather
+ * than a menu: a menu on a phone is a second surface to open and aim at, and
+ * these are at most a handful of short labels that wrap on their own.
  */
-export function SheetAddRow({ onClick, className }) {
+export function SheetAddRow({ onClick, className, suggestions = [], onAddSuggestion }) {
+  const chips = onAddSuggestion ? suggestions : []
   return (
     <div className={cn('border-b last:border-b-0 print:hidden', className)}>
-      <button
-        type="button"
-        onClick={onClick}
-        className="my-1 inline-flex items-center gap-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
-      >
-        <Plus className="h-3 w-3" /> Satır Ekleyin
-      </button>
+      <div className="flex flex-wrap items-center gap-1.5 py-1">
+        <button
+          type="button"
+          onClick={onClick}
+          className="my-1 inline-flex items-center gap-1 py-1 text-[11px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
+        >
+          <Plus className="h-3 w-3" /> Satır Ekleyin
+        </button>
+        {chips.map((label) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => onAddSuggestion(label)}
+            title={`${label} satırını geri ekleyin`}
+            className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-primary/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground transition active:scale-95 hover:border-primary/70 hover:text-primary"
+          >
+            <Plus className="h-2.5 w-2.5" />
+            {label}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

@@ -15,7 +15,7 @@
  * SheetSpecRow on the demo/ozalit form, EditableSpecSheet in Ürün Bilgileri).
  */
 
-const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
+const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR').trim()
 
 export const PARCA_KINDS = ['main', 'kutu', 'kilavuz', 'other']
 
@@ -88,6 +88,29 @@ export const KILAVUZ_TEMPLATE_LABELS = [
   'İÇ KAĞIT CİNSİ',
   'CİLT',
 ]
+
+/** The template a parça of this kind arrives with. `other` has none. */
+export function templateLabelsForKind(kind) {
+  if (kind === 'kutu') return KUTU_TEMPLATE_LABELS
+  if (kind === 'kilavuz') return KILAVUZ_TEMPLATE_LABELS
+  if (kind === 'main') return MAIN_TEMPLATE_LABELS
+  return []
+}
+
+/**
+ * The template rows this parça is currently missing, in template order.
+ *
+ * The send gate (lib/spec-form-completeness.js) makes deleting a row the way
+ * out of a template line this job doesn't need — so getting one back has to
+ * cost a tap, not the retyping of "SETTEKİ KİTAP SAYISI" into a textarea on a
+ * phone. Compares by label, so a row the author renamed counts as gone and is
+ * offered again; that is the right answer either way, since what they renamed
+ * it to is now a different field.
+ */
+export function missingTemplateLabels(kind, rows) {
+  const present = new Set((rows ?? []).map((r) => up(r?.label)).filter(Boolean))
+  return templateLabelsForKind(kind).filter((label) => !present.has(up(label)))
+}
 
 /**
  * A project's sibling parça, named the way the catalog names one: the job,

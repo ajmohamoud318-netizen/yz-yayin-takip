@@ -31,7 +31,9 @@ import {
   kilavuzTemplateFields,
   kutuComponentName,
   kutuTemplateFields,
+  missingTemplateLabels,
   parcaKind,
+  templateLabelsForKind,
 } from './parcaTemplates'
 
 const LS_KEY = 'yz_product_info_overrides_v1'
@@ -84,6 +86,38 @@ describe('parcaKind', () => {
     expect(parcaKind({ component: 'Ringoo' })).toBe('main')
     expect(parcaKind({ component: 'STICKER', kind: 'nonsense' })).toBe('main')
     expect(parcaKind(null)).toBe('main')
+  })
+})
+
+describe('missingTemplateLabels', () => {
+  // Deleting a template line is how the author clears the send gate for a
+  // field this job doesn't have (lib/spec-form-completeness.js), so putting
+  // one back has to cost a tap rather than the retyping of "SETTEKİ KİTAP
+  // SAYISI" into a textarea on a phone.
+  const rows = (...labels) => labels.map((label) => ({ label, value: '' }))
+
+  it('offers what the parça is missing, in template order', () => {
+    expect(missingTemplateLabels('kutu', rows('ÜST KAĞIT CİNSİ')))
+      .toEqual(['KUTU AÇIK EBAT', 'ALT KAĞIT', 'LAMİNASYON'])
+  })
+
+  it('offers nothing once every template line is on the block', () => {
+    expect(missingTemplateLabels('kutu', rows(...KUTU_TEMPLATE_LABELS))).toEqual([])
+  })
+
+  it('offers the whole template to a block stripped bare', () => {
+    expect(missingTemplateLabels('kilavuz', [])).toEqual(KILAVUZ_TEMPLATE_LABELS)
+    expect(missingTemplateLabels('main', null)).toEqual(MAIN_TEMPLATE_LABELS)
+  })
+
+  it('ignores case and stray spacing when deciding what is already there', () => {
+    expect(missingTemplateLabels('kutu', rows('  alt kağıt  ')))
+      .not.toContain('ALT KAĞIT')
+  })
+
+  it('has nothing to offer a parça with no template of its own', () => {
+    expect(templateLabelsForKind('other')).toEqual([])
+    expect(missingTemplateLabels('other', [])).toEqual([])
   })
 })
 

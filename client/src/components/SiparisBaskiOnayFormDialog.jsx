@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 
 import api from '@/api'
 import { getComponentsForProject, getComponentRows } from '@/data/productCatalog'
+import { missingTemplateLabels, parcaKind } from '@/data/parcaTemplates'
 import { adetForComponent, isAdetLabel, missingAdetLabel, withAdetRow } from '@/lib/spec-form-adet'
 import { buildFormSheet, printSpecSheets } from '@/lib/specPrint'
 import { useAuth } from '@/hooks/useAuth'
@@ -155,9 +156,11 @@ export default function SiparisBaskiOnayFormDialog({
       i !== ci ? c : { ...c, rows: c.rows.map((r, j) => (j === ri ? { ...r, ...patch } : r)) }
     )))
   }
-  function addRow(ci) {
+  // `label` pre-names the row so a deleted template line goes back with a tap
+  // (the chips on SheetAddRow) instead of being retyped.
+  function addRow(ci, label = '') {
     setComponents((prev) => prev.map((c, i) => (
-      i !== ci ? c : { ...c, rows: [...c.rows, { id: `row-${Date.now()}`, label: '', value: '' }] }
+      i !== ci ? c : { ...c, rows: [...c.rows, { id: `row-${Date.now()}`, label, value: '' }] }
     )))
   }
   function removeRow(ci, ri) {
@@ -308,7 +311,13 @@ export default function SiparisBaskiOnayFormDialog({
                   required={isAdetLabel(r.label)}
                 />
               ))}
-              {!isReadOnly && <SheetAddRow onClick={() => addRow(ci)} />}
+              {!isReadOnly && (
+                <SheetAddRow
+                  onClick={() => addRow(ci)}
+                  suggestions={missingTemplateLabels(parcaKind(c), c.rows)}
+                  onAddSuggestion={(label) => addRow(ci, label)}
+                />
+              )}
             </FormSheetBlock>
           </div>
         ))

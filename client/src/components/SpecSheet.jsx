@@ -1,5 +1,5 @@
 import { Box, BookOpen, ChevronDown, ChevronUp, GraduationCap, Layers, Plus, X } from 'lucide-react'
-import { parcaKind } from '@/data/parcaTemplates'
+import { missingTemplateLabels, parcaKind } from '@/data/parcaTemplates'
 import { cn } from '@/lib/utils'
 
 const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
@@ -173,7 +173,7 @@ export function EditableSheetRow({ label, value, onLabel, onValue, onRemove, onM
 export function EditableSpecSheet({ comp, onChange }) {
   const fields = comp.fields ?? []
   const setField = (i, patch) => onChange({ ...comp, fields: fields.map((f, idx) => (idx === i ? { ...f, ...patch } : f)) })
-  const addField = () => onChange({ ...comp, fields: [...fields, { k: '', v: '' }] })
+  const addField = (k = '') => onChange({ ...comp, fields: [...fields, { k, v: '' }] })
   const removeField = (i) => onChange({ ...comp, fields: fields.filter((_, idx) => idx !== i) })
   // Order is meaning on a sheet the matbaa reads top to bottom — the KUTU
   // template lands as EBAT → ÜST KAĞIT → ALT KAĞIT → LAMİNASYON and a leader
@@ -234,14 +234,29 @@ export function EditableSpecSheet({ comp, onChange }) {
           />
         ))}
       </dl>
-      <div className="border-t border-dashed px-4 py-2.5 print:hidden">
+      {/* The parça's own template lines that aren't on it right now — one tap
+          to put back a field that was deleted, instead of retyping "SETTEKİ
+          KİTAP SAYISI" into an input on a phone. */}
+      <div className="flex flex-wrap items-center gap-1.5 border-t border-dashed px-4 py-2.5 print:hidden">
         <button
           type="button"
-          onClick={addField}
+          onClick={() => addField()}
           className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-primary transition active:scale-95 hover:opacity-80"
         >
           <Plus className="h-3.5 w-3.5" /> Satır Ekle
         </button>
+        {missingTemplateLabels(kind, fields.map((f) => ({ label: f.k }))).map((label) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => addField(label)}
+            title={`${label} satırını geri ekleyin`}
+            className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-primary/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground transition active:scale-95 hover:border-primary/70 hover:text-primary"
+          >
+            <Plus className="h-2.5 w-2.5" />
+            {label}
+          </button>
+        ))}
       </div>
     </div>
   )
