@@ -274,8 +274,27 @@ export default function SpecSheetBody({
                   the print all key on — and renaming it belongs in Ürün
                   Bilgileri, not here. It is also why the send gate counts two
                   rows BESIDES this one (lib/spec-form-completeness.js): İŞİN
-                  ADI comes filled in and proves nothing about the spec. */}
-              <SheetRow label="İŞİN ADI" value={c.component} readOnly />
+                  ADI comes filled in and proves nothing about the spec.
+
+                  It doubles as the block's head on screen: tinted and set in
+                  the same weight as its label, with a "PARÇA n/N" marker, so
+                  three parçalar scrolling as one document still read as three
+                  sheets. The matbaa opens this read-only and cannot use the
+                  picker above to count them — running the blocks together
+                  under identical hairlines left them unable to tell whether
+                  they were holding one job or three. Both the tint and the
+                  marker are screen-only; on paper the page break says it. */}
+              <SheetRow
+                label="İŞİN ADI"
+                value={c.component}
+                readOnly
+                className="bg-muted/40 font-semibold print:bg-transparent print:font-normal"
+                badge={selectedComponents.length > 1 ? (
+                  <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground ring-1 ring-border">
+                    Parça {ci + 1}/{selectedComponents.length}
+                  </span>
+                ) : null}
+              />
               {(c.rows ?? []).length === 0 && readOnly && (
                 <p className="py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
               )}
@@ -322,6 +341,16 @@ export default function SpecSheetBody({
       {showsComponentCards && !readOnly && (
         <p className="px-4 py-2 text-[10px] text-muted-foreground print:hidden">
           Buradaki düzenlemeler Ürün Bilgileri'ne de kaydedilir.
+        </p>
+      )}
+
+      {/* The editor learns this from the picker's own line ("… 3 ayrı form
+          oluşturulur"), which is part of an editing control and so never
+          reaches the matbaa — the one reader who has to know how many sheets
+          are coming. Same fact, stated where they can see it. */}
+      {showsComponentCards && readOnly && selectedComponents.length > 1 && (
+        <p className="border-t px-4 py-2 text-center text-[10px] text-muted-foreground print:hidden">
+          Bu form <strong>{selectedComponents.length}</strong> parçadan oluşur — her parça kendi sayfasında basılır.
         </p>
       )}
 

@@ -122,10 +122,10 @@ export function FormSheetBlock({ className, children }) {
  * cell carries a red wash, so the gap shows on the sheet itself and not only
  * in a footer warning a scroll away on a phone.
  */
-export function SheetRow({ label, name, value, onChange, readOnly, required = false }) {
+export function SheetRow({ label, name, value, onChange, readOnly, required = false, className, badge = null }) {
   const missing = required && !String(value ?? '').trim()
   return (
-    <div className={SHEET_ROW}>
+    <div className={cn(badge ? SHEET_ROW_TOOLS : SHEET_ROW, className)}>
       <span className={SHEET_LABEL}>
         {label}
         {/* A fill-this-in instruction — nothing to obey on a sheet that can no
@@ -146,6 +146,11 @@ export function SheetRow({ label, name, value, onChange, readOnly, required = fa
           />
         )}
       </div>
+      {/* Screen-only marker in the tools column — "PARÇA 2/3" on a parça's
+          İŞİN ADI row. On paper each parça IS its own page and the head says
+          so; on screen they scroll as one document, and the matbaa has to be
+          able to see where one sheet ends and the next begins. */}
+      {badge && <div className="flex items-start pl-2 pt-1.5 print:hidden">{badge}</div>}
     </div>
   )
 }

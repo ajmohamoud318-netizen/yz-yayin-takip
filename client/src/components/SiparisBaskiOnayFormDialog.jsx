@@ -297,8 +297,20 @@ export default function SiparisBaskiOnayFormDialog({
             <FormSheetBlock className="border-b-0">
               {/* Named by its own İŞİN ADI row, the way it prints and the way
                   the project-side sheet does it (SpecSheetBody). Read-only:
-                  the parça's name is its identity, edited in Ürün Bilgileri. */}
-              <SheetRow label="İŞİN ADI" value={c.component} readOnly />
+                  the parça's name is its identity, edited in Ürün Bilgileri.
+                  Tinted, and marked "PARÇA n/N", so blocks scrolling as one
+                  document still read as the separate sheets they print as. */}
+              <SheetRow
+                label="İŞİN ADI"
+                value={c.component}
+                readOnly
+                className="bg-muted/40 font-semibold print:bg-transparent print:font-normal"
+                badge={components.length > 1 ? (
+                  <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground ring-1 ring-border">
+                    Parça {ci + 1}/{components.length}
+                  </span>
+                ) : null}
+              />
               {c.rows.map((r, ri) => (
                 <SheetSpecRow
                   key={r.id ?? ri}
