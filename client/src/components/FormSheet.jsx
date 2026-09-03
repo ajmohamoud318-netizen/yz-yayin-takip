@@ -77,17 +77,17 @@ export function FormSheet({ className, children }) {
  * the job it belongs to, `attemptLabel` the round ("2. DEMO") where the stage
  * counts rounds — the sipariş side has no counter and passes none.
  *
- * `attemptLabel` sits at the very top, flush against the header's upper edge,
- * so the round number reads as the first thing on the sheet. Below it the
- * title and subtitle own the centred block.
+ * `attemptLabel` sits at the very top tight against the header's upper edge
+ * on the right, so the round number reads as a small top-right marker while
+ * the centred title and subtitle own the rest of the block.
  */
 export function FormSheetHead({ title, subtitle, attemptLabel, icon: Icon }) {
   return (
-    <div className="border-b px-4 pt-0 pb-3 text-center">
+    <div className="border-b px-4 pt-1 pb-3 text-center">
       {attemptLabel && (
-        <p className="-mx-4 -mt-px rounded-none border-b bg-muted/40 px-4 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">{attemptLabel}</p>
+        <p className="mb-0.5 text-right text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">{attemptLabel}</p>
       )}
-      <h2 className="mt-2 text-[12px] font-bold uppercase tracking-[0.18em] text-foreground">{title}</h2>
+      <h2 className="text-[12px] font-bold uppercase tracking-[0.18em] text-foreground">{title}</h2>
       {subtitle && (
         <p className="mt-1.5 flex items-start justify-center gap-1.5 text-[13px] font-semibold leading-snug text-foreground">
           {/* A glyph belongs to the app, not to the form the matbaa gets. */}
