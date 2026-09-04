@@ -17,9 +17,25 @@ import {
   loadProjectAssignees,
   listProjectSubtasks,
   insertDemoSnapshot,
+  loadLatestDemoSnapshot,
 } from '../project-repository.js'
 import { activeUserIdsByRole } from '../notifications.js'
 import { runProjectCommand } from '../project-service.js'
+
+/**
+ * Per-parça approve context (migrations 068/069/070): the FSM gate at
+ * demo_onay / ozalit_onay / baski_onay / ekran routes needs the latest
+ * snapshot's `_selectedComponents` to know which parçalar are on this
+ * round's sheet. Routes pass `kind` so we can match the right snapshot
+ * (a project may carry both a `demo` and an `ozalit` row).
+ */
+function withSnapshot(snapshotKind = 'demo') {
+  return async function snapshotPrepare({ client, row }) {
+    const base = await withAssigneesAndLeaders({ client, row })
+    const snapshot = await loadLatestDemoSnapshot(client, row.id, snapshotKind)
+    return { ...base, snapshot }
+  }
+}
 
 /* --------------------------------------------------------------------------
  * Named prepare-context helpers
@@ -117,13 +133,19 @@ export function advanceProject(projectId, actor, ctx = {}, client = null) {
 
 /** POST /api/projects/:id/approve */
 export function approveProject(projectId, actor, ctx = {}, client = null) {
+  // Per-parça gate (migrations 068/069/070): the snapshot's
+  // `_selectedComponents` decides which parçalar the leader has to sign
+  // off on this click. Load the latest snapshot for the matching gate
+  // (demo/ozalit/baski) so the FSM has the parça list in scope.
   return runProjectCommand(projectId, actor, {
-    prepare: withAssigneesAndLeaders,
+    prepare: withSnapshot(ctx.snapshotKind ?? 'demo'),
     run: (project, pCtx) => project.approve(actor, {
       stage: ctx.stage,
       note: ctx.note ?? '',
+      parcalar: ctx.parcalar ?? null,
       designerIds: pCtx.designerIds ?? [],
       teamLeaderIds: pCtx.teamLeaderIds ?? [],
+      snapshot: pCtx.snapshot ?? null,
     }),
   }, client)
 }
@@ -169,10 +191,16 @@ export function ozalitNotReceived(projectId, actor, client = null) {
 }
 
 /** POST /api/projects/:id/baski-onay-prepare. */
-export function baskiOnayPrepare(projectId, actor, client = null) {
+export function baskiOnayPrepare(projectId, actor, ctx = {}, client = null) {
+  // Per-parça preparer ledger (migrations 068/069/070): each parça on the
+  // baski snapshot gets its own preparer row so the approving leader has
+  // to be a different person per parça.
   return runProjectCommand(projectId, actor, {
-    prepare: withLeaders,
-    run: (project) => project.baskiOnayPrepare(actor),
+    prepare: withSnapshot('baski_onay'),
+    run: (project, pCtx) => project.baskiOnayPrepare(actor, {
+      parcalar: ctx.parcalar ?? null,
+      snapshot: pCtx.snapshot ?? null,
+    }),
   }, client)
 }
 
@@ -288,10 +316,17 @@ export function ekranDemoRequest(projectId, actor, client = null) {
 }
 
 /** POST /api/projects/:id/ekran-demo-approve. */
-export function ekranDemoApprove(projectId, actor, client = null) {
+export function ekranDemoApprove(projectId, actor, ctx = {}, client = null) {
+  // Per-parça gate (migrations 068/069/070): the ekran-demo approval
+  // must also sign off every parça on the snapshot's
+  // `_selectedComponents`. Routes pass `parcalar` (optional subset) and
+  // we read the latest demo snapshot for the matching gate.
   return runProjectCommand(projectId, actor, {
-    prepare: withAssignees,
-    run: (project) => project.ekranDemoApprove(actor),
+    prepare: withSnapshot('demo'),
+    run: (project, pCtx) => project.ekranDemoApprove(actor, {
+      parcalar: ctx.parcalar ?? null,
+      snapshot: pCtx.snapshot ?? null,
+    }),
   }, client)
 }
 

@@ -3,16 +3,17 @@ import { httpClient } from '../client.js'
 /**
  * Subtask repository.
  *
- * `setSubtaskDone` is the tap-to-toggle path for non-pages subtasks
- * (kapak, kutu, sticker-count, etc.); it goes through PATCH /subtasks/:id
- * with `{ is_done }`. The toggle stays here forever — it's the same UX
- * designers have used for everything except "İç Sayfalar".
+ * The non-pages subtasks (kapak, kutu, sticker-count, …) still go through
+ * `setSubtaskDone` / `setSubtaskStickers` / `toggleSubtask`. Designers
+ * click a checkbox and one row updates.
  *
- * `setSubtaskDesignerCounts` is the migration 067 replacement for the
- * per-chip PATCH /subtasks/:id/pages/:pageIndex round-trip the chip
- * grid used to make. Designers enter the page count they shipped into
- * a number input; one save per blur/Enter; the response is a slim
- * shape that the SPA merges into state without a follow-up GET.
+ * The "İç Sayfalar" (pages) subtask took a different shape with the
+ * chip-by-chip UX gone (migration 067). The "+N ekledim" UI sends one
+ * `addSubtaskDesignerBatch` per save, creating an append-only row in
+ * `subtask_designer_batches` whose `pages` contributes to the running
+ * subtask total via the migration 067 trigger. Each batch is
+ * independently re-touchable: `markSubtaskDesignerBatchRedone` stamps
+ * the "Yeniden Çalıştım" affordance on one specific saved batch.
  *
  * `saveProjectSubtasks` (PUT /projects/:id/subtasks) and
  * `updateSubtask` (PATCH /subtasks/:id) stay leader-driven and remain
@@ -35,28 +36,34 @@ export function createHttpSubtaskRepository() {
     },
     /**
      * migration 067 — designer pages-done input. Body is
-     * `{ counts: [{ designer_id, pages_done }, ...] }`. The route
-     * resolves every `(designer_id, pages_done)` pair into the right
-     * row of `subtask_designer_counts`, recomputes the parent subtask's
-     * `pages_done` / `is_done` via the migration 067 trigger, and
-     * returns the slim shape that `useProjectSubtasks.handleDesignerCountChange`
-     * needs to update the header bar / designer input row without a
-     * follow-up GET.
+     * `{ designer_id, pages }`. Server enforces ownership:
+     *   • team_leader may add a batch for any active designer;
+     *   • designer may add only for themselves.
      *
-     * The server gates the body:
-     *   • team_leader role may update any slots;
-     *   • designer role may update only their own slot (the body must
-     *     include exactly their `designer_id`).
-     *
-     * Returns the full `data` shape:
+     * Slim response shape:
      *   { subtask_id, project_id, total_pages, pages_done, is_done,
-     *     designer_counts: [{ designer_id, designer_name, pages_done }],
+     *     batch: { id, designer_id, designer_name, pages, created_at,
+     *              redone_at, redone_by, redone_by_name },
      *     project_progress, project: { id, progress, version } }
      */
-    async setSubtaskDesignerCounts(subtaskId, counts, { signal } = {}) {
-      const { data } = await httpClient.patch(
-        `/subtasks/${subtaskId}/designer-counts`,
-        { counts },
+    async addSubtaskDesignerBatch(subtaskId, { designerId, pages }, { signal } = {}) {
+      const { data } = await httpClient.post(
+        `/subtasks/${subtaskId}/designer-batches`,
+        { designer_id: designerId, pages },
+        signal ? { signal } : undefined,
+      )
+      return data
+    },
+    /**
+     * migration 067 — stamp "Yeniden Çalıştım" on a single batch.
+     * Idempotent on the server side, so the SPA can call it freely
+     * (re-click, retry, optimistic UI rebind) without double-stamping
+     * the audit row.
+     */
+    async markSubtaskDesignerBatchRedone(subtaskId, batchId, { signal } = {}) {
+      const { data } = await httpClient.post(
+        `/subtasks/${subtaskId}/designer-batches/${batchId}/redone`,
+        {},
         signal ? { signal } : undefined,
       )
       return data

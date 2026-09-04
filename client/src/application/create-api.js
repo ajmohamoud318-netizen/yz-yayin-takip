@@ -182,12 +182,14 @@ export function createApi() {
     setSubtaskDone: (subtaskId, isDone) => subtaskRepo.setSubtaskDone(subtaskId, isDone),
     setSubtaskStickers: (subtaskId, stickersDone) =>
       subtaskRepo.setSubtaskStickers(subtaskId, stickersDone),
-    // migration 067 — designer pages-done input. Replaces the per-chip
-    // PATCH /subtasks/:id/pages/:pageIndex call the old chip grid made;
-    // one save per blur/Enter. Body is `{ counts: [{ designer_id,
-    // pages_done }, ...] }`.
-    setSubtaskDesignerCounts: (subtaskId, counts) =>
-      subtaskRepo.setSubtaskDesignerCounts(subtaskId, counts),
+    // migration 067 — designer pages-done input. Each save appends one
+    // batch row; the running total on the parent subtask is the SUM of
+    // every batch's `pages`. Body is `{ designer_id, pages }`. Yeniden
+    // Çalıştım on a saved batch uses the second method below.
+    addSubtaskDesignerBatch: (subtaskId, { designerId, pages }) =>
+      subtaskRepo.addSubtaskDesignerBatch(subtaskId, { designerId, pages }),
+    markSubtaskDesignerBatchRedone: (subtaskId, batchId) =>
+      subtaskRepo.markSubtaskDesignerBatchRedone(subtaskId, batchId),
     reviseSubtask: (subtaskId) => subtaskRepo.reviseSubtask(subtaskId),
     addSubtaskUpdate: (subtaskId, payload) => subtaskRepo.addSubtaskUpdate(subtaskId, payload),
     updateSubtask: (subtaskId, patch) => subtaskRepo.updateSubtask(subtaskId, patch),

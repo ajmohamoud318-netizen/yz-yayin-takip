@@ -96,6 +96,17 @@ function projectRow(overrides = {}) {
     has_product_info: false,
     assignees: [],
     subtasks: [],
+    // Per-parça approval ledgers (migrations 068/069/070) — defaults
+    // match rowToProject in project-repository so the diff in
+    // changedFields() doesn't false-positive.
+    demo_parca_approvals: [],
+    demo_parca_rejections: [],
+    ozalit_parca_approvals: {},
+    ozalit_parca_rejections: [],
+    baski_parca_preparers: {},
+    baski_parca_approvals: {},
+    cin_baski_parca_preparers: {},
+    cin_baski_parca_approvals: {},
     ...overrides,
   }
 }
@@ -250,7 +261,7 @@ describe('project-service — persistence diffing', () => {
     const project = projectRow({ stage: 'baski_onay', baski_onay_prepared: false })
     const client = makeClient({ project, leaders: ['L1', 'L2'] })
 
-    await service.baskiOnayPrepare('p-1', L1, client)
+    await service.baskiOnayPrepare('p-1', L1, {}, client)
 
     // activeUserIdsByRole uses `role = ANY($1)` (not a literal match).
     assert.equal(client.matching(/role = ANY\(\$1\)/).length, 1)

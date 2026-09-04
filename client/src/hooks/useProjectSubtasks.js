@@ -95,49 +95,38 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
   }
 
   /**
-   * Designer pages-done save. One round-trip per call, regardless of
-   * how many keystrokes the designer typed before settling on a value.
-   * The body always sends a single-entry array: the slot for THIS
-   * designer — the server rejects multi-slot payloads from non-leader
-   * users (the team leader can fix any slot).
-   *
-   * Optimistic update keeps the input value in lockstep with server
-   * state — the parent `DesignerPagesInput` clears its draft on
-   * success and reverts on failure.
+   * migration 067 — designer pages-done save. Each call appends one
+   * batch row to `subtask_designer_batches`; the running total on the
+   * parent subtask is the SUM of every batch's `pages`. The optimistic
+   * merge matches the same recompute the server's trigger runs so the
+   * "X / Y tamamlandı" header is in lockstep with the DB before the
+   * response lands.
    */
-  async function handleDesignerCountChange(sub, designerId, pagesDone) {
+  async function handleDesignerBatchAdd(sub, designerId, pages) {
     if (!canEditSubtask(sub)) return
-    // Snapshot the affected subtask so a server-side reject can roll
-    // back. Reading `project` from the closure is fine here — the
-    // input only fires on user interaction, a fresh handle closure
-    // over a stale project would still hold the shape we revert to.
+    // Optimistic pre-state for revert.
     const before = project?.subtasks?.find((s) => s.id === sub.id) ?? null
+    const optimisticBatch = {
+      id: `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      designer_id: designerId,
+      designer_name: null,
+      pages,
+      created_at: new Date().toISOString(),
+      redone_at: null,
+      redone_by: null,
+      redone_by_name: null,
+    }
     setProject((prev) => {
       if (!prev) return prev
       const subs = (prev.subtasks ?? []).map((s) => {
         if (s.id !== sub.id) return s
         const total = Number(s.total_pages ?? 0)
-        const nextCounts = (Array.isArray(s.designer_counts) ? s.designer_counts : []).map((c) => (
-          c.designer_id === designerId ? { ...c, pages_done: pagesDone } : c
-        ))
-        // If the slot doesn't exist yet, materialise it so the optimistic
-        // totals reflect the same state the trigger will recompute on the
-        // server (the server's UPSERT runs ON CONFLICT DO UPDATE which
-        // inserts a new row when one doesn't exist).
-        const hasSlot = nextCounts.some((c) => c.designer_id === designerId)
-        const finalCounts = hasSlot
-          ? nextCounts
-          : [...nextCounts, {
-              designer_id: designerId,
-              designer_name: null,
-              pages_done: pagesDone,
-              updated_at: new Date().toISOString(),
-            }]
-        const sum = finalCounts.reduce((acc, c) => acc + Number(c.pages_done ?? 0), 0)
+        const nextBatches = [optimisticBatch, ...(Array.isArray(s.designer_batches) ? s.designer_batches : [])]
+        const sum = nextBatches.reduce((acc, b) => acc + Number(b.pages ?? 0), 0)
         const pagesDoneClamped = total > 0 ? Math.min(sum, total) : sum
         return {
           ...s,
-          designer_counts: finalCounts,
+          designer_batches: nextBatches,
           pages_done: pagesDoneClamped,
           is_done: total > 0 && sum >= total,
         }
@@ -145,31 +134,31 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
       return { ...prev, subtasks: subs, progress: subtaskProgress(subs) }
     })
     try {
-      const res = await api.setSubtaskDesignerCounts(
-        sub.id,
-        [{ designer_id: designerId, pages_done: pagesDone }],
-      )
-      // Slim response shape:
-      //   { subtask_id, project_id, total_pages, pages_done, is_done,
-      //     designer_counts: [...], project_progress, project: {...} }
+      const res = await api.addSubtaskDesignerBatch(sub.id, { designerId, pages })
       if (res) {
         setProject((prev) => {
           if (!prev) return prev
-          // Trust the server's per-designer array and counters; merge
-          // them onto the affected subtask so a stray drift between
-          // optimistic and server totals is reconciled by the truth.
+          // The server's response carries:
+          //   { subtask_id, project_id, total_pages, pages_done, is_done,
+          //     batch: { id, designer_id, designer_name, pages, ... },
+          //     designer_batches?: [...],   // not currently returned but
+          //                                    the trigger keeps pages_done in sync
+          //     project_progress, project: { id, progress, version } }
+          // Trust the server's pages_done / is_done. We keep the
+          // optimistically-appended batch (its id is the temp one)
+          // and let the next refetch swap the id — the user's draft is
+          // already cleared and the visible total is correct, which is
+          // what matters for the optimistic path.
           const subs = (prev.subtasks ?? []).map((s) => (
             s.id === res.subtask_id
               ? {
                   ...s,
-                  designer_counts: res.designer_counts,
                   pages_done: Number(res.pages_done ?? s.pages_done ?? 0),
                   is_done: !!res.is_done,
                 }
               : s
           ))
           const out = { ...prev, subtasks: subs }
-          // Project progress + version live on the slim response.
           if (res.project && typeof res.project.progress === 'number') {
             out.progress = res.project.progress
           }
@@ -181,9 +170,7 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
       }
     } catch (err) {
       // Revert to the snapshotted subtask on a real failure. Mirrors
-      // the optimistic-update pattern the per-chip route used — only
-      // the affected subtask is restored, the rest of the project is
-      // left alone.
+      // the optimistic-update pattern every other path uses.
       if (before) {
         setProject((prev) => {
           if (!prev) return prev
@@ -193,9 +180,52 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
           return { ...prev, subtasks: subs, progress: subtaskProgress(subs) }
         })
       }
-      toast.error(err?.message || 'Sayfa sayısı kaydedilemedi.')
-      // Re-throw so the input's `<DesignerPagesInput>` keeps its error
-      // flag visible across the next edit attempt.
+      toast.error(err?.message || 'Sayfa eklenemedi.')
+      throw err
+    }
+  }
+
+  /**
+   * migration 067 — stamp "Yeniden Çalıştım" on a single batch. The
+   * server is idempotent (redone_at is set only on the FIRST call) so
+   * the optimistic state here is the equivalent: a re-click on an
+   * already-redone batch is a no-op.
+   */
+  async function handleDesignerBatchRedone(sub, batchId) {
+    if (!canEditSubtask(sub)) return
+    const before = project?.subtasks?.find((s) => s.id === sub.id) ?? null
+    setProject((prev) => {
+      if (!prev) return prev
+      const subs = (prev.subtasks ?? []).map((s) => {
+        if (s.id !== sub.id) return s
+        const nextBatches = (Array.isArray(s.designer_batches) ? s.designer_batches : []).map((b) => {
+          if (b.id !== batchId) return b
+          // Idempotent: only stamp on the first call.
+          if (b.redone_at) return b
+          return {
+            ...b,
+            redone_at: new Date().toISOString(),
+            redone_by: user?.id ?? null,
+            redone_by_name: user?.name ?? null,
+          }
+        })
+        return { ...s, designer_batches: nextBatches }
+      })
+      return { ...prev, subtasks: subs }
+    })
+    try {
+      await api.markSubtaskDesignerBatchRedone(sub.id, batchId)
+    } catch (err) {
+      if (before) {
+        setProject((prev) => {
+          if (!prev) return prev
+          const subs = (prev.subtasks ?? []).map((s) => (
+            s.id === sub.id ? before : s
+          ))
+          return { ...prev, subtasks: subs }
+        })
+      }
+      toast.error(err?.message || 'Yeniden çalıştım kaydedilemedi.')
       throw err
     }
   }
@@ -288,7 +318,7 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
 
     // Helpers + handlers
     subtaskChecked, toggleSubtask,
-    handleDesignerCountChange,
+    handleDesignerBatchAdd, handleDesignerBatchRedone,
     saveSubtaskChanges, handleRedo, handleRevize,
   }
 }

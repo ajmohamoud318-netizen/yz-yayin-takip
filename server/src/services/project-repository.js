@@ -20,6 +20,13 @@ import { nanoid } from 'nanoid'
 import { HttpError } from '../domain/errors.js'
 import { normaliseProjectTitle } from '../domain/project-title.js'
 
+// Per-parça approval ledgers (migrations 068/069/070): the gate that
+// keeps a project at demo_onay / ozalit_onay / baski_onay until every
+// parça on the latest snapshot has been signed off. JSONB so the rule
+// layer can evolve without further migrations. List column is a flat
+// comma-separated bare-name list — `listProjects` prefixes every entry
+// with `p.` by splitting on commas, so adding any non-bare-name text
+// here would shred the only query that does the prefixing.
 const PROJECT_COLUMNS = `
   id, title, type, stage, assigned_to, created_by, target_month,
   demo_attempt, ozalit_attempt, pass_number, pass_kind,
@@ -43,6 +50,10 @@ const PROJECT_COLUMNS = `
   ekran_ozalit,
   origin,
   catalog_hidden, catalog_hidden_at, catalog_hidden_by,
+  demo_parca_approvals, demo_parca_rejections,
+  ozalit_parca_approvals, ozalit_parca_rejections,
+  baski_parca_preparers, baski_parca_approvals,
+  cin_baski_parca_preparers, cin_baski_parca_approvals,
   created_at, updated_at,
   deleted_at, deleted_by, deleted_by_name
 `
@@ -434,6 +445,20 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
   // round). Unlike the ekran-demo trio above this is a plain boolean — the
   // round IS the request, there is no separate pending state.
   'ekran_ozalit',
+  // Per-parça approval ledgers (migrations 068/069/070). Each gate
+  // (demo_onay / cin_demo_onay / ozalit_onay / ekran_ozalit /
+  // baski_onay / cin_baski_onay) refuses to advance until every parça in
+  // the latest snapshot's `_selectedComponents` has the required party
+  // sign-off recorded in the matching ledger. demo/ozalit rejections
+  // mirror the project-level reject (reason + target).
+  'demo_parca_approvals',
+  'demo_parca_rejections',
+  'ozalit_parca_approvals',
+  'ozalit_parca_rejections',
+  'baski_parca_preparers',
+  'baski_parca_approvals',
+  'cin_baski_parca_preparers',
+  'cin_baski_parca_approvals',
 ])
 
 // The JSONB columns on `projects`. They MUST be serialised with
@@ -453,6 +478,19 @@ const PROJECT_WRITABLE_COLUMNS = new Set([
 const PROJECT_JSONB_COLUMNS = new Set([
   'ozalit_approvals',
   'ozalit_designer_approvals',
+  // Per-parça approval ledgers (migrations 068/069/070) — all JSONB and
+  // all need the `JSON.stringify` + `::jsonb` cast dance described above.
+  // demo_parca_approvals/rejections are list-shaped (the same as
+  // ozalit_designer_approvals). The other four are object-shaped
+  // (`{ '<parca>': [{...}] }`) — same wire-format contract.
+  'demo_parca_approvals',
+  'demo_parca_rejections',
+  'ozalit_parca_approvals',
+  'ozalit_parca_rejections',
+  'baski_parca_preparers',
+  'baski_parca_approvals',
+  'cin_baski_parca_preparers',
+  'cin_baski_parca_approvals',
 ])
 
 export async function patchProject(client, id, fields, { expectedVersion = null } = {}) {
@@ -682,6 +720,45 @@ export async function insertDemoSnapshot(client, { project_id, order_id = null, 
   return rows[0]
 }
 
+/**
+ * Load the latest demo/ozalit/baski_onay snapshot for a project — the
+ * source of truth for "which parçalar are on this round's sheet". The
+ * per-parça approval FSM (migrations 068/069/070) compares this snapshot's
+ * `_selectedComponents` against the per-parça ledger to decide whether the
+ * round can advance.
+ *
+ * `kind` is the gate we want: 'demo' for demo_onay, 'ozalit' for
+ * ozalit_onay, 'baski_onay' for baski_onay (and 'cin_' mirrors just change
+ * the `attempt` scoping). Returns `{ selectedComponents, attempt }` from
+ * the most recent demo row whose `_selectedComponents` actually contains
+ * parçalar; falls back to the most recent row of the kind even if it has
+ * no parçalar, so an empty demo still resolves to an attempt number.
+ *
+ * `client` is the tx-scoped pool client, never the pool — the demo row
+ * sits under the same FOR UPDATE the route already holds, so reading it
+ * here is free.
+ */
+export async function loadLatestDemoSnapshot(client, projectId, kind) {
+  const { rows } = await client.query(
+    `SELECT payload, attempt
+       FROM demos
+      WHERE project_id = $1 AND order_id IS NULL AND kind = $2
+        AND jsonb_typeof(payload) = 'object'
+        AND jsonb_typeof(COALESCE(payload->'_selectedComponents', '[]'::jsonb)) = 'array'
+      ORDER BY attempt DESC, created_at DESC
+      LIMIT 1`,
+    [projectId, kind],
+  )
+  if (!rows[0]) return null
+  const payload = rows[0].payload ?? {}
+  const selected = Array.isArray(payload._selectedComponents)
+    ? payload._selectedComponents
+        .map((c) => (typeof c === 'string' ? c : c?.component))
+        .filter(Boolean)
+    : []
+  return { selectedComponents: selected, attempt: rows[0].attempt }
+}
+
 export async function reconcileOzalitApprovals(actor) {
   const { rows: leaderRows } = await getPool().query(
     "SELECT id FROM users WHERE role = 'team_leader' AND is_active = TRUE",
@@ -896,6 +973,22 @@ function rowToProject(r) {
       : r.ekran_demo_requested_at,
     ekran_demo_requested_by: r.ekran_demo_requested_by ?? null,
     ekran_demo_requested_by_name: r.ekran_demo_requested_by_name ?? null,
+    // Ekran Ozalit (migration 061): plain boolean — round IS the request,
+    // no separate pending state.
+    ekran_ozalit: r.ekran_ozalit ?? false,
+    // Per-parça approval ledgers (migrations 068/069/070). All default to
+    // empty / {} — the per-parça check is "every parça in the latest
+    // snapshot's `_selectedComponents` is recorded here", and an empty
+    // ledger trivially satisfies that for projects with zero parçalar
+    // (legacy single-product work).
+    demo_parca_approvals: r.demo_parca_approvals ?? [],
+    demo_parca_rejections: r.demo_parca_rejections ?? [],
+    ozalit_parca_approvals: r.ozalit_parca_approvals ?? {},
+    ozalit_parca_rejections: r.ozalit_parca_rejections ?? [],
+    baski_parca_preparers: r.baski_parca_preparers ?? {},
+    baski_parca_approvals: r.baski_parca_approvals ?? {},
+    cin_baski_parca_preparers: r.cin_baski_parca_preparers ?? {},
+    cin_baski_parca_approvals: r.cin_baski_parca_approvals ?? {},
     has_product_info: r.has_product_info ?? false,
     // 'pipeline' | 'legacy'. The client's projects store filters `legacy` out of
     // every pipeline view (Kanban, Tüm Projeler, counts) — see migration 031.

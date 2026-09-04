@@ -1,133 +1,143 @@
 import { useState } from 'react'
-import { Check, Loader2, User as UserIcon } from 'lucide-react'
+import { Check, Loader2, RotateCcw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import UserAvatar from '@/components/UserAvatar.jsx'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTr } from '@/lib/utils'
 
 /**
- * migration 067 — replace PageChipGrid with a per-designer number input.
+ * migration 067 — the "İç Sayfalar" subtask renders as a session log.
  *
- * Each assigned designer gets a row with their avatar, name, a numeric
- * input pre-filled with their current count, a "/ {total_pages}" cap
- * and a "Kaydet" button. Saving fires for one designer at a time —
- * either by clicking the button or by pressing Enter / Tab away from
- * the input. One round-trip to PATCH /subtasks/:id/designer-counts per
- * save.
- *
- * Compared with the chip grid this is dramatically lighter on the DB:
- * one UPSERT + trigger + patchProject per save instead of ~12 SQL
- * statements per chip click. A designer marking "48 / 80 done" lands
- * as a single commit, regardless of how many intermediate values they
- * typed before settling on 48.
+ * Top of the card: each prior batch (id + designer + pages + when),
+ * each with its own "Yeniden Çalıştım" affordance when `redone_at` is
+ * null. Bottom of the card: a per-designer "+N ekledim" input. One
+ * blur / Enter / explicit save = one POST to the new
+ * `/subtasks/:id/designer-batches` endpoint = one tickbox appended to
+ * the top of the list.
  *
  * Props:
- *   • subtask — the İç Sayfalar row from the project's subtasks list.
- *     Carries `total_pages`, the page cap; `designer_counts` (the
- *     server-derived slots) carries the per-designer current counts.
- *   • canEdit — boolean. Subtasks in revision / on a frozen stage read
- *     the existing values but the inputs disable.
- *   • onSave — async (designerId, pagesDone) => Promise. Parent hook
- *     (`useProjectSubtasks.handleDesignerCountChange`) wires the API
- *     call + optimistic merge + revert on failure.
- *
- * Slot visibility: if `designer_counts` is empty (a leader hasn't
- * assigned anyone yet) we render a single empty row for the current
- * user, so a designer hitting "İç Sayfalar" on a project that has no
- * slot yet gets a writable input. Submitting that row materialises the
- * slot on the server (the route's `INSERT … ON CONFLICT DO UPDATE` is
- * idempotent for first-time rows).
+ *   • subtask — kind='pages' row from project.subtasks:
+ *       { id, total_pages, pages_done, is_done, designer_batches: […],
+ *         assigned_to, … }
+ *       `designer_batches` is the server-derived per-session log
+ *       (newest first). Each entry:
+ *         { id, designer_id, designer_name, pages, created_at,
+ *           redone_at, redone_by, redone_by_name }
+ *   • canEdit — boolean. Stages where the input is read-only still
+ *       render the batch log so the team can see who shipped what.
+ *   • onAddBatch — async (designerId, pages) => Promise. Hook wires the
+ *       API call + optimistic merge + revert on failure.
+ *   • onRedoneBatch — async (batchId) => Promise. Idempotent — a second
+ *       call after the first is a no-op.
  */
-export default function DesignerPagesInput({ subtask, canEdit, onSave }) {
+export default function DesignerPagesInput({
+  subtask,
+  canEdit,
+  currentUserId,
+  allUsers = [],
+  onAddBatch,
+  onRedoneBatch,
+}) {
   const total = Number(subtask.total_pages ?? 0)
-  const slots = Array.isArray(subtask.designer_counts) ? subtask.designer_counts : []
+  const batches = Array.isArray(subtask.designer_batches) ? subtask.designer_batches : []
   const pagesDone = Number(subtask.pages_done ?? 0)
   const isDone = !!subtask.is_done
-  // Per-row local state. Optimistically cleared after a successful
-  // save so the next edit starts from the server-confirmed value, but
-  // while the user is typing we hold the in-flight value to avoid
-  // round-tripping on every keystroke.
-  const [drafts, setDrafts] = useState({}) // designer_id -> string
-  const [savingId, setSavingId] = useState(null)
-  const [errorId, setErrorId] = useState(null)
 
-  // Build a stable slot list — fall back to a single anonymous row when
-  // there are no slots yet (the leader hasn't assigned anyone, or the
-  // migration's pre-create INSERT hasn't yet run for the current user).
-  // The latter is what makes the input appear for the designer the
-  // first time the project lands at the right stage.
-  const rows = slots.length > 0
-    ? slots.map((s) => ({
-        designer_id: s.designer_id,
-        designer_name: s.designer_name ?? s.designer_id,
-        pages_done: s.pages_done,
-      }))
-    : []
+  // Map designer_id → { name, id } for fast lookup when rendering batch
+  // rows. Falls back gracefully if the user list is still loading —
+  // server already JOINs users.name, so this is just for the
+  // add-row's avatar (which the server hasn't prefilled).
+  const usersById = new Map(
+    (Array.isArray(allUsers) ? allUsers : [])
+      .filter((u) => u && u.id)
+      .map((u) => [u.id, u]),
+  )
 
-  function valueFor(designerId, fallback) {
-    return drafts[designerId] ?? String(fallback ?? '')
-  }
+  // ── local state for the "+N ekledim" input row ─────────────────────
+  const [draftPage, setDraftPage] = useState('')
+  const [draftDesignerId, setDraftDesignerId] = useState(() => {
+    // Default to "my slot" when the actor is one of the slot owners,
+    // else the subtask's primary. The team leader can change the
+    // picker to log a batch on a teammate's behalf.
+    const me = currentUserId
+    const owners = new Set(batches.map((b) => b.designer_id).filter(Boolean))
+    if (me && owners.has(me)) return me
+    return subtask.assigned_to || me || ''
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const [redoneBusyId, setRedoneBusyId] = useState(null)
 
-  function setDraft(designerId, v) {
-    setDrafts((prev) => ({ ...prev, [designerId]: v }))
-    if (errorId === designerId) setErrorId(null)
-  }
-
-  async function commit(row, raw) {
-    if (!canEdit) return
-    const trimmed = String(raw ?? '').trim()
+  async function commitAdd(e) {
+    if (e) e.preventDefault()
+    if (!canEdit || saving) return
+    const trimmed = String(draftPage ?? '').trim()
     if (!trimmed) {
-      setErrorId(row.designer_id)
+      setError('Lütfen bir sayı girin.')
       return
     }
     const parsed = Number(trimmed)
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      setErrorId(row.designer_id)
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setError('Sayı pozitif bir tam sayı olmalı.')
       return
     }
     if (total > 0 && parsed > total) {
-      setErrorId(row.designer_id)
+      setError(`Sayı toplam sayfa sayısını (${total}) aşamaz.`)
       return
     }
-    setSavingId(row.designer_id)
-    setErrorId(null)
+    if (!draftDesignerId) {
+      setError('Lütfen tasarımcı seçin.')
+      return
+    }
+    setSaving(true)
+    setError(null)
     try {
-      await onSave(row.designer_id, Math.floor(parsed))
-      // Clear draft so the next render reads from the (now-confirmed)
-      // server value via `valueFor(…, fallback)`.
-      setDrafts((prev) => {
-        const next = { ...prev }
-        delete next[row.designer_id]
-        return next
-      })
-    } catch (e) {
-      setErrorId(row.designer_id)
+      await onAddBatch(draftDesignerId, Math.floor(parsed))
+      setDraftPage('')
+    } catch (e2) {
+      setError(e2?.message || 'Sayfa eklenemedi.')
     } finally {
-      setSavingId(null)
+      setSaving(false)
     }
   }
 
-  function onKeyDown(e, row, raw) {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      commit(row, raw)
-    } else if (e.key === 'Escape') {
-      // Restore the server-confirmed value, drop any draft.
-      setDrafts((prev) => {
-        const next = { ...prev }
-        delete next[row.designer_id]
-        return next
-      })
+  async function commitRedone(batchId) {
+    if (redoneBusyId === batchId) return
+    setRedoneBusyId(batchId)
+    setError(null)
+    try {
+      await onRedoneBatch(batchId)
+    } catch (e) {
+      setError(e?.message || 'Yeniden çalıştım kaydedilemedi.')
+    } finally {
+      setRedoneBusyId(null)
     }
   }
+
+  function onKeyDown(e) {
+    if (e.key === 'Enter') commitAdd()
+    else if (e.key === 'Escape') setDraftPage('')
+  }
+
+  // ── derive the add-row designer choices ────────────────────────────
+  // Designers that already have batches (so the leader can add a
+  // continuation) plus the subtask's primary owner, plus the current
+  // user. De-duped and ordered by name for the picker.
+  const designerChoices = (() => {
+    const ids = new Set()
+    for (const b of batches) ids.add(b.designer_id)
+    if (subtask.assigned_to) ids.add(subtask.assigned_to)
+    if (currentUserId) ids.add(currentUserId)
+    return Array.from(ids)
+      .map((id) => usersById.get(id) ?? { id, name: null })
+      .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id, 'tr'))
+  })()
 
   return (
     <div
       className={cn(
         'rounded-lg border bg-background px-3 py-2.5 text-sm transition',
-        isDone
-          ? 'border-emerald-200 bg-emerald-50/40'
-          : 'hover:border-primary/30',
+        isDone && 'border-emerald-200 bg-emerald-50/40',
         !canEdit && 'opacity-60',
       )}
     >
@@ -145,79 +155,147 @@ export default function DesignerPagesInput({ subtask, canEdit, onSave }) {
         </span>
       </div>
 
-      <div className="mt-2 space-y-1.5">
-        {rows.length === 0 ? (
-          <p className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-center text-xs text-muted-foreground">
-            Henüz tasarımcı atanmamış.
-          </p>
+      {/* Batch log — newest first. The team's daily cadence lives here;
+          a leader can scroll back through the day to see who shipped
+          what when. */}
+      <ul className="mt-2 space-y-1">
+        {batches.length === 0 ? (
+          <li className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-center text-xs text-muted-foreground">
+            Henüz sayfa eklenmedi.
+          </li>
         ) : (
-          rows.map((row) => {
-            const isSaving = savingId === row.designer_id
-            const hasError = errorId === row.designer_id
-            const val = valueFor(row.designer_id, row.pages_done)
-            const dirty = val !== String(row.pages_done ?? '')
+          batches.map((b) => {
+            const redoBusy = redoneBusyId === b.id
+            const user = usersById.get(b.designer_id) ?? {
+              id: b.designer_id,
+              name: b.designer_name,
+            }
+            const isMine = currentUserId && b.designer_id === currentUserId
+            const canRedo = canEdit && !b.redone_at && (isMine || canEdit /* leader override */)
+            const whenLabel = (() => {
+              const d = b.created_at ? new Date(b.created_at) : null
+              if (!d || Number.isNaN(d.getTime())) return ''
+              return formatDateTr(d)
+            })()
             return (
-              <div
-                key={row.designer_id}
-                className={cn(
-                  'flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border bg-background/60 px-2.5 py-1.5 transition',
-                  hasError
-                    ? 'border-rose-300 ring-1 ring-rose-200'
-                    : dirty
-                      ? 'border-primary/40 ring-1 ring-primary/15'
-                      : 'border-transparent',
-                )}
+              <li
+                key={b.id}
+                className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border bg-background/60 px-2.5 py-1.5 text-xs"
               >
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <UserAvatar user={{ id: row.designer_id, name: row.designer_name }} size="xs" />
-                  <span className="truncate text-xs font-medium text-foreground">{row.designer_name}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    max={total || undefined}
-                    step={1}
-                    value={val}
-                    disabled={!canEdit || isSaving}
-                    onChange={(e) => setDraft(row.designer_id, e.target.value)}
-                    onBlur={() => dirty && commit(row, val)}
-                    onKeyDown={(e) => onKeyDown(e, row, val)}
-                    className={cn(
-                      'h-8 w-20 rounded-md border border-input bg-background px-2 text-right tabular-nums text-sm shadow-sm transition',
-                      'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
-                      'disabled:cursor-not-allowed disabled:opacity-60',
-                    )}
-                  />
-                  <span className="text-[11px] tabular-nums text-muted-foreground">/ {total || '—'}</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={dirty ? 'default' : 'outline'}
-                    disabled={!canEdit || isSaving || !dirty}
-                    onClick={() => commit(row, val)}
-                    className="h-8 px-2.5"
+                <UserAvatar user={user} size="xs" />
+                <span className="font-medium">{user.name || b.designer_name || b.designer_id}</span>
+                <span className="rounded bg-primary/10 px-1.5 py-0.5 font-semibold tabular-nums text-primary">
+                  +{b.pages} sayfa
+                </span>
+                <span className="text-muted-foreground">{whenLabel}</span>
+                {b.redone_at ? (
+                  <span
+                    className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700"
+                    title={b.redone_at}
                   >
-                    {isSaving ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : dirty ? (
-                      <Check className="h-3.5 w-3.5" />
-                    ) : (
-                      <span className="text-[11px]">Kaydet</span>
-                    )}
-                  </Button>
-                </div>
-                {hasError && (
-                  <span className="basis-full text-[11px] text-rose-600">
-                    Geçerli bir sayı girin (0–{total || '—'}).
+                    <RotateCcw className="h-2.5 w-2.5" />
+                    {b.redone_by_name ? `${b.redone_by_name} yeniden çalıştı` : 'Yeniden çalışıldı'}
                   </span>
+                ) : (
+                  canRedo && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => commitRedone(b.id)}
+                      disabled={redoBusy}
+                      className="ml-auto h-7 px-2 text-[11px]"
+                      title="Bu partiyi yeniden gözden geçirdim"
+                    >
+                      {redoBusy ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <>
+                          <RotateCcw className="mr-1 h-3 w-3" />
+                          Yeniden Çalıştım
+                        </>
+                      )}
+                    </Button>
+                  )
                 )}
-              </div>
+              </li>
             )
           })
         )}
-      </div>
+      </ul>
+
+      {/* Add row — disabled when the actor can't edit. The designer
+          picker lets the leader attribute a batch to a teammate;
+          a designer usually sees only themselves. */}
+      {canEdit && (
+        <form
+          onSubmit={commitAdd}
+          className="mt-2 flex flex-wrap items-center gap-2"
+        >
+          {designerChoices.length > 1 && (
+            <select
+              value={draftDesignerId}
+              onChange={(e) => setDraftDesignerId(e.target.value)}
+              disabled={saving}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              {designerChoices.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name || u.id}
+                </option>
+              ))}
+            </select>
+          )}
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground">+</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={total || undefined}
+              step={1}
+              value={draftPage}
+              disabled={saving}
+              onChange={(e) => {
+                setDraftPage(e.target.value)
+                if (error) setError(null)
+              }}
+              onBlur={() => {
+                if (draftPage && Number(draftPage) > 0) commitAdd()
+              }}
+              onKeyDown={onKeyDown}
+              placeholder="+ sayfa"
+              className={cn(
+                'h-8 w-20 rounded-md border bg-background px-2 text-right tabular-nums text-sm shadow-sm',
+                'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
+                'disabled:cursor-not-allowed disabled:opacity-60',
+                error ? 'border-rose-300 ring-1 ring-rose-200' : 'border-input',
+              )}
+            />
+            <span className="text-xs tabular-nums text-muted-foreground">/ {total || '—'}</span>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={saving || !draftPage}
+              className="h-8 px-2.5"
+            >
+              {saving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <>
+                  <Check className="mr-1 h-3.5 w-3.5" />
+                  Ekle
+                </>
+              )}
+            </Button>
+          </div>
+          {error && (
+            <span className="basis-full text-[11px] text-rose-600">
+              {error}
+            </span>
+          )}
+        </form>
+      )}
     </div>
   )
 }

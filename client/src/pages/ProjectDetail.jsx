@@ -143,7 +143,8 @@ export default function ProjectDetail() {
               saving={d.saving}
               toggling={d.toggling}
               onSaveChanges={d.saveSubtaskChanges}
-              onDesignerCountSave={d.handleDesignerCountChange}
+              onAddDesignerBatch={d.handleDesignerBatchAdd}
+              onRedoneDesignerBatch={d.handleDesignerBatchRedone}
               onRedo={d.handleRedo}
               onRevize={d.handleRevize}
             />

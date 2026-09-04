@@ -96,6 +96,12 @@ export async function projectRoutes(fastify) {
     return projectService.approveProject(request.params.id, request.user, {
       stage: request.body.stage,
       note: request.body.note,
+      // Per-parça payload (migrations 068/069/070): the leader's click may
+      // target a single parça, a subset, or all still-pending parçalar
+      // (omit → "Tüm parçaları onaylayın" bulk shortcut). `snapshotKind`
+      // tells the prepare hook which gate to read the snapshot from.
+      parcalar: request.body.parcalar ?? null,
+      snapshotKind: request.body.snapshotKind ?? 'demo',
     })
   })
 
@@ -119,9 +125,11 @@ export async function projectRoutes(fastify) {
     return projectService.ozalitNotReceived(request.params.id, request.user)
   })
 
-  fastify.post('/projects/:id/baski-onay-prepare', { schema: schemas.projectsIdParams }, async (request) => {
+  fastify.post('/projects/:id/baski-onay-prepare', { schema: schemas.projectsBaskiOnayPrepare }, async (request) => {
     await attachUser(request)
-    return projectService.baskiOnayPrepare(request.params.id, request.user)
+    return projectService.baskiOnayPrepare(request.params.id, request.user, {
+      parcalar: request.body?.parcalar ?? null,
+    })
   })
 
   fastify.post('/projects/:id/demo-start', { schema: schemas.projectsIdParams }, async (request) => {
@@ -193,9 +201,11 @@ export async function projectRoutes(fastify) {
     return projectService.ekranDemoRequest(request.params.id, request.user)
   })
 
-  fastify.post('/projects/:id/ekran-demo-approve', { schema: schemas.projectsIdParams }, async (request) => {
+  fastify.post('/projects/:id/ekran-demo-approve', { schema: schemas.projectsEkranDemoApprove }, async (request) => {
     await attachUser(request)
-    return projectService.ekranDemoApprove(request.params.id, request.user)
+    return projectService.ekranDemoApprove(request.params.id, request.user, {
+      parcalar: request.body?.parcalar ?? null,
+    })
   })
 
   fastify.post('/projects/:id/ekran-demo-reject', { schema: schemas.projectsEkranDemoReject }, async (request) => {

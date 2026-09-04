@@ -615,6 +615,30 @@ const projectsIdParams = {
   },
 }
 
+// Per-parça payload (migrations 068/069/070): parcalar = the set of
+// parçalar the leader/designer is acting on. null = "all still-pending
+// parçalar on this round" (the bulk-approve shortcut).
+const projectsParcalarBody = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    parcalar: {
+      type: ['array', 'null'],
+      items: { type: 'string', minLength: 1, maxLength: 200 },
+    },
+  },
+}
+
+const projectsEkranDemoApprove = {
+  ...projectsIdParams,
+  body: projectsParcalarBody,
+}
+
+const projectsBaskiOnayPrepare = {
+  ...projectsIdParams,
+  body: projectsParcalarBody,
+}
+
 /**
  * `/demo-edit-notify`, `/ozalit-edit-notify`. `demo_id` is the snapshot the
  * SPA just saved for this correction (migration 052) — optional, since an
@@ -676,6 +700,15 @@ const projectsApprove = {
     properties: {
       stage,
       note: { type: 'string', maxLength: 1000 },
+      // Per-parça approval (migrations 068/069/070): null = "all
+      // still-pending parçalar on this round" (bulk-approve shortcut);
+      // an array = "approve only these parçalar". `snapshotKind` tells
+      // the prepare hook which gate to read the snapshot from.
+      parcalar: {
+        type: ['array', 'null'],
+        items: { type: 'string', minLength: 1, maxLength: 200 },
+      },
+      snapshotKind: { type: 'string', enum: ['demo', 'ozalit', 'baski_onay'] },
     },
   },
 }
@@ -778,35 +811,28 @@ const subtasksRevize = {
   },
 }
 
-// (predecessor of the removed per-chip PATCH) is gone too — see
-// migration 067 for the per-designer replacement below.
+// migration 067 — per-designer batch log for the "İç Sayfalar" subtask.
+// One row per "sat-down-and-shipped-this-many" session. Designers run
+// their input from "+N ekledim" to a tickbox above; the running total
+// on the subtask is the SUM of every batch's `pages`, kept in sync by
+// the trigger `recompute_subtask_pages_counter` (migration 067).
 //
-// `pageIndex` was declared as a string-with-pattern for fastify v4 path
-// params; the route is gone now and so is the schema.
+// Two endpoints, two schemas:
+//
+//   POST /api/subtasks/:id/designer-batches
+//     Body: { designer_id, pages }. One batch per call — designers can
+//     queue multiple batches in the SPA without a per-call round-trip.
+//
+//   POST /api/subtasks/:id/designer-batches/:batchId/redone
+//     No body. Stamps "Yeniden Çalıştım" on a single saved batch.
+//
+// Both endpoints enforce ownership in the route (designer may only
+// touch their own slot; team_leader may touch any).
+//
+// Per-batch cap of `pages <= total_pages` is enforced in the route;
+// the column CHECK only constrains `pages > 0`.
 
-// migration 067 — per-designer page counts for the "İç Sayfalar" subtask.
-// The chip-by-chip UX is gone; designers (and the team leader) now enter
-// the page count they shipped into a per-designer input. Body is a
-// list of { designer_id, pages_done } pairs so a save can update
-// several slots at once (the leader may correct multiple designers in
-// one round when handing a book over).
-//
-// `design_pages_done_count` rides along as a body-level field — same
-// pattern as the order page subtasks — so the leader's "save all
-// changes" button can commit the number-input edits together with the
-// surrounding alt-görev toggles in a single round-trip.
-//
-// The route validates:
-//   • every designer_id is a real, active, role='designer' user
-//     (cheap SELECT inside the same tx),
-//   • pages_done is a finite integer ≥ 0,
-//   • actor permissions: team_leader may edit any slot; designer may
-//     edit only their own.
-//
-// Per-row cap of pages_done ≤ total_pages is enforced in the route —
-// the column CHECK only constrains the row value in isolation, not
-// relative to the subtask's total.
-const subtasksDesignerCountsPatch = {
+const subtasksDesignerBatchCreate = {
   params: {
     type: 'object',
     additionalProperties: false,
@@ -816,37 +842,41 @@ const subtasksDesignerCountsPatch = {
   body: {
     type: 'object',
     additionalProperties: false,
-    required: ['counts'],
+    required: ['designer_id', 'pages'],
     properties: {
-      counts: {
-        type: 'array',
-        minItems: 1,
-        maxItems: 256,
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['designer_id', 'pages_done'],
-          properties: {
-            designer_id: { type: 'string', minLength: 1, maxLength: 64 },
-            // `type: ['integer','string']` matters here: Fastify v4 only
-            // coerces when the schema type is an array of types. A bare
-            // `type: 'integer'` against `"12"` rejects with
-            // FST_ERR_VALIDATION before the handler ever runs, which is
-            // what designers were hitting when they pasted a number from
-            // a spreadsheet into the input. The regex pins 0–100000
-            // (the same range the pageIndex column capped at);
-            // `Number()` in the handler turns the validated string back
-            // into a number.
-            pages_done: {
-              type: ['integer', 'string'],
-              pattern: '^[0-9]{1,6}$',
-              minimum: 0,
-              maximum: 100000,
-            },
-          },
-        },
+      designer_id: { type: 'string', minLength: 1, maxLength: 64 },
+      // Fastify v4's ajv coerces only when `type` is an array of types;
+      // a bare `type: 'integer'` against `"12"` rejects with
+      // FST_ERR_VALIDATION before the handler runs. The regex pins
+      // 1–100000; `Number()` in the handler turns the validated string
+      // back into a number (and the column CHECK rejects 0 / negative).
+      pages: {
+        type: ['integer', 'string'],
+        pattern: '^[1-9][0-9]{0,5}$',
+        minimum: 1,
+        maximum: 100000,
       },
     },
+  },
+}
+
+const subtasksDesignerBatchRedone = {
+  // Path captures both ids so a stray POST against another subtask's
+  // batch can't redone-stamp the wrong row.
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id', 'batchId'],
+    properties: {
+      id: { type: 'string', minLength: 1, maxLength: 64 },
+      batchId: { type: 'string', minLength: 1, maxLength: 64 },
+    },
+  },
+  // Empty body by design — the redone stamp is purely who/when, with
+  // `designer_id` pulled from the actor in the route.
+  body: {
+    type: 'object',
+    additionalProperties: false,
   },
 }
 
@@ -1204,13 +1234,14 @@ export const schemas = {
   projectsApprove,
   projectsReject,
   projectsEkranDemoReject,
+  projectsEkranDemoApprove,
+  projectsBaskiOnayPrepare,
   projectsChangeRequest,
   subtasksPatch,
   subtasksUpdates,
   subtasksRevize,
-  subtasksPageAssign: undefined, // migration 067 — per-chip /pages routes removed; kept as undefined so downstream tooling that pokes at `schemas.subtasksPageAssign` throws a clear "undefined" error rather than a noisy "is not a function" stack.
-  subtasksPagesBulkAssign: undefined,
-  subtasksDesignerCountsPatch,
+  subtasksDesignerBatchCreate,
+  subtasksDesignerBatchRedone,
   projectsSubtasksPut,
   demosCreate,
   productInfoUpsert,

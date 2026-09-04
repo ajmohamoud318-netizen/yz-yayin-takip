@@ -16,7 +16,7 @@ export default function SubtaskCard({
   subtasksSafe, progressCountedSubtasks, hasSubtaskChanges, pendingRevize,
   localDone, subtaskChecked, toggleSubtask,
   saving, toggling,
-  onSaveChanges, onDesignerCountSave,
+  onSaveChanges, onAddDesignerBatch, onRedoneDesignerBatch,
   onRedo, onRevize,
 }) {
   return (
@@ -82,8 +82,13 @@ export default function SubtaskCard({
                       <DesignerPagesInput
                         subtask={s}
                         canEdit={canEdit}
-                        onSave={(designerId, pagesDone) =>
-                          onDesignerCountSave(s, designerId, pagesDone)
+                        currentUserId={user?.id ?? null}
+                        allUsers={project?.assignees ?? []}
+                        onAddBatch={(designerId, pagesDone) =>
+                          onAddDesignerBatch(s, designerId, pagesDone)
+                        }
+                        onRedoneBatch={(batchId) =>
+                          onRedoneDesignerBatch(s, batchId)
                         }
                       />
                       {/* Subtask-level CTAs (revize / redo) stay mounted
