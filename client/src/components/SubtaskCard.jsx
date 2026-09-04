@@ -3,19 +3,20 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Save, User as UserIcon } from 'lucide-react'
 import { cn, formatDateTr, initials } from '@/lib/utils'
-import PageChipGrid from '@/components/PageChipGrid'
+import DesignerPagesInput from '@/components/DesignerPagesInput'
 
 /**
  * Subtask list card — renders each subtask as a checkbox row, with the
- * "İç Sayfalar" pages subtask rendering its own PageChipGrid instead.
+ * "İç Sayfalar" pages subtask rendering its own DesignerPagesInput
+ * (migration 067) instead of the legacy chip grid.
  */
 export default function SubtaskCard({
   project, user, isLeader, isAssigned,
   canEditSubtask, canEditSubtasks, inRevision,
   subtasksSafe, progressCountedSubtasks, hasSubtaskChanges, pendingRevize,
-  localDone, subtaskChecked, toggleSubtask, activePage, allUsers,
+  localDone, subtaskChecked, toggleSubtask,
   saving, toggling,
-  onSaveChanges, onPageClick, onPageRework, onPageAssign,
+  onSaveChanges, onDesignerCountSave,
   onRedo, onRevize,
 }) {
   return (
@@ -26,26 +27,18 @@ export default function SubtaskCard({
           <span className="text-xs text-muted-foreground">
             {progressCountedSubtasks.filter((s) => subtaskChecked(s)).length} / {progressCountedSubtasks.length} tamamlandı
           </span>
-          {/* migration 055 — Pages subtasks can have individual pages
-              flagged for rework. Summing them across every pages subtask
-              gives the team leader a single "X revize" indicator next
-              to the main counter, so a stuck page is visible without
-              having to scroll into the chip grid. */}
+          {/* migration 067 — the per-page rework status (`status='rework'`
+              on a single page) is gone with the chip grid. The subtask-
+              level `needs_revize` flag still exists and reads as a
+              "needs rework" indicator next to the main counter, so a
+              stuck "İç Sayfalar" subtask stays visible without forcing
+              a designer to scroll through a chip grid. */}
           {(() => {
-            const reworkTotal = subtasksSafe
-              .filter((s) => s.kind === 'pages')
-              .reduce(
-                (sum, s) =>
-                  sum +
-                  (Array.isArray(s.pages)
-                    ? s.pages.filter((p) => p.status === 'rework').length
-                    : 0),
-                0,
-              )
-            if (reworkTotal === 0) return null
+            const revizeTotal = subtasksSafe.filter((s) => s.needs_revize).length
+            if (revizeTotal === 0) return null
             return (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                {reworkTotal} revize
+                {revizeTotal} revize
               </span>
             )
           })()}
@@ -78,55 +71,56 @@ export default function SubtaskCard({
                 const flagged = inRevision && s.needs_revize
                 const lockedDone = inRevision && !s.needs_revize && s.is_done
 
-                // migration 055 — the "İç Sayfalar" subtask renders
-                // its own chip grid instead of a single checkbox.
-                // Pages split across multiple designers, and each
-                // page is independently reworkable, so the same
-                // row pattern as the other subtasks doesn't fit.
+                // migration 067 — the "İç Sayfalar" subtask renders its
+                // per-designer number input instead of a single
+                // checkbox. Designers (and the leader) type the page
+                // count they shipped into one input per assigned
+                // designer; one save per blur/Enter.
                 if (s.kind === 'pages') {
                   return (
                     <div key={s.id} className="space-y-1.5">
-                      <PageChipGrid
+                      <DesignerPagesInput
                         subtask={s}
-                        // Flagged subtasks stay editable so the designer
-                        // can mark individual pages for rework — the
-                        // previous `!flagged` made the whole grid read-
-                        // only right when the leader wanted it touched.
                         canEdit={canEdit}
-                        flagged={flagged}
-                        user={user}
-                        activePage={activePage}
-                        // migration 056 — only team_leader gets the
-                        // assign popover. Designers still see the
-                        // owner pip as an information layer (their
-                        // chip border picks it up automatically), but
-                        // there's no trigger button on their render.
-                        isLeader={isLeader}
-                        designers={allUsers}
-                        onPageClick={(pageIndex, currentStatus) =>
-                          onPageClick(s, pageIndex, currentStatus)
+                        onSave={(designerId, pagesDone) =>
+                          onDesignerCountSave(s, designerId, pagesDone)
                         }
-                        onPageRework={(pageIndex) => onPageRework(s, pageIndex)}
-                        onAssign={(pageIndex, assignedTo) =>
-                          onPageAssign(s, pageIndex, assignedTo)
-                        }
-                        // Surface the subtask-level "Revize Edin" CTA
-                        // inside the chip grid. Without this, a pages
-                        // subtask flagged during a demo/ozalit rejection
-                        // has no UI affordance to clear needs_revize, so
-                        // the project sits in its redo state (tasarim
-                        // for demo-redo, ozalit_onay for ozalit-redo)
-                        // forever and the resubmit button stays disabled.
-                        onRevize={onRevize}
-                        revizing={toggling === s.id}
-                        // Mirror the non-pages branch's "Yeniden Çalıştım"
-                        // affordance — logs a designer note when the
-                        // designer touches a fully-shipped pages subtask
-                        // again. Per-page rework is already handled by the
-                        // ↻ chip; this one is the subtask-level signal.
-                        onRedo={onRedo}
-                        redoing={toggling === s.id && !flagged}
                       />
+                      {/* Subtask-level CTAs (revize / redo) stay mounted
+                          next to the input so the designer's existing
+                          gestures keep working. The pages subtask
+                          doesn't grow its own inline CTAs because the
+                          input already fills the row. */}
+                      {(flagged || (canEdit && s.is_done)) && (
+                        <div className="flex flex-wrap items-center justify-end gap-1.5 pl-1">
+                          {flagged && canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => onRevize(s)}
+                              disabled={toggling === s.id}
+                              className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
+                            >
+                              {toggling === s.id ? 'Kaydediliyor…' : 'Revize Edin'}
+                            </button>
+                          )}
+                          {flagged && !canEdit && (
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                              Revize bekliyor
+                            </span>
+                          )}
+                          {!flagged && !lockedDone && canEdit && s.is_done && (
+                            <button
+                              type="button"
+                              onClick={() => onRedo(s)}
+                              disabled={toggling === s.id}
+                              title="Bu görev üzerinde tekrar çalıştığınızı kaydedin"
+                              className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition hover:border-primary/40 hover:text-primary disabled:opacity-50"
+                            >
+                              {toggling === s.id ? 'Kaydediliyor…' : 'Yeniden Çalıştım'}
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 }

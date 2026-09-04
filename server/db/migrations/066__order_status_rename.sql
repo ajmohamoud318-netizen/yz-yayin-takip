@@ -31,6 +31,17 @@
 
 BEGIN;
 
+-- 0) DROP the legacy CHECK constraint BEFORE any backfill. The constraint
+--    was tightened to legacy names ('pending', 'goruldu', …) by
+--    migrations 005 / 046 / 054, and the new names ('atama_bekleniyor',
+--    …) are NOT in that allow-list, so the first UPDATE below would
+--    itself be a CHECK violation and abort the transaction. The original
+--    shape of this file did UPDATEs first then DROP/ADD, which blew up
+--    on first apply with "new row for relation order_requests violates
+--    check constraint order_requests_status_check". Forcing the DROP to
+--    here removes that trap without losing the migration's intent.
+ALTER TABLE order_requests DROP CONSTRAINT IF EXISTS order_requests_status_check;
+
 -- 1) Backfill order_history.step first — it's referenced by
 --    orderStepPath's ekran branch detection, and we want the history
 --    rows to read consistently with current status under the new labels.
@@ -44,6 +55,8 @@ UPDATE order_history SET step = 'baski_onayi_bekleniyor' WHERE step = 'siparis_b
 UPDATE order_history SET step = 'baskida'                WHERE step = 'onaylandi';
 
 -- 2) Backfill order_requests.status — the live column the app reads.
+--    Safe now: the constraint was dropped in step 0 above, so each new
+--    value passes the (currently absent) check freely.
 UPDATE order_requests SET status = 'atama_bekleniyor'       WHERE status = 'pending';
 UPDATE order_requests SET status = 'tasarimciya_atandi'     WHERE status = 'goruldu';
 UPDATE order_requests SET status = 'kontroller_tamam'       WHERE status = 'kontrol_edildi';
@@ -57,7 +70,6 @@ UPDATE order_requests SET status = 'baskida'                WHERE status = 'onay
 --    five values; subsequent migrations added three more without
 --    updating it, so it hasn't actually been enforcing anything since
 --    migration 046. Drop + re-add with the full set.
-ALTER TABLE order_requests DROP CONSTRAINT IF EXISTS order_requests_status_check;
 ALTER TABLE order_requests
   ADD CONSTRAINT order_requests_status_check
   CHECK (status IN (

@@ -30,7 +30,7 @@ import { useProjectSubtasks } from './useProjectSubtasks'
  * Delegates to:
  *   - useProjectDetailData(id)  — orders/handovers/users fetch + order handlers
  *   - useProjectDelivery(...)   — delivery/teslim mutations + TESLIM_CONFIRMS
- *   - useProjectSubtasks(...)   — subtask/page mutations + local edit state
+ *   - useProjectSubtasks(...)   — subtask mutations + local edit state
  */
 export function useProjectDetail(id) {
   const navigate = useNavigate()
@@ -50,7 +50,7 @@ export function useProjectDetail(id) {
   const isLeader = user?.role === 'team_leader'
   const subtasks = useProjectSubtasks(
     project, refetch, setProject, user,
-    data.allUsers, isLeader, isAssigned, celebrate,
+    isLeader, isAssigned, celebrate,
   )
 
   // SSE: refetch the project whenever a relevant notification arrives.

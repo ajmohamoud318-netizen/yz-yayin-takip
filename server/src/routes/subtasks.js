@@ -4,9 +4,8 @@ import { withTx } from '../db/pool.js'
 import {
   getProject, getProjectForUpdate, patchProject, logHistory,
   listProjectSubtasks, listProjectHistory, loadProjectAssignees,
-  seedSubtaskPages, pruneSubtaskPages,
-  resyncSubtaskPageAssignments,
-  setSubtaskPage, assignSubtaskPage,
+  setSubtaskDesignerCounts,
+  refreshSubtaskPagesCounters,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
@@ -90,15 +89,21 @@ export function describeSubtaskListChange(before, after) {
 /**
  * Subtask API.
  *
- * PATCH /api/subtasks/:id                 — toggle or update fields
- * POST  /api/subtasks/:id/updates         — append a designer note
- * PUT   /api/projects/:id/subtasks        — team_leader bulk replaces the list
+ * PATCH /api/subtasks/:id                    — toggle or update fields
+ * POST  /api/subtasks/:id/updates            — append a designer note
+ * POST  /api/subtasks/:id/revize             — designer clears `needs_revize`
+ * PUT   /api/projects/:id/subtasks           — team_leader bulk replaces the list
+ * PATCH /api/subtasks/:id/designer-counts    — designer pages-done input (migration 067)
  *
- * The `progress` field on the parent project is recomputed in the same
- * transaction so the client cache stays valid. Every state change also
- * writes a `stage_history` row so the project timeline can show who did
- * what (subtask_done / subtask_undone / subtask_progress / subtask_note /
- * subtask_list_update).
+ * Per-chip PATCH /subtasks/:id/pages/:pageIndex and the
+ * per-page ASSIGN / BULK-ASSIGN routes are gone — chip-grid UX is gone.
+ * Pages are now entered as a number per assigned designer.
+ *
+ * `subtasks.pages_done` and `subtasks.is_done` are derived from
+ * `subtask_designer_counts` via a trigger (see migration 067), so this
+ * file never writes them directly. `progressFor` and `progress` on
+ * `projects` are recomputed in the same transaction so the project
+ * progress bar reflects the change without a follow-up GET.
  */
 export async function subtaskRoutes(fastify) {
   fastify.patch('/subtasks/:id', { schema: schemas.subtasksPatch }, async (request) => {
@@ -147,6 +152,15 @@ export async function subtaskRoutes(fastify) {
         allowed.needs_revize = request.body.needs_revize
       }
       if (Object.keys(allowed).length === 0) badRequest('Geçerli alan yok.')
+      // kind='pages' subtasks are driven exclusively by
+      // PATCH /subtasks/:id/designer-counts; the per-chip PATCH is gone.
+      // Refuse a direct pages_done write on a pages subtask here so a stale
+      // SPA that still uses the old toggle can't desync the trigger-derived
+      // pages_done from the underlying counts.
+      if (sub.kind === 'pages'
+        && (pagesChanged || stickersChanged)) {
+        badRequest('İç sayfalar için tasarımcı sayısı kullanılır.')
+      }
       const cols = Object.keys(allowed)
       const setSql = cols.map((c, i) => `${c} = $${i + 2}`).join(', ')
       const { rows: updatedSub } = await client.query(
@@ -158,9 +172,10 @@ export async function subtaskRoutes(fastify) {
       )
       const progress = progressFor(project, projectSubs)
       // Pass the locked row's version as the SQL-level OCC guard so a
-      // concurrent writer (admin script, future non-locking path) can't
-      // silently overwrite this progress bump. Mirrors the contract the
-      // `runProjectCommand` orchestrator uses for FSM-driven writes.
+      // concurrent writer that raced past `getProjectForUpdate` (admin
+      // script, future non-locking path) can't silently overwrite. Same
+      // `expectedVersion` contract the `runProjectCommand` orchestrator
+      // uses for FSM-driven writes.
       const updProject = await patchProject(
         client,
         project.id,
@@ -389,16 +404,12 @@ export async function subtaskRoutes(fastify) {
       // Updating survivors in place keeps their id, which is what saves the
       // notes; the columns above are simply never touched by this route.
       //
-      // is_done and done_at are the designer's work state, set by
-      // PATCH /subtasks/:id (whole-subtask toggle) and
-      // PATCH /subtasks/:id/pages/:pageIndex (per-page chip flip), and must
-      // not be writable from here. The SPA mapper that builds the body
-      // reads is_done from the project repo's in-memory cache, which is
-      // NOT refreshed on every subtask mutation (toggleSubtask /
-      // setSubtaskPage return the response without touching the cache), so
-      // a leader adding a designer to a project whose cache predates the
-      // designer's work would otherwise POST every subtask as is_done=false
-      // and the project's progress would reset to 0% on save.
+      // is_done and pages_done are derived columns kept in sync by the
+      // migration 067 trigger on `subtask_designer_counts` — this route
+      // never writes them directly. Per-designer page counts persist
+      // across leader edits since they live in a separate table; the
+      // chip-grid's "reset everything on rename" hazard is gone with the
+      // chip grid.
       const { rows: previous } = await client.query(
         `SELECT id, title, kind, total_pages, total_stickers, assigned_to, is_done
            FROM subtasks WHERE project_id = $1 ORDER BY position, created_at`,
@@ -434,10 +445,10 @@ export async function subtaskRoutes(fastify) {
         const subAssignee = s.assigned_to ?? project.assigned_to ?? null
         const existing = claim(s)
         // NOTE: `is_done` is intentionally absent from this param list. The
-        // designer's work state is owned by the toggle and per-page routes
-        // and must not be writable from the bulk reconcile — see the block
-        // comment at the top of the route. Clients that post it are
-        // silently ignored.
+        // designer's work state is owned by the toggle and the
+        // /designer-counts endpoint and must not be writable from the bulk
+        // reconcile — see the block comment at the top of the route.
+        // Clients that post it are silently ignored.
         const params = [
           s.title,
           s.kind ?? 'check',
@@ -454,16 +465,13 @@ export async function subtaskRoutes(fastify) {
                     assigned_to = $6, position = $7,
                     -- The done flag is intentionally NOT in the SET clause:
                     -- the designer's work state is owned by the per-row
-                    -- toggle route and the per-page endpoint. done_at
-                    -- follows the column (keep when the flag is set, clear
-                    -- when it is not) so the two stay in lock-step — a
-                    -- row that has somehow been cleared outside this route
-                    -- still has its done_at nulled on the next save.
+                    -- toggle route and the designer-counts endpoint.
+                    -- done_at follows the column (keep when the flag is
+                    -- set, clear when it is not) so the two stay in
+                    -- lock-step — a row that has somehow been cleared
+                    -- outside this route still has its done_at nulled on
+                    -- the next save.
                     done_at = CASE WHEN is_done THEN done_at ELSE NULL END,
-                    -- Lowering a total must not leave a counter above it
-                    -- (12/16 pages becoming 12/8). Raising one changes nothing.
-                    pages_done = LEAST(pages_done, COALESCE($4, pages_done)),
-                    stickers_done = LEAST(stickers_done, COALESCE($5, stickers_done)),
                     updated_at = NOW()
               WHERE id = $1
               RETURNING *`,
@@ -485,6 +493,17 @@ export async function subtaskRoutes(fastify) {
           )
           finalRows.push(rows[0])
           keptIds.push(rows[0].id)
+          // migration 067 — for a brand-new kind='pages' subtask the
+          // designer-counts slot is pre-created here so the SPA
+          // doesn't have to send a zero-write first to materialise it.
+          if (rows[0].kind === 'pages' && Number(rows[0].total_pages) > 0 && subAssignee) {
+            await client.query(
+              `INSERT INTO subtask_designer_counts (subtask_id, designer_id, pages_done)
+               VALUES ($1, $2, 0)
+               ON CONFLICT (subtask_id, designer_id) DO NOTHING`,
+              [rows[0].id, subAssignee],
+            )
+          }
         }
       }
 
@@ -496,77 +515,20 @@ export async function subtaskRoutes(fastify) {
         [project.id, keptIds],
       )
 
-      // migration 055 — reconcile the per-page rows for every kind='pages'
-      // subtask in the saved list. Growing total_pages adds new pending rows;
-      // shrinking it drops rows past the new total (the chip grid only ever
-      // shows what's in scope). Same set of operations is done at create
-      // time on POST /projects — this branch catches the leader editing an
-      // existing list.
-      //
-      // Snapshot the previous `assigned_to` for every subtask that survived
-      // the save so the sweep below can tell "leader just reassigned" from
-      // "leader only renamed / re-totalled / no-op'd".
-      const previousAssignedToById = new Map(previous.map((p) => [p.id, p.assigned_to]))
-      const previousById = new Map(previous.map((p) => [p.id, p]))
-      for (const row of finalRows) {
-        if (row.kind !== 'pages') continue
-        const total = Number(row.total_pages ?? 0)
-        if (total > 0) {
-          // New rows added when total_pages grows pick up the just-saved
-          // subtask owner — same default-stamping rule POST /projects uses,
-          // so a 12 → 16 page change doesn't leave the 4 new chips looking
-          // orphaned when the subtask is owned by a real designer.
-          await seedSubtaskPages(client, row.id, total, row.assigned_to)
-        }
-        await pruneSubtaskPages(client, row.id, total)
-        // If the team leader reassigned this `kind='pages'` subtask to a
-        // different designer (or cleared the assignment entirely) on this
-        // save, propagate the change to the per-page grid. The sweep:
-        //   • updates `assigned_to` + `assigned_at` on every non-done row
-        //   • leaves `done` rows alone — `done_by` is the audit trail for
-        //     who actually shipped the page, and overwriting the planned
-        //     owner of a finished page would visually re-attribute work.
-        //   • is a no-op when the value didn't actually change, both via
-        //     the comparison here and the SQL `IS DISTINCT FROM` guard
-        //     inside resyncSubtaskPageAssignments.
-        const previousAssignedTo = previousAssignedToById.get(row.id) ?? null
-        if (previousAssignedTo !== row.assigned_to) {
-          await resyncSubtaskPageAssignments(client, row.id, row.assigned_to)
-        }
-      }
-
       // ── Reopen done work when the leader reassigns the owner ───────────────
       //
-      // The leader's reassignment of a `kind='check'` or `kind='pages'`
-      // subtask whose work was already complete implies "the new owner
-      // has to redo this." Without this branch, the previous fix that
-      // protects the designer's work state would let the leader move
-      // a finished alt görev to a different designer and leave the
-      // "tamamlandı" checkmark in place — which silently strands the
-      // credit with the old finisher while the new designer is now on
-      // the hook for delivery they never had a chance to do.
-      //
-      // Behaviour by kind:
-      //   • kind='check' — flip is_done=false, clear done_at. The
-      //     subtask goes back into B's queue; the audit-trail row in
-      //     stage_history from when A finished it is unchanged.
-      //   • kind='pages' — every page that was status='done' flips to
-      //     status='rework' with rework_count incremented. done_by /
-      //     done_at are intentionally NOT in the SET clause, so the
-      //     audit trail of who last shipped the page stays. The next
-      //     time B clicks a chip to mark it done, done_by updates
-      //     through the normal per-page route and both names end up
-      //     in the timeline.
-      //
-      // pages_done AND is_done are recomputed afterwards (the LEAST
-      // clamp inside the bulk UPDATE only fires when total_pages
-      // changes, and is_done is the parent flag progressFor counts).
-      //
-      // The detection: previous.is_done (from the snapshot at the top
-      // of the route) is true AND previous.assigned_to !== new
-      // assigned_to. A "leader only renamed" or "leader only changed
-      // totals" save keeps the original finisher's credit and is
-      // intentionally not affected by this branch.
+      // The leader's reassignment of a completed alt görev implies "the
+      // new owner has to redo this." For kind='check' we flip is_done
+      // straight back to false. For kind='pages' we no longer have per-
+      // page rows to flip — instead we pre-create the new owner's
+      // designer-counts row at 0; existing counts are kept (they
+      // represent who actually shipped the pages and stay in the audit
+      // trail), and the trigger on subtask_designer_counts recomputes
+      // subtasks.pages_done / is_done from the row set. Net effect: a
+      // leader handover of a previously-completed pages subtask spawns
+      // a fresh "0" slot for the new owner without disturbing the
+      // previous owner's record.
+      const previousById = new Map(previous.map((p) => [p.id, p]))
       for (const row of finalRows) {
         if (row.kind !== 'check' && row.kind !== 'pages') continue
         const prev = previousById.get(row.id)
@@ -583,37 +545,18 @@ export async function subtaskRoutes(fastify) {
             [row.id],
           )
         } else {
+          // kind='pages' — pre-create the new owner's slot at 0. ON
+          // CONFLICT leaves an existing slot alone (the leader picked
+          // someone who already had a slot; nothing to reset).
           await client.query(
-            `UPDATE subtask_pages
-                SET status = 'rework',
-                    rework_count = rework_count + 1,
-                    updated_at = NOW()
-              WHERE subtask_id = $1
-                AND status = 'done'`,
-            [row.id],
+            `INSERT INTO subtask_designer_counts (subtask_id, designer_id, pages_done)
+             VALUES ($1, $2, 0)
+             ON CONFLICT (subtask_id, designer_id) DO NOTHING`,
+            [row.id, row.assigned_to],
           )
-          // Recompute pages_done AND is_done from the actual chip-grid
-          // state. Without this, is_done stays true (stale) and the
-          // progress recompute further down would count a subtask whose
-          // pages have all been flipped to rework as "done".
-          await client.query(
-            `UPDATE subtasks
-                SET pages_done = COALESCE((
-                      SELECT COUNT(*)::int
-                        FROM subtask_pages
-                       WHERE subtask_id = $1
-                         AND status = 'done'
-                    ), 0),
-                    is_done = COALESCE((
-                      SELECT (COUNT(*) FILTER (WHERE status = 'done')
-                              = COUNT(*))
-                        FROM subtask_pages
-                       WHERE subtask_id = $1
-                    ), false),
-                    updated_at = NOW()
-              WHERE id = $1`,
-            [row.id],
-          )
+          // The trigger on subtask_designer_counts runs on the INSERT and
+          // refreshes pages_done / is_done on the subtask row. Nothing
+          // else to do here.
         }
       }
 
@@ -667,25 +610,61 @@ export async function subtaskRoutes(fastify) {
   })
 
   /**
-   * PATCH /api/subtasks/:id/pages/:pageIndex
+   * PATCH /api/subtasks/:id/designer-counts
    *
-   * Per-page state flip on the "İç Sayfalar" subtask (migration 055). Every
-   * chip click on the SPA grid hits this endpoint — it's intentionally the
-   * cheapest possible write: one UPDATE on `subtask_pages`, one counter
-   * UPDATE on `subtasks`, then a project progress recompute.
+   * The designer-facing write for the "İç Sayfalar" subtask (migration
+   * 067). Replaces the per-chip PATCH /subtasks/:id/pages/:pageIndex
+   * route — designers no longer click chips one at a time; they enter
+   * the page count they shipped into a per-designer input and save.
    *
-   * Ownership mirrors the project subtask PATCH route: any project assignee
-   * can drive a page to `done` (pages are commonly split across designers);
-   * only the actor who marked a page done (or the team leader) can clear it
-   * back to `pending` or mark it for `rework`. The team leader override is
-   * what lets them resolve a stale "page marked done by someone who no
-   * longer works here" without a manual SQL fix.
+   * Body: `{ counts: [{ designer_id, pages_done }, ...] }`. Multiple
+   * slots can be updated in one call (the leader may correct several
+   * designers' counts at once on a handover), but every entry maps to
+   * exactly one (subtask, designer) row.
+   *
+   * Gating:
+   *   • team_leader role may edit any slot;
+   *   • designer role may edit only their own slot (the body must
+   *     contain exactly their designer_id, and the slot must exist on
+   *     this subtask or be insertable via ON CONFLICT).
+   *
+   * Inside the transaction:
+   *   1. Lock the subtask (FOR UPDATE) and the parent project.
+   *   2. Validate the body — every designer_id is a known user with
+   *      role='designer' AND is_active=true; every pages_done is a
+   *      non-negative integer ≤ the subtask's total_pages (the latter
+   *      isn't enforced by the column CHECK because that's a per-row
+   *      cap; the per-subtask cap is the route's responsibility).
+   *   3. setSubtaskDesignerCounts — single UPSERT that triggers the
+   *      subtask-pages counter recompute (subtasks.pages_done /
+   *      is_done handled by migration 067's trigger).
+   *   4. refreshSubtaskPagesCounters — explicit recompute inside the
+   *      same tx so the response carries the post-write totals without
+   *      a follow-up SELECT (the trigger agrees, but the route wants
+   *      them in the same response).
+   *   5. patchProject with the recomputed progress.
+   *   6. logHistory — one summary row per save, e.g.
+   *      "İç Sayfalar: Ayşe 12, Gönül 8 sayfa tamamlandı". Skipped when
+   *      every entry is a no-op (same pages_done as already on disk).
+   *
+   * Returns a slim shape so the SPA can merge into state without
+   * hitting /projects/:id for the full payload:
+   *   { subtask_id, project_id, total_pages, pages_done, is_done,
+   *     designer_counts: [{ designer_id, designer_name, pages_done }],
+   *     project_progress, project: { id, progress, version } }
+   *
+   * The SPA's `setProject` on project detail can still tolerate the
+   * full project response (PATCH /subtasks/:id returns it for the
+   * `is_done` toggle case), so we include a `project` fragment here
+   * too — just the columns the consuming components need to update
+   * the header bar in place.
    */
-  fastify.patch('/subtasks/:id/pages/:pageIndex', { schema: schemas.subtasksPagePatch }, async (request) => {
+  fastify.patch('/subtasks/:id/designer-counts', {
+    schema: schemas.subtasksDesignerCountsPatch,
+  }, async (request) => {
     await attachUser(request)
     const subtaskId = request.params.id
-    const pageIndex = Number(request.params.pageIndex)
-    const { status } = request.body
+    const counts = Array.isArray(request.body?.counts) ? request.body.counts : []
 
     const result = await withTx(async (client) => {
       const { rows: subRows } = await client.query(
@@ -694,232 +673,123 @@ export async function subtaskRoutes(fastify) {
       )
       const sub = subRows[0]
       if (!sub) notFound('Alt görev bulunamadı.')
-      if (sub.kind !== 'pages') badRequest('Bu alt görev "İç Sayfalar" türünde değil.')
-      // Same gate the existing PATCH /subtasks/:id uses: the project must
-      // not be in a frozen stage, and the actor must either be the team
-      // leader or an assigned designer. Assignees come from the same load
-      // helper every other route uses — `project.assigned_to` plus the
-      // per-subtask designers (see project-repository.loadProjectAssignees).
-      const project = await getProjectForUpdate(client, sub.project_id)
-      if (!project) notFound('Proje bulunamadı.')
-      const assigneeIds = new Set(
-        (await loadProjectAssignees(client, project)).map((a) => a.id),
-      )
-      const isLeader = request.user.role === 'team_leader'
-      const isAssignedDesigner =
-        request.user.role === 'designer' && assigneeIds.has(request.user.id)
-      if (!isLeader && !isAssignedDesigner) {
-        badRequest('Yalnızca ekip lideri veya atanmış tasarımcı sayfa işaretleyebilir.')
-      }
-
-      // The leader bypasses the "only the original finisher can rework a
-      // page" rule — see setSubtaskPage's docblock.
-      const result = await setSubtaskPage(client, {
-        subtaskId,
-        pageIndex,
-        status,
-        actorId: request.user.id,
-        actorName: request.user.name,
-      })
-      if (result.error === 'not_yours') {
-        // Non-leader: surface the ownership gate as a 400. Leader: setSubtaskPage
-        // returned not_yours because the page was owned by someone else, but the
-        // route's !isLeader bypass let execution fall through. Without this
-        // short-circuit we'd log a phantom "Sayfa N tamamlandı" history row for a
-        // transition that never actually happened — the page didn't change.
-        if (!isLeader) {
-          // Bug #6 brought the rework branch into the same ownership gate as
-          // done/pending, so the error message has to use the right verb per
-          // transition — designers reading "geri alabilir" on a rework click
-          // would think they tried to undo when they actually tried to flag.
-          const verb = status === 'rework' ? 'revize edebilir' : 'geri alabilir'
-          badRequest(`Bu sayfayı yalnızca işaretleyen kişi ${verb}.`)
-        }
-        const currentSubs = await listProjectSubtasks(client, project.id)
-        const currentHistory = await listProjectHistory(client, project.id)
-        const currentAssignees = await loadProjectAssignees(client, project)
-        return {
-          page: result.updated ?? null,
-          subtask: result.subtask ?? null,
-          project: {
-            ...project,
-            assignees: currentAssignees,
-            assigned_name: currentAssignees.map((a) => a.name).join(', ') || project.assigned_name || '—',
-            subtasks: currentSubs,
-            history: currentHistory,
-          },
-        }
-      }
-      if (result.error === 'out_of_range') {
-        badRequest(`Sayfa numarası 1 ile ${sub.total_pages} arasında olmalı.`)
-      }
-      if (result.error === 'wrong_kind') {
+      if (sub.kind !== 'pages') {
         badRequest('Bu alt görev "İç Sayfalar" türünde değil.')
       }
-      if (result.error === 'bad_status') {
-        badRequest('Geçersiz sayfa durumu.')
+      const total = Number(sub.total_pages ?? 0)
+      const project = await getProjectForUpdate(client, sub.project_id)
+      if (!project) notFound('Proje bulunamadı.')
+
+      // Validate the body before any writes. Designer may only touch
+      // their own row; team_leader may touch any (and may add a brand-new
+      // designer slot by listing someone whose row didn't exist yet).
+      const isLeader = request.user.role === 'team_leader'
+      if (!isLeader && request.user.role !== 'designer') {
+        badRequest('Yalnızca ekip lideri veya tasarımcı sayfa sayısını güncelleyebilir.')
       }
-      if (result.error === 'not_found') {
-        // Defensive: setSubtaskPage returns this when its own SELECT finds no
-        // subtask row. The route's pre-check at the top of withTx already
-        // would have notFound'd first, so this branch is unreachable today —
-        // but if anyone ever loosens the pre-check, a missing subtask would
-        // otherwise silently fall through to logHistory and return a phantom
-        // 200 with no actual change (same shape as bug #2 used to produce).
-        notFound('Alt görev bulunamadı.')
+      if (counts.length === 0) badRequest('En az bir tasarımcı sayısı gerekli.')
+      const seen = new Set()
+      const cleaned = []
+      for (const c of counts) {
+        const designerId = String(c?.designer_id ?? '').trim()
+        if (!designerId) badRequest('designer_id gerekli.')
+        if (seen.has(designerId)) badRequest('Aynı tasarımcı için birden fazla girdi olamaz.')
+        seen.add(designerId)
+        const raw = Number(c?.pages_done)
+        if (!Number.isFinite(raw)) badRequest('pages_done bir sayı olmalı.')
+        const pagesDone = Math.max(0, Math.floor(raw))
+        if (!isLeader && designerId !== request.user.id) {
+          badRequest('Yalnızca kendi sayınızı güncelleyebilirsiniz.')
+        }
+        // Per-row cap: each designer's individual count can't exceed
+        // the subtask's total. The summed-cap check lives in the
+        // trigger (recompute_subtask_pages_counter). Negative inputs
+        // are clamped to 0 above; a per-row cap ensures a designer
+        // can't accidentally type `total * designers` and inflate the
+        // subtask's progress.
+        if (total > 0 && pagesDone > total) {
+          badRequest(`pages_done (${pagesDone}) total_pages (${total}) değerinden büyük olamaz.`)
+        }
+        cleaned.push({ designer_id: designerId, pages_done: pagesDone })
+      }
+      // Verify every designer_id exists with role=designer and is
+      // active. A single batched SELECT keeps the per-call round-trip
+      // count low — the same pattern the bulk-assign route uses.
+      const { rows: validUsers } = await client.query(
+        `SELECT id FROM users
+          WHERE id = ANY($1::text[])
+            AND role = 'designer'
+            AND is_active = true`,
+        [cleaned.map((c) => c.designer_id)],
+      )
+      const validIds = new Set(validUsers.map((r) => r.id))
+      for (const c of cleaned) {
+        if (!validIds.has(c.designer_id)) {
+          badRequest(`Tasarımcı bulunamadı veya aktif değil: ${c.designer_id}`)
+        }
       }
 
-      // Same "return the full project shape" contract every other subtask
-      // route keeps — the SPA merges it into state without a follow-up GET.
-      //
-      // Recompute project.progress from the just-updated subtask list. The
-      // subtasks the previous PATCH /subtasks/:id route did was the same
-      // query; doing it here makes a chip click update the header bar the
-      // same way a checkbox toggle does, so the designer sees the
-      // percentage move as they click through the grid. Without this the
-      // project.progress field never changes for İç Sayfalar subtasks
-      // — the value got stuck the day the project was created, and the
-      // "10/48 tamamlandı" chip-grid header was the only signal designers
-      // had that work was actually happening.
+      // Snapshot previous counts so the history row can describe the
+      // diff (e.g. "Ayşe 8 → 12") instead of the absolute new value.
+      const { rows: priorRows } = await client.query(
+        `SELECT designer_id, pages_done FROM subtask_designer_counts WHERE subtask_id = $1`,
+        [subtaskId],
+      )
+      const prior = new Map(priorRows.map((r) => [r.designer_id, Number(r.pages_done)]))
+
+      // Single UPSERT per batch. The trigger recomputes
+      // subtasks.pages_done / is_done on every row written; we also
+      // call refreshSubtaskPagesCounters below so the response shape
+      // carries the post-write totals without a follow-up SELECT.
+      await setSubtaskDesignerCounts(client, { subtaskId, counts: cleaned })
+      const refreshed = await refreshSubtaskPagesCounters(client, subtaskId)
+
+      // Read back the full counts so the response + history row describe
+      // every slot (not just the ones in this save).
+      const { rows: postRows } = await client.query(
+        `SELECT sdc.designer_id, sdc.pages_done, u.name AS designer_name
+           FROM subtask_designer_counts sdc
+           LEFT JOIN users u ON u.id = sdc.designer_id
+          WHERE sdc.subtask_id = $1
+          ORDER BY u.name NULLS LAST, sdc.designer_id`,
+        [subtaskId],
+      )
+
       const { rows: projectSubs } = await client.query(
         'SELECT * FROM subtasks WHERE project_id = $1', [project.id],
       )
       const progress = progressFor(project, projectSubs)
-      // SQL-level OCC guard: pass the locked row's version so a concurrent
-      // writer that slipped past `getProjectForUpdate` (admin script,
-      // future non-locking path) can't silently overwrite this progress
-      // bump. Same `expectedVersion` contract the `runProjectCommand`
-      // orchestrator uses for FSM-driven writes.
+      // SQL-level OCC guard: refuse the write if the project's version
+      // moved between the lock at the top of this tx and now. Same
+      // contract every other subtask-mutation route uses.
       const updProject = await patchProject(
         client,
         project.id,
         { progress },
         { expectedVersion: project.version },
       )
-      const subtasksList = await listProjectSubtasks(client, project.id)
-      const history = await listProjectHistory(client, project.id)
-      const assigneesOut = await loadProjectAssignees(client, updProject)
-      // Log the page-level event so the project timeline shows "Sayfa 5,
-      // tamamlandı" rather than just a silent subtask counter bump. Three
-      // things have to line up for a row to be written:
-      //
-      //   1. The status actually changed (`prevStatus !== status`). A
-      //      same-author redundant done click passes the not_yours gate and
-      //      gets through, but it isn't an event — without this check every
-      //      double-click on a done chip produced an identical "tamamlandı"
-      //      row in the timeline.
-      //   2. The right event name for the new status. Pending used to log as
-      //      `subtask_done` (same icon as a fresh completion) — the
-      //      timeline's undo gesture should read as `subtask_undone`, the
-      //      way PATCH /subtasks/:id already distinguishes them.
-      //   3. The Turkish verb agrees with the new status.
-      const prevStatus = result.prevStatus
-      if (prevStatus !== status) {
-        const labelMap = { done: 'tamamlandı', pending: 'tamamlanmadı', rework: 'revize edildi' }
-        const eventName =
-          status === 'done' ? 'subtask_done'
-            : status === 'pending' ? 'subtask_undone'
-              : 'subtask_progress'
-        await logHistory(
-          client,
-          {
-            project_id: project.id,
-            from_stage: project.stage,
-            to_stage: project.stage,
-            action: 'system',
-            event: eventName,
-            note: `${sub.title}, sayfa ${pageIndex} ${labelMap[status]}`,
-          },
-          request.user,
-        )
-      }
-      return {
-        page: result.updated,
-        subtask: result.subtask,
-        project: {
-          ...updProject,
-          assignees: assigneesOut,
-          assigned_name: assigneesOut.map((a) => a.name).join(', ') || updProject.assigned_name || '—',
-          subtasks: subtasksList,
-          history,
-        },
-      }
-    })
-    return result
-  })
 
-  /**
-   * PATCH /api/subtasks/:id/pages/:pageIndex/assign
-   *
-   * Migration 056 — assign or un-assign a single page's owner. The team
-   * leader calls this to pre-allocate pages ("Aylin does 1-24, Rahşan
-   * does 25-48") or to reassign mid-revision ("move 5, 8, 12 from Aylin
-   * to Rahşan because Aylin is stretched"). Body `assigned_to` is the
-   * designer id; null means "un-assign".
-   *
-   * Leader-only by design — only the team_leader role can name a page's
-   * owner. Designers can't reassign someone else's pages away because
-   * the chip grid already lets them claim work via done_by, and the two
-   * signals (assigned_to vs done_by) intentionally diverge: a designer
-   * who finishes a page reassigned to someone else gets done_by credit
-   * for the audit trail without claiming the planned owner slot.
-   *
-   * Returns the same full project shape as setSubtaskPage so the SPA's
-   * `setProject` can drop it straight into state.
-   */
-  fastify.patch('/subtasks/:id/pages/:pageIndex/assign', { schema: schemas.subtasksPageAssign }, async (request) => {
-    await attachUser(request)
-    // The chip grid has a leader-only assign UI, but the schema's
-    // assigned_to can also be null (un-assign), so role-gate here
-    // rather than relying on the schema to refuse designers.
-    requireRole(request, 'team_leader')
-    const subtaskId = request.params.id
-    const pageIndex = Number(request.params.pageIndex)
-    const { assigned_to } = request.body
-
-    const result = await withTx(async (client) => {
-      const { rows: subRows } = await client.query(
-        'SELECT id, project_id, title, kind, total_pages FROM subtasks WHERE id = $1 FOR UPDATE',
-        [subtaskId],
-      )
-      const sub = subRows[0]
-      if (!sub) notFound('Alt görev bulunamadı.')
-      if (sub.kind !== 'pages') badRequest('Bu alt görev "İç Sayfalar" türünde değil.')
-      const project = await getProjectForUpdate(client, sub.project_id)
-      if (!project) notFound('Proje bulunamadı.')
-      const result = await assignSubtaskPage(client, {
-        subtaskId,
-        pageIndex,
-        assignedTo: assigned_to,
-        actorId: request.user.id,
-      })
-      if (result.error === 'not_found') notFound('Alt görev bulunamadı.')
-      if (result.error === 'wrong_kind') badRequest('Bu alt görev "İç Sayfalar" türünde değil.')
-      if (result.error === 'out_of_range') {
-        badRequest(`Sayfa numarası 1 ile ${sub.total_pages} arasında olmalı.`)
-      }
-      // Same full-project-shape contract every other subtask route uses.
-      // SQL-level OCC guard: pass the locked row's version so a concurrent
-      // writer that slipped past `getProjectForUpdate` (admin script,
-      // future non-locking path) can't silently overwrite. Same
-      // `expectedVersion` contract the `runProjectCommand` orchestrator
-      // uses for FSM-driven writes.
-      const updProject = await patchProject(
-        client,
-        project.id,
-        {},
-        { expectedVersion: project.version },
-      )
-      const subtasksList = await listProjectSubtasks(client, project.id)
-      const history = await listProjectHistory(client, project.id)
-      const assigneesOut = await loadProjectAssignees(client, updProject)
-      // Log the assignment so the project timeline shows "Sayfa 5,
-      // Aylin'e atandı" rather than just a silent column flip. Skipped
-      // when the assignment didn't actually change (un-assigning a
-      // already-unassigned page, or reassigning to the same designer).
-      const prevAssignee = result.page?.assigned_to ?? null
-      if (prevAssignee !== assigned_to) {
-        const verb = assigned_to ? `${result.page.assigned_to_name ?? '?'} tarafından atandı` : 'atama kaldırıldı'
+      // One history row summarising the diff. Skip when nothing moved —
+      // opening the editor and saving twice with the same values used
+      // to leave two identical rows in the timeline (the old per-chip
+      // route had the same kind of leak, just at a smaller cadence).
+      const diffs = cleaned
+        .map((c) => {
+          const before = prior.get(c.designer_id) ?? 0
+          if (before === c.pages_done) return null
+          return { designer_id: c.designer_id, before, after: c.pages_done }
+        })
+        .filter(Boolean)
+      if (diffs.length > 0) {
+        const label = (id) => {
+          const found = postRows.find((r) => r.designer_id === id)
+          return found?.designer_name ?? id
+        }
+        const note = diffs.map((d) => (
+          d.before === 0
+            ? `${label(d.designer_id)} ${d.after} sayfa`
+            : `${label(d.designer_id)} ${d.before} → ${d.after} sayfa`
+        )).join(' · ')
         await logHistory(
           client,
           {
@@ -928,186 +798,28 @@ export async function subtaskRoutes(fastify) {
             to_stage: project.stage,
             action: 'system',
             event: 'subtask_progress',
-            note: `${sub.title}, sayfa ${pageIndex} ${verb}`,
+            note: `${sub.title}: ${note}`,
           },
           request.user,
         )
       }
+
       return {
-        page: result.page,
+        subtask_id: subtaskId,
+        project_id: project.id,
+        total_pages: total,
+        pages_done: refreshed?.pages_done ?? 0,
+        is_done: refreshed?.is_done ?? false,
+        designer_counts: postRows.map((r) => ({
+          designer_id: r.designer_id,
+          designer_name: r.designer_name ?? null,
+          pages_done: r.pages_done,
+        })),
+        project_progress: progress,
         project: {
-          ...updProject,
-          assignees: assigneesOut,
-          assigned_name: assigneesOut.map((a) => a.name).join(', ') || updProject.assigned_name || '—',
-          subtasks: subtasksList,
-          history,
-        },
-      }
-    })
-    return result
-  })
-
-  /**
-   * POST /api/subtasks/:id/pages/bulk-assign
-   *
-   * Two modes, picked by the body shape:
-   *   • `{ assigned_to: '<designerId>' }` — every page in the subtask
-   *     goes to that one designer. The leader's "this whole book is
-   *     Rahşan's now" gesture, replacing 200 per-chip popovers with
-   *     one click.
-   *   • `{ distribute: true }` — pages are assigned to the active
-   *     designer roster in round-robin order (page 1 → designer A,
-   *     page 2 → designer B, page N → designer N mod len). The
-   *     leader's "split this whole book across the team" gesture.
-   *
-   * Both modes are leader-only and only meaningful on `kind='pages'`
-   * subtasks. The body schema's `oneOf` enforces that exactly one of
-   * the two keys is present; sending both or neither is a 400 before
-   * the route runs.
-   *
-   * Implementation: a single UPDATE that joins a generated series of
-   * page indexes against the computed per-page owner. For the
-   * single-designer mode the per-page owner is constant; for the
-   * distribute mode it's an array of length total_pages. Both run in
-   * one statement, no per-page round-trip.
-   *
-   * Returns the same full project shape every other subtask route
-   * uses so the SPA's `setProject` can drop it straight into state.
-   */
-  fastify.post('/subtasks/:id/pages/bulk-assign', { schema: schemas.subtasksPagesBulkAssign }, async (request) => {
-    await attachUser(request)
-    requireRole(request, 'team_leader')
-    const subtaskId = request.params.id
-    const { assigned_to, distribute } = request.body
-
-    const result = await withTx(async (client) => {
-      const { rows: subRows } = await client.query(
-        'SELECT id, project_id, title, kind, total_pages FROM subtasks WHERE id = $1 FOR UPDATE',
-        [subtaskId],
-      )
-      const sub = subRows[0]
-      if (!sub) notFound('Alt görev bulunamadı.')
-      if (sub.kind !== 'pages') badRequest('Bu alt görev "İç Sayfalar" türünde değil.')
-      const project = await getProjectForUpdate(client, sub.project_id)
-      if (!project) notFound('Proje bulunamadı.')
-
-      const totalPages = Number(sub.total_pages)
-      if (!Number.isFinite(totalPages) || totalPages <= 0) {
-        badRequest('Alt görevin sayfa sayısı tanımsız.')
-      }
-
-      // Build the per-page owner array. For single-designer mode every
-      // entry is the same id; for distribute mode we round-robin across
-      // the designers actively working on THIS project — same set the
-      // leader sees in the popover. Using the global active designer
-      // roster would hand pages to designers who aren't even on the
-      // project, which would surprise the leader and dump random work
-      // on the recipient with no prior context. The query returns the
-      // project primary UNION all distinct per-subtask assignees on
-      // this project, filtered to role=designer AND is_active=true.
-      let perPageOwners
-      let summaryLabel
-      if (distribute) {
-        const { rows: designers } = await client.query(
-          `SELECT DISTINCT u.id, u.name
-             FROM users u
-            WHERE u.is_active = true
-              AND u.role = 'designer'
-              AND (
-                u.id = (SELECT assigned_to FROM projects WHERE id = $2)
-                OR EXISTS (
-                  SELECT 1 FROM subtasks s
-                   WHERE s.project_id = $2
-                     AND s.assigned_to = u.id
-                )
-              )
-            ORDER BY u.name`,
-          [subtaskId, project.id],
-        )
-        if (designers.length === 0) {
-          badRequest('Bu projede atanmış aktif tasarımcı yok.')
-        }
-        perPageOwners = Array.from(
-          { length: totalPages },
-          (_, i) => designers[i % designers.length].id,
-        )
-        summaryLabel = 'tasarımcılara dağıtıldı'
-      } else {
-        // Validate the target designer is real and active before
-        // committing the UPDATE. Cheap to do; cheap to skip; the
-        // alternative is a 200-page UPDATE that succeeds against a
-        // ghost id, which would be much harder to debug.
-        const { rows: u } = await client.query(
-          `SELECT 1 FROM users WHERE id = $1::text AND role = 'designer' AND is_active = true`,
-          [assigned_to],
-        )
-        if (u.length === 0) {
-          badRequest('Tasarımcı bulunamadı veya aktif değil.')
-        }
-        perPageOwners = new Array(totalPages).fill(assigned_to)
-        summaryLabel = `${u[0]?.name ?? 'tasarımcı'} adına atandı`
-      }
-
-      // Single UPDATE that stamps every page's assigned_to. The
-      // generate_series gives us (1, 2, …, total_pages); the array
-      // literal gives us the per-page owner; the join lines them up
-      // and the IS DISTINCT FROM guard makes the whole thing a no-op
-      // when the new owners already match (avoids touching assigned_at
-      // and updated_at on a redundant call).
-      await client.query(
-        `UPDATE subtask_pages
-            SET assigned_to = owners.new_owner::text,
-                assigned_at = CASE
-                  WHEN assigned_to IS DISTINCT FROM owners.new_owner::text
-                    THEN NOW()
-                  ELSE assigned_at
-                END,
-                updated_at = NOW()
-           FROM (
-             SELECT g.i AS page_index, o.new_owner
-               FROM generate_series(1, $2::int) AS g(i)
-               CROSS JOIN UNNEST($3::text[]) WITH ORDINALITY AS o(new_owner, ord)
-              WHERE o.ord = g.i
-           ) AS owners
-          WHERE subtask_pages.subtask_id = $1
-            AND subtask_pages.page_index = owners.page_index`,
-        [subtaskId, totalPages, perPageOwners],
-      )
-
-      // Same full-project-shape contract every other subtask route uses.
-      // SQL-level OCC guard: pass the locked row's version so a concurrent
-      // writer that slipped past `getProjectForUpdate` (admin script,
-      // future non-locking path) can't silently overwrite. Same
-      // `expectedVersion` contract the `runProjectCommand` orchestrator
-      // uses for FSM-driven writes.
-      const updProject = await patchProject(
-        client,
-        project.id,
-        {},
-        { expectedVersion: project.version },
-      )
-      const subtasksList = await listProjectSubtasks(client, project.id)
-      const history = await listProjectHistory(client, project.id)
-      const assigneesOut = await loadProjectAssignees(client, updProject)
-      await logHistory(
-        client,
-        {
-          project_id: project.id,
-          from_stage: project.stage,
-          to_stage: project.stage,
-          action: 'system',
-          event: 'subtask_progress',
-          note: `${sub.title}, tüm sayfalar ${summaryLabel}`,
-        },
-        request.user,
-      )
-      return {
-        project: {
-          ...updProject,
-          assignees: assigneesOut,
-          assigned_name: assigneesOut.map((a) => a.name).join(', ') || updProject.assigned_name || '—',
-          subtasks: subtasksList,
-          history,
+          id: updProject.id,
+          progress: updProject.progress,
+          version: updProject.version,
         },
       }
     })

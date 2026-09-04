@@ -140,14 +140,10 @@ export default function ProjectDetail() {
               localDone={d.localDone}
               subtaskChecked={d.subtaskChecked}
               toggleSubtask={d.toggleSubtask}
-              activePage={d.activePage}
-              allUsers={d.allUsers}
               saving={d.saving}
               toggling={d.toggling}
               onSaveChanges={d.saveSubtaskChanges}
-              onPageClick={d.handlePageClick}
-              onPageRework={d.handlePageRework}
-              onPageAssign={d.handlePageAssign}
+              onDesignerCountSave={d.handleDesignerCountChange}
               onRedo={d.handleRedo}
               onRevize={d.handleRevize}
             />

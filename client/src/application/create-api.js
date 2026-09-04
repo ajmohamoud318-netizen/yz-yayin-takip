@@ -180,23 +180,14 @@ export function createApi() {
     toggleSubtask: (projectId, subtaskId, isDone) =>
       subtaskRepo.toggleSubtask(projectId, subtaskId, isDone),
     setSubtaskDone: (subtaskId, isDone) => subtaskRepo.setSubtaskDone(subtaskId, isDone),
-    setSubtaskPages: (subtaskId, pagesDone) => subtaskRepo.setSubtaskPages(subtaskId, pagesDone),
     setSubtaskStickers: (subtaskId, stickersDone) =>
       subtaskRepo.setSubtaskStickers(subtaskId, stickersDone),
-    setSubtaskPage: (subtaskId, pageIndex, status) =>
-      subtaskRepo.setSubtaskPage(subtaskId, pageIndex, status),
-    // migration 056 — leader-side gesture for splitting pages between
-    // designers (pre-allocation) or moving a page to a different designer
-    // mid-revision. The chip grid's "atama" affordance is the caller;
-    // passing null un-assigns.
-    assignSubtaskPage: (subtaskId, pageIndex, assignedTo) =>
-      subtaskRepo.assignSubtaskPage(subtaskId, pageIndex, assignedTo),
-    // Bulk-assign every page in an İç Sayfalar subtask. Two gestures:
-    // pass `{ assignedTo }` for a single-designer overwrite, or
-    // `{ distribute: true }` to round-robin across the active roster.
-    // Replaces 200 per-chip popovers with one click.
-    bulkAssignSubtaskPages: (subtaskId, opts) =>
-      subtaskRepo.bulkAssignSubtaskPages(subtaskId, opts),
+    // migration 067 — designer pages-done input. Replaces the per-chip
+    // PATCH /subtasks/:id/pages/:pageIndex call the old chip grid made;
+    // one save per blur/Enter. Body is `{ counts: [{ designer_id,
+    // pages_done }, ...] }`.
+    setSubtaskDesignerCounts: (subtaskId, counts) =>
+      subtaskRepo.setSubtaskDesignerCounts(subtaskId, counts),
     reviseSubtask: (subtaskId) => subtaskRepo.reviseSubtask(subtaskId),
     addSubtaskUpdate: (subtaskId, payload) => subtaskRepo.addSubtaskUpdate(subtaskId, payload),
     updateSubtask: (subtaskId, patch) => subtaskRepo.updateSubtask(subtaskId, patch),

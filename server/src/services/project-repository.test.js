@@ -10,7 +10,7 @@
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { loadProjectAssignees, assignSubtaskPage, resyncSubtaskPageAssignments, patchProject, findProjectByTitle } from './project-repository.js'
+import { loadProjectAssignees, patchProject, findProjectByTitle } from './project-repository.js'
 
 // Minimal in-memory pg client: each query() is matched on the WHERE clause
 // fragment so the same client can serve both the primary lookup and the
@@ -283,163 +283,13 @@ describe('project row queries', () => {
   })
 })
 
-// Regression test for the `could not determine data type of parameter $3`
-// 500 that surfaced once the route actually hit PostgreSQL.
-//
-// assignSubtaskPage uses the same `$3` parameter in three places: an INSERT
-// value, a CASE WHEN comparator, and an UPDATE assignment. pg's query
-// planner can't infer the type when the same parameter appears in a
-// CASE comparison to NULL and a bare column assignment, and the resulting
-// error code is `42P08` from parse_param.c. Casting the parameter to
-// `::text` explicitly (in every reference) keeps the planner happy.
-//
-// Without the cast, the route looks fine in the schema-validation test
-// (that one uses a Fastify in-memory client and never parses SQL) but
-// 500s in production the first time the leader clicks the assign popover.
-describe('assignSubtaskPage — parameter type cast', () => {
-  // Slice 3 moved assignSubtaskPage into subtask-repository.js; this test
-  // still inspects its source for the `$3::text` cast, so it reads from
-  // the new home.
-  const src = readFileSync(
-    fileURLToPath(new URL('./subtask-repository.js', import.meta.url)),
-    'utf8',
-  )
-
-  it('casts $3 to text in the INSERT, the UPDATE, and the CASE branches', () => {
-    const fn = src.match(/export async function assignSubtaskPage\([\s\S]*?\n\}/)
-    assert.ok(fn, 'assignSubtaskPage not found in source')
-    const body = fn[0]
-    // Every reference to the assigned_to parameter has to be ::text — three
-    // uses in the body (INSERT value, CASE NULL check, UPDATE assignment).
-    // Two bare `$3` references would trip the parser; with the cast, the
-    // parameter is unambiguous and pg accepts the plan.
-    assert.equal(
-      (body.match(/\$3::text/g) ?? []).length,
-      4,
-      'expected four $3::text casts in assignSubtaskPage (INSERT x2, CASE x2)',
-    )
-    assert.ok(
-      !body.match(/\$3(?![:\d])/),
-      'assignSubtaskPage still has a bare $3 reference — pg will throw 42P08',
-    )
-  })
-
-  it('returns { error: "out_of_range" } without throwing on bad pageIndex', async () => {
-    // Belt-and-braces check: when the route's downstream check rejects the
-    // pageIndex, assignSubtaskPage must propagate the error code, not crash.
-    // The fake client only answers the initial SELECT; we never reach the
-    // INSERT/UPDATE because pageIndex=999 is > total_pages=2.
-    const client = {
-      async query(sql, params) {
-        if (/FROM subtasks WHERE id = \$1/.test(sql)) {
-          return { rows: [{ id: params[0], project_id: 'p-1', kind: 'pages', total_pages: 2 }] }
-        }
-        return { rows: [] }
-      },
-    }
-    const result = await assignSubtaskPage(client, {
-      subtaskId: 's-1', pageIndex: 999, assignedTo: 'u-aylin', actorId: 'u-leader',
-    })
-    assert.deepEqual(result, { error: 'out_of_range' })
-  })
-})
-
-// ---------------------------------------------------------------------------
-// `resyncSubtaskPageAssignments` — bulk re-stamp `assigned_to` for the
-// per-page grid when the team leader reassigns a `kind='pages'` subtask
-// mid-flight. The whole point of this helper is to keep the chip-grid
-// owner pip in sync with the subtask-level owner; without it, every
-// pending chip stayed on the original designer's colour forever after a
-// single reassignment.
-//
-// We test the SQL contract the route relies on:
-//   • `IS DISTINCT FROM` guard — no UPDATE issued for the same value
-//   • `status <> 'done'` — done rows are never touched (audit trail)
-//   • `CASE WHEN ... THEN NULL ELSE NOW()` — assigned_at mirrors the
-//     assignSubtaskPage convention
-//   • `$2::text` cast — prevents the 42P08 ambiguity regression assignSubtaskPage
-//     already locks in (cheap to assert here too; same nullable TEXT column).
-function makeSweepClient() {
-  const calls = []
-  return {
-    calls,
-    async query(sql, params) {
-      calls.push({ sql: sql.trim().replace(/\s+/g, ' '), params })
-      return { rows: [] }
-    },
-  }
-}
-
-describe('resyncSubtaskPageAssignments', () => {
-  it('issues an UPDATE filtered to the given subtask and the new owner', async () => {
-    const client = makeSweepClient()
-    await resyncSubtaskPageAssignments(client, 's-1', 'u-rahsan')
-    assert.equal(client.calls.length, 1)
-    const { sql, params } = client.calls[0]
-    assert.match(sql, /UPDATE subtask_pages/)
-    assert.match(sql, /WHERE subtask_id = \$1/)
-    assert.match(sql, /status <> 'done'/)
-    assert.match(sql, /assigned_to IS DISTINCT FROM \$2::text/)
-    assert.deepEqual(params, ['s-1', 'u-rahsan'])
-  })
-
-  it('casts the new value to text so pg can plan the query', async () => {
-    // Same nullability trap assignSubtaskPage tests for: a bare $2 in
-    // SET assigned_to = $2 plus WHERE assigned_to IS DISTINCT FROM $2 plus
-    // CASE WHEN $2::text IS NULL lets pg throw 42P08 because the
-    // parameter appears in three type contexts. The implementation casts
-    // every reference to $2::text — the SET, the WHERE guard, and the
-    // CASE used to clear `assigned_at` when the new owner is null.
-    const client = makeSweepClient()
-    await resyncSubtaskPageAssignments(client, 's-1', 'u-rahsan')
-    const body = client.calls[0].sql
-    const textCasts = (body.match(/\$2::text/g) ?? []).length
-    assert.equal(
-      textCasts, 3,
-      `expected three $2::text casts in resyncSubtaskPageAssignments (SET + WHERE + CASE), got ${textCasts}`,
-    )
-    assert.ok(
-      !body.match(/\$2(?![:\d])/),
-      'resyncSubtaskPageAssignments still has a bare $2 reference — pg will throw 42P08',
-    )
-  })
-
-  it('stamps assigned_at to NOW() when an owner is provided, NULL when clearing', async () => {
-    // Two calls in sequence: one to set a new owner, one to clear it. The
-    // CASE expression must produce a timestamp on the first and NULL on
-    // the second so the chip-grid tooltip's "X tarafından atandı" stays
-    // honest.
-    const client = makeSweepClient()
-    await resyncSubtaskPageAssignments(client, 's-1', 'u-rahsan')
-    await resyncSubtaskPageAssignments(client, 's-1', null)
-    assert.match(
-      client.calls[0].sql,
-      /assigned_at = CASE WHEN \$2::text IS NULL THEN NULL ELSE NOW\(\) END/,
-    )
-    assert.match(
-      client.calls[1].sql,
-      /assigned_at = CASE WHEN \$2::text IS NULL THEN NULL ELSE NOW\(\) END/,
-    )
-    // And the second call's params carry the null the route layer is
-    // expected to pass when the leader clears the subtask's assignment.
-    assert.deepEqual(client.calls[1].params, ['s-1', null])
-  })
-
-  it('treats the IS DISTINCT FROM guard as the second line of defence against no-op writes', async () => {
-    // The route layer already short-circuits with
-    // `previousAssignedTo !== row.assigned_to` before calling this helper,
-    // but the SQL guard is what protects against future callers (a
-    // refactor that loses the JS check, a bulk import that passes the
-    // existing value, …) silently re-stamping 200 rows on a no-op save.
-    // The presence of the guard in the SQL is the contract we depend on.
-    const client = makeSweepClient()
-    await resyncSubtaskPageAssignments(client, 's-1', 'u-rahsan')
-    assert.match(
-      client.calls[0].sql,
-      /AND assigned_to IS DISTINCT FROM \$2::text/,
-    )
-  })
-})
+// migration 067 — designer pages-done input. Replaces the per-chip
+// PATCH /subtasks/:id/pages/:pageIndex route that the chip grid used
+// to make. Tests for the chip-grid helpers (`assignSubtaskPage`,
+// `resyncSubtaskPageAssignments`, `setSubtaskPage`) and the
+// chip-grid routes (PATCH /subtasks/:id/pages/:pageIndex, PATCH
+// /subtasks/:id/pages/:pageIndex/assign, POST /subtasks/:id/pages/bulk-assign)
+// are gone with the route removals.
 
 // ---------------------------------------------------------------------------
 // PUT /projects/:id/subtasks — source-level contract that the bulk reconcile
@@ -600,44 +450,6 @@ describe('PUT /projects/:id/subtasks — reopen on reassign of done work', () =>
     )
   })
 
-  it('flips done pages to rework on kind=pages reopen, with rework_count++', () => {
-    // The pages-kind reopen must (1) touch only the rows that are
-    // currently 'done' (the WHERE guard) and (2) increment rework_count
-    // so the team can see how many times a page has bounced, and
-    // (3) NOT touch done_by / done_at — the audit trail of who last
-    // shipped the page stays.
-    assert.match(
-      subtasksRouteSrc,
-      /UPDATE subtask_pages\s+SET status = 'rework',\s*rework_count = rework_count \+ 1/,
-      'pages-kind reopen should set status=rework and bump rework_count',
-    )
-    // The WHERE clause must filter to status='done' so a page already
-    // in 'pending' or 'rework' isn't double-counted.
-    assert.match(
-      subtasksRouteSrc,
-      /status = 'rework'[\s\S]{0,200}WHERE subtask_id = \$1\s+AND status = 'done'/,
-      'pages-kind reopen WHERE must scope to status=done rows',
-    )
-  })
-
-  it('recomputes is_done + pages_done after the pages-kind reopen', () => {
-    // After flipping 50 done pages to rework, the subtask's is_done
-    // flag is stale (still true from before) and pages_done is stale
-    // (still 50, but zero pages are actually 'done' now). Without this
-    // recompute, progressFor would count the subtask as done and the
-    // project progress bar would lie.
-    assert.match(
-      subtasksRouteSrc,
-      /pages_done = COALESCE\(\(\s*SELECT COUNT\(\*\)::int\s+FROM subtask_pages/,
-      'pages_done should be recomputed from the chip-grid state',
-    )
-    assert.match(
-      subtasksRouteSrc,
-      /is_done = COALESCE\(\(\s*SELECT \(COUNT\(\*\) FILTER \(WHERE status = 'done'\)\s*=\s*COUNT\(\*\)\)/,
-      'is_done should be recomputed from the chip-grid state too',
-    )
-  })
-
   it('detects the reopen only when the assignee actually changed AND is_done was true', () => {
     // The branch gates on `prev.assigned_to !== row.assigned_to` AND
     // `prev.is_done === true`. Both must hold — a save that only
@@ -743,141 +555,16 @@ describe('PUT /projects/:id/subtasks — orphan-designer guard', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// POST /api/subtasks/:id/pages/bulk-assign — distribute mode targets the
-// project's actual assignees, not the global active designer roster.
-//
-// Background: the leader's "Tüm tasarımcılara dağıt" popover shows the
-// designers who are actually working on this project (project primary UNION
-// per-subtask assignees). If the distribute used the global active roster
-// the round-robin could include designers who aren't even on the project —
-// they'd suddenly get pages with no prior context, and the leader
-// couldn't see that designer in the popover. The distribute must use the
-// same set the popover shows, and the SQL contract is: WHERE
-// role='designer' AND is_active=true AND (id = project primary OR
-// assigned_to some subtask on this project).
-describe('POST /api/subtasks/:id/pages/bulk-assign — distribute targets project assignees', () => {
-  it('filters the rotation to designers actively on this project', () => {
-    // Anchor on the WHERE clause of the distribute query and assert it
-    // scopes the rotation to "is_active=true AND role=designer AND
-    // (project primary OR subtask owner)". A regression to the global
-    // roster would have a bare `role='designer' AND is_active=true`
-    // without the project-scope subqueries.
-    assert.match(
-      subtasksRouteSrc,
-      /SELECT DISTINCT u\.id, u\.name\s+FROM users u\s+WHERE u\.is_active = true\s+AND u\.role = 'designer'/,
-      'distribute query should filter to role=designer AND is_active=true',
-    )
-    // Project primary check: the rotation must include the project
-    // primary when they're a designer. Without this, designers who are
-    // only the primary (and not on any subtask) get silently dropped
-    // from the rotation.
-    assert.match(
-      subtasksRouteSrc,
-      /u\.id = \(SELECT assigned_to FROM projects WHERE id = \$2\)/,
-      'distribute must include the project primary in the rotation',
-    )
-    // Subtask owner check: the rotation must include every designer
-    // assigned to any subtask on this project. Without this, the
-    // distribute ignores designers who only appear on other subtasks
-    // (Kapak, Kutu) — exactly the "active in the project" set.
-    assert.match(
-      subtasksRouteSrc,
-      /EXISTS \(\s*SELECT 1 FROM subtasks s\s+WHERE s\.project_id = \$2\s+AND s\.assigned_to = u\.id\s*\)/,
-      'distribute must include designers assigned to any subtask on the project',
-    )
-  })
+// migration 067 — leader's "Tüm tasarımcılara dağıt" popover removed
+// with the chip grid; designers enter their own page count via a
+// per-designer input now. POST /api/subtasks/:id/pages/bulk-assign is
+// gone.
 
-  it('refuses with 400 when the project has no active assignees', () => {
-    // A project with no designers at all (or all inactive) can't be
-    // distributed to. The error message names the project, not the
-    // designer list, because the leader can't act on it.
-    assert.match(
-      subtasksRouteSrc,
-      /badRequest\('Bu projede atanmış aktif tasarımcı yok\.'\)/,
-    )
-  })
-})
-
-// ---------------------------------------------------------------------------
-// PATCH /api/subtasks/:id/pages/:pageIndex — any project assignee can
-// mark a pending or rework page done, regardless of who the leader
-// assigned the page to.
-//
-// The per-page `assigned_to` is a planning signal (drives the chip
-// colour, the "Benim sayfalarım" filter, the legend) but is NOT a
-// permission gate. If the leader assigns page 47 to Aylin, Cem (also a
-// project assignee) can still mark page 47 done — Cem's click
-// updates `done_by = cem` and `done_at = NOW()`, so the chip flips
-// from Aylin's planned colour to Cem's "shipped it" colour. That's the
-// right behaviour: the leader's plan was a hint, and the audit trail
-// still credits whoever actually did the work.
-//
-// The one place per-page ownership DOES gate is re-marking an
-// already-done page (the `not_yours` check). That stays — the
-// designer who finished the work is the one who can undo or rework it
-// (the leader has the override). Without that, Cem could "fix" Aylin's
-// work without ever telling Aylin, and the audit trail would say
-// Aylin shipped something Cem actually undid — bug #6 territory.
-describe('PATCH /api/subtasks/:id/pages/:pageIndex — per-page assignment is not a permission gate', () => {
-  // Slice 3 moved setSubtaskPage into subtask-repository.js; the source
-  // check below reads from the new home.
-  const subtaskSrc = readFileSync(
-    fileURLToPath(new URL('./subtask-repository.js', import.meta.url)),
-    'utf8',
-  )
-
-  it('the route gates on project membership, NOT on per-page assigned_to', () => {
-    // Anchor on the route's isAssignedDesigner check. It compares the
-    // requester against `assigneeIds` (the union of project primary and
-    // per-subtask owners), NOT against the per-page assigned_to. A
-    // regression that added a per-page check would break the
-    // "Cem can do Aylin's assigned page" rule.
-    assert.match(
-      subtasksRouteSrc,
-      /assigneeIds\.has\(request\.user\.id\)/,
-      'route should check project membership via assigneeIds, not per-page assigned_to',
-    )
-    // And the isAssignedDesigner check should require the user to be
-    // a designer (not just any role) so non-designer roles can't sneak
-    // in via a different membership list.
-    assert.match(
-      subtasksRouteSrc,
-      /request\.user\.role === 'designer' && assigneeIds\.has\(request\.user\.id\)/,
-      'isAssignedDesigner must require the designer role',
-    )
-  })
-
-  it('setSubtaskPage allows status=done on a pending or rework page without an ownership check', () => {
-    // Pull the not-yours check. The first arm of the OR (`page.status
-    // === 'pending'` etc.) is what the test cares about: the helper
-    // doesn't compare `page.assigned_to` to the actor, only
-    // `page.done_by`. A page in pending/rework has no done_by yet, so
-    // any project assignee who reaches the helper can flip it to done.
-    //
-    // Pull the body of the done-status branch and assert it only checks
-    // `page.status` and `page.done_by`, not `page.assigned_to`.
-    const fn = subtaskSrc.match(/export async function setSubtaskPage\([\s\S]*?\n\}/)
-    assert.ok(fn, 'setSubtaskPage not found in source')
-    const body = fn[0]
-    assert.match(
-      body,
-      /if \(page && page\.status === 'done' && page\.done_by && page\.done_by !== actorId\)/,
-      'not_yours should fire on done-by-someone-else, not on assigned_to mismatch',
-    )
-    // Negative assertion: assigned_to must not appear in the not_yours
-    // check. A regression that added `page.assigned_to !== actorId`
-    // here would silently lock pages to their planned owner.
-    const notYoursMatch = body.match(
-      /if \(page && page\.status === 'done' && page\.done_by && page\.done_by !== actorId\)\s*\{[\s\S]*?\n\s+\}/,
-    )
-    assert.ok(notYoursMatch, 'expected to find the not_yours check block')
-    assert.ok(
-      !notYoursMatch[0].includes('assigned_to'),
-      'not_yours check must NOT reference assigned_to — only done_by',
-    )
-  })
-})
+// migration 067 — PATCH /api/subtasks/:id/pages/:pageIndex is gone.
+// The per-page chip-grid click flow is replaced by the per-designer
+// number-input save on PATCH /api/subtasks/:id/designer-counts.
+// Tests for the chip-grid route's permissions live where the new
+// route's permissions live (future).
 
 /**
  * patchProject's JSONB binding.

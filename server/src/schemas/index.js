@@ -778,89 +778,75 @@ const subtasksRevize = {
   },
 }
 
-// migration 055 — flip a single page's status inside an "İç Sayfalar" subtask.
-// path param `pageIndex` is the 1-based page number (matches the chip grid),
-// body `status` is one of pending/done/rework. Returns the same project shape
-// every other subtask route returns so the client can drop it straight into
-// state without a follow-up GET.
+// (predecessor of the removed per-chip PATCH) is gone too — see
+// migration 067 for the per-designer replacement below.
 //
-// `pageIndex` is declared as a string-with-pattern, NOT a JSON integer —
-// Fastify hands path params to handlers as strings (URL segments are always
-// strings), and Fastify v5's ajv defaults to `coerceTypes: 'array'`, which
-// only coerces when the schema type is an array of types. A bare
-// `type: 'integer'` against `"2"` rejects with FST_ERR_VALIDATION before
-// the handler ever runs, which is what designers were hitting after a
-// leader rejected an "İç Sayfalar" subtask and tried to mark pages done.
-// The regex pins 1–100000 (the same range the old `integer` covered);
-// `Number()` in the handler turns the validated string back into a number.
-const subtasksPagePatch = {
+// `pageIndex` was declared as a string-with-pattern for fastify v4 path
+// params; the route is gone now and so is the schema.
+
+// migration 067 — per-designer page counts for the "İç Sayfalar" subtask.
+// The chip-by-chip UX is gone; designers (and the team leader) now enter
+// the page count they shipped into a per-designer input. Body is a
+// list of { designer_id, pages_done } pairs so a save can update
+// several slots at once (the leader may correct multiple designers in
+// one round when handing a book over).
+//
+// `design_pages_done_count` rides along as a body-level field — same
+// pattern as the order page subtasks — so the leader's "save all
+// changes" button can commit the number-input edits together with the
+// surrounding alt-görev toggles in a single round-trip.
+//
+// The route validates:
+//   • every designer_id is a real, active, role='designer' user
+//     (cheap SELECT inside the same tx),
+//   • pages_done is a finite integer ≥ 0,
+//   • actor permissions: team_leader may edit any slot; designer may
+//     edit only their own.
+//
+// Per-row cap of pages_done ≤ total_pages is enforced in the route —
+// the column CHECK only constrains the row value in isolation, not
+// relative to the subtask's total.
+const subtasksDesignerCountsPatch = {
   params: {
     type: 'object',
     additionalProperties: false,
-    required: ['id', 'pageIndex'],
-    properties: {
-      id: { type: 'string', minLength: 1, maxLength: 64 },
-      pageIndex: { type: 'string', pattern: '^[1-9][0-9]*$', minLength: 1, maxLength: 6 },
-    },
+    required: ['id'],
+    properties: { id: { type: 'string', minLength: 1, maxLength: 64 } },
   },
   body: {
     type: 'object',
     additionalProperties: false,
-    required: ['status'],
+    required: ['counts'],
     properties: {
-      status: { type: 'string', enum: ['atama_bekleniyor', 'done', 'rework'] },
+      counts: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 256,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['designer_id', 'pages_done'],
+          properties: {
+            designer_id: { type: 'string', minLength: 1, maxLength: 64 },
+            // `type: ['integer','string']` matters here: Fastify v4 only
+            // coerces when the schema type is an array of types. A bare
+            // `type: 'integer'` against `"12"` rejects with
+            // FST_ERR_VALIDATION before the handler ever runs, which is
+            // what designers were hitting when they pasted a number from
+            // a spreadsheet into the input. The regex pins 0–100000
+            // (the same range the pageIndex column capped at);
+            // `Number()` in the handler turns the validated string back
+            // into a number.
+            pages_done: {
+              type: ['integer', 'string'],
+              pattern: '^[0-9]{1,6}$',
+              minimum: 0,
+              maximum: 100000,
+            },
+          },
+        },
+      },
     },
-  },
-}
-
-// migration 056 — assign (or un-assign) a single page's owner. The team
-// leader calls this to pre-allocate pages between designers ("Aylin does
-// 1-24, Rahşan does 25-48") or to reassign during a revision ("move 5, 8,
-// 12 to Rahşan because Aylin is stretched"). Body `assigned_to` is the
-// designer id, or null to un-assign. The route checks that the actor is
-// a team_leader before touching the row.
-const subtasksPageAssign = {
-  params: subtasksPagePatch.params,
-  body: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['assigned_to'],
-    properties: {
-      assigned_to: { type: ['string', 'null'], minLength: 1, maxLength: 64 },
-    },
-  },
-}
-
-// Bulk-assign all pages of an "İç Sayfalar" subtask. Two modes:
-//   • `assigned_to: <userId>` — every page in the subtask goes to that
-//     one designer. The leader is saying "this whole book is Rahşan's
-//     now." Fastest way to pre-allocate when the leader doesn't want to
-//     distribute.
-//   • `distribute: true` — pages are assigned to the active designer
-//     roster in round-robin order (page 1 → designer A, page 2 →
-//     designer B, page N → designer (N mod len)). The leader is
-//     saying "split this whole book across the team."
-//
-// Exactly one of the two must be set; the schema enforces it with
-// `oneOf` so a request that accidentally sends both is rejected with
-// a 400 before the route runs. Unassign (clear all assignments) is
-// deliberately NOT supported here — the per-page endpoint already
-// handles unassign one page at a time, and a bulk-unassign would be
-// one click away from wiping 200 chips' ownership, which is too easy
-// to misfire.
-const subtasksPagesBulkAssign = {
-  params: subtasksPagePatch.params,
-  body: {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      assigned_to: { type: 'string', minLength: 1, maxLength: 64 },
-      distribute: { type: 'boolean' },
-    },
-    oneOf: [
-      { required: ['assigned_to'] },
-      { required: ['distribute'] },
-    ],
   },
 }
 
@@ -1222,9 +1208,9 @@ export const schemas = {
   subtasksPatch,
   subtasksUpdates,
   subtasksRevize,
-  subtasksPagePatch,
-  subtasksPageAssign,
-  subtasksPagesBulkAssign,
+  subtasksPageAssign: undefined, // migration 067 — per-chip /pages routes removed; kept as undefined so downstream tooling that pokes at `schemas.subtasksPageAssign` throws a clear "undefined" error rather than a noisy "is not a function" stack.
+  subtasksPagesBulkAssign: undefined,
+  subtasksDesignerCountsPatch,
   projectsSubtasksPut,
   demosCreate,
   productInfoUpsert,

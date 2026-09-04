@@ -50,12 +50,19 @@ export const DISPLAY_ORDER_STEP_LABELS = {
 // imza_bekleniyor handling. This keeps the detail page in lock-step with
 // SiparisTalepleri so a leader who lands here from the queue doesn't see
 // the action verb flip under their feet.
+//
+// Keys use the post-migration-066 status names. The legacy `pending` /
+// `ekran_onay` entries pre-dated the rename; with the server now writing
+// `atama_bekleniyor` / `ekran_onayinda`, those rows were silently falling
+// through to the `?? 'Onaylayın'` fallback — a team leader on the atama
+// step saw "Onaylayın" instead of "Tasarımcıya Aktarın" on the project
+// tracker's "Aksiyon bekliyor" chip.
 const ORDER_ACTION_LABELS = {
-  pending: 'Tasarımcıya Aktarın',
+  atama_bekleniyor: 'Tasarımcıya Aktarın',
   tasarimciya_atandi: 'Kontrolleri Yapın',
   kontroller_tamam: 'Ozalit İsteyin',
   matbaa_ozalit_yapiyor: 'Teslim Edin',
-  ekran_onay: 'Onaylayın',
+  ekran_onayinda: 'Onaylayın',
   imza_bekleniyor: 'Onaylayın',
   baski_onayi_bekleniyor: 'Baskı Onay Formu',
 }
