@@ -165,6 +165,18 @@ export function availableActions({ project, user }) {
   if (isAssignedDesigner && stage === 'tasarim') {
     set.add('advance')
   }
+  // Ozalit redo leg (post-rejection): the project stayed on ozalit_onay
+  // instead of bouncing back to tasarım, so the assigned designer / team
+  // leader reopens the route picker (matbaa vs ekran) from this stage.
+  // The server refuses an advance with outstanding revize flags, so the
+  // action row's disabled-by-pendingRevize watcher keeps the button honest.
+  if (
+    stage === 'ozalit_onay' &&
+    project.last_reject_type === 'ozalit' &&
+    (role === 'team_leader' || isAssignedDesigner)
+  ) {
+    set.add('advance')
+  }
   // Ozalit Teslim two-step handoff: the leader or assigned designer requests the
   // ozalit (which hands it to the matbaa), then the matbaa delivers it to Ozalit
   // Onay. A reject-to-matbaa locks the step to the matbaa (re-delivery). TR only.
@@ -213,11 +225,19 @@ export function advanceActionLabel(project, userRole) {
     if (project.stage === 'demo_teslim') return "Demo'yu Teslim Edin"
     if (project.stage === 'ozalit_teslim') return 'Ozaliti Teslim Edin'
   }
+  // Ozalit redo leg: the project stays on ozalit_onay with last_reject_type='ozalit'
+  // and the designer (or leader) reopens the route picker from the same stage.
+  if (
+    project.stage === 'ozalit_onay' &&
+    project.last_reject_type === 'ozalit'
+  ) {
+    return "Ozalit'e Gönderin"
+  }
   switch (project.stage) {
     case 'tasarim':
-      // A design that's back in Tasarım after an ozalit rejection resubmits to
-      // the ozalit flow, not the demo.
-      return project.last_reject_type === 'ozalit' ? "Ozalit'e Gönderin" : "Demo'ya Gönderin"
+      // A design that's back in Tasarım after a demo rejection resubmits to
+      // the demo flow.
+      return "Demo'ya Gönderin"
     case 'demo_onay':
     case 'cin_demo_onay':
       // Matbaa delivered; leader can approve/reject. The leader or

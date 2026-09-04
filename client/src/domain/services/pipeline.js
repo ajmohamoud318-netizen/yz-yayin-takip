@@ -256,7 +256,13 @@ export function canApproveOzalitNow(user, project) {
  * @param {{ stage?: string, last_reject_type?: string|null }} project
  */
 export function needsOzalitRouteChoice(project) {
-  return project?.stage === 'tasarim' && project?.last_reject_type === 'ozalit'
+  // Ozalit redo legs stay on ozalit_onay rather than bouncing all the way
+  // back to tasarim — the designer revizes in-place and then resubmits
+  // from the same stage via the route picker (see computeAdvance in the
+  // server's domain/transitions.js). Demo redo legs still bounce to
+  // tasarim and route through the generic forward advance, so this only
+  // fires for the ozalit half of the redo flow.
+  return project?.stage === 'ozalit_onay' && project?.last_reject_type === 'ozalit'
 }
 
 /**

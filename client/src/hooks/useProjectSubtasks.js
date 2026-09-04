@@ -26,20 +26,25 @@ export function useProjectSubtasks(project, refetch, setProject, user, allUsers,
   // ---------------------------------------------------------------------------
 
   // Stages where a designer may still work on the subtasks after submitting an
-  // early demo.
+  // early demo, plus the ozalit redo leg (project stays on ozalit_onay with
+  // last_reject_type='ozalit' instead of bouncing back to tasarım).
   const DEMO_STAGES = ['demo_teslim', 'demo_onay', 'cin_demo_teslim', 'cin_demo_onay']
+  const isOzalitRedoLeg =
+    project?.stage === 'ozalit_onay' && project?.last_reject_type === 'ozalit'
 
   const canEditBase =
     !project?.deleted_at &&
     user?.role === 'designer' &&
     isAssigned &&
     (project?.stage === 'tasarim' ||
+      isOzalitRedoLeg ||
       (DEMO_STAGES.includes(project?.stage) && (project?.progress ?? 0) < 100))
 
   const canLogUpdate = !project?.deleted_at && user?.role === 'designer' && isAssigned
 
   const inRevision =
-    project?.stage === 'tasarim' && (project?.subtasks ?? []).some((s) => s.needs_revize)
+    (project?.stage === 'tasarim' || isOzalitRedoLeg) &&
+    (project?.subtasks ?? []).some((s) => s.needs_revize)
 
   // Per-subtask editability.
   const canEditSubtask = useCallback((sub) => {

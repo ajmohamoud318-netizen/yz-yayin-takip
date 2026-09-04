@@ -481,3 +481,158 @@ describe('PageChipGrid — pages subtask revize affordance', () => {
     await unmount({ root, host })
   })
 })
+
+// ---------------------------------------------------------------------------
+// Regression: "Yeniden Çalıştım" button on a fully-shipped pages subtask
+// ---------------------------------------------------------------------------
+//
+// Mirrors the non-pages branch's affordance — when the designer has
+// shipped every page and then revisits the subtask, clicking this logs
+// a "Yeniden çalışıldı" note so the timeline shows activity. Per-page
+// rework is the ↻ chip; this one is the subtask-level signal and is
+// hidden during revision (the revize flag would block it).
+describe('PageChipGrid — pages subtask redo affordance', () => {
+  beforeEach(() => {
+    document.body.replaceChildren()
+  })
+
+  function doneSubtask(over = {}) {
+    return buildSubtask({ is_done: true, ...over })
+  }
+
+  it('renders the "Yeniden Çalıştım" button when editable and fully done', async () => {
+    const onRedo = vi.fn()
+    const { root, host } = render({
+      subtask: doneSubtask(),
+      canEdit: true,
+      flagged: false,
+      user: { id: 'u-aylin', role: 'designer' },
+      isLeader: false,
+      designers: DESIGNERS,
+      onPageClick: vi.fn(),
+      onPageRework: vi.fn(),
+      onAssign: vi.fn(),
+      onRedo,
+    })
+    const btn = host.querySelector('[data-testid="pages-subtask-redo"]')
+    expect(btn).not.toBeNull()
+    expect(btn.textContent.trim()).toBe('Yeniden Çalıştım')
+    expect(btn.disabled).toBe(false)
+    await unmount({ root, host })
+  })
+
+  it('calls onRedo with the subtask when the button is clicked', async () => {
+    const onRedo = vi.fn()
+    const sub = doneSubtask()
+    const { root, host } = render({
+      subtask: sub,
+      canEdit: true,
+      flagged: false,
+      user: { id: 'u-aylin', role: 'designer' },
+      isLeader: false,
+      designers: DESIGNERS,
+      onPageClick: vi.fn(),
+      onPageRework: vi.fn(),
+      onAssign: vi.fn(),
+      onRedo,
+    })
+    const btn = host.querySelector('[data-testid="pages-subtask-redo"]')
+    await fireClick(btn)
+    expect(onRedo).toHaveBeenCalledTimes(1)
+    expect(onRedo).toHaveBeenCalledWith(sub)
+    await unmount({ root, host })
+  })
+
+  it('shows "Kaydediliyor…" and disables the button while redoing', async () => {
+    const onRedo = vi.fn()
+    const { root, host } = render({
+      subtask: doneSubtask(),
+      canEdit: true,
+      flagged: false,
+      redoing: true,
+      user: { id: 'u-aylin', role: 'designer' },
+      isLeader: false,
+      designers: DESIGNERS,
+      onPageClick: vi.fn(),
+      onPageRework: vi.fn(),
+      onAssign: vi.fn(),
+      onRedo,
+    })
+    const btn = host.querySelector('[data-testid="pages-subtask-redo"]')
+    expect(btn.textContent.trim()).toBe('Kaydediliyor…')
+    expect(btn.disabled).toBe(true)
+    await unmount({ root, host })
+  })
+
+  it('hides the button when the subtask is in revision (flagged)', async () => {
+    const onRedo = vi.fn()
+    const { root, host } = render({
+      subtask: doneSubtask({ needs_revize: true }),
+      canEdit: true,
+      flagged: true,
+      user: { id: 'u-aylin', role: 'designer' },
+      isLeader: false,
+      designers: DESIGNERS,
+      onPageClick: vi.fn(),
+      onPageRework: vi.fn(),
+      onAssign: vi.fn(),
+      onRedo,
+    })
+    expect(host.querySelector('[data-testid="pages-subtask-redo"]')).toBeNull()
+    await unmount({ root, host })
+  })
+
+  it('hides the button when canEdit is false', async () => {
+    const onRedo = vi.fn()
+    const { root, host } = render({
+      subtask: doneSubtask(),
+      canEdit: false,
+      flagged: false,
+      user: { id: 'u-aylin', role: 'designer' },
+      isLeader: false,
+      designers: DESIGNERS,
+      onPageClick: vi.fn(),
+      onPageRework: vi.fn(),
+      onAssign: vi.fn(),
+      onRedo,
+    })
+    expect(host.querySelector('[data-testid="pages-subtask-redo"]')).toBeNull()
+    await unmount({ root, host })
+  })
+
+  it('hides the button when the subtask is not fully done', async () => {
+    const onRedo = vi.fn()
+    // is_done is left false on the pages subtask because one page is still pending
+    const { root, host } = render({
+      subtask: buildSubtask(),
+      canEdit: true,
+      flagged: false,
+      user: { id: 'u-aylin', role: 'designer' },
+      isLeader: false,
+      designers: DESIGNERS,
+      onPageClick: vi.fn(),
+      onPageRework: vi.fn(),
+      onAssign: vi.fn(),
+      onRedo,
+    })
+    expect(host.querySelector('[data-testid="pages-subtask-redo"]')).toBeNull()
+    await unmount({ root, host })
+  })
+
+  it('hides the button when the parent did not provide onRedo', async () => {
+    const { root, host } = render({
+      subtask: doneSubtask(),
+      canEdit: true,
+      flagged: false,
+      user: { id: 'u-aylin', role: 'designer' },
+      isLeader: false,
+      designers: DESIGNERS,
+      onPageClick: vi.fn(),
+      onPageRework: vi.fn(),
+      onAssign: vi.fn(),
+      // no onRedo → legacy callers keep their pre-fix banner-only view
+    })
+    expect(host.querySelector('[data-testid="pages-subtask-redo"]')).toBeNull()
+    await unmount({ root, host })
+  })
+})

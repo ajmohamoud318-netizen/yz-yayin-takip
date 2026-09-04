@@ -31,6 +31,7 @@ export default function SpecFormFooter({
   onStartWork,
   startingWork,
   authoringOrderOzalit,
+  offersOzalitRoute,
   rejectContext,
   onAdvance,
   isBaskiOnayApproval,
@@ -83,11 +84,13 @@ export default function SpecFormFooter({
           {startingWork ? 'İşleniyor…' : 'İşlemi Başlatın'}
         </Button>
       )}
-      {/* Resubmit after a reject-to-designer: the same sheet can go to the
-          matbaa for another physical ozalit (the primary button) or
-          straight to the team leader as a digital Ekran Onayı. Only
-          offered once the order has actually bounced back — a first
-          request always takes the matbaa route. */}
+      {/* Two resubmit after a reject-to-designer. The order pipeline's route
+          ('matbaa_ozalit_yapiyor' vs 'ekran_onayinda') and the project
+          pipeline's route ('ozalit' vs 'ekran') are spelled differently —
+          they're computed by their respective server FSMs, so the dialog has
+          to mirror each one. Only offered once the relevant pipeline has
+          actually bounced back — a first request always takes the physical
+          route. */}
       {mode === 'advance' && authoringOrderOzalit && order?.last_reject_type === 'designer' && (
         <Button
           type="button"
@@ -96,6 +99,16 @@ export default function SpecFormFooter({
           onClick={() => onAdvance('ekran_onayinda')}
         >
           {busy ? 'Gönderiliyor…' : 'Ekran Onayı İsteyin'}
+        </Button>
+      )}
+      {mode === 'advance' && offersOzalitRoute && (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy || missingRequired.length > 0 || incompleteSpec?.length > 0}
+          onClick={() => onAdvance('ekran')}
+        >
+          {busy ? 'Gönderiliyor…' : 'Ekran Ozalit İsteyin'}
         </Button>
       )}
       {mode === 'advance' && (
@@ -108,16 +121,27 @@ export default function SpecFormFooter({
           // incompleteSpec arrives already scoped to a composer on a
           // Demo / Ozalit sheet, so it needs no exemption of its own —
           // it is empty everywhere the gate should not apply.
+          //
+          // `route` is computed once here and reused for both the click
+          // and the label below, so the button may not say one thing and
+          // do another (footer contract — see the file docblock above).
           disabled={busy || (!rejectContext && missingRequired.length > 0) || incompleteSpec?.length > 0}
-          onClick={() => onAdvance(authoringOrderOzalit && order?.last_reject_type === 'designer' ? 'matbaa_ozalit_yapiyor' : null)}
+          onClick={() => onAdvance(
+            offersOzalitRoute
+              ? 'ozalit'
+              : (authoringOrderOzalit && order?.last_reject_type === 'designer'
+                ? 'matbaa_ozalit_yapiyor'
+                : null)
+          )}
           variant={rejectContext ? 'destructive' : 'default'}
         >
           <Send className="h-4 w-4" />
           {busy
             ? 'Gönderiliyor…'
             : rejectContext ? 'Reddedin ve Gönderin'
-              : authoringOrderOzalit ? 'Ozalit İsteyin'
-                : variant.advanceLabel(user)}
+              : offersOzalitRoute ? 'Matbaadan Ozalit İsteyin'
+                : authoringOrderOzalit ? 'Ozalit İsteyin'
+                  : variant.advanceLabel(user)}
         </Button>
       )}
       {isBaskiOnayApproval && !baskiOnayPrepared && (

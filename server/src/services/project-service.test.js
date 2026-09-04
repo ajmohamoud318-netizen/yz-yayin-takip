@@ -274,14 +274,16 @@ describe('project-service — persistence diffing', () => {
 
 describe('project-service — advance', () => {
   it('writes the stage transition and emits the right history row', async () => {
-    const project = projectRow({ stage: 'tasarim', last_reject_type: 'ozalit', progress: 100 })
+    // Ozalit rejection leaves the project on ozalit_onay (not tasarim) so
+    // the redo cycle stays anchored to the Ozalit half of the pipeline.
+    const project = projectRow({ stage: 'ozalit_onay', last_reject_type: 'ozalit', progress: 100 })
     const client = makeClient({ project })
 
     await service.advanceProject('p-1', L1, { route: 'ozalit' }, client)
 
     const rows = historyRows(client)
     assert.equal(rows.length, 1)
-    assert.equal(rows[0].from_stage, 'tasarim')
+    assert.equal(rows[0].from_stage, 'ozalit_onay')
     assert.equal(rows[0].to_stage, 'ozalit_teslim')
     assert.equal(rows[0].action, 'advance')
     const patch = updatePatch(client)

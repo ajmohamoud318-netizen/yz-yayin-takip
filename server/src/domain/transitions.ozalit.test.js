@@ -316,8 +316,12 @@ describe('ozalit "Teslim Alındı" gate (migration 035)', () => {
  * cannot quietly become a change to the other.
  */
 describe('ekran ozalit', () => {
+  // Ozalit rejections leave the project on ozalit_onay (not tasarım) so the
+  // redo cycle stays anchored to the Ozalit half of the pipeline — the
+  // designer revizes the flagged subtasks in-place and then reopens the
+  // route picker from the same stage.
   const revized = (overrides = {}) => ({
-    id: 'p-9', type: 'TR', stage: 'tasarim', progress: 100,
+    id: 'p-9', type: 'TR', stage: 'ozalit_onay', progress: 100,
     last_reject_type: 'ozalit', ozalit_attempt: 1, ozalit_approvals: [],
     ...overrides,
   })
@@ -377,7 +381,10 @@ describe('ekran ozalit', () => {
 
   it('a rejection clears the flag so the next round picks its own route', () => {
     const { project: next } = computeRejection(onScreen(), 'olmamış', [], 'designer', { actorName: 'Ayşenur', actor: L1 })
-    assert.equal(next.stage, 'tasarim')
+    // Ozalit-onay rejections to the designer stay on ozalit_onay now — the
+    // designer revizes in-place and then resubmits via the route picker, so
+    // the stage indicator never "teleports" back to tasarım.
+    assert.equal(next.stage, 'ozalit_onay')
     assert.equal(next.ekran_ozalit, false)
     assert.equal(next.last_reject_type, 'ozalit')
   })

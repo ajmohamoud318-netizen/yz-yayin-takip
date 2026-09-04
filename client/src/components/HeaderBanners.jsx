@@ -88,8 +88,11 @@ export default function HeaderBanners({ d }) {
         </div>
       )}
 
-      {/* Rejection banner — shown whenever the project is back in tasarım after a rejection */}
-      {isAssigned && project.stage === 'tasarim' && ((project.demo_attempt ?? 0) > 0 || (project.ozalit_attempt ?? 0) > 0) && (
+      {/* Rejection banner — shown whenever the project is back in a redo
+          state after a rejection: tasarım for demo-redo, ozalit_onay for
+          ozalit-redo (the project no longer bounces back to tasarım on
+          ozalit rejection — it stays anchored to ozalit_onay). */}
+      {isAssigned && ((project.stage === 'tasarim' && ((project.demo_attempt ?? 0) > 0 || (project.ozalit_attempt ?? 0) > 0)) || (project.stage === 'ozalit_onay' && project.last_reject_type === 'ozalit')) && (
         <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div className="min-w-0 flex-1">

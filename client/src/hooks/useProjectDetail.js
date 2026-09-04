@@ -209,7 +209,10 @@ export function useProjectDetail(id) {
   // ---------------------------------------------------------------------------
 
   function handleAdvanceAction() {
-    if (project.stage === 'tasarim' && project.last_reject_type === 'ozalit') {
+    // Ozalit redo leg: project stays on ozalit_onay (no longer bounces
+    // back to tasarım) — the designer (or leader) revizes in-place and
+    // then reopens the route picker from the same stage.
+    if (project.stage === 'ozalit_onay' && project.last_reject_type === 'ozalit') {
       setOzalitFormMode('advance')
       setOzalitFormAttempt(null)
       setOzalitFormOpen(true)

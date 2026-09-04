@@ -20,7 +20,7 @@ import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { incompleteSpecBlocks } from '@/lib/spec-form-completeness'
 import { useSpecSheet } from '@/hooks/useSpecSheet'
 import { saveEditedComponents } from '@/data/productCatalog'
-import { ozalitLeaderApproved } from '@/domain'
+import { ozalitLeaderApproved, needsOzalitRouteChoice } from '@/domain'
 import { buildChangeSummary } from '@/lib/spec-form-diff'
 import { openMultiPrint } from '@/lib/spec-form-print'
 import { VARIANTS, computeBaskiOnayLocked, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
@@ -199,6 +199,16 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
      snapshot stays read-only for everyone. */
   const authoringOrderOzalit =
     orderScoped && mode === 'advance' && order?.status === 'kontroller_tamam'
+  /* Project pipeline post-revize resubmit (migration 061): a project back at
+     `tasarim` after an ozalit rejection must declare whether the next check is
+     another physical round ('ozalit') or an Ekran Ozalit straight to the leader
+     ('ekran'). The server refuses the advance without a route
+     (computeAdvance, server/src/domain/transitions.js), so the footer has to
+     offer the chooser. Mirrors the existing `authoringOrderOzalit` predicate
+     the sipariş resubmit reads — separate paths, same UX contract. */
+  const offersProjectOzalitRoute =
+    !orderScoped && mode === 'advance' && variantName === 'ozalit'
+    && needsOzalitRouteChoice(project)
   /* ── Baskı Onayı dual-approval (migration 045) ────────────────────────────
    * One team leader PREPARES the form; a DIFFERENT team leader gives the
    * actual "Baskı Onayı". The server is the source of truth for "different
@@ -635,7 +645,12 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         })
         : rejectContext
           ? await api.rejectProject(project.id, rejectContext.reason, [], rejectContext.target)
-          : await api.advanceProject(project.id)
+          // The project pipeline's post-revize resubmit picks between another
+          // physical round ('ozalit') and an Ekran Ozalit straight to the
+          // leader ('ekran') through this same footer — see offersProjectOzalitRoute
+          // above. A null route is fine everywhere else: the HTTP repo only
+          // includes the field in the body when truthy.
+          : await api.advanceProject(project.id, offersProjectOzalitRoute ? routeOverride : null)
       // Reject-to-matbaa: the form is read-only and we're not composing a
       // new spec, so the saved snapshot must stay exactly as the matbaa
       // had it when they pressed İşlemi Başlatın. Skip the localStorage +
@@ -655,7 +670,16 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             ? routeOverride === 'ekran_onayinda'
               ? 'Ekran onayı istendi, ekip liderine gönderildi.'
               : 'Ozalit istendi, matbaaya gönderildi.'
-            : variant.advanceToast(project),
+            // Project pipeline's post-revize resubmit: same two outcomes as
+            // the sipariş above, same wording — the screen route skips the
+            // matbaa entirely (and the one-leader sign-off downstream — see
+            // computeApproval's ekran_ozalit branch), the physical route
+            // lands on ozalit_teslim like a normal first request.
+            : offersProjectOzalitRoute && routeOverride === 'ekran'
+              ? 'Ekran ozalit istendi, ekip liderine gönderildi.'
+              : offersProjectOzalitRoute && routeOverride === 'ozalit'
+                ? 'Ozalit istendi, matbaaya gönderildi.'
+                : variant.advanceToast(project),
       )
       // The sipariş's ozalit request is where the designer's work actually
       // leaves their desk (the checks step before it is only half a turn), so
@@ -864,6 +888,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           authoringOrderOzalit={authoringOrderOzalit}
           order={order}
           rejectContext={rejectContext}
+          projectResubmitOzalit={offersProjectOzalitRoute}
         />
 
         <SpecChangeSummary changeSummary={changeSummary} />
@@ -935,6 +960,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           onStartWork={onStartWork}
           startingWork={startingWork}
           authoringOrderOzalit={authoringOrderOzalit}
+          offersOzalitRoute={offersProjectOzalitRoute}
           rejectContext={rejectContext}
           onAdvance={handleAdvance}
           isBaskiOnayApproval={isBaskiOnayApproval}

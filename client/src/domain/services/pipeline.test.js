@@ -493,11 +493,16 @@ describe('ekran ozalit', () => {
   const designer = { id: 'u-d', role: 'designer' }
 
   it('asks for a route only on a post-revize ozalit resubmit', () => {
-    expect(needsOzalitRouteChoice({ stage: 'tasarim', last_reject_type: 'ozalit' })).toBe(true)
-    // A demo rejection resubmits without a choice — it has only one road back.
+    // Ozalit redo legs stay on ozalit_onay (no longer bounce to tasarim) —
+    // the designer revizes in-place and then reopens the route picker from
+    // the same stage. Demo rejections still bounce to tasarim and route
+    // through the generic forward advance, so they don't need a choice.
+    expect(needsOzalitRouteChoice({ stage: 'ozalit_onay', last_reject_type: 'ozalit' })).toBe(true)
     expect(needsOzalitRouteChoice({ stage: 'tasarim', last_reject_type: 'demo' })).toBe(false)
     expect(needsOzalitRouteChoice({ stage: 'tasarim', last_reject_type: null })).toBe(false)
+    expect(needsOzalitRouteChoice({ stage: 'tasarim', last_reject_type: 'ozalit' })).toBe(false)
     expect(needsOzalitRouteChoice({ stage: 'ozalit_teslim', last_reject_type: 'ozalit' })).toBe(false)
+    expect(needsOzalitRouteChoice({ stage: 'ozalit_onay', last_reject_type: null })).toBe(false)
     expect(needsOzalitRouteChoice(null)).toBe(false)
   })
 

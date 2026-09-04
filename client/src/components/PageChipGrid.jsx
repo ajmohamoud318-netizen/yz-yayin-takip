@@ -56,6 +56,8 @@ export default function PageChipGrid({
   onAssign,
   onRevize,
   revizing = false,
+  onRedo,
+  redoing = false,
 }) {
   const [myPagesOnly, setMyPagesOnly] = useState(false)
   const total = Number(subtask.total_pages ?? 0)
@@ -145,6 +147,25 @@ export default function PageChipGrid({
             <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
               {reworkCount} revize
             </span>
+          )}
+          {/* Subtask-level "Yeniden Çalıştım" — mirrors the non-pages
+              branch's affordance. Logs a designer note so the timeline
+              shows activity on a fully-shipped pages subtask. The ↻
+              button on each done chip already covers per-page rework;
+              this one is the "I'm reviewing the whole subtask again"
+              signal, only shown when the subtask isn't in revision
+              (the flag would block it, same as the non-pages branch). */}
+          {canEdit && !flagged && subtask.is_done && onRedo && (
+            <button
+              type="button"
+              data-testid="pages-subtask-redo"
+              onClick={() => onRedo(subtask)}
+              disabled={redoing}
+              title="Bu görev üzerinde tekrar çalıştığınızı kaydedin"
+              className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition hover:border-primary/40 hover:text-primary disabled:opacity-50"
+            >
+              {redoing ? 'Kaydediliyor…' : 'Yeniden Çalıştım'}
+            </button>
           )}
           {user && myCount > 0 && (
             <button

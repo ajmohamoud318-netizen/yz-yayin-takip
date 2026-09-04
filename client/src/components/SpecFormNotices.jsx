@@ -18,8 +18,14 @@ import { cn } from '@/lib/utils'
  * Why this dialog is open, when the reason isn't the ordinary one: the
  * designer's own ozalit request, or a leader reviewing a sheet on its way
  * back to matbaa.
+ *
+ * `projectResubmitOzalit` — the project pipeline's parallel of
+ * `authoringOrderOzalit`'s last_reject_type branch: a project back at `tasarim`
+ * after an ozalit rejection must declare whether it wants another physical
+ * round or an Ekran Ozalit straight to the leader. The footer renders both
+ * buttons; the intro just makes the alternative visible at a glance.
  */
-export function SpecFormIntro({ authoringOrderOzalit, order, rejectContext }) {
+export function SpecFormIntro({ authoringOrderOzalit, projectResubmitOzalit, order, rejectContext }) {
   return (
     <>
       {/* The designer's ozalit request (migration 054). The checks are
@@ -34,6 +40,20 @@ export function SpecFormIntro({ authoringOrderOzalit, order, rejectContext }) {
             ozaliti bu formdan basacak.
             {order?.last_reject_type === 'designer'
               && ' Revize sonrası olduğu için, fiziksel ozalit yerine ekip liderinden ekran onayı da isteyebilirsiniz.'}
+          </p>
+        </div>
+      )}
+      {/* Project pipeline's post-revize resubmit (migration 061). Same shape
+          as the order-pipeline banner above: the sheet goes out with this
+          click, the secondary route (Ekran Ozalit) is the alternative, and
+          neither is offered unless last_reject_type === 'ozalit' (gated by
+          the dialog, which only renders this block when it does). */}
+      {projectResubmitOzalit && (
+        <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+          <p className="font-semibold text-foreground">Ozalit isteği</p>
+          <p className="mt-0.5 text-muted-foreground">
+            Formu gözden geçirin, gerekirse düzeltin ve gönderin.
+            {' '}Revize sonrası olduğu için, fiziksel ozalit yerine ekip liderinden ekran ozalit onayı da isteyebilirsiniz.
           </p>
         </div>
       )}

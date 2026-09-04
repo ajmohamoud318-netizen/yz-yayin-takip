@@ -112,12 +112,20 @@ export default function SubtaskCard({
                         }
                         // Surface the subtask-level "Revize Edin" CTA
                         // inside the chip grid. Without this, a pages
-                        // subtask flagged during a demo rejection has
-                        // no UI affordance to clear needs_revize, so
-                        // the project sits at tasarim forever and the
-                        // resubmit button stays disabled.
+                        // subtask flagged during a demo/ozalit rejection
+                        // has no UI affordance to clear needs_revize, so
+                        // the project sits in its redo state (tasarim
+                        // for demo-redo, ozalit_onay for ozalit-redo)
+                        // forever and the resubmit button stays disabled.
                         onRevize={onRevize}
                         revizing={toggling === s.id}
+                        // Mirror the non-pages branch's "Yeniden Çalıştım"
+                        // affordance — logs a designer note when the
+                        // designer touches a fully-shipped pages subtask
+                        // again. Per-page rework is already handled by the
+                        // ↻ chip; this one is the subtask-level signal.
+                        onRedo={onRedo}
+                        redoing={toggling === s.id && !flagged}
                       />
                     </div>
                   )

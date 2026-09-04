@@ -100,12 +100,24 @@ export function computeAdvance(project, actor, { route = null } = {}) {
   const now = new Date().toISOString()
   const actorName = actor?.name ?? 'Bilinmeyen'
 
-  // Resubmit gate: a project back in Tasarım after a reject-to-designer can't
-  // move forward until the designer has revized every flagged subtask. The
-  // flagged subtasks stay complete (progress unchanged); each must be cleared
-  // via the Revize action first. (The advance route loads subtasks so this
+  // Resubmit gate: a project after a reject-to-designer can't move forward
+  // until the designer has revized every flagged subtask. The flagged
+  // subtasks stay complete (progress unchanged); each must be cleared via
+  // the Revize action first. (The advance route loads subtasks so this
   // guard can see them; a first submission has no needs_revize flags.)
-  if (project.stage === 'tasarim' && (project.subtasks ?? []).some((s) => s.needs_revize)) {
+  //
+  // Two shapes: a generic forward advance from tasarim checks the revize
+  // pile directly (older demo-redo leg); the in-place ozalit redo leg
+  // stays on ozalit_onay with last_reject_type='ozalit' and is gated by
+  // the same pile when those two conditions are both true. The split
+  // matches the upstream stages the rest of computeAdvance branches on.
+  const pendingRevize = (project.subtasks ?? []).some((s) => s.needs_revize)
+  const tasarimLeg = project.stage === 'tasarim' && pendingRevize
+  const ozalitRedoLeg =
+    project.stage === 'ozalit_onay' &&
+    project.last_reject_type === 'ozalit' &&
+    pendingRevize
+  if (tasarimLeg || ozalitRedoLeg) {
     badRequest('Revize bekleyen alt görevler var, hepsini revize etmeden gönderemezsiniz.')
   }
 
@@ -122,7 +134,14 @@ export function computeAdvance(project, actor, { route = null } = {}) {
   // moment (`_resolveAdvanceTarget`, domain/entities/Order.js): the person who
   // did the revision is the one who knows whether it needs ink on paper, so
   // defaulting it silently would put that call back on whoever clicks first.
-  if (project.stage === 'tasarim' && project.last_reject_type === 'ozalit') {
+  //
+  // Trigger stage is ozalit_onay (not tasarim): an ozalit rejection leaves the
+  // project on ozalit_onay with last_reject_type='ozalit' rather than bouncing
+  // it all the way back to tasarim — the designer revizes in-place and then
+  // picks the route here. Demo rejections still bounce to tasarim and route
+  // through the generic forward-advance below, so this branch only fires on
+  // the ozalit redo cycle.
+  if (project.stage === 'ozalit_onay' && project.last_reject_type === 'ozalit') {
     if (!route) {
       badRequest('Revize sonrası Ozalit mi yoksa Ekran Ozalit mi isteneceğini seçmelisiniz.')
     }
@@ -161,7 +180,7 @@ export function computeAdvance(project, actor, { route = null } = {}) {
         history: makeEntry(project, {
           action: 'advance',
           event: 'ekran_ozalit_requested',
-          from_stage: 'tasarim',
+          from_stage: 'ozalit_onay',
           to_stage: 'ozalit_onay',
           done_by_name: actorName,
           note: 'Ozalit revizyonu tamamlandı, ekran ozalit onayına gönderildi',
@@ -179,7 +198,7 @@ export function computeAdvance(project, actor, { route = null } = {}) {
       },
       history: makeEntry(project, {
         action: 'advance',
-        from_stage: 'tasarim',
+        from_stage: 'ozalit_onay',
         to_stage: 'ozalit_teslim',
         done_by_name: actorName,
         note: 'Ozalit revizyonu tamamlandı, matbaaya gönderildi',
@@ -1685,7 +1704,17 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
   const teslimStage = stageIdx > 0 ? pipeline[stageIdx - 1] : 'tasarim'
   const toMatbaa =
     target === 'matbaa' && project.type === 'TR' && teslimStage.endsWith('_teslim')
-  const toStage = toMatbaa ? teslimStage : 'tasarim'
+  // Ozalit-onay rejections to the designer stay on ozalit_onay (no longer
+  // bounce all the way to tasarım) — the designer revizes flagged subtasks
+  // in-place and then resubmits via the post-revize ozalit route picker
+  // (computeAdvance below), so the visual stage stays anchored to the Ozalit
+  // half of the pipeline throughout the redo cycle. Demo and matbaa-re-delivery
+  // branches keep their old behaviour: only the ozalit→designer leg changes.
+  const toStage = toMatbaa
+    ? teslimStage
+    : isOzalit
+      ? 'ozalit_onay'
+      : 'tasarim'
 
   // A reject — to either the designer (fresh redesign) or the matbaa
   // (re-delivery of the same, unchanged design) — starts a new round for

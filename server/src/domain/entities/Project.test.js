@@ -238,11 +238,15 @@ describe('Project.demoChangeAccept', () => {
 })
 
 describe('Project.advance', () => {
+  // Ozalit rejections no longer bounce the project all the way back to
+  // tasarım — it stays on ozalit_onay so the redo cycle stays anchored to
+  // the Ozalit half of the pipeline. The route picker (matbaa vs ekran)
+  // and the resulting stage transitions are otherwise unchanged.
   const resubmit = () => new Project(baseProject({
-    stage: 'tasarim', last_reject_type: 'ozalit', progress: 100,
+    stage: 'ozalit_onay', last_reject_type: 'ozalit', progress: 100,
   }))
 
-  it('tasarim → ozalit_teslim on an ozalit rejection resubmit routed physical', () => {
+  it('ozalit_onay → ozalit_teslim on an ozalit rejection resubmit routed physical', () => {
     const project = resubmit()
     const event = project.advance(L1, { route: 'ozalit' })
     assert.equal(project.stage, 'ozalit_teslim')
@@ -254,7 +258,7 @@ describe('Project.advance', () => {
 
   // Migration 061: the screen route skips the matbaa leg entirely and lands
   // on the approval stage itself.
-  it('tasarim → ozalit_onay on an ozalit rejection resubmit routed ekran', () => {
+  it('ozalit_onay (unchanged) on an ozalit rejection resubmit routed ekran', () => {
     const project = resubmit()
     project.advance(L1, { route: 'ekran' })
     assert.equal(project.stage, 'ozalit_onay')
@@ -273,6 +277,9 @@ describe('Project.advance', () => {
   })
 
   it('refuses a tasarim resubmit with outstanding revize flags', () => {
+    // Demo redo still bounces back to tasarım — the revize gate fires only
+    // there. Ozalit redo's equivalent check is tested via the in-place
+    // advance branch above.
     const project = new Project(baseProject({
       stage: 'tasarim', subtasks: [{ kind: 'check', needs_revize: true }],
     }))
