@@ -21,15 +21,22 @@ import { cn, formatNumber } from '@/lib/utils'
 // badge don't maintain two independent hardcoded copies.
 const LEADER_ACTION_STEPS = ORDER_LEADER_ACTION_STEPS
 
+// Status badge palette for the team-leader queue. Keys mirror the workflow
+// statuses in `client/src/domain/constants/orders.js` (post-migration 066
+// names). The legacy `pending`/`ekran_onay`/`onaylandi` keys were carried
+// from when the migration pre-existed these badge maps but the SQL INSERT
+// for new orders was never updated to match — with the server now writing
+// `atama_bekleniyor`/`ekran_onayinda`/`baskida`, every card lands on the
+// matching class instead of falling back to ''.
 const STATUS_BADGE = {
-  pending:             'bg-amber-50 text-amber-700 border-amber-200',
-  tasarimciya_atandi:             'bg-blue-50 text-blue-700 border-blue-200',
-  kontroller_tamam:      'bg-blue-50 text-blue-700 border-blue-200',
-  matbaa_ozalit_yapiyor:      'bg-indigo-50 text-indigo-700 border-indigo-200',
-  ekran_onay:          'bg-cyan-50 text-cyan-700 border-cyan-200',
-  imza_bekleniyor:         'bg-violet-50 text-violet-700 border-violet-200',
-  baski_onayi_bekleniyor:  'bg-purple-50 text-purple-700 border-purple-200',
-  onaylandi:           'bg-emerald-50 text-emerald-700 border-emerald-200',
+  atama_bekleniyor:       'bg-amber-50 text-amber-700 border-amber-200',
+  tasarimciya_atandi:     'bg-blue-50 text-blue-700 border-blue-200',
+  kontroller_tamam:       'bg-blue-50 text-blue-700 border-blue-200',
+  matbaa_ozalit_yapiyor:  'bg-indigo-50 text-indigo-700 border-indigo-200',
+  ekran_onayinda:         'bg-cyan-50 text-cyan-700 border-cyan-200',
+  imza_bekleniyor:        'bg-violet-50 text-violet-700 border-violet-200',
+  baski_onayi_bekleniyor: 'bg-purple-50 text-purple-700 border-purple-200',
+  baskida:                'bg-emerald-50 text-emerald-700 border-emerald-200',
 }
 
 export default function SiparisTalepleri() {

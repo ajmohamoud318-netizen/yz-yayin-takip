@@ -142,11 +142,20 @@ export async function lockOrderForSubtaskPatch(client, orderId) {
  *
  * The RETURNING list is deliberately the narrow original set: this is the
  * body POST /order-requests has always answered with.
+ *
+ * `status` is hard-coded to `'atama_bekleniyor'` (the workflow's first step),
+ * which matches the column DEFAULT set in migration 066. The previous literal
+ * `'pending'` drifted out of sync with the rest of the system when the
+ * migration renamed the status: new orders landed with status `pending` while
+ * every consumer (SiparisTalepleri's `LEADER_ACTION_STEPS`, `canActOnOrder`,
+ * `ORDER_LEADER_ACTION_STEPS`, `STATUS_BADGE` maps) only matched
+ * `atama_bekleniyor`, so the team leader's "Tasarımcıya Aktarın" button
+ * silently vanished on every freshly-created order.
  */
 export async function insertOrder(client, { projectId, requestedBy, payload }) {
   const { rows } = await client.query(
     `INSERT INTO order_requests (id, project_id, status, requested_by, payload)
-     VALUES ($1,$2,'pending',$3,$4)
+     VALUES ($1,$2,'atama_bekleniyor',$3,$4)
      RETURNING id, project_id, status, requested_by, payload, version, created_at, updated_at`,
     [`o-${nanoid(16)}`, projectId, requestedBy, payload],
   )
