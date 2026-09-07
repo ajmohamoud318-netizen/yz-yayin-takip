@@ -15,6 +15,7 @@ import { awaitsOzalitReceipt } from '@/domain'
 
 import { useProjectDetailData, useProjectDetailSSE } from './useProjectDetailData'
 import { useProjectDelivery } from './useProjectDelivery'
+import { useProjectParcaState } from './useParcaQueue'
 import { useProjectSubtasks } from './useProjectSubtasks'
 
 /**
@@ -47,6 +48,10 @@ export function useProjectDetail(id) {
 
   const data = useProjectDetailData(id)
   const delivery = useProjectDelivery(project, refetch, user)
+  // Per-parça routing rows (migration 074). Loaded here rather than in the
+  // page because `availableActions` below needs them: while the round is split
+  // across desks the whole-round Onayla/Reddet must not be offered.
+  const { rows: parcaRows, refetch: refetchParcaRows } = useProjectParcaState(id)
   const isAssigned = (project?.assignees ?? []).some((a) => a.id === user?.id)
   const isLeader = user?.role === 'team_leader'
   const subtasks = useProjectSubtasks(
@@ -157,7 +162,9 @@ export function useProjectDetail(id) {
     awaitsOzalitReceipt(project) && (isLeader || (user?.role === 'designer' && isAssigned))
 
   // Available actions + labels
-  const actions = availableActions({ project, user })
+  // parcaRows (migration 074) suppress the whole-round Onayla/Reddet while the
+  // round is split across desks — see availableActions.
+  const actions = availableActions({ project, user, parcaRows })
   const advLabel = project ? advanceActionLabel(project, user?.role) : 'İlerletin'
   const appLabel = project ? approveActionLabel(project) : 'Onaylayın'
   const sentStatus =
@@ -296,6 +303,7 @@ export function useProjectDetail(id) {
   // ---------------------------------------------------------------------------
 
   return {
+    parcaRows, refetchParcaRows,
     // Data
     project, loading, refetch, setProject,
     projectOrders: data.projectOrders,

@@ -83,7 +83,7 @@ export function orderActionLabel(order) {
  * approval. The leader approves or rejects (reason required) at every *_onay
  * stage, and moves production / customs forward.
  */
-export function availableActions({ project, user }) {
+export function availableActions({ project, user, parcaRows = [] }) {
   if (!project || !user) return []
   // Imported backlist products (origin='legacy', migration 031) have no design
   // phase: no subtasks, no designer, no demo/ozalit history. Every pipeline
@@ -113,7 +113,23 @@ export function availableActions({ project, user }) {
   const isAssignedDesigner =
     role === 'designer' && (project.assignees ?? []).some((a) => a.id === user.id)
 
-  if ((stage === 'demo_onay' || stage === 'cin_demo_onay') && role === 'team_leader') {
+  // Is this round currently split across desks (migration 074)?
+  //
+  // While even one parça is out, the WHOLE-ROUND Onayla and Reddet must not be
+  // offered. They operate on the round as a unit: the project-level Onayla
+  // signs off every parça still pending on the snapshot — including the one
+  // sitting with the designer — and the project-level Reddet wipes the
+  // per-parça ledger and bounces everything, discarding the sign-offs the
+  // leader already gave. Either one silently undoes the split.
+  //
+  // The parça grid is the surface for a split round; it has its own per-parça
+  // Onayla/Reddet, and the whole-round pair comes back the moment every parça
+  // is home.
+  const splitAcrossDesks = (parcaRows ?? []).some((r) => (
+    r?.state === 'with_designer' || r?.state === 'with_matbaa' || r?.state === 'in_round'
+  ))
+
+  if ((stage === 'demo_onay' || stage === 'cin_demo_onay') && role === 'team_leader' && !splitAcrossDesks) {
     // Hide Onayla + Reddet until the demo has been received (Teslim Alındı)
     // and while the demo is held. The leader can't approve/reject a demo
     // they haven't taken delivery of yet, and once held, the project is
@@ -152,7 +168,7 @@ export function availableActions({ project, user }) {
   // round's own flag as the gate instead, and canApproveOzalitNow / the
   // server's reject gate both already carry the "one leader decides a screen
   // round" rule.
-  if (ozalitDecidable(project)) {
+  if (ozalitDecidable(project) && !splitAcrossDesks) {
     const alreadyApproved = (project.ozalit_approvals ?? []).some((a) => a.id === user.id)
     // Each leader/designer approves once. A leader who hasn't decided yet sees
     // both Onayla and Reddet; once they approve, BOTH disappear (they've

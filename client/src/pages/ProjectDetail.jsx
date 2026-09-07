@@ -32,7 +32,6 @@ import { isDemoApprover, orderOzalitFormMode } from '@/domain'
 
 import { useProjectDetail } from '@/hooks/useProjectDetail'
 import { useParcaSnapshot, parcaRoundDecidable } from '@/hooks/useParcaSnapshot'
-import { useProjectParcaState } from '@/hooks/useParcaQueue'
 import ProjectDetailHeader from '@/components/ProjectDetailHeader'
 import DesignerPanel from '@/components/DesignerPanel'
 import SubtaskCard from '@/components/SubtaskCard'
@@ -137,7 +136,7 @@ export default function ProjectDetail() {
   // Per-parça routing rows (migration 074) — who is holding what on this
   // project right now. Distinct from the ledgers the grid above reads: those
   // record who SIGNED what, this records whose turn it is.
-  const { rows: parcaRows, refetch: refetchParcaRows } = useProjectParcaState(project?.id)
+  const { parcaRows, refetchParcaRows } = d
   const [parcaRoundBusy, setParcaRoundBusy] = useState(null)
   // A designer may send back only a parça on a project they are assigned to;
   // a leader may do it on the designer's behalf, matching the latitude
