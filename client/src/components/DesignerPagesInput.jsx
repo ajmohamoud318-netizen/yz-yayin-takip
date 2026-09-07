@@ -270,14 +270,17 @@ export default function DesignerPagesInput({
             <input
               type="text"
               inputMode="numeric"
-              // Migration 068 — accept either "5" or "1-5". Anything else
-              // falls through to parsePageRange returning null and the
-              // route's "Sayfa numarası veya aralığı girin" message. A
-              // number-type input would refuse the dash, hence text.
+              // Migration 068 — accept either "5" or "1-5". The onChange
+              // strips anything that isn't a digit or a dash, so pasting
+              // "abc1-2xyz" lands as "1-2" and a stray "e" can't sneak
+              // through. parsePageRange then validates the shape; we don't
+              // rely on the regex here because the user might be mid-typing
+              // ("1-" while reaching for the end of the range).
               value={draftPage}
               disabled={saving}
               onChange={(e) => {
-                setDraftPage(e.target.value)
+                const cleaned = e.target.value.replace(/[^\d-]/g, '')
+                setDraftPage(cleaned)
                 if (error) setError(null)
               }}
               onBlur={() => {
