@@ -726,13 +726,29 @@ export function computeApproval(project, actor, ctx = {}) {
     // WHOLE call when ANY targeted parça would violate it. The "no other
     // active leader" escape hatch applies per parça too.
     if (snapshotParcalar.length > 0) {
-      const otherActiveLeaders = teamLeaderIds.filter((id) => id !== project.baski_onay_prepared_by)
       // We allow the same leader to act on a parça they didn't prepare
       // themselves. The check is per-parça: a leader who prepared KUTU can
       // still approve KİTAP if Aylin prepared KİTAP.
+      //
+      // The escape hatch is per-parça too, and it has to be: with nobody else
+      // active, refusing the preparer's own approval leaves the project stuck
+      // with no one who can move it.
+      //
+      // It used to be computed ONCE, outside this loop, against the
+      // project-level `baski_onay_prepared_by` — a single scalar that
+      // computeBaskiOnayPrepare overwrites on every prepare, so it names
+      // whoever prepared LAST, not the preparer of the parça being approved.
+      // That deadlocked a real case: A prepares KUTU, B prepares KİTAP (scalar
+      // now B), B is deactivated. `teamLeaderIds` is [A], the scalar says B, so
+      // `otherActiveLeaders` came out as [A] — non-empty — and A was refused on
+      // the KUTU they prepared, with no other leader alive to do it instead.
+      // Filtering against the parça's OWN preparer answers the question the
+      // rule is actually asking.
       for (const parca of targetParcalar) {
         const preparerId = preparers[parca]?.by
-        if (preparerId && actor?.id === preparerId && otherActiveLeaders.length > 0) {
+        if (!preparerId || actor?.id !== preparerId) continue
+        const othersForThisParca = teamLeaderIds.filter((id) => id !== preparerId)
+        if (othersForThisParca.length > 0) {
           badRequest(
             `Baskı onay formunu hazırlayan kişi kendi onayını veremez: ${parca}. Başka bir ekip lideri onaylamalıdır.`,
           )
@@ -745,7 +761,14 @@ export function computeApproval(project, actor, ctx = {}) {
         const p = preparers[parca]
         const a = nextApprovals[parca]
         if (!p || !a) return true
-        return a.by === p.by
+        if (a.by !== p.by) return false
+        // Same leader on both sides. Normally that means the maker-checker
+        // pair is unfinished — but when there is nobody else active it is the
+        // escape hatch above doing its job, and the parça IS done. Without
+        // this the hatch only half-worked: the lone leader was allowed to
+        // approve, and the project then sat at baskı onayı forever because its
+        // own approval never counted.
+        return teamLeaderIds.filter((id) => id !== p.by).length > 0
       })
       if (stillPending.length === 0) {
         const nextStage = isCin ? 'baskida' : pipelineFor(project)[pipelineFor(project).indexOf(project.stage) + 1]

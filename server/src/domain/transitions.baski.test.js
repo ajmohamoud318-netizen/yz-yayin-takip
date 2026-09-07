@@ -209,3 +209,79 @@ describe('legacy baskı onayı (no per-parça snapshot)', () => {
     )
   })
 })
+
+/**
+ * The lone-leader escape hatch (migration 070).
+ *
+ * Baskı onayı is maker-checker: one leader prepares, a DIFFERENT one approves.
+ * With nobody else active that rule has no one left to satisfy, so the preparer
+ * may sign their own — otherwise the project is stuck at baskı onayı with no
+ * one able to move it.
+ *
+ * Both halves of the hatch are pinned here, because it used to only half-work:
+ * the check that ALLOWS the self-approval was computed against the
+ * project-level `baski_onay_prepared_by` scalar (overwritten by whoever
+ * prepared last, so it named the wrong person on a multi-preparer round), and
+ * the advance gate separately treated "same person on both sides" as unfinished
+ * — so even a permitted self-approval never completed the round.
+ */
+describe('baskı onayı with only one active team leader', () => {
+  const soloCtx = (parcalar = PARCALAR) => ({
+    teamLeaderIds: ['L1'],
+    snapshot: { selectedComponents: parcalar },
+  })
+
+  it('lets the only leader approve the parça they prepared', () => {
+    const p = baskiProject({
+      baski_parca_preparers: { KAPAK: { by: 'L1', by_name: 'Ayşenur', at: 't1' } },
+    })
+    assert.doesNotThrow(() => computeApproval(p, L1, { ...soloCtx(['KAPAK']), parcalar: ['KAPAK'] }))
+  })
+
+  it('and that self-approval actually completes the round', () => {
+    // The half that was missing: allowed to approve, but the parça stayed
+    // "pending" forever because approver === preparer.
+    const p = baskiProject({
+      baski_parca_preparers: { KAPAK: { by: 'L1', by_name: 'Ayşenur', at: 't1' } },
+    })
+    const { project: next } = computeApproval(
+      p, L1, { ...soloCtx(['KAPAK']), parcalar: ['KAPAK'] },
+    )
+    assert.equal(next.stage, 'baskida', 'the project must move on')
+  })
+
+  it('still refuses a self-approval while another leader is active', () => {
+    const p = baskiProject({
+      baski_parca_preparers: { KAPAK: { by: 'L1', by_name: 'Ayşenur', at: 't1' } },
+    })
+    assert.throws(
+      () => computeApproval(
+        p, L1,
+        { teamLeaderIds: ['L1', 'L2'], snapshot: { selectedComponents: ['KAPAK'] }, parcalar: ['KAPAK'] },
+      ),
+      /kendi onayını veremez/,
+    )
+  })
+
+  it('survives leader churn on a multi-preparer round', () => {
+    // The exact deadlock: L1 prepared KAPAK, L2 prepared KUTU (so the
+    // project-level scalar names L2), then L2 was deactivated. L1 is now the
+    // only active leader and must be able to close BOTH parçalar — including
+    // the one they prepared themselves.
+    const p = baskiProject({
+      baski_onay_prepared_by: 'L2', // scalar names the LAST preparer, not KAPAK's
+      baski_parca_preparers: {
+        KAPAK: { by: 'L1', by_name: 'Ayşenur', at: 't1' },
+        KUTU: { by: 'L2', by_name: 'İkinci Lider', at: 't2' },
+      },
+    })
+    assert.doesNotThrow(
+      () => computeApproval(p, L1, { ...soloCtx(['KAPAK', 'KUTU']), parcalar: ['KAPAK', 'KUTU'] }),
+      'the only active leader must not be locked out of their own parça',
+    )
+    const { project: next } = computeApproval(
+      p, L1, { ...soloCtx(['KAPAK', 'KUTU']), parcalar: ['KAPAK', 'KUTU'] },
+    )
+    assert.equal(next.stage, 'baskida')
+  })
+})
