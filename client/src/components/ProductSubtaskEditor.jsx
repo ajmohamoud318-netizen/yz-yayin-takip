@@ -39,12 +39,24 @@ export default function ProductSubtaskEditor({ projectId, designers = [] }) {
   const [rows, setRows] = useState(null)
   const [draft, setDraft] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [parcalar, setParcalar] = useState([])
 
   useEffect(() => {
     let cancelled = false
     api.getProject(projectId)
       .then((p) => { if (!cancelled) setRows(p.subtasks ?? []) })
       .catch(() => { if (!cancelled) setRows([]) })
+    // The parça list this project's subtasks can be assigned to (migration
+    // 075). Read here rather than passed in, so both call sites — Ürün
+    // Bilgileri and Ürünler — stay unchanged. A project with no parçalar
+    // simply gets no selector, which is the correct outcome: there is
+    // nothing to assign to.
+    api.getProductInfo(projectId)
+      .then((comps) => {
+        if (cancelled) return
+        setParcalar((comps ?? []).map((c) => c?.component).filter(Boolean))
+      })
+      .catch(() => { if (!cancelled) setParcalar([]) })
     return () => { cancelled = true }
   }, [projectId])
 
@@ -68,6 +80,8 @@ export default function ProductSubtaskEditor({ projectId, designers = [] }) {
           total_stickers: s.kind === 'sticker-count' ? (Number(s.total_stickers) || null) : null,
           is_done: !!s.is_done,
           assigned_to: s.assigned_to ?? null,
+          // null = project-wide; only an explicit pick scopes a subtask to a parça.
+          parca: s.parca || null,
         }))
       await api.saveProjectSubtasks(projectId, payload)
       // Re-read rather than trusting the reply: the endpoint returns the raw
@@ -172,6 +186,23 @@ export default function ProductSubtaskEditor({ projectId, designers = [] }) {
                     <option value="">Projedeki tasarımcı</option>
                     {designers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
+                  {/* Which parça this görev belongs to (migration 075). It is
+                      what scopes a per-parça reject's revize flags: bouncing
+                      KİTAP flags KİTAP's görevler and leaves KUTU's alone.
+                      "Tüm proje" (null) keeps the old behaviour — the leader
+                      picks those explicitly on a reject. Hidden entirely when
+                      the project has no parçalar to choose between. */}
+                  {parcalar.length > 0 && (
+                    <select
+                      value={s.parca ?? ''}
+                      onChange={(e) => set(i, { parca: e.target.value || null })}
+                      title="Bu görev hangi parçaya ait?"
+                      className="rounded-md border bg-background px-1.5 py-1 text-xs"
+                    >
+                      <option value="">Tüm proje</option>
+                      {parcalar.map((name) => <option key={name} value={name}>{name}</option>)}
+                    </select>
+                  )}
                   <button
                     type="button"
                     onClick={() => setDraft(draft.filter((_, idx) => idx !== i))}
@@ -184,6 +215,11 @@ export default function ProductSubtaskEditor({ projectId, designers = [] }) {
               ) : (
                 <>
                   <span className="min-w-0 flex-1 text-[13px]">{s.title}</span>
+                  {s.parca && (
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {s.parca}
+                    </span>
+                  )}
                   {s.needs_revize && (
                     <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-600/20">
                       revize

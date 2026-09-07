@@ -367,6 +367,60 @@ export function createHttpProjectRepository(userRepo) {
       cache.set(id, data)
       return data
     },
+    /* ---------------------------------------------------------------- */
+    /* Per-parça routing (migration 074)                                 */
+    /*                                                                   */
+    /* These move ONE parça between desks and never change the project,  */
+    /* so unlike every other verb in this file they must NOT write the   */
+    /* project cache — the server returns a parca_state row, not a       */
+    /* project, and caching it under the project id would corrupt the    */
+    /* very entry `rejectProject` / `approveProject` read `stage` from.  */
+    /* ---------------------------------------------------------------- */
+
+    /** One project's parça routing rows. */
+    async listParcaState(id) {
+      const { data } = await httpClient.get(`/projects/${id}/parca-state`)
+      return data
+    },
+
+    /**
+     * Every parça on the caller's own desk, across projects. This is what lets
+     * the matbaa's queue show one row per parça instead of one per project.
+     */
+    async listParcaQueue() {
+      const { data } = await httpClient.get('/parca-queue')
+      return data
+    },
+
+    /** Matbaa: began work on this one parça. */
+    async startParca(id, parca) {
+      const { data } = await httpClient.post(
+        `/projects/${id}/parca/${encodeURIComponent(parca)}/start`, {},
+      )
+      return data
+    },
+
+    /** Matbaa: handed this one parça back; it returns to the leader's gate. */
+    async deliverParca(id, parca) {
+      const { data } = await httpClient.post(
+        `/projects/${id}/parca/${encodeURIComponent(parca)}/deliver`, {},
+      )
+      return data
+    },
+
+    /**
+     * Designer: revized this parça and is sending it back round.
+     * `route` is 'physical' (matbaa produces it again) or 'ekran' (screen
+     * check, straight back to the leader). Required — the server refuses
+     * without it, the same way the project-level route picker does.
+     */
+    async requestParcaRound(id, parca, route) {
+      const { data } = await httpClient.post(
+        `/projects/${id}/parca/${encodeURIComponent(parca)}/request-round`, { route },
+      )
+      return data
+    },
+
     // Ekran Demo Onayı — lightweight digital alternative to a physical
     // re-demo for a held demo at 100% progress (migration 050).
     async requestEkranDemoOnay(id) {

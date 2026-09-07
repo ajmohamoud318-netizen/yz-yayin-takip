@@ -26,6 +26,7 @@ import { isTitleConflictError } from '../domain/project-title.js'
 import { Project } from '../domain/entities/Project.js'
 import { assertNotLegacy } from '../domain/pipeline.js'
 import { canonicalise } from './deep-equal.js'
+import { upsertParcaState } from './parca-state-repository.js'
 import {
   listProjects as repoListProjects,
   getProject,
@@ -102,7 +103,7 @@ function changedFields(before, entity) {
  * Routes that didn't change stage (demo-receive, ekran-demo-reject, …) ride
  * their own notifyXxx; the stage-changing verbs all ride notifyProjectTransition.
  */
-async function dispatchProjectNotification(client, { notification, project, actor }) {
+async function dispatchProjectNotification(client, { notification, project, actor, history }) {
   if (!notification) return
   switch (notification.kind) {
     case 'transition':
@@ -110,7 +111,28 @@ async function dispatchProjectNotification(client, { notification, project, acto
         project,
         fromStage: project.__prevStage ?? null,
         toStage: project.stage,
-        action: project.__prevAction ?? 'advance',
+        // The action comes off the history row this same event produced.
+        //
+        // It used to read `project.__prevAction`, a field NOTHING in the
+        // codebase ever assigned — so every transition announced itself as an
+        // 'advance' and both of notifyProjectTransition's `action === 'reject'`
+        // branches were unreachable. The fallout was live: a demo rejected to
+        // the designer landed on `tasarim`, matched no case in the stage switch
+        // and notified nobody at all, while an ozalit rejected to the designer
+        // fell into `case 'ozalit_onay'` and told them "Matbaa ozaliti teslim
+        // etti" — a delivery, when their work had just been sent back. That is
+        // the exact hazard the comment above that branch warns about.
+        //
+        // `projectHistory.action` is the authoritative value ('reject' here):
+        // it is what the FSM stamped and what the timeline row is written with.
+        action: history?.action ?? 'advance',
+        // Per-parça rejects name their parçalar (migration 073) so the message
+        // can say WHICH parça came back rather than implicating the whole project.
+        parca: history?.parca ?? null,
+        // Which desk it went to. A per-parça reject leaves the stage untouched,
+        // so this is the only thing that says whether the designer or the
+        // matbaa should be told.
+        rejectTarget: history?.reject_target ?? null,
         actor,
         assignees: project.assignees ?? null,
       })
@@ -240,6 +262,16 @@ async function runProjectCommand(projectId, actor, { prepare, run, after } = {},
       }
     }
 
+    // Per-parça routing rows (migration 074) — the third write path, for the
+    // same reason as subtasks: `parca_state` is its own table, so it can't ride
+    // the project diff. A per-parça reject lands here with one patch per parça
+    // it sent away; a whole-round reject carries none.
+    if (event.parcaState) {
+      for (const { parca, patch } of event.parcaState) {
+        await upsertParcaState(client, projectId, parca, patch)
+      }
+    }
+
     if (after) await after({ client, event, updated, project, actor, ctx })
 
     // Notify after every write is queued in the tx; emit() registers an
@@ -252,6 +284,7 @@ async function runProjectCommand(projectId, actor, { prepare, run, after } = {},
       notification: event.notification,
       project,
       actor,
+      history: event.projectHistory ?? null,
     })
 
     // Cleanup stashed ctx fields so they don't leak out.

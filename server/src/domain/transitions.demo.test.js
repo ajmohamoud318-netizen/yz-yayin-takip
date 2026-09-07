@@ -336,8 +336,10 @@ describe('per-parça demo approval gate (migrations 068/069/070)', () => {
       p, 'KAPAK tasarımı hatalı', [], 'designer',
       { actorName: 'Ayşenur', actor: leader, parcalar: ['KAPAK'] },
     )
-    // Whole-round reject still drops the project back to tasarim.
-    assert.equal(next.stage, 'tasarim')
+    // Migration 074: a per-parça reject leaves the project at the gate. KUTU is
+    // still signed off and the leader can carry on with it; only KAPAK went
+    // back, and to the designer's desk rather than the whole project's.
+    assert.equal(next.stage, 'demo_onay')
     const approvedParcalar = next.demo_parca_approvals.map((r) => r.parca).sort()
     assert.deepEqual(approvedParcalar, ['KUTU'])
     const rejectedParcalar = next.demo_parca_rejections.map((r) => r.parca).sort()

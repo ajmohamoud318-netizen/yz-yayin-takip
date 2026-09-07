@@ -1,9 +1,12 @@
+import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   AlertTriangle,
 } from 'lucide-react'
 
-import {
+import { toast } from 'sonner'
+
+import api, {
   STAGE_LABELS, IN_FLIGHT_DEMO_OZALIT_STAGES,
 } from '@/api'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -23,10 +26,13 @@ import SiparisBaskiOnayFormDialog from '@/components/SiparisBaskiOnayFormDialog'
 import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import ProjectHistory from '@/components/ProjectHistory'
 import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
+import ParcaRejectDialog from '@/components/ParcaRejectDialog'
+import ParcaReturnedPanel from '@/components/ParcaReturnedPanel'
 import { isDemoApprover, orderOzalitFormMode } from '@/domain'
 
 import { useProjectDetail } from '@/hooks/useProjectDetail'
 import { useParcaSnapshot, parcaRoundDecidable } from '@/hooks/useParcaSnapshot'
+import { useProjectParcaState } from '@/hooks/useParcaQueue'
 import ProjectDetailHeader from '@/components/ProjectDetailHeader'
 import DesignerPanel from '@/components/DesignerPanel'
 import SubtaskCard from '@/components/SubtaskCard'
@@ -74,6 +80,86 @@ export default function ProjectDetail() {
   // Hook order: this must run before the loading/empty early-returns below,
   // so it is called here and no-ops while `project` is still null.
   const { parcalar: parcaSnapshot, ledgerKind } = useParcaSnapshot(project)
+  // Which parçalar the reject dialog is open for; null = closed.
+  const [parcaReject, setParcaReject] = useState(null)
+
+  // Sheet-first for per-parça decisions.
+  //
+  // The rule everywhere else in this app: you see the sheet before you commit
+  // to it. The matbaa's İşlemi Başlatın has never been a bare confirm, and at
+  // ozalit_onay / baski_onay the leader's project-level Onayla opens the form
+  // to sign. The per-parça buttons were the exception — thumbs-up posted
+  // straight to the API — which meant a leader could sign off KUTU without
+  // ever looking at what KUTU is. This closes that.
+  //
+  // { action: 'approve' | 'reject' | 'review', parcalar: string[] }
+  const [parcaSheet, setParcaSheet] = useState(null)
+  // The parça whose sheet the designer has read; only then are the two route
+  // buttons offered. Cleared once they pick one.
+  const [reviewedParca, setReviewedParca] = useState(null)
+
+  function openParcaSheet(action, parcalar) {
+    setParcaSheet({ action, parcalar: parcalar ?? [] })
+    // The gate decides which sheet — the same variant the round was authored in.
+    if (ledgerKind === 'ozalit') {
+      d.setOzalitFormMode('view'); d.setOzalitFormAttempt(null); setOzalitFormOpen(true)
+    } else {
+      d.setDemoFormMode('view'); d.setDemoFormAttempt(null); setDemoFormOpen(true)
+    }
+  }
+
+  /** What the sheet's footer button does once the leader has read it. */
+  async function commitParcaSheet() {
+    const pending = parcaSheet
+    if (!pending) return
+    setParcaSheet(null)
+    setDemoFormOpen(false)
+    setOzalitFormOpen(false)
+    if (pending.action === 'review') {
+      // Designer has read what they are about to send back round; now they
+      // choose the road.
+      setReviewedParca(pending.parcalar[0] ?? null)
+    } else if (pending.action === 'approve') {
+      await d.handleApproveParcalar(pending.parcalar)
+      refetchParcaRows()
+    } else {
+      // Reject still needs a reason and a responsible party, which the sheet
+      // cannot express — so the sheet hands off to the dialog that can.
+      setParcaReject(pending.parcalar)
+    }
+  }
+
+  const PARCA_SHEET_VERB = { approve: 'Onaylayın', reject: 'Reddedin', review: 'Gönderin' }
+  const parcaSheetLabel = parcaSheet
+    ? `${parcaSheet.parcalar.join(', ')} · ${PARCA_SHEET_VERB[parcaSheet.action]}`
+    : null
+
+  // Per-parça routing rows (migration 074) — who is holding what on this
+  // project right now. Distinct from the ledgers the grid above reads: those
+  // record who SIGNED what, this records whose turn it is.
+  const { rows: parcaRows, refetch: refetchParcaRows } = useProjectParcaState(project?.id)
+  const [parcaRoundBusy, setParcaRoundBusy] = useState(null)
+  // A designer may send back only a parça on a project they are assigned to;
+  // a leader may do it on the designer's behalf, matching the latitude
+  // canRequestOzalit gives them on the project-level round.
+  const canSendParcaBack = isLeader || (user?.role === 'designer' && isAssigned)
+
+  async function handleRequestParcaRound(parca, route) {
+    setParcaRoundBusy(parca)
+    try {
+      await api.requestParcaRound(project.id, parca, route)
+      toast.success(route === 'ekran'
+        ? `${parca} ekran onayına gönderildi.`
+        : `${parca} matbaaya gönderildi.`)
+      setReviewedParca(null)
+      refetchParcaRows()
+      refetch()
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setParcaRoundBusy(null)
+    }
+  }
   // Role gate mirrors the queue's (Approvals.jsx): demo is leader-or-matbaa,
   // ozalit is leader-or-designer (the server enforces leader-first and the
   // assigned-designer rule on top), baskı is leader-only. Reject stays
@@ -136,18 +222,29 @@ export default function ProjectDetail() {
               kind={ledgerKind}
               snapshotParcalar={parcaSnapshot}
               busy={d.processingEkranDemo}
-              onApproveParcalar={d.handleApproveParcalar}
-              // `reason` is required by the reject schema (minLength 1), so the
-              // grid's bare onRejectParcalar([parca]) needs one supplied here.
-              // Same default the queue uses, so both surfaces write the same
-              // history line; a leader who wants narrative uses the header's
-              // whole-round Reddet dialog.
-              onRejectParcalar={isLeader
-                ? (parcalar) => d.handleRejectParcalar(parcalar, 'Parça bazlı red', 'designer')
-                : undefined}
+              // Both open the sheet first; the decision is taken from its
+              // footer. Reject then hands off to the reason/party dialog,
+              // which is the part the sheet cannot carry.
+              onApproveParcalar={(parcalar) => openParcaSheet('approve', parcalar)}
+              onRejectParcalar={isLeader ? (parcalar) => openParcaSheet('reject', parcalar) : undefined}
             />
           </div>
         )}
+
+        {/* Whose desk each parça is on, and the designer's way back out. Sits
+            under the approval grid because it answers the question the grid
+            raises: the grid says KİTAP is not signed off, this says why and
+            who has it. */}
+        <ParcaReturnedPanel
+          rows={parcaRows}
+          canAct={canSendParcaBack}
+          busyParca={parcaRoundBusy}
+          reviewedParca={reviewedParca}
+          // Sheet first: the designer sees what they are putting back into the
+          // pipeline before the two roads are offered.
+          onReview={(parca) => openParcaSheet('review', [parca])}
+          onRequestRound={handleRequestParcaRound}
+        />
 
         {/* Body grid */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -220,6 +317,22 @@ export default function ProjectDetail() {
         onDone={onActionDone}
       />
 
+      {/* Per-parça reject (migration 074): the leader names the responsible
+          party, and the parça goes to that desk while the project stays put. */}
+      <ParcaRejectDialog
+        open={!!parcaReject}
+        onOpenChange={(v) => !v && setParcaReject(null)}
+        project={project}
+        parcalar={parcaReject ?? []}
+        busy={d.processingEkranDemo}
+        onConfirm={async (parcalar, reason, target) => {
+          const updated = await d.handleRejectParcalar(parcalar, reason, target)
+          // Only close on success — a failed reject leaves the dialog open with
+          // the leader's reason still typed, rather than silently discarding it.
+          if (updated) setParcaReject(null)
+        }}
+      />
+
       <NewProjectDialog
         open={editOpen}
         onOpenChange={setEditOpen}
@@ -236,7 +349,7 @@ export default function ProjectDetail() {
 
       <OzalitFormDialog
         open={ozalitFormOpen}
-        onOpenChange={(v) => { d.setOzalitFormOpen(v); if (!v) { d.setOzalitFormAttempt(null); d.setOzalitFormRound(null); d.setOzalitFormSnapshot(null); d.setOzalitFormNotify(false); d.setOzalitFormStartWork(false) } }}
+        onOpenChange={(v) => { d.setOzalitFormOpen(v); if (!v) { d.setOzalitFormAttempt(null); d.setOzalitFormRound(null); d.setOzalitFormSnapshot(null); d.setOzalitFormNotify(false); d.setOzalitFormStartWork(false); setParcaSheet(null) } }}
         project={project}
         mode={ozalitFormMode}
         viewAttempt={ozalitFormAttempt}
@@ -246,13 +359,19 @@ export default function ProjectDetail() {
         // Matbaa's "İşlemi Başlatın" opened this sheet: the footer stamps
         // ozalit_started once they've read it. Closed only on success, so a
         // failed stamp leaves them on the form with the error toast.
-        onStartWork={ozalitFormStartWork
-          ? async () => {
-            if (!await d.handleOzalitStart()) return
-            setOzalitFormOpen(false); d.setOzalitFormStartWork(false)
-          }
-          : undefined}
-        startingWork={d.startingWork}
+        // Two things can drive this footer slot: the matbaa's start gate, and a
+        // leader's per-parça decision (migration 074). The parça action wins —
+        // the two never co-occur, since a printer has no parça grid.
+        onStartWork={parcaSheet
+          ? commitParcaSheet
+          : ozalitFormStartWork
+            ? async () => {
+              if (!await d.handleOzalitStart()) return
+              setOzalitFormOpen(false); d.setOzalitFormStartWork(false)
+            }
+            : undefined}
+        startWorkLabel={parcaSheetLabel}
+        startingWork={d.startingWork || d.processingEkranDemo}
         onDone={onActionDone}
       />
 
@@ -266,7 +385,7 @@ export default function ProjectDetail() {
 
       <DemoFormDialog
         open={demoFormOpen}
-        onOpenChange={(v) => { setDemoFormOpen(v); if (!v) { d.setDemoFormAttempt(null); d.setDemoFormRound(null); d.setDemoFormSnapshot(null); d.setDemoFormNotify(false); d.setDemoFormStartWork(false) } }}
+        onOpenChange={(v) => { setDemoFormOpen(v); if (!v) { d.setDemoFormAttempt(null); d.setDemoFormRound(null); d.setDemoFormSnapshot(null); d.setDemoFormNotify(false); d.setDemoFormStartWork(false); setParcaSheet(null) } }}
         project={project}
         mode={demoFormMode}
         viewAttempt={demoFormAttempt}
@@ -274,13 +393,16 @@ export default function ProjectDetail() {
         viewDemoId={demoFormSnapshot}
         notifyOnSave={demoFormNotify}
         // See the ozalit dialog above — same review-then-start gate.
-        onStartWork={demoFormStartWork
-          ? async () => {
-            if (!await d.handleDemoStart()) return
-            setDemoFormOpen(false); d.setDemoFormStartWork(false)
-          }
-          : undefined}
-        startingWork={d.startingWork}
+        onStartWork={parcaSheet
+          ? commitParcaSheet
+          : demoFormStartWork
+            ? async () => {
+              if (!await d.handleDemoStart()) return
+              setDemoFormOpen(false); d.setDemoFormStartWork(false)
+            }
+            : undefined}
+        startWorkLabel={parcaSheetLabel}
+        startingWork={d.startingWork || d.processingEkranDemo}
         onDone={onActionDone}
       />
 

@@ -1,6 +1,7 @@
 import { attachUser, requireRole } from '../middleware/auth.js'
 import { schemas } from '../schemas/index.js'
 import * as projectService from '../services/project-service.js'
+import * as parcaService from '../services/parca-service.js'
 
 /**
  * Projects + stage transition API.
@@ -129,6 +130,44 @@ export async function projectRoutes(fastify) {
     await attachUser(request)
     return projectService.baskiOnayPrepare(request.params.id, request.user, {
       parcalar: request.body?.parcalar ?? null,
+    })
+  })
+
+  /* ------------------------------------------------------------------ */
+  /* Per-parça routing (migration 074)                                   */
+  /*                                                                     */
+  /* These move ONE parça between desks without moving the project. The  */
+  /* project stays at its approval gate throughout — two parties can     */
+  /* hold different parçalar of the same project at once, so no single   */
+  /* stage would be true for it. See services/parca-service.js.          */
+  /* ------------------------------------------------------------------ */
+
+  fastify.get('/projects/:id/parca-state', { schema: schemas.projectsIdParams }, async (request) => {
+    await attachUser(request)
+    return parcaService.listProjectParcaState(request.params.id)
+  })
+
+  // Every parça on the caller's own desk, across projects — the query behind
+  // the matbaa's per-parça queue.
+  fastify.get('/parca-queue', async (request) => {
+    await attachUser(request)
+    return parcaService.listMyParcaQueue(request.user)
+  })
+
+  fastify.post('/projects/:id/parca/:parca/start', { schema: schemas.projectsParcaParams }, async (request) => {
+    await attachUser(request)
+    return parcaService.startParca(request.params.id, request.params.parca, request.user)
+  })
+
+  fastify.post('/projects/:id/parca/:parca/deliver', { schema: schemas.projectsParcaParams }, async (request) => {
+    await attachUser(request)
+    return parcaService.deliverParca(request.params.id, request.params.parca, request.user)
+  })
+
+  fastify.post('/projects/:id/parca/:parca/request-round', { schema: schemas.projectsParcaRequestRound }, async (request) => {
+    await attachUser(request)
+    return parcaService.requestParcaRound(request.params.id, request.params.parca, request.user, {
+      route: request.body.route,
     })
   })
 

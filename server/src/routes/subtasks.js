@@ -462,13 +462,18 @@ export async function subtaskRoutes(fastify) {
           s.total_stickers ?? null,
           subAssignee,
           index,
+          // Which parça this subtask belongs to (migration 075). NULL means
+          // project-wide, which is what every pre-075 row is and what a
+          // subtask like "Yazılım" stays. It is what scopes a per-parça
+          // reject's revize flags to the parça that actually came back.
+          s.parca ?? null,
         ]
 
         if (existing) {
           const { rows } = await client.query(
             `UPDATE subtasks
                 SET title = $2, kind = $3, total_pages = $4, total_stickers = $5,
-                    assigned_to = $6, position = $7,
+                    assigned_to = $6, position = $7, parca = $8,
                     -- The done flag is intentionally NOT in the SET clause:
                     -- the designer's work state is owned by the per-row
                     -- toggle route and the designer-counts endpoint.
@@ -488,13 +493,13 @@ export async function subtaskRoutes(fastify) {
         } else {
           const { rows } = await client.query(
             `INSERT INTO subtasks
-               (project_id, title, kind, total_pages, total_stickers, assigned_to, position)
+               (project_id, title, kind, total_pages, total_stickers, assigned_to, position, parca)
              -- The done flag is omitted: the column defaults to FALSE in
              -- migration 003, and brand-new subtasks have no designer
              -- work to credit. Keep the column out of the column list
              -- AND the VALUES list so future readers don't see the
              -- route as a legitimate writer of designer state.
-             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
             [project.id, ...params],
           )
           finalRows.push(rows[0])

@@ -367,24 +367,43 @@ describe('PUT /projects/:id/subtasks — designer work state is preserved', () =
     )
   })
 
-  it('param list for the UPDATE is 7 elements: id + 6 settable columns', () => {
-    // Param count: $1 = existing.id, $2 = title, $3 = kind, $4 = total_pages,
-    // $5 = total_stickers, $6 = subAssignee, $7 = index. `is_done` MUST NOT
-    // be in this list — that's the contract. An extra param would let the
-    // client side push a value into $6, but the SQL no longer references
-    // it; the assertion below is on the route source so a future
-    // refactor that re-introduces the value also re-introduces the bug.
+  it('the UPDATE param list carries only settable shape columns, never is_done', () => {
+    // Param order: $1 = existing.id, $2 = title, $3 = kind, $4 = total_pages,
+    // $5 = total_stickers, $6 = subAssignee, $7 = index, $8 = parca
+    // (migration 075). `is_done` MUST NOT be in this list — that is the
+    // contract, and the assertion is on the route SOURCE so a future refactor
+    // that re-introduces the value also re-introduces the bug.
+    //
+    // The count is asserted alongside the real rule rather than instead of it:
+    // a bare "must be N" fails on every legitimate column addition (as it did
+    // when `parca` landed) while saying nothing about the thing that matters.
     const paramsMatch = subtasksRouteSrc.match(
       /const params = \[\s*([\s\S]*?)\]\s*\n\s*if \(existing\)/,
     )
     assert.ok(paramsMatch, 'expected to find the bulk-reconcile params array')
+    // Strip JS comments first — they contain commas and would otherwise be
+    // counted as parameters.
     const items = paramsMatch[1]
+      .replace(/\/\/[^\n]*/g, '')
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
-    assert.equal(
-      items.length, 6,
-      `expected 6 params (no is_done); got ${items.length}: ${items.join(', ')}`,
+    assert.ok(
+      !items.some((i) => /\bis_done\b/.test(i)),
+      `is_done must never be a bulk-reconcile param; got: ${items.join(', ')}`,
+    )
+    assert.deepEqual(
+      items,
+      [
+        's.title',
+        "s.kind ?? 'check'",
+        's.total_pages ?? null',
+        's.total_stickers ?? null',
+        'subAssignee',
+        'index',
+        's.parca ?? null',
+      ],
+      'the settable set changed — confirm the new column is shape, not designer work state',
     )
   })
 
@@ -396,7 +415,7 @@ describe('PUT /projects/:id/subtasks — designer work state is preserved', () =
     // be a no-op for new rows, but it'd advertise to future readers
     // that the route is allowed to write is_done, which it isn't.
     const insertMatch = subtasksRouteSrc.match(
-      /INSERT INTO subtasks[\s\S]*?VALUES \(\$1,\$2,\$3,\$4,\$5,\$6,\$7\) RETURNING \*/,
+      /INSERT INTO subtasks[\s\S]*?VALUES \(\$1,\$2,\$3,\$4,\$5,\$6,\$7,\$8\) RETURNING \*/,
     )
     assert.ok(
       insertMatch,

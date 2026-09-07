@@ -209,6 +209,14 @@ export function createApi() {
     saveProjectSubtasks: (projectId, subtasks) =>
       subtaskRepo.saveProjectSubtasks(projectId, subtasks),
 
+    // Per-parça routing (migration 074) — whose desk each parça is on.
+    listParcaState: (projectId) => projectRepo.listParcaState(projectId),
+    listParcaQueue: () => projectRepo.listParcaQueue(),
+    startParca: (projectId, parca) => projectRepo.startParca(projectId, parca),
+    deliverParca: (projectId, parca) => projectRepo.deliverParca(projectId, parca),
+    requestParcaRound: (projectId, parca, route) =>
+      projectRepo.requestParcaRound(projectId, parca, route),
+
     // Demos
     listDemos: () => demoRepo.listDemos(),
     createDemo: (payload) => demoRepo.createDemo(payload),

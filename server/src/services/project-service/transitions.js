@@ -20,6 +20,7 @@ import {
   loadLatestDemoSnapshot,
 } from '../project-repository.js'
 import { activeUserIdsByRole } from '../notifications.js'
+import { listParcaState } from '../parca-state-repository.js'
 import { runProjectCommand } from '../project-service.js'
 
 /**
@@ -68,7 +69,15 @@ async function withSubtasks({ client, row }) {
   const ctx = await withAssignees({ client, row })
   const subtasks = await listProjectSubtasks(client, row.id)
   row.subtasks = subtasks
-  return { ...ctx, subtasks }
+  // Per-parça routing rows (migration 074). `reject` reads them to carry each
+  // parça's own round number forward — the project-level attempt counter no
+  // longer moves on a per-parça reject, so without this every bounce would
+  // reset that parça to round 1 and its spec-sheet snapshot would stop
+  // resolving. Stamped onto `row` alongside subtasks/assignees so the FSM can
+  // read `project.parca_state` the same way it reads `project.subtasks`.
+  const parcaState = await listParcaState(client, row.id)
+  row.parca_state = parcaState
+  return { ...ctx, subtasks, parcaState }
 }
 
 /**

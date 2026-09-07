@@ -25,6 +25,7 @@ import { randomUUID } from 'node:crypto'
 import { STAGE_PIPELINE, STAGES_REQUIRING_FULL_PROGRESS } from './stages.js'
 import { subtaskProgress } from './progress.js'
 import { HttpError } from './errors.js'
+import { parcaRejectPatch, parcaGateForStage } from './parca-routing.js'
 
 /** Match the client's badRequest semantics — throw a 400. */
 function badRequest(message) {
@@ -273,6 +274,18 @@ function pruneApprovalsToSnapshot(ledger, snapshotParcalar, isObject = false) {
 function pruneRejectionsToSnapshot(ledger, snapshotParcalar) {
   const keep = new Set(snapshotParcalar)
   return (ledger ?? []).filter((row) => row && keep.has(row.parca))
+}
+
+/**
+ * This parça's own round number (migration 074).
+ *
+ * `project.parca_state` is hydrated by the service's prepare hook, the same way
+ * `project.subtasks` and `project.assignees` are. Absent (a project that predates
+ * per-parça routing, or a parça being sent back for the first time) means round 1.
+ */
+function parcaAttemptOf(project, parca) {
+  const row = (project?.parca_state ?? []).find((r) => r?.parca === parca)
+  return row?.attempt ?? 1
 }
 
 /** Drop a parça's row from a ledger (used by per-parça rejection). */
@@ -2367,19 +2380,35 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
   const pipeline = pipelineFor(project)
   const stageIdx = pipeline.indexOf(project.stage)
   const teslimStage = stageIdx > 0 ? pipeline[stageIdx - 1] : 'tasarim'
-  const toMatbaa =
-    target === 'matbaa' && project.type === 'TR' && teslimStage.endsWith('_teslim')
+  // `project.type === 'TR'` used to be part of this condition, which left ÇİN
+  // with no matbaa re-delivery leg at all: a ÇİN demo rejected to the matbaa
+  // fell through to `tasarim` and landed on the designer, who had nothing to
+  // fix. The remaining `endsWith('_teslim')` test is what actually guards this
+  // — STAGE_PIPELINE.CIN carries `cin_demo_teslim` (domain/stages.js), so ÇİN
+  // satisfies it on its own and any pipeline without a teslim leg still can't
+  // route here.
+  const toMatbaa = target === 'matbaa' && teslimStage.endsWith('_teslim')
   // Ozalit-onay rejections to the designer stay on ozalit_onay (no longer
   // bounce all the way to tasarım) — the designer revizes flagged subtasks
   // in-place and then resubmits via the post-revize ozalit route picker
   // (computeAdvance below), so the visual stage stays anchored to the Ozalit
   // half of the pipeline throughout the redo cycle. Demo and matbaa-re-delivery
   // branches keep their old behaviour: only the ozalit→designer leg changes.
-  const toStage = toMatbaa
-    ? teslimStage
-    : isOzalit
-      ? 'ozalit_onay'
-      : 'tasarim'
+  //
+  // A PER-PARÇA reject moves nothing (migration 074). Two parties can now hold
+  // different parçalar of one project at the same time, so no single stage is
+  // true for the project as a whole: KUTU may be at the matbaa while KİTAP is
+  // with the designer and KILAVUZ is already signed off. The stage therefore
+  // stays at the approval gate and `parca_state` carries the detail — which
+  // keeps Kanban, the project lists and StageBar meaning what they always
+  // meant. A whole-round reject still moves the stage exactly as before.
+  const toStage = isPartial
+    ? project.stage
+    : toMatbaa
+      ? teslimStage
+      : isOzalit
+        ? 'ozalit_onay'
+        : 'tasarim'
 
   // A reject — to either the designer (fresh redesign) or the matbaa
   // (re-delivery of the same, unchanged design) — starts a new round for
@@ -2391,7 +2420,16 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
   // !demo_started) while the leader/designer instead saw "Değişiklik İste"
   // (canRequestDemoChange requires demo_started) for a round that hadn't
   // even been redelivered yet.
-  const legReset = isOzalit
+  //
+  // A PER-PARÇA reject skips the whole reset (migration 074). These are all
+  // project-level scalars describing ONE round of the whole sheet, and the
+  // project's round has not ended — only one parça's has. Wiping
+  // `*_received` in particular would be actively wrong: the leader is still
+  // reviewing the parçalar that came back fine, and clearing the receipt
+  // closes the approval gate under them (`ozalitDecidable` on the client,
+  // the `!project.ozalit_received` guard on the server). Per-parça round
+  // flags live on `parca_state.started_at` / `delivered_at` instead.
+  const legReset = isPartial ? {} : isOzalit
     ? {
         // The rejected round is over; the next one declares its own route.
         ekran_ozalit: false,
@@ -2436,22 +2474,38 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
     ...project,
     stage: toStage,
     last_reject_reason: reason,
-    last_reject_type: isOzalit ? 'ozalit' : 'demo',
-    last_reject_target: target,
-    reject_target: toMatbaa ? 'matbaa' : null,
-    ozalit_requested: false,
     updated_at: nowIso,
+    // The project-level reject scalars describe a WHOLE-project bounce, so a
+    // per-parça reject must not write them (migration 074).
+    //
+    // `last_reject_type` is the dangerous one. Setting it to 'ozalit' puts the
+    // project into the in-place redo leg: `needsOzalitRouteChoice` starts
+    // demanding a route, `computeAdvance` refuses while subtasks await revize,
+    // `computeOzalitReceive` refuses outright ("Reddedilen ozalit teslim
+    // alınamaz"), and `awaitsOzalitReceipt` goes false — so the "Teslim Alın"
+    // button disappears from a round the leader is still working through, and
+    // the remaining parçalar can be neither received nor approved. The whole
+    // project would be frozen by one parça being sent back, which is the exact
+    // opposite of what this feature is for.
+    ...(isPartial
+      ? {}
+      : {
+          last_reject_type: isOzalit ? 'ozalit' : 'demo',
+          last_reject_target: target,
+          reject_target: toMatbaa ? 'matbaa' : null,
+          ozalit_requested: false,
+        }),
     ...legReset,
-    ...(isOzalit
+    // Same reasoning for the ozalit multi-party ledger: a whole-round reject
+    // wipes it so the next round starts fresh, but on a per-parça reject the
+    // other parçalar's sign-offs must survive untouched.
+    ...(isOzalit && !isPartial
       ? {
           ozalit_leader_approved: false,
           ozalit_leader_approved_by: null,
           ozalit_leader_approved_at: null,
           ozalit_designer_approvals: [],
-          // Multi-party ledger: a rejection wipes any partial approvals so the
-          // next ozalit round starts fresh. On a per-parça reject only the
-          // targeted parçalar's approvals are cleared; the rest stay locked.
-          ozalit_approvals: isPartial ? project.ozalit_approvals : [],
+          ozalit_approvals: [],
         }
       : {}),
     // Per-parça ledgers (migrations 068/069/070): same rule, scoped to one
@@ -2464,19 +2518,31 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
           demo_parca_approvals: isOzalit
             ? project.demo_parca_approvals
             : dropParcaFromList(project.demo_parca_approvals, rejectedParcalar),
-          demo_parca_rejections: appendParcaRejections(
-            project.demo_parca_rejections ?? [],
-            rejectedParcalar,
-            actor,
-            actorName,
-            nowIso,
-            reason,
-            target,
-          ),
-          ozalit_parca_approvals: dropParcaFromObject(
-            project.ozalit_parca_approvals ?? {},
-            rejectedParcalar,
-          ),
+          // Both halves of each gate's pair answer to `isOzalit`. They used to
+          // disagree: the rejection list was appended unconditionally while its
+          // approval sibling above was guarded, so an ozalit reject wrote a row
+          // into the DEMO ledger for a demo round that wasn't happening. A later
+          // demo round then rendered an APPROVED parça as "Reddedildi", because
+          // ParcaApprovalRow resolves `rejected` before `approved`. The ozalit
+          // pair below had the mirror-image bug — approvals dropped on a demo
+          // reject, rejections guarded.
+          demo_parca_rejections: isOzalit
+            ? project.demo_parca_rejections
+            : appendParcaRejections(
+              project.demo_parca_rejections ?? [],
+              rejectedParcalar,
+              actor,
+              actorName,
+              nowIso,
+              reason,
+              target,
+            ),
+          ozalit_parca_approvals: isOzalit
+            ? dropParcaFromObject(
+              project.ozalit_parca_approvals ?? {},
+              rejectedParcalar,
+            )
+            : project.ozalit_parca_approvals,
           ozalit_parca_rejections: isOzalit
             ? appendParcaRejections(
               project.ozalit_parca_rejections ?? [],
@@ -2497,10 +2563,43 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
         }),
   }
 
-  const counter = isOzalit
-    ? { ozalit_attempt: (project.ozalit_attempt ?? 0) + 1 }
-    : { demo_attempt: (project.demo_attempt ?? 0) + 1 }
+  // The project-level round counter belongs to a whole-sheet round. A
+  // per-parça reject bumps that parça's own `parca_state.attempt` instead
+  // (migration 074) — bumping the project's here would renumber the round for
+  // every parça that is still fine, and the spec-sheet snapshot lookup keys off
+  // that number (`fetchServerSnapshot`), so the untouched parçalar's sheets
+  // would stop resolving.
+  const counter = isPartial
+    ? {}
+    : isOzalit
+      ? { ozalit_attempt: (project.ozalit_attempt ?? 0) + 1 }
+      : { demo_attempt: (project.demo_attempt ?? 0) + 1 }
 
+  // Routing patches for the parçalar this reject sent away (migration 074).
+  // The FSM stays pure — these are handed to the service layer, which upserts
+  // them into `parca_state` inside the same transaction, the same way
+  // `updatedSubtasks` is handled.
+  const parcaState = isPartial
+    ? rejectedParcalar.map((parca) => ({
+        parca,
+        patch: parcaRejectPatch({
+          target,
+          reason,
+          actor,
+          actorName,
+          now: nowIso,
+          gate: parcaGateForStage(project.stage),
+          currentAttempt: parcaAttemptOf(project, parca),
+        }),
+      }))
+    : null
+
+  // Name the parçalar on the row (migration 073). Without this the timeline
+  // shows a bare reason — "Parça bazlı red" from the grid's default — on a
+  // project whose whole point is that its parçalar are handled separately, and
+  // the only record of WHICH parça was bounced sits in the *_parca_rejections
+  // JSONB that nothing renders. `parca` is the structured field; the note is
+  // what a human actually reads in the history list.
   const history = makeEntry(project, {
     action: 'reject',
     from_stage: project.stage,
@@ -2508,6 +2607,14 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
     done_by_name: actorName,
     reason,
     reject_target: target,
+    ...(isPartial
+      ? {
+          parca: rejectedParcalar.join(', '),
+          note: `${rejectedParcalar.join(', ')} reddedildi (${
+            target === 'matbaa' ? 'matbaaya' : 'tasarımcıya'
+          })`,
+        }
+      : {}),
   })
 
   if (toMatbaa) {
@@ -2515,15 +2622,28 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
     // are left untouched — but the attempt counter advances just like a
     // reject-to-designer, so the re-delivered demo/ozalit carries its own
     // number (matching the project timeline, which already counts it).
-    return { project: { ...base, ...counter }, history }
+    return { project: { ...base, ...counter }, history, parcaState }
   }
 
+  // Which subtasks the designer has to rework.
+  //
+  // On a per-parça reject the parça picks them: `subtasks.parca` (migration
+  // 075) ties each subtask to the parça it belongs to, so bouncing KİTAP flags
+  // KİTAP's subtasks and leaves KUTU's alone. Subtasks with no parça are
+  // project-wide and stay the leader's explicit `revizeIds` choice, which is
+  // also the whole-round path's only source.
   const selected = new Set(revizeIds ?? [])
   const baseSubs = (project.subtasks ?? []).filter((s) => s.kind !== 'revize')
-  const updatedSubs = baseSubs.map((s) => applyRevize(s, selected))
+  const rejectedSet = new Set(rejectedParcalar)
+  const updatedSubs = baseSubs.map((s) => (
+    isPartial && s.parca
+      ? (rejectedSet.has(s.parca) ? { ...s, needs_revize: true } : s)
+      : applyRevize(s, selected)
+  ))
   return {
     project: { ...base, ...counter, subtasks: updatedSubs, progress: subtaskProgress(updatedSubs) },
     history,
+    parcaState,
   }
 }
 

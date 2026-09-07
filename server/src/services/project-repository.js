@@ -634,8 +634,8 @@ export async function restoreProject(client, id) {
 export async function insertHistory(client, entry) {
   await client.query(
     `INSERT INTO stage_history
-       (project_id, from_stage, to_stage, action, event, reason, reject_target, pass_number, done_by, note, demo_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+       (project_id, from_stage, to_stage, action, event, reason, reject_target, pass_number, done_by, note, demo_id, parca)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
     [
       entry.project_id,
       entry.from_stage ?? null,
@@ -651,6 +651,9 @@ export async function insertHistory(client, entry) {
       // (migration 052) — the only way to tell two corrections of the same
       // round apart, since both share an attempt slot.
       entry.demo_id ?? null,
+      // The parçalar a per-parça reject bounced (migration 073), comma-joined.
+      // NULL on every other row, where "the whole project" is the meaning.
+      entry.parca ?? null,
     ],
   )
 }

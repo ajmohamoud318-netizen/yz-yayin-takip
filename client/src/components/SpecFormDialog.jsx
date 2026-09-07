@@ -103,7 +103,7 @@ export { stampSpecSignature } from '@/lib/spec-form-storage'
  *   ship a different file). The saved sheet still loads as-is (like a
  *   read-only viewer would) instead of the normal "fresh compose" reset.
  */
-export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, order = null, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, rejectContext = null }) {
+export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, order = null, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, startWorkLabel = null, rejectContext = null }) {
   const variant = VARIANTS[variantName]
   const { user } = useAuth()
   const { updateOne } = useProjectsStore()
@@ -971,6 +971,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           noChangesToSend={noChangesToSend}
           onStartWork={onStartWork}
           startingWork={startingWork}
+          startWorkLabel={startWorkLabel}
           authoringOrderOzalit={authoringOrderOzalit}
           offersOzalitRoute={offersProjectOzalitRoute}
           rejectContext={rejectContext}

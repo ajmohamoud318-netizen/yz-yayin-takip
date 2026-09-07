@@ -634,6 +634,42 @@ const projectsEkranDemoApprove = {
   body: projectsParcalarBody,
 }
 
+/**
+ * Per-parça routing endpoints (migration 074). The parça travels in the path
+ * because these act on exactly one — the matbaa starts KUTU, not "some
+ * parçalar" — which keeps them idempotent per parça and makes the URL the
+ * thing you can retry.
+ *
+ * maxLength mirrors parcaNames / sanitiseParcalar elsewhere: parça names are
+ * free text a leader typed into Ürün Bilgileri, not an enum.
+ */
+const projectsParcaParams = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id', 'parca'],
+    properties: { id: projectId, parca: { type: 'string', minLength: 1, maxLength: 200 } },
+  },
+}
+
+/**
+ * The designer's post-revize route choice for one parça, mirroring the
+ * project-level picker in computeAdvance's ozalit redo leg:
+ *   'physical' — the matbaa produces this parça again
+ *   'ekran'    — a screen check, straight back to the leader
+ * Required, exactly as the project-level one is: there is no sensible default,
+ * and guessing sends real work to the wrong desk.
+ */
+const projectsParcaRequestRound = {
+  ...projectsParcaParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['route'],
+    properties: { route: { type: 'string', enum: ['physical', 'ekran'] } },
+  },
+}
+
 const projectsBaskiOnayPrepare = {
   ...projectsIdParams,
   body: projectsParcalarBody,
@@ -983,6 +1019,12 @@ const projectsSubtasksPut = {
             // "inherit from the project". The PUT handler passes it through
             // to the subtasks.assigned_to column.
             assigned_to: { type: ['string', 'null'], maxLength: 64 },
+            // Which parça this subtask belongs to (migration 075). Optional;
+            // null/omitted means project-wide, which is what every existing
+            // row is. maxLength matches sanitiseParcalar and the parca_state
+            // column — parça names are free text from Ürün Bilgileri, not an
+            // enum, so this cannot be validated against a list.
+            parca: { type: ['string', 'null'], minLength: 1, maxLength: 200 },
           },
         },
       },
@@ -1267,6 +1309,8 @@ export const schemas = {
   projectsEkranDemoReject,
   projectsEkranDemoApprove,
   projectsBaskiOnayPrepare,
+  projectsParcaParams,
+  projectsParcaRequestRound,
   projectsChangeRequest,
   subtasksPatch,
   subtasksUpdates,

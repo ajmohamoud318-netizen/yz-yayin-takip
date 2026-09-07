@@ -158,6 +158,23 @@ export default function SubtaskCard({
                       {s.title}
                     </span>
                     <div className="flex flex-wrap items-center justify-end gap-1.5 pl-7 sm:pl-0">
+                      {/* Which parça this görev belongs to (migration 075).
+                          A chip rather than grouped sections: the leader's
+                          explicit `position` ordering is meaningful, and
+                          regrouping would silently override it. During a
+                          revision this is the line that answers "why is THIS
+                          one flagged and not that one" — the flagged rows
+                          already lead the list. */}
+                      {s.parca && (
+                        <span className={cn(
+                          'whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium',
+                          flagged
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-muted text-muted-foreground',
+                        )}>
+                          {s.parca}
+                        </span>
+                      )}
                       {flagged && canEdit && (
                         <button
                           type="button"

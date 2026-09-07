@@ -14,7 +14,9 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import DemoFormDialog from '@/components/DemoFormDialog'
+import ParcaJobGroup from '@/components/ParcaJobGroup'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
+import { useParcaQueue } from '@/hooks/useParcaQueue'
 import TalepSignDialog from '@/components/TalepSignDialog'
 import {
   canRespondDemoChange, canRespondOzalitChange,
@@ -62,6 +64,27 @@ export default function MatbaaIsleri() {
   // read. Same rule on Approvals.jsx and the project detail header.
   const [startingWork, setStartingWork] = useState(false)
 
+  // Per-parça jobs (migration 074) — parçalar this printer owes on projects
+  // whose OTHER parçalar may be elsewhere entirely. The stage-driven queues
+  // below cannot see these: the project sits at its approval gate the whole
+  // time, so `p.stage === 'demo_teslim'` never matches.
+  const { rows: parcaJobs, loading: parcaLoading, refetch: refetchParca } = useParcaQueue(
+    user?.role === 'printer',
+  )
+  const [parcaBusy, setParcaBusy] = useState(null)
+  // Grouped by project so the matbaa can take a whole sheet in one pass or
+  // pick parçalar off it individually — whatever they don't act on stays in
+  // the queue until they do.
+  const parcaGroups = useMemo(() => {
+    const byProject = new Map()
+    for (const row of parcaJobs) {
+      const g = byProject.get(row.project_id)
+      if (g) g.rows.push(row)
+      else byProject.set(row.project_id, { projectId: row.project_id, projectTitle: row.project_title, rows: [row] })
+    }
+    return [...byProject.values()]
+  }, [parcaJobs])
+
   // Sipariş queue (printer's sign-off step: matbaa_ozalit_yapiyor → imza_bekleniyor).
   // Same filter Approvals.jsx:73 uses — one rule, one place.
   useEffect(() => {
@@ -77,19 +100,32 @@ export default function MatbaaIsleri() {
     return () => { cancelled = true }
   }, [])
 
+  // Projects already broken out into per-parça cards above. A multi-parça
+  // round matches BOTH queues — the stage-driven one below still sees
+  // `demo_teslim` — and would otherwise be listed twice, once as a whole
+  // sheet and once as its parçalar, with two different sets of buttons acting
+  // on the same work. The parça cards win: they are strictly more precise.
+  const parcaProjectIds = useMemo(
+    () => new Set(parcaGroups.map((g) => g.projectId)),
+    [parcaGroups],
+  )
+
   // Same filter rules as Approvals.jsx:97-100 — keeping them in lockstep so
   // the sidebar badge and this list never disagree on what's pending.
   const demoQueue = useMemo(
-    () => projects.filter((p) => p.type === 'TR' && p.stage === 'demo_teslim'),
-    [projects],
+    () => projects.filter((p) => (
+      p.type === 'TR' && p.stage === 'demo_teslim' && !parcaProjectIds.has(p.id)
+    )),
+    [projects, parcaProjectIds],
   )
   const ozalitQueue = useMemo(
     () => projects.filter((p) => (
       p.type === 'TR'
       && p.stage === 'ozalit_teslim'
       && (!!p.ozalit_requested || p.reject_target === 'matbaa')
+      && !parcaProjectIds.has(p.id)
     )),
-    [projects],
+    [projects, parcaProjectIds],
   )
   const productionCount = useMemo(
     () => projects.filter((p) => p.stage === 'baskida' || p.stage === 'gumruk').length,
@@ -191,6 +227,82 @@ export default function MatbaaIsleri() {
     }
   }
 
+  /**
+   * Open the sheet for a per-parça job (migration 074).
+   *
+   * Never acts directly. The matbaa commits to producing what is on the sheet,
+   * so the sheet opens first and the action is stamped from its footer — the
+   * same rule the project-level "İşlemi Başlatın" follows. Because a per-parça
+   * round's snapshot carries only that parça in `_selectedComponents`, the
+   * sheet they open is already narrowed to their parça; no extra filtering.
+   */
+  function handleParcaAct(rowOrRows) {
+    const list = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows]
+    const first = list[0]
+    if (!first) return
+    const form = {
+      project: { id: first.project_id, title: first.project_title },
+      mode: 'view',
+      parca: list,
+    }
+    if (first.gate === 'ozalit') setOzalitForm(form)
+    else setDemoForm(form)
+  }
+
+  /**
+   * Stamp start or delivery for one parça or a whole group, from inside the
+   * sheet's footer.
+   *
+   * Sequential rather than parallel on purpose: each call takes the project
+   * row's lock (getProjectForUpdate), and delivering the LAST parça also
+   * advances the project — firing them at once would have them queue on that
+   * lock anyway, with the advance racing its own siblings.
+   */
+  async function handleParcaCommit(rows, closeForm) {
+    const list = Array.isArray(rows) ? rows : [rows]
+    if (list.length === 0) return
+    setParcaBusy(list[0].project_id)
+    const done = []
+    try {
+      for (const row of list) {
+        if (row.state === 'in_round') {
+          await api.deliverParca(row.project_id, row.parca)
+        } else {
+          await api.startParca(row.project_id, row.parca)
+        }
+        done.push(row.parca)
+      }
+      const verb = list[0].state === 'in_round' ? 'teslim edildi' : 'çalışmasına başlandı'
+      toast.success(`${done.join(', ')} ${verb}.`)
+      closeForm()
+    } catch (err) {
+      // Report what DID land — a half-finished bulk run must not look like a
+      // no-op, or the printer redoes work they already stamped.
+      if (done.length > 0) toast.error(`${done.join(', ')} kaydedildi, kalanı tamamlanamadı: ${err.message}`)
+      else toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setParcaBusy(null)
+      refetchParca()
+    }
+  }
+
+  /**
+   * What the sheet's footer button promises for a per-parça job.
+   *
+   * Names every parça it is about to stamp — a bulk "Hepsini" opened this sheet
+   * and the printer has to see, on the button itself, exactly which parçalar it
+   * covers before committing.
+   */
+  function parcaFooterLabel(parcaOrList) {
+    if (!parcaOrList) return null
+    const list = Array.isArray(parcaOrList) ? parcaOrList : [parcaOrList]
+    if (list.length === 0) return null
+    const names = list.map((r) => r.parca).join(', ')
+    return list[0].state === 'in_round'
+      ? `${names} · Teslim Edin`
+      : `${names} · İşlemi Başlatın`
+  }
+
   // ----- Sections --------------------------------------------------------
 
   function renderPendingRow(item, sub) {
@@ -271,7 +383,7 @@ export default function MatbaaIsleri() {
     )
   }
 
-  const pendingCount = demoQueue.length + ozalitQueue.length + orders.length
+  const pendingCount = demoQueue.length + ozalitQueue.length + orders.length + parcaJobs.length
 
   return (
     <>
@@ -288,7 +400,7 @@ export default function MatbaaIsleri() {
           tone="amber"
           count={pendingCount}
         >
-          {loading || ordersLoading ? (
+          {loading || ordersLoading || parcaLoading ? (
             <div className="space-y-2.5">
               {[0, 1, 2].map((i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
             </div>
@@ -300,6 +412,21 @@ export default function MatbaaIsleri() {
             />
           ) : (
             <div className="space-y-2.5">
+              {/* Per-parça jobs first: a single parça owed on an otherwise
+                  finished sheet is the thing most likely to be holding a whole
+                  project up. */}
+              {parcaGroups.map((g) => (
+                <ParcaJobGroup
+                  key={g.projectId}
+                  projectId={g.projectId}
+                  projectTitle={g.projectTitle}
+                  rows={g.rows}
+                  busy={parcaBusy === g.projectId}
+                  onAct={handleParcaAct}
+                  onActAll={handleParcaAct}
+                  onNavigate={(projectId) => navigate(`/projects/${projectId}`)}
+                />
+              ))}
               {demoQueue.map((p) => renderPendingRow(p, 'demo'))}
               {ozalitQueue.map((p) => renderPendingRow(p, 'ozalit'))}
               {orders.map((o) => renderPendingRow(o, 'siparis'))}
@@ -341,8 +468,18 @@ export default function MatbaaIsleri() {
         onOpenChange={(v) => setDemoForm(v ? demoForm : null)}
         project={demoForm?.project}
         mode={demoForm?.mode ?? 'advance'}
-        onStartWork={demoForm?.startWork ? () => handleStartWork(demoForm.project, 'demo') : undefined}
-        startingWork={startingWork}
+        // Three ways this footer button is used, in priority order: a
+        // per-parça job stamps that parça (migration 074), a project-level
+        // job stamps the whole sheet, and everything else has no button.
+        onStartWork={
+          demoForm?.parca
+            ? () => handleParcaCommit(demoForm.parca, () => setDemoForm(null))
+            : demoForm?.startWork
+              ? () => handleStartWork(demoForm.project, 'demo')
+              : undefined
+        }
+        startWorkLabel={parcaFooterLabel(demoForm?.parca)}
+        startingWork={startingWork || !!parcaBusy}
         onDone={() => setDemoForm(null)}
       />
       <OzalitFormDialog
@@ -350,8 +487,15 @@ export default function MatbaaIsleri() {
         onOpenChange={(v) => setOzalitForm(v ? ozalitForm : null)}
         project={ozalitForm?.project}
         mode={ozalitForm?.mode ?? 'advance'}
-        onStartWork={ozalitForm?.startWork ? () => handleStartWork(ozalitForm.project, 'ozalit') : undefined}
-        startingWork={startingWork}
+        onStartWork={
+          ozalitForm?.parca
+            ? () => handleParcaCommit(ozalitForm.parca, () => setOzalitForm(null))
+            : ozalitForm?.startWork
+              ? () => handleStartWork(ozalitForm.project, 'ozalit')
+              : undefined
+        }
+        startWorkLabel={parcaFooterLabel(ozalitForm?.parca)}
+        startingWork={startingWork || !!parcaBusy}
         onDone={() => setOzalitForm(null)}
       />
       <TalepSignDialog

@@ -30,6 +30,7 @@ export default function SpecFormFooter({
   noChangesToSend,
   onStartWork,
   startingWork,
+  startWorkLabel = null,
   authoringOrderOzalit,
   offersOzalitRoute,
   rejectContext,
@@ -78,10 +79,15 @@ export default function SpecFormFooter({
               : (notifyEdit ? 'Düzeltmeyi Matbaaya Gönderin' : 'Taslağı Kaydedin')}
         </Button>
       )}
+      {/* The matbaa's commit button. `startWorkLabel` overrides the copy for a
+          per-parça job (migration 074), where the same slot is reused for
+          "KUTU Teslim Edin" — the parça's delivery goes through its own
+          endpoint, not the project-level advance, but it must still be
+          stamped from inside the sheet the printer is looking at. */}
       {mode === 'view' && onStartWork && (
         <Button variant="success" disabled={startingWork} onClick={onStartWork}>
           <CheckCircle2 className="h-4 w-4" />
-          {startingWork ? 'İşleniyor…' : 'İşlemi Başlatın'}
+          {startingWork ? 'İşleniyor…' : (startWorkLabel ?? 'İşlemi Başlatın')}
         </Button>
       )}
       {/* Two resubmit after a reject-to-designer. The order pipeline's route

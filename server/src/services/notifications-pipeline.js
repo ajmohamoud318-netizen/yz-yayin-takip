@@ -374,7 +374,7 @@ export async function notifyEkranDemoRejected(client, { project, actor, assignee
  * approve / receive routes do); otherwise we resolve it here (reject route).
  */
 export async function notifyProjectTransition(client, {
-  project, fromStage, toStage, action, actor, assignees,
+  project, fromStage, toStage, action, actor, assignees, parca = null, rejectTarget = null,
 }) {
   const designers = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
   const leaders = await activeUserIdsByRole(client, 'team_leader')
@@ -383,11 +383,44 @@ export async function notifyProjectTransition(client, {
   const base = { actorId: actor?.id, title: project.title, projectId: project.id,
     event: { type: 'project.transition', aggregateId: project.id } }
 
+  // A PER-PARÇA reject (migration 074). Caught before everything else, and
+  // keyed on the reject itself rather than on where the project ended up,
+  // because a per-parça reject deliberately leaves the stage where it was.
+  //
+  // That is exactly what makes it dangerous here. With `toStage === fromStage`
+  // it matches neither reject branch below and falls into the stage switch,
+  // where `case 'demo_onay'` announces "Matbaa demoyu teslim etti" — a
+  // delivery — to the very designer whose work was just sent back. Same
+  // failure the ozalit branch below documents, reached by a different road.
+  //
+  // The parça goes to exactly one desk, so exactly one party is told.
+  if (action === 'reject' && parca) {
+    const toMatbaa = rejectTarget === 'matbaa'
+    return emit(client, {
+      ...base,
+      recipientIds: toMatbaa ? printers : designers,
+      type: 'parca_rejected',
+      tone: 'rose',
+      body: toMatbaa
+        ? `${parca} yeniden basılacak`
+        : `${parca} reddedildi, revizyon gerekiyor`,
+      link: toMatbaa ? `/projects/${project.id}?action=teslim` : `/projects/${project.id}`,
+    })
+  }
+
   // Rejection back to Tasarım → the designer has to rework.
+  //
+  // `parca` is set only by a per-parça reject (migration 073). Naming it
+  // matters more here than anywhere else: on a multi-parça round "revizyon
+  // gerekiyor" tells a designer their whole project came back, when in fact
+  // one parça did and the rest are still signed off.
   if (action === 'reject' && toStage === 'tasarim') {
     return emit(client, {
       ...base, recipientIds: designers, type: 'rejection', tone: 'rose',
-      body: 'Revizyon gerekiyor, tasarıma geri döndü', link: `/projects/${project.id}`,
+      body: parca
+        ? `${parca} reddedildi, revizyon gerekiyor`
+        : 'Revizyon gerekiyor, tasarıma geri döndü',
+      link: `/projects/${project.id}`,
     })
   }
 
@@ -401,7 +434,10 @@ export async function notifyProjectTransition(client, {
   if (action === 'reject' && toStage === 'ozalit_onay') {
     return emit(client, {
       ...base, recipientIds: designers, type: 'rejection', tone: 'rose',
-      body: 'Ozalit reddedildi, revizyon gerekiyor', link: `/projects/${project.id}`,
+      body: parca
+        ? `${parca} ozaliti reddedildi, revizyon gerekiyor`
+        : 'Ozalit reddedildi, revizyon gerekiyor',
+      link: `/projects/${project.id}`,
     })
   }
 
@@ -444,7 +480,11 @@ export async function notifyProjectTransition(client, {
       // form, so skip the extra tap.
       return emit(client, {
         ...base, recipientIds: printers, type: 'demo_delivery_pending', tone: 'blue',
-        body: 'Demo teslimi bekleniyor', link: `/projects/${project.id}?action=teslim`,
+        // Whole-sheet delivery only. A per-parça handover never reaches here —
+        // it returns from the per-parça branch above, because it leaves the
+        // stage untouched and so never enters this switch.
+        body: 'Demo teslimi bekleniyor',
+        link: `/projects/${project.id}?action=teslim`,
       })
 
     // Matbaa delivered the demo. NOT an approval ping: nobody can approve yet
@@ -468,7 +508,8 @@ export async function notifyProjectTransition(client, {
         // Same ?action=teslim handoff as demo_teslim above.
         return emit(client, {
           ...base, recipientIds: printers, type: 'ozalit_delivery_pending', tone: 'blue',
-          body: 'Ozalit teslimi bekleniyor', link: `/projects/${project.id}?action=teslim`,
+          body: 'Ozalit teslimi bekleniyor',
+          link: `/projects/${project.id}?action=teslim`,
         })
       }
       return emit(client, {

@@ -486,3 +486,135 @@ test('every order step emits a tone the notifications CHECK accepts', async () =
     }
   }
 })
+
+/**
+ * Rejection notifications (Phase 0 fix).
+ *
+ * These two branches were unreachable in production. `dispatchProjectNotification`
+ * read `project.__prevAction`, a field nothing in the codebase ever assigned, so
+ * every transition arrived here as an 'advance'. The consequences were live and
+ * user-visible:
+ *
+ *   • a demo rejected to the designer lands on `tasarim`, which matches no case
+ *     in the stage switch → `default: return 0` → the designer was told nothing;
+ *   • an ozalit rejected to the designer stays on `ozalit_onay` and fell into
+ *     `case 'ozalit_onay'`, announcing "Matbaa ozaliti teslim etti" — a delivery,
+ *     when their work had just been sent back. That is precisely the hazard the
+ *     comment above that branch warns about.
+ *
+ * The dispatcher now takes the action off the history row the same event wrote.
+ * These tests pin the resulting copy, including the per-parça naming.
+ */
+
+test('a rejected demo tells the designers, and nobody hears about a delivery', async () => {
+  const client = fakeClient()
+  await notifyProjectTransition(client, {
+    project, fromStage: 'demo_onay', toStage: 'tasarim', action: 'reject',
+    actor: { id: 'u-ayse', name: 'Ayşenur' }, assignees,
+  })
+  assert.deepEqual(client.rows.map((r) => r.userId).sort(), ['u-aylin', 'u-feyza'])
+  for (const r of client.rows) {
+    assert.equal(r.type, 'rejection')
+    assert.match(r.body, /[Rr]evizyon/)
+  }
+})
+
+test('a rejected ozalit never announces a delivery that did not happen', async () => {
+  const client = fakeClient()
+  await notifyProjectTransition(client, {
+    project, fromStage: 'ozalit_onay', toStage: 'ozalit_onay', action: 'reject',
+    actor: { id: 'u-ayse', name: 'Ayşenur' }, assignees,
+  })
+  assert.ok(client.rows.length > 0, 'the designers must be told')
+  for (const r of client.rows) {
+    assert.equal(r.type, 'rejection')
+    assert.ok(
+      !/teslim etti/.test(r.body),
+      `told the designer the matbaa delivered a proof, on a reject: ${r.body}`,
+    )
+  }
+})
+
+test('a per-parça reject names the parça instead of blaming the whole project', async () => {
+  const client = fakeClient()
+  await notifyProjectTransition(client, {
+    project, fromStage: 'demo_onay', toStage: 'tasarim', action: 'reject',
+    actor: { id: 'u-ayse', name: 'Ayşenur' }, assignees, parca: 'KUTU',
+  })
+  for (const r of client.rows) {
+    assert.match(r.body, /KUTU/, `did not say which parça came back: ${r.body}`)
+  }
+})
+
+test('a whole-round reject to the matbaa still asks for the sheet', async () => {
+  // No parça: the WHOLE sheet goes back, the stage moves to demo_teslim, and
+  // the printer gets the ordinary delivery ping. The per-parça equivalent
+  // never reaches this branch — see the per-parça tests below.
+  const client = fakeClient()
+  await notifyProjectTransition(client, {
+    project, fromStage: 'demo_onay', toStage: 'demo_teslim', action: 'reject',
+    actor: { id: 'u-ayse', name: 'Ayşenur' }, assignees,
+  })
+  const printerRow = client.rows.find((r) => r.type === 'demo_delivery_pending')
+  assert.ok(printerRow, 'the matbaa must be asked for the redelivery')
+  assert.equal(printerRow.body, 'Demo teslimi bekleniyor')
+})
+
+test('a whole-round reject keeps the original project-wide copy', async () => {
+  const client = fakeClient()
+  await notifyProjectTransition(client, {
+    project, fromStage: 'demo_onay', toStage: 'tasarim', action: 'reject',
+    actor: { id: 'u-ayse', name: 'Ayşenur' }, assignees,
+  })
+  for (const r of client.rows) {
+    assert.equal(r.body, 'Revizyon gerekiyor, tasarıma geri döndü')
+  }
+})
+
+/**
+ * A per-parça reject (migration 074) leaves the project's stage untouched, so
+ * `toStage === fromStage`. That makes it invisible to both reject branches
+ * above — it would fall into the stage switch and announce a DELIVERY to the
+ * designer whose work was just sent back. Same failure mode the ozalit branch
+ * documents, reached by a different road, and caught by an end-to-end run
+ * rather than by either branch's own test.
+ */
+test('a per-parça reject never announces a delivery, even though the stage held', async () => {
+  const client = fakeClient()
+  await notifyProjectTransition(client, {
+    project, fromStage: 'demo_onay', toStage: 'demo_onay', action: 'reject',
+    actor: { id: 'u-ayse', name: 'Ayşenur' }, assignees,
+    parca: 'KİTAP', rejectTarget: 'designer',
+  })
+  assert.ok(client.rows.length > 0, 'the designers must be told')
+  for (const r of client.rows) {
+    assert.equal(r.type, 'parca_rejected')
+    assert.match(r.body, /KİTAP/)
+    assert.ok(!/teslim etti/.test(r.body), `announced a delivery on a reject: ${r.body}`)
+  }
+})
+
+test('a per-parça reject tells only the responsible party', async () => {
+  // To the designer: the matbaa has nothing to do and must not be paged.
+  const toDesigner = fakeClient()
+  await notifyProjectTransition(toDesigner, {
+    project, fromStage: 'demo_onay', toStage: 'demo_onay', action: 'reject',
+    actor: { id: 'u-ayse', name: 'Ayşenur' }, assignees,
+    parca: 'KİTAP', rejectTarget: 'designer',
+  })
+  assert.deepEqual(toDesigner.rows.map((r) => r.userId).sort(), ['u-aylin', 'u-feyza'])
+
+  // To the matbaa: the designer's work stands, so they hear nothing.
+  const toMatbaa = fakeClient()
+  await notifyProjectTransition(toMatbaa, {
+    project, fromStage: 'demo_onay', toStage: 'demo_onay', action: 'reject',
+    actor: { id: 'u-ayse', name: 'Ayşenur' }, assignees,
+    parca: 'KUTU', rejectTarget: 'matbaa',
+  })
+  assert.ok(toMatbaa.rows.length > 0, 'the matbaa must be told')
+  assert.ok(
+    !toMatbaa.rows.some((r) => ['u-aylin', 'u-feyza'].includes(r.userId)),
+    'the designer has nothing to do on a print fault',
+  )
+  for (const r of toMatbaa.rows) assert.match(r.body, /KUTU/)
+})

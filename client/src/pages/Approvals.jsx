@@ -21,6 +21,7 @@ import BaskiOnayFormDialog from '@/components/BaskiOnayFormDialog'
 import TalepSignDialog from '@/components/TalepSignDialog'
 import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
+import ParcaRejectDialog from '@/components/ParcaRejectDialog'
 import { ledgerKindForStage, parcaRoundDecidable } from '@/hooks/useParcaSnapshot'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
 import {
@@ -71,6 +72,8 @@ export default function Approvals({ tab = 'demo' }) {
   // is in flight, so the same parça can't get double-clicked by the bulk
   // shortcut and the per-row button.
   const [parcaBusyId, setParcaBusyId] = useState(null)
+  // { project, parcalar } while the per-parça reject dialog is open; null = closed.
+  const [parcaReject, setParcaReject] = useState(null)
 
   const isPrinter = user?.role === 'printer'
   const isLeader = user?.role === 'team_leader'
@@ -285,31 +288,68 @@ export default function Approvals({ tab = 'demo' }) {
     }
   }
 
-  // Per-parça reject (migrations 068/069/070): the leader picks which
-  // parçalar to bounce. For the queue UI we don't prompt for a reason +
-  // target inline; the leader falls back to the existing ApprovalDialog
-  // (whole-round) when they want to add narrative.
-  async function handleRejectParcalar(project, parcalar) {
-    if (!project) return
+  /**
+   * Per-parça reject (migration 074).
+   *
+   * This used to fire straight off the grid's thumbs-down with a hard-coded
+   * reason ("Parça bazlı red") and a hard-coded target ('designer'). Both were
+   * wrong: the leader could not route a printing fault to the matbaa, and the
+   * timeline recorded a reason nobody wrote. The dialog now asks for the
+   * responsible party — the whole point of per-parça routing — and the reason
+   * the reject schema requires anyway.
+   */
+  async function handleRejectParcalar(project, parcalar, reason, target) {
+    if (!project) return null
     setParcaBusyId(project.id)
     try {
-      // Default target is the designer — the round most commonly needs a
-      // redelivery of the offending parça. The "Hepsini Reddedin" button
-      // passes `null` which the server maps to whole-round reject.
-      const updated = await api.rejectProject(
-        project.id,
-        'Parça bazlı red',
-        [],
-        'designer',
-        parcalar,
-      )
+      const updated = await api.rejectProject(project.id, reason, [], target, parcalar)
       updateOne(updated)
-      toast.success('Red kaydedildi.')
+      toast.success(target === 'matbaa' ? 'Parça matbaaya gönderildi.' : 'Parça tasarımcıya gönderildi.')
+      return updated
     } catch (err) {
       toast.error(err.message || 'İşlem tamamlanamadı.')
+      return null
     } finally {
       setParcaBusyId(null)
     }
+  }
+
+  /**
+   * Sheet-first for per-parça decisions (migration 074).
+   *
+   * Same rule the rest of the app follows: you read the sheet before you commit
+   * to it. The matbaa's İşlemi Başlatın has never been a bare confirm, and the
+   * project-level Onayla at ozalit_onay opens the form to sign — so the
+   * per-parça thumbs-up must not be the one place a leader signs blind.
+   *
+   * { project, action: 'approve' | 'reject', parcalar, sub }
+   */
+  function openParcaSheet(project, action, parcalar, sub) {
+    const form = { project, mode: 'view', parcaAction: { action, parcalar, sub } }
+    if (sub === 'ozalit') setOzalitForm(form)
+    else setDemoForm(form)
+  }
+
+  /** Run the decision from the sheet's footer, once it has been read. */
+  async function commitParcaSheet(form, close) {
+    const pending = form?.parcaAction
+    if (!pending) return
+    close()
+    if (pending.action === 'approve') {
+      await handleApproveParcalar(form.project, pending.parcalar, pending.sub)
+    } else {
+      // Reject needs a reason and a responsible party — neither lives on the
+      // sheet, so it hands off to the dialog that carries them.
+      setParcaReject({ project: form.project, parcalar: pending.parcalar })
+    }
+  }
+
+  /** What the footer button promises, naming every parça it covers. */
+  function parcaSheetLabel(form) {
+    const p = form?.parcaAction
+    if (!p) return null
+    const names = (p.parcalar ?? []).join(', ') || 'Tüm parçalar'
+    return `${names} · ${p.action === 'approve' ? 'Onaylayın' : 'Reddedin'}`
   }
 
   async function handlePrepareBaskiParcalar(project, parcalar) {
@@ -436,8 +476,8 @@ export default function Approvals({ tab = 'demo' }) {
               showParcaGrid={showParcaGrid}
               snapshotParcalar={snap}
               parcaBusy={parcaBusyId === p.id}
-              onApproveParcalar={(parcalar) => handleApproveParcalar(p, parcalar, sub)}
-              onRejectParcalar={(parcalar) => handleRejectParcalar(p, parcalar)}
+              onApproveParcalar={(parcalar) => openParcaSheet(p, 'approve', parcalar, sub)}
+              onRejectParcalar={(parcalar) => openParcaSheet(p, 'reject', parcalar, sub)}
               onPrepareBaskiParcalar={(parcalar) => handlePrepareBaskiParcalar(p, parcalar)}
               onApprove={() => {
                 if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
@@ -529,8 +569,15 @@ export default function Approvals({ tab = 'demo' }) {
         onOpenChange={(v) => setDemoForm(v ? demoForm : null)}
         project={demoForm?.project}
         mode={demoForm?.mode ?? 'advance'}
-        onStartWork={demoForm?.startWork ? () => handleStartWork(demoForm.project, 'demo') : undefined}
-        startingWork={startingWork}
+        onStartWork={
+          demoForm?.parcaAction
+            ? () => commitParcaSheet(demoForm, () => setDemoForm(null))
+            : demoForm?.startWork
+              ? () => handleStartWork(demoForm.project, 'demo')
+              : undefined
+        }
+        startWorkLabel={parcaSheetLabel(demoForm)}
+        startingWork={startingWork || parcaBusyId === demoForm?.project?.id}
         onDone={onDone}
       />
       <OzalitFormDialog
@@ -538,8 +585,15 @@ export default function Approvals({ tab = 'demo' }) {
         onOpenChange={(v) => setOzalitForm(v ? ozalitForm : null)}
         project={ozalitForm?.project}
         mode={ozalitForm?.mode ?? 'approve'}
-        onStartWork={ozalitForm?.startWork ? () => handleStartWork(ozalitForm.project, 'ozalit') : undefined}
-        startingWork={startingWork}
+        onStartWork={
+          ozalitForm?.parcaAction
+            ? () => commitParcaSheet(ozalitForm, () => setOzalitForm(null))
+            : ozalitForm?.startWork
+              ? () => handleStartWork(ozalitForm.project, 'ozalit')
+              : undefined
+        }
+        startWorkLabel={parcaSheetLabel(ozalitForm)}
+        startingWork={startingWork || parcaBusyId === ozalitForm?.project?.id}
         onDone={onDone}
       />
       <BaskiOnayFormDialog
@@ -554,6 +608,20 @@ export default function Approvals({ tab = 'demo' }) {
         onOpenChange={(v) => !v && setEkranDemoRejectFor(null)}
         project={ekranDemoRejectFor}
         onDone={() => setEkranDemoRejectFor(null)}
+      />
+
+      {/* Per-parça reject (migration 074) — same dialog the project page uses,
+          so the leader answers the same two questions wherever they are. */}
+      <ParcaRejectDialog
+        open={!!parcaReject}
+        onOpenChange={(v) => !v && setParcaReject(null)}
+        project={parcaReject?.project}
+        parcalar={parcaReject?.parcalar ?? []}
+        busy={parcaBusyId === parcaReject?.project?.id}
+        onConfirm={async (parcalar, reason, target) => {
+          const updated = await handleRejectParcalar(parcaReject.project, parcalar, reason, target)
+          if (updated) setParcaReject(null)
+        }}
       />
     </>
   )

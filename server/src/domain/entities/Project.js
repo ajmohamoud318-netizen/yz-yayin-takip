@@ -391,6 +391,11 @@ export class Project {
       notification: {
         kind: 'transition',
       },
+      // Per-parça routing rows (migration 074) — which parçalar this reject
+      // handed to whom. Null on a whole-round reject. The FSM stays pure, so
+      // the service upserts these into `parca_state` in the same transaction,
+      // exactly as it does for `updatedSubtasks` below.
+      parcaState: result.parcaState ?? null,
       // Only the designer route actually mutates subtasks. The matbaa
       // route leaves them alone (same values as before reject), so the
       // service's `after` hook has nothing to write — `updatedSubtasks`

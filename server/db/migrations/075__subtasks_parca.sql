@@ -1,0 +1,37 @@
+-- 075 — Tie a subtask to the parça it belongs to
+--
+-- Subtasks and parçalar have always described the same work from two angles.
+-- A project has subtasks ("Kapak", "İç Sayfalar", "Kutu") and parçalar
+-- (the KİTAP, the KUTU, the KILAVUZ), and NewProjectDialog even seeds the
+-- KUTU/KILAVUZ parçalar from the ticked Kutu/Kılavuz subtasks at create time —
+-- then immediately forgets the correspondence. Nothing links a row to a parça
+-- afterwards: renaming a parça, adding one, or adding a subtask changes
+-- neither side.
+--
+-- That was tolerable while a reject was a whole-project event. With per-parça
+-- routing (migration 074) it is not: rejecting KİTAP has to tell the designer
+-- WHICH work to redo, and without this column the only options are to flag
+-- every subtask (implying the whole project came back) or to flag none
+-- (leaving them to guess). Both undercut the point of routing one parça.
+--
+-- NULL means project-wide, which is what every existing row is and what a
+-- subtask like "Yazılım" stays. Only rows a leader explicitly assigns to a
+-- parça get a value, so nothing is reinterpreted by this migration: a NULL
+-- subtask keeps answering to the leader's explicit revizeIds choice exactly as
+-- it does today.
+--
+-- TEXT rather than a FK, matching migration 074: parçalar are name-keyed
+-- strings everywhere in this codebase (sanitiseParcalar in
+-- domain/transitions.js, parcaNames in the client's domain/services/pipeline.js)
+-- and live inside product_info.components — there is no parça table to point
+-- at. A renamed parça therefore orphans the link rather than cascading, which
+-- is the safer failure: the subtask falls back to project-wide instead of
+-- silently following a rename the leader may not have intended.
+--
+-- No index. Subtasks are always read by project (idx_subtasks_project) and the
+-- per-parça filter runs over one project's handful of rows in memory.
+--
+-- Idempotent so re-running on a seeded DB is a no-op.
+
+ALTER TABLE subtasks
+  ADD COLUMN IF NOT EXISTS parca TEXT;
