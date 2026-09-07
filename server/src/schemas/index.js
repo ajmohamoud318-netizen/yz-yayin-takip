@@ -865,25 +865,25 @@ const subtasksDesignerBatchCreate = {
     required: ['designer_id', 'pages', 'start_page'],
     properties: {
       designer_id: { type: 'string', minLength: 1, maxLength: 64 },
-      // Fastify v4's ajv coerces only when `type` is an array of types;
-      // a bare `type: 'integer'` against `"12"` rejects with
-      // FST_ERR_VALIDATION before the handler runs. The regex pins
-      // 1–100000; `Number()` in the handler turns the validated string
-      // back into a number (and the column CHECK rejects 0 / negative).
+      // Fastify v5's ajv runs in strict mode by default; union types
+      // like `type: ['integer', 'string']` are rejected at route-
+      // registration time with "use allowUnionTypes to allow union
+      // type keyword (strictTypes)", which silently fails the route
+      // mount and turns every request into a 404. The handler does
+      // the string→number coercion via `Number()` + `Math.floor()`
+      // and validates via the route's own badRequest() paths, so a
+      // plain `type: 'integer'` here is enough.
       pages: {
-        type: ['integer', 'string'],
-        pattern: '^[1-9][0-9]{0,5}$',
+        type: 'integer',
         minimum: 1,
         maximum: 100000,
       },
       // Migration 068 — first page in the batch's range. The range
       // [start_page, start_page + pages - 1] must fit in total_pages
       // and not overlap any existing batch's range on this subtask;
-      // both are enforced in the route handler below. Same coerce
-      // pattern as `pages` — the handler converts with `Number()`.
+      // both are enforced in the route handler below.
       start_page: {
-        type: ['integer', 'string'],
-        pattern: '^[1-9][0-9]{0,5}$',
+        type: 'integer',
         minimum: 1,
         maximum: 100000,
       },
