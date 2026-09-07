@@ -499,17 +499,11 @@ export async function subtaskRoutes(fastify) {
           )
           finalRows.push(rows[0])
           keptIds.push(rows[0].id)
-          // migration 067 — for a brand-new kind='pages' subtask the
-          // designer-counts slot is pre-created here so the SPA
-          // doesn't have to send a zero-write first to materialise it.
-          if (rows[0].kind === 'pages' && Number(rows[0].total_pages) > 0 && subAssignee) {
-            await client.query(
-              `INSERT INTO subtask_designer_counts (subtask_id, designer_id, pages_done)
-               VALUES ($1, $2, 0)
-               ON CONFLICT (subtask_id, designer_id) DO NOTHING`,
-              [rows[0].id, subAssignee],
-            )
-          }
+          // No designer-work row is seeded for a brand-new kind='pages'
+          // subtask. Migration 071 replaced the per-designer counter with
+          // an append-only batch log (CHECK pages > 0), so there is no
+          // empty slot to materialise — the first /designer-batches POST
+          // creates the first row.
         }
       }
 

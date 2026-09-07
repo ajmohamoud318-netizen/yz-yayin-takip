@@ -100,22 +100,12 @@ export async function createProject(actor, body) {
         [project.id, s.title, s.kind ?? 'check', s.total_pages ?? null, s.total_stickers ?? null, subAssignee, index],
       )
       subRows.push(rows[0])
-      if (rows[0].kind === 'pages' && Number(rows[0].total_pages) > 0 && subAssignee) {
-        // migration 067 — pre-create the subtask_designer_counts row so the
-        // designer's "I did X / Y" input shows up ready on first paint
-        // instead of an empty field that only materialises on first save.
-        // The trigger recomputes subtasks.pages_done / is_done on the
-        // INSERT — both are zero, so the recompute is a no-op-and-redundant
-        // UPDATE that we eat on purpose to keep this call site trivial.
-        // ON CONFLICT keeps the create idempotent if a future flow re-seeds
-        // the same subtask (e.g. the legacy import path lands here twice).
-        await client.query(
-          `INSERT INTO subtask_designer_counts (subtask_id, designer_id, pages_done)
-           VALUES ($1, $2, 0)
-           ON CONFLICT (subtask_id, designer_id) DO NOTHING`,
-          [rows[0].id, subAssignee],
-        )
-      }
+      // No designer-work row is seeded for kind='pages'. Migration 071
+      // replaced the one-row-per-designer counter with an append-only
+      // batch log (`subtask_designer_batches`, CHECK pages > 0), so there
+      // is no empty slot to pre-create — a brand-new subtask legitimately
+      // has zero batches, and `listProjectSubtasks` hands the SPA
+      // `designer_batches: []` for it.
     }
     const progress = subtaskProgress(subRows)
     // SQL-level OCC guard: the freshly-inserted project's version is 0
