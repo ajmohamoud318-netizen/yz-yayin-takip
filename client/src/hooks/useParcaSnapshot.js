@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { VARIANTS, specVariantForStage } from '@/lib/spec-form-variants'
 import { fetchServerSnapshot } from '@/lib/spec-form-storage'
-import { parcaNames } from '@/domain'
+import { parcaNames, ozalitDecidable } from '@/domain'
 
 /**
  * The parça list the current approval gate is standing on (migrations
@@ -75,4 +75,31 @@ export function ledgerKindForStage(stage) {
   if (stage === 'cin_baski_onay') return 'cin_baski_onay'
   if (stage === 'baski_onay') return 'baski_onay'
   return 'demo'
+}
+
+/**
+ * Can this round be signed off at all right now?
+ *
+ * The per-parça grid is an approval surface, so it must answer to the same
+ * receipt gates `computeApproval` enforces server-side — otherwise it renders
+ * Onayla/Reddet on a round the server refuses, and the leader gets a 400
+ * ("Önce ozalit \"Teslim Alındı\" olarak işaretlenmelidir.") from a button that
+ * looked live. The whole-round buttons already lead with "Teslim Alın" in that
+ * state; the grid has to stay out of the way for the same reason.
+ *
+ *  • demo_onay / cin_demo_onay — needs `demo_received` (transitions.js#L833).
+ *  • ozalit_onay — needs a received physical proof OR a screen round;
+ *    `ozalitDecidable` is the client's copy of that rule, and it also
+ *    excludes the in-place redo leg, where a rejected proof is parked on the
+ *    stage while the designer revizes and nothing is signable.
+ *  • baskı onayı — no receipt step at all; the sheet is authored in place.
+ *
+ * @param {{ stage?: string, demo_received?: boolean } | null | undefined} project
+ */
+export function parcaRoundDecidable(project) {
+  const stage = project?.stage
+  if (stage === 'demo_onay' || stage === 'cin_demo_onay') return project?.demo_received === true
+  if (stage === 'ozalit_onay') return ozalitDecidable(project)
+  if (stage === 'baski_onay' || stage === 'cin_baski_onay') return true
+  return false
 }

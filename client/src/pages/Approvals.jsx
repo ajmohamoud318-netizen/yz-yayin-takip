@@ -21,7 +21,7 @@ import BaskiOnayFormDialog from '@/components/BaskiOnayFormDialog'
 import TalepSignDialog from '@/components/TalepSignDialog'
 import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
-import { ledgerKindForStage } from '@/hooks/useParcaSnapshot'
+import { ledgerKindForStage, parcaRoundDecidable } from '@/hooks/useParcaSnapshot'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
 import {
   canRejectAtStage, isDemoApprover, isOzalitApprover, ozalitLeaderApproved,
@@ -407,7 +407,10 @@ export default function Approvals({ tab = 'demo' }) {
             ? 'demo'
             : sub === 'ozalit' ? 'ozalit' : 'baski_onay'
           const snap = snapshotFor(p.id, snapshotKind)
-          const showParcaGrid = snap.length >= 2 && (
+          // Same receipt gate the single Onayla button answers to: the row
+          // leads with "Teslim Alın" while a proof is undelivered, so the
+          // grid must not offer a sign-off the server would refuse.
+          const showParcaGrid = snap.length >= 2 && parcaRoundDecidable(p) && (
             sub === 'demo'
               ? canActOnDemo
               : sub === 'ozalit'

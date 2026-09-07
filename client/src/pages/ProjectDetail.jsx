@@ -26,7 +26,7 @@ import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
 import { isDemoApprover, orderOzalitFormMode } from '@/domain'
 
 import { useProjectDetail } from '@/hooks/useProjectDetail'
-import { useParcaSnapshot } from '@/hooks/useParcaSnapshot'
+import { useParcaSnapshot, parcaRoundDecidable } from '@/hooks/useParcaSnapshot'
 import ProjectDetailHeader from '@/components/ProjectDetailHeader'
 import DesignerPanel from '@/components/DesignerPanel'
 import SubtaskCard from '@/components/SubtaskCard'
@@ -78,7 +78,10 @@ export default function ProjectDetail() {
   // ozalit is leader-or-designer (the server enforces leader-first and the
   // assigned-designer rule on top), baskı is leader-only. Reject stays
   // leader-only, as it is everywhere else.
-  const showParcaGrid = parcaSnapshot.length >= 2 && (
+  // parcaRoundDecidable first: an undelivered proof (or an ozalit parked on
+  // the stage for revision) has nothing to sign, and offering Onayla there
+  // gets a 400 back from a button that looked live.
+  const showParcaGrid = parcaSnapshot.length >= 2 && parcaRoundDecidable(project) && (
     ledgerKind === 'demo'
       ? isDemoApprover(user)
       : ledgerKind === 'ozalit'
