@@ -477,7 +477,15 @@ export default function Approvals({ tab = 'demo' }) {
               snapshotParcalar={snap}
               parcaBusy={parcaBusyId === p.id}
               onApproveParcalar={(parcalar) => openParcaSheet(p, 'approve', parcalar, sub)}
-              onRejectParcalar={(parcalar) => openParcaSheet(p, 'reject', parcalar, sub)}
+              // Reject is demo/ozalit only. Baskı Onayı is a leader-to-leader
+              // maker-checker (migration 070) with no designer or matbaa leg —
+              // there is no desk to send a parça back to, and computeRejection
+              // refuses a per-parça reject outside the demo/ozalit onay stages
+              // ("Parça bazlı red yalnızca demo ve ozalit onay aşamalarında
+              // yapılabilir"). Offering the button here is a guaranteed 400.
+              onRejectParcalar={sub === 'baski-onay'
+                ? undefined
+                : (parcalar) => openParcaSheet(p, 'reject', parcalar, sub)}
               onPrepareBaskiParcalar={(parcalar) => handlePrepareBaskiParcalar(p, parcalar)}
               onApprove={() => {
                 if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })

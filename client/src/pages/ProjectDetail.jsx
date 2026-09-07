@@ -225,7 +225,15 @@ export default function ProjectDetail() {
               // footer. Reject then hands off to the reason/party dialog,
               // which is the part the sheet cannot carry.
               onApproveParcalar={(parcalar) => openParcaSheet('approve', parcalar)}
-              onRejectParcalar={isLeader ? (parcalar) => openParcaSheet('reject', parcalar) : undefined}
+              // Reject is demo/ozalit only. Baskı Onayı is a leader-to-leader
+              // maker-checker (migration 070) with no designer or matbaa leg —
+              // there is no desk to send a parça back to, and computeRejection
+              // refuses a per-parça reject outside the demo/ozalit onay stages
+              // ("Parça bazlı red yalnızca demo ve ozalit onay aşamalarında
+              // yapılabilir"). Offering the button here is a guaranteed 400.
+              onRejectParcalar={isLeader && ledgerKind !== 'baski_onay' && ledgerKind !== 'cin_baski_onay'
+                ? (parcalar) => openParcaSheet('reject', parcalar)
+                : undefined}
             />
           </div>
         )}
