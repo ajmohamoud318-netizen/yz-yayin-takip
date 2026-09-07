@@ -74,6 +74,16 @@ export default function DesignerPagesInput({
   const [error, setError] = useState(null)
   const [redoneBusyId, setRedoneBusyId] = useState(null)
 
+  // Placeholder numbers that mirror the remaining work. Static "5 veya
+  // 1-5" misled the designer into typing numbers bigger than what the
+  // route would accept; the route still rejects oversize ranges with
+  // a clear Turkish message, but a placeholder that names the real
+  // ceiling means most attempts pass on the first try.
+  const remaining = Math.max(0, total - pagesDone)
+  const placeholder = remaining > 0
+    ? `${remaining} veya 1-${remaining}`
+    : '—'
+
   async function commitAdd(e) {
     if (e) e.preventDefault()
     if (!canEdit || saving) return
@@ -287,7 +297,7 @@ export default function DesignerPagesInput({
                 if (draftPage && parsePageRange(draftPage)) commitAdd()
               }}
               onKeyDown={onKeyDown}
-              placeholder="5 veya 1-5"
+              placeholder={placeholder}
               className={cn(
                 'h-8 w-24 rounded-md border bg-background px-2 text-right tabular-nums text-sm shadow-sm',
                 'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
