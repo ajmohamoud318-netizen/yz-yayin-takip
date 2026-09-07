@@ -43,6 +43,14 @@ import {
   canEditProductInfo,
   isLegacyProject,
   assertNotLegacy,
+  // Per-parça helpers (migrations 068/069/070): the UI twin of the
+  // server-side per-parça ledger helpers. Kept in sync so the queue can
+  // render the same pending/approved/rejected sets the FSM will gate on.
+  parcaNames,
+  pendingParcalar,
+  approvedParcalar,
+  rejectedParcalar,
+  bulkApproveAvailable,
 } from '../index.js'
 
 describe('getPipeline', () => {
@@ -528,5 +536,204 @@ describe('ekran ozalit', () => {
     }
     expect(ozalitLeaderApproved(afterLeader)).toBe(true)
     expect(canApproveOzalitNow(designer, afterLeader)).toBe(true)
+  })
+})
+
+// Per-parça approval helpers (migrations 068/069/070). The client twin of
+// the server's per-parça ledger helpers — pure functions so the queue
+// can render the same pending/approved/rejected sets the FSM gates on,
+// and the bulk-approve shortcut can hide itself on single-parça sheets.
+describe('parcaNames', () => {
+  it('returns plain parça names from a string array', () => {
+    expect(parcaNames(['KAPAK', 'KUTU'])).toEqual(['KAPAK', 'KUTU'])
+  })
+
+  it('extracts .component from object entries (matches the spec-sheet shape)', () => {
+    expect(parcaNames([
+      { component: 'KAPAK', date: '2026-01-01' },
+      { component: 'KUTU' },
+    ])).toEqual(['KAPAK', 'KUTU'])
+  })
+
+  it('returns [] for null/undefined/non-array input', () => {
+    expect(parcaNames(null)).toEqual([])
+    expect(parcaNames(undefined)).toEqual([])
+    expect(parcaNames('KAPAK')).toEqual([])
+  })
+
+  it('skips entries without a .component on the object shape', () => {
+    expect(parcaNames([{ component: 'KAPAK' }, {}, { component: '' }])).toEqual(['KAPAK'])
+  })
+})
+
+describe('pendingParcalar', () => {
+  const SNAPSHOT = ['KAPAK', 'KUTU', 'KILAVUZ']
+
+  it('demo: returns every parça when nothing is approved', () => {
+    const p = { demo_parca_approvals: [] }
+    expect(pendingParcalar(p, 'demo', SNAPSHOT)).toEqual(SNAPSHOT)
+  })
+
+  it('demo: drops approved parçalar from the pending set', () => {
+    const p = {
+      demo_parca_approvals: [
+        { parca: 'KAPAK', by: 'u-l', by_name: 'Lider' },
+      ],
+    }
+    expect(pendingParcalar(p, 'demo', SNAPSHOT)).toEqual(['KUTU', 'KILAVUZ'])
+  })
+
+  it('demo: returns [] when every parça is approved', () => {
+    const p = {
+      demo_parca_approvals: [
+        { parca: 'KAPAK' }, { parca: 'KUTU' }, { parca: 'KILAVUZ' },
+      ],
+    }
+    expect(pendingParcalar(p, 'demo', SNAPSHOT)).toEqual([])
+  })
+
+  it('demo: empty snapshot → [] (legacy single-parça shortcut)', () => {
+    expect(pendingParcalar({ demo_parca_approvals: [] }, 'demo', [])).toEqual([])
+  })
+
+  it('ozalit: returns every parça when no rows exist for them', () => {
+    const p = { ozalit_parca_approvals: {} }
+    expect(pendingParcalar(p, 'ozalit', SNAPSHOT)).toEqual(SNAPSHOT)
+  })
+
+  it('ozalit: drops parçalar with at least one approver row', () => {
+    const p = {
+      ozalit_parca_approvals: {
+        KAPAK: [{ id: 'u-l', role: 'team_leader' }],
+      },
+    }
+    expect(pendingParcalar(p, 'ozalit', SNAPSHOT)).toEqual(['KUTU', 'KILAVUZ'])
+  })
+
+  it('baski_onay: a parça is pending when missing preparer OR approver OR same-leader', () => {
+    // Three preparers, two approvals — KILAVUZ has the preparer but no
+    // approver, so it stays pending.
+    const p = {
+      baski_parca_preparers: {
+        KAPAK: { by: 'u-l1' },
+        KUTU: { by: 'u-l2' },
+        KILAVUZ: { by: 'u-l1' },
+      },
+      baski_parca_approvals: {
+        KAPAK: { by: 'u-l2' },  // different leader — done
+        KUTU: { by: 'u-l1' },  // different leader — done
+        // KILAVUZ has no approver yet → pending
+      },
+    }
+    expect(pendingParcalar(p, 'baski_onay', SNAPSHOT)).toEqual(['KILAVUZ'])
+  })
+
+  it('baski_onay: maker-checker — same leader on both sides → pending', () => {
+    // KUTU's preparer AND approver are the same leader → still pending.
+    const p = {
+      baski_parca_preparers: {
+        KUTU: { by: 'u-l1' },
+      },
+      baski_parca_approvals: {
+        KUTU: { by: 'u-l1' }, // SAME — maker-checker rule violated
+      },
+    }
+    expect(pendingParcalar(p, 'baski_onay', ['KUTU'])).toEqual(['KUTU'])
+  })
+
+  it('cin_baski_onay: same dual-leader rule, mirrored ledger', () => {
+    const p = {
+      cin_baski_parca_preparers: {
+        KAPAK: { by: 'u-l1' },
+      },
+      cin_baski_parca_approvals: {
+        KAPAK: { by: 'u-l1' }, // SAME — pending
+      },
+    }
+    expect(pendingParcalar(p, 'cin_baski_onay', ['KAPAK'])).toEqual(['KAPAK'])
+  })
+})
+
+describe('approvedParcalar', () => {
+  it('demo: returns every parça with at least one approval row', () => {
+    const p = {
+      demo_parca_approvals: [
+        { parca: 'KAPAK' },
+        { parca: 'KAPAK' }, // dupes collapse
+        { parca: 'KUTU' },
+      ],
+    }
+    expect(approvedParcalar(p, 'demo')).toEqual(['KAPAK', 'KUTU'])
+  })
+
+  it('ozalit: returns every parça key with at least one approver row', () => {
+    const p = {
+      ozalit_parca_approvals: {
+        KAPAK: [{ id: 'u-l' }],
+        KUTU: [],
+        KILAVUZ: [{ id: 'u-d' }],
+      },
+    }
+    expect(approvedParcalar(p, 'ozalit').sort()).toEqual(['KAPAK', 'KILAVUZ'])
+  })
+
+  it('baski_onay: only parçalar with BOTH preparer AND different-leader approver count as done', () => {
+    const p = {
+      baski_parca_preparers: {
+        KAPAK: { by: 'u-l1' },
+        KUTU: { by: 'u-l2' },
+        KILAVUZ: { by: 'u-l1' },
+      },
+      baski_parca_approvals: {
+        KAPAK: { by: 'u-l2' }, // different leader — done
+        KUTU: { by: 'u-l2' }, // SAME leader — maker-checker fails
+        KILAVUZ: { by: 'u-l1' }, // SAME leader — maker-checker fails
+      },
+    }
+    expect(approvedParcalar(p, 'baski_onay')).toEqual(['KAPAK'])
+  })
+})
+
+describe('rejectedParcalar', () => {
+  it('demo: returns every parça name in the rejection ledger', () => {
+    const p = {
+      demo_parca_rejections: [
+        { parca: 'KAPAK' },
+        { parca: 'KAPAK' },
+        { parca: 'KUTU' },
+      ],
+    }
+    expect(rejectedParcalar(p, 'demo')).toEqual(['KAPAK', 'KUTU'])
+  })
+
+  it('ozalit: reads the ozalit_parca_rejections ledger', () => {
+    const p = {
+      ozalit_parca_rejections: [{ parca: 'KAPAK' }],
+    }
+    expect(rejectedParcalar(p, 'ozalit')).toEqual(['KAPAK'])
+  })
+})
+
+describe('bulkApproveAvailable', () => {
+  it('false on a single-parça sheet (the existing single button is enough)', () => {
+    const p = { demo_parca_approvals: [] }
+    expect(bulkApproveAvailable(p, 'demo', ['KAPAK'])).toBe(false)
+  })
+
+  it('true on a multi-parça sheet with ≥2 parçalar pending', () => {
+    const p = { demo_parca_approvals: [] }
+    expect(bulkApproveAvailable(p, 'demo', ['KAPAK', 'KUTU'])).toBe(true)
+  })
+
+  it('false when ≥2 parçalar exist on the snapshot but only 1 is pending', () => {
+    const p = {
+      demo_parca_approvals: [{ parca: 'KAPAK' }, { parca: 'KUTU' }],
+    }
+    // Only KILAVUZ is pending → bulk button should hide.
+    expect(bulkApproveAvailable(p, 'demo', ['KAPAK', 'KUTU', 'KILAVUZ'])).toBe(false)
+  })
+
+  it('false on an empty snapshot (no parça list at all)', () => {
+    expect(bulkApproveAvailable({}, 'demo', [])).toBe(false)
   })
 })

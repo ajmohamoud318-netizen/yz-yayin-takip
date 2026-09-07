@@ -35,21 +35,26 @@ export function createHttpSubtaskRepository() {
       return { project: data }
     },
     /**
-     * migration 067 — designer pages-done input. Body is
-     * `{ designer_id, pages }`. Server enforces ownership:
+     * migration 067/068 — designer pages-done input. Body is
+     * `{ designer_id, pages, start_page }`. Server enforces ownership:
      *   • team_leader may add a batch for any active designer;
      *   • designer may add only for themselves.
      *
+     * Migration 068 — `start_page` pins this batch to a specific page
+     * range [start_page, start_page + pages - 1]; the server refuses
+     * the save if the range overlaps any existing batch on the same
+     * subtask (no double-counting across designers).
+     *
      * Slim response shape:
      *   { subtask_id, project_id, total_pages, pages_done, is_done,
-     *     batch: { id, designer_id, designer_name, pages, created_at,
-     *              redone_at, redone_by, redone_by_name },
+     *     batch: { id, designer_id, designer_name, pages, start_page,
+     *              created_at, redone_at, redone_by, redone_by_name },
      *     project_progress, project: { id, progress, version } }
      */
-    async addSubtaskDesignerBatch(subtaskId, { designerId, pages }, { signal } = {}) {
+    async addSubtaskDesignerBatch(subtaskId, { designerId, pages, startPage }, { signal } = {}) {
       const { data } = await httpClient.post(
         `/subtasks/${subtaskId}/designer-batches`,
-        { designer_id: designerId, pages },
+        { designer_id: designerId, pages, start_page: startPage },
         signal ? { signal } : undefined,
       )
       return data

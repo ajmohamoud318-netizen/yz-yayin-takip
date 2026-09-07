@@ -177,12 +177,11 @@ function ekranDemoPendingParcalar(project, ctx) {
 /** Ekran ozalit: which parçalar haven't been ekran-approved yet. */
 function ekranOzalitPendingParcalar(project, ctx) {
   const set = new Set(snapshotParcalar(ctx, 'ozalit'))
+  const ledger = project.ozalit_parca_approvals ?? {}
   const approved = new Set(
-    (project.ozalit_parca_approvals ?? {})
-      ? Object.entries(project.ozalit_parca_approvals)
-          .filter(([, ledger]) => Array.isArray(ledger) && ledger.some((a) => a?.via === 'ekran'))
-          .map(([parca]) => parca)
-      : [],
+    Object.entries(ledger)
+      .filter(([, row]) => Array.isArray(row) && row.some((a) => a?.via === 'ekran'))
+      .map(([parca]) => parca),
   )
   return [...set].filter((p) => !approved.has(p))
 }
@@ -684,12 +683,114 @@ export function computeApproval(project, actor, ctx = {}) {
     if (!canApproveAt(project.stage, actor)) {
       badRequest('Baskı onayını yalnızca ekip lideri yapabilir.')
     }
+    // Per-parça gate (migrations 068/069/070): every parça on the latest
+    // baski_onay snapshot must have a preparer + a DIFFERENT approver before
+    // the project can advance. The legacy project-level baski_onay_prepared
+    // flag stays as a backward-compat tally — when the per-parça ledger is
+    // empty (legacy single-parça projects with no snapshot), the old
+    // dual-leader rule still applies.
+    const isCin = project.stage === 'cin_baski_onay'
+    const preparers = isCin
+      ? (project.cin_baski_parca_preparers ?? {})
+      : (project.baski_parca_preparers ?? {})
+    const approvals = isCin
+      ? (project.cin_baski_parca_approvals ?? {})
+      : (project.baski_parca_approvals ?? {})
+    const snapshotParcalar = Array.isArray(ctx?.snapshot?.selectedComponents)
+      ? ctx.snapshot.selectedComponents
+      : []
+    const teamLeaderIds = ctx.teamLeaderIds ?? []
+
+    // Dual-leader per parça: for each parça the approving leader must differ
+    // from the preparer. Default `parcalar` is "all parçalar missing an
+    // approver (with preparer)" — the bulk-approve shortcut.
+    const requestedParcalar = sanitiseParcalar(ctx?.parcalar, snapshotParcalar)
+    const targetParcalar = requestedParcalar.length === 0
+      ? snapshotParcalar.filter((p) => preparers[p] && !approvals[p])
+      : requestedParcalar.filter((p) => preparers[p] && !approvals[p])
+    // Same actor on both sides — the maker-checker rule, scoped to a single
+    // parça. Per parça: refuse when the approver IS the preparer; refuse the
+    // WHOLE call when ANY targeted parça would violate it. The "no other
+    // active leader" escape hatch applies per parça too.
+    if (snapshotParcalar.length > 0) {
+      const otherActiveLeaders = teamLeaderIds.filter((id) => id !== project.baski_onay_prepared_by)
+      // We allow the same leader to act on a parça they didn't prepare
+      // themselves. The check is per-parça: a leader who prepared KUTU can
+      // still approve KİTAP if Aylin prepared KİTAP.
+      for (const parca of targetParcalar) {
+        const preparerId = preparers[parca]?.by
+        if (preparerId && actor?.id === preparerId && otherActiveLeaders.length > 0) {
+          badRequest(
+            `Baskı onay formunu hazırlayan kişi kendi onayını veremez: ${parca}. Başka bir ekip lideri onaylamalıdır.`,
+          )
+        }
+      }
+      // Append approvals for each targeted parça.
+      const nextApprovals = appendBaskiParcaRow(approvals, targetParcalar, actor, actorName, now)
+      // Per-parça pending set after this click.
+      const stillPending = snapshotParcalar.filter((parca) => {
+        const p = preparers[parca]
+        const a = nextApprovals[parca]
+        if (!p || !a) return true
+        return a.by === p.by
+      })
+      if (stillPending.length === 0) {
+        const nextStage = isCin ? 'baskida' : pipelineFor(project)[pipelineFor(project).indexOf(project.stage) + 1]
+        assertCanEnterProductionLocal(nextStage, project.progress)
+        return {
+          project: {
+            ...project,
+            stage: nextStage,
+            baski_onay_prepared: false,
+            baski_onay_prepared_by: null,
+            baski_onay_prepared_by_name: null,
+            baski_onay_prepared_at: null,
+            [isCin ? 'cin_baski_parca_preparers' : 'baski_parca_preparers']: pruneApprovalsToSnapshot(
+              preparers, snapshotParcalar, true,
+            ),
+            [isCin ? 'cin_baski_parca_approvals' : 'baski_parca_approvals']: pruneApprovalsToSnapshot(
+              nextApprovals, snapshotParcalar, true,
+            ),
+            updated_at: now,
+          },
+          history: makeEntry(project, {
+            action: 'approve',
+            from_stage: project.stage,
+            to_stage: nextStage,
+            done_by_name: actorName,
+            note: targetParcalar.length > 0
+              ? `Baskı onaylandı: ${targetParcalar.join(', ')} dahil tüm parçalar`
+              : 'Baskı onaylandı, baskıya alındı',
+          }),
+        }
+      }
+      return {
+        project: {
+          ...project,
+          [isCin ? 'cin_baski_parca_approvals' : 'baski_parca_approvals']: pruneApprovalsToSnapshot(
+            nextApprovals, snapshotParcalar, true,
+          ),
+          updated_at: now,
+        },
+        history: makeEntry(project, {
+          action: 'approve',
+          from_stage: project.stage,
+          to_stage: project.stage,
+          done_by_name: actorName,
+          note: targetParcalar.length > 0
+            ? `Baskı onay parçaları onaylandı: ${targetParcalar.join(', ')} — bekleyen: ${stillPending.join(', ') || '—'}`
+            : `Baskı onayı verildi, ${stillPending.length} parça daha bekleniyor`,
+        }),
+      }
+    }
+
+    // Legacy single-parça path (no snapshot): keep the old dual-leader
+    // check. Click without per-parça ctx.snapshot falls through here.
     if (!project.baski_onay_prepared) {
       badRequest('Önce baskı onay formu hazırlanmalıdır.')
     }
-    const teamLeaderIds = ctx.teamLeaderIds ?? []
-    const otherActiveLeaders = teamLeaderIds.filter((id) => id !== project.baski_onay_prepared_by)
-    if (actor?.id === project.baski_onay_prepared_by && otherActiveLeaders.length > 0) {
+    const otherActiveLeadersLegacy = teamLeaderIds.filter((id) => id !== project.baski_onay_prepared_by)
+    if (actor?.id === project.baski_onay_prepared_by && otherActiveLeadersLegacy.length > 0) {
       badRequest('Baskı onay formunu hazırlayan kişi kendi onayını veremez, başka bir ekip lideri onaylamalıdır.')
     }
     const pipeline = pipelineFor(project)
@@ -779,17 +880,54 @@ export function computeApproval(project, actor, ctx = {}) {
         }),
       }
     }
-    // At 100% progress with at least one pending parça: bulk-approve the
-    // remaining ones and advance. A leader who already inspected every
-    // parça on this round may click once to clear the gate.
-    if (pending.length > 0) {
-      const nextApprovals = appendParcaApprovals(
-        project.demo_parca_approvals ?? [],
-        pending,
-        actor,
-        actorName,
-        now,
-      )
+    // At 100% progress: the leader's click either completes the round
+    // (every parça now approved) or signs off just the chosen parçalar.
+    // When `parcalar` is specified, only the targeted parçalar are
+    // approved — `pending` is the still-owed set, `target` is the
+    // intersection with the leader's choice. Both arrays drive the
+    // append below; the stage advances only when the remaining set is
+    // empty (recomputed AFTER the append — a partial `target` leaves
+    // the rest pending).
+    const requested = sanitiseParcalar(ctx?.parcalar, snapshotParcalar)
+    const target = requested.length === 0
+      ? pending
+      : requested.filter((p) => pending.includes(p))
+    if (pending.length > 0 && target.length === 0) {
+      badRequest('Onaylanacak parça bulunamadı.')
+    }
+    const nextApprovals = appendParcaApprovals(
+      project.demo_parca_approvals ?? [],
+      target,
+      actor,
+      actorName,
+      now,
+    )
+    const stillPending = [...snapshotParcalar].filter((p) =>
+      !nextApprovals.some((row) => row?.parca === p),
+    )
+    if (stillPending.length > 0) {
+      // Partial approve — stay at demo_onay, the next click (or a
+      // refresh + bulk shortcut) clears the rest of the set.
+      return {
+        project: {
+          ...project,
+          demo_parca_approvals: pruneApprovalsToSnapshot(nextApprovals, snapshotParcalar, false),
+          updated_at: now,
+        },
+        history: makeEntry(project, {
+          action: 'approve',
+          from_stage: project.stage,
+          to_stage: project.stage,
+          done_by_name: actorName,
+          note: target.length > 0
+            ? `Demo parçaları onaylandı: ${target.join(', ')} — bekleyen: ${stillPending.join(', ') || '—'}`
+            : `Demo parçaları onaylandı (${target.length})`,
+        }),
+      }
+    }
+    // All parçalar done. Either legacy single-parça (no snapshot list)
+    // or the round is fully approved and we advance.
+    if (snapshotParcalar.length === 0) {
       const pipeline = pipelineFor(project)
       const stageIdx = pipeline.indexOf(project.stage)
       const next = pipeline[stageIdx + 1]
@@ -808,11 +946,10 @@ export function computeApproval(project, actor, ctx = {}) {
           from_stage: project.stage,
           to_stage: next,
           done_by_name: actorName,
-          note: `Demo onaylandı: ${pending.join(', ')} dahil tüm parçalar`,
         }),
       }
     }
-    // No parça on the snapshot (legacy single-parça shortcut) — advance.
+    // Per-parça advance.
     const pipeline = pipelineFor(project)
     const stageIdx = pipeline.indexOf(project.stage)
     const next = pipeline[stageIdx + 1]
@@ -823,6 +960,7 @@ export function computeApproval(project, actor, ctx = {}) {
         ...project,
         stage: next,
         demo_held: false,
+        demo_parca_approvals: pruneApprovalsToSnapshot(nextApprovals, snapshotParcalar, false),
         updated_at: now,
       },
       history: makeEntry(project, {
@@ -830,6 +968,9 @@ export function computeApproval(project, actor, ctx = {}) {
         from_stage: project.stage,
         to_stage: next,
         done_by_name: actorName,
+        note: target.length > 0
+          ? `Demo onaylandı: ${target.join(', ')} dahil tüm parçalar`
+          : 'Demo onaylandı',
       }),
     }
   }
@@ -911,7 +1052,7 @@ export function computeEkranDemoRequest(project, actor) {
   }
 }
 
-export function computeEkranDemoApprove(project, actor) {
+export function computeEkranDemoApprove(project, actor, ctx = {}) {
   const now = new Date().toISOString()
   const actorName = actor?.name ?? 'Bilinmeyen'
   if (project.stage !== 'demo_onay' && project.stage !== 'cin_demo_onay') {
@@ -926,13 +1067,19 @@ export function computeEkranDemoApprove(project, actor) {
   // Per-parça gate (migrations 068/069/070): the leader approving the
   // ekran-demo request must also sign off every parça on the latest
   // snapshot. Default to "approve all pending parçalar" (the UX
-  // shortcut). The route passes ctx.snapshot + ctx.parcalar.
-  const snapshotParcalar = Array.isArray(actor?._parcaSnapshot)
-    ? actor._parcaSnapshot
-    : []
+  // shortcut). The route passes `ctx.snapshot` (prepare hook) +
+  // `ctx.parcalar` (request body). The actor-stash shape
+  // (`actor._parcaSnapshot` / `actor._parcalar`) is the older shortcut;
+  // the service layer's calls go through ctx now, but the stash keys
+  // stay valid for direct FSM calls (tests, internal callers).
+  const snapshotParcalar = Array.isArray(ctx?.snapshot?.selectedComponents)
+    ? ctx.snapshot.selectedComponents
+    : (Array.isArray(actor?._parcaSnapshot) ? actor._parcaSnapshot : [])
+  const requested = Array.isArray(ctx?.parcalar)
+    ? ctx.parcalar
+    : (Array.isArray(actor?._parcalar) ? actor._parcalar : null)
   const ctxForGate = { snapshot: { selectedComponents: snapshotParcalar } }
   const pending = ekranDemoPendingParcalar(project, ctxForGate)
-  const requested = Array.isArray(actor?._parcalar) ? actor._parcalar : null
   const target = !requested || requested.length === 0
     ? pending
     : requested.filter((p) => pending.includes(p))
@@ -1873,22 +2020,79 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
   // gate (nothing arrived), no multi-party ledger, no designer counter-sign.
   // Same shape as the sipariş pipeline's `ekran_onay` step and the project's
   // own Ekran Demo Onayı.
+  //
+  // Per-parça gate (migrations 068/069/070): the leader still has to sign off
+  // every parça on the latest ozalit snapshot. Default to "all pending"
+  // (the UX shortcut). The route passes ctx.snapshot (prepare hook) +
+  // ctx.parcalar (request body) the same way the demo branch does. The
+  // actor-stash keys (`actor._parcaSnapshot` / `actor._parcalar`) remain
+  // valid for direct FSM calls (tests, internal callers).
   if (project.ekran_ozalit === true) {
     if (actor?.role !== 'team_leader') {
       badRequest('Ekran ozalit onayını yalnızca ekip lideri verebilir.')
     }
+    const snapshotParcalar = Array.isArray(ctx?.snapshot?.selectedComponents)
+      ? ctx.snapshot.selectedComponents
+      : (Array.isArray(actor?._parcaSnapshot) ? actor._parcaSnapshot : [])
+    const requested = Array.isArray(ctx?.parcalar)
+      ? ctx.parcalar
+      : (Array.isArray(actor?._parcalar) ? actor._parcalar : null)
+    const ctxForGate = { snapshot: { selectedComponents: snapshotParcalar } }
+    const pending = ekranOzalitPendingParcalar(project, ctxForGate)
+    const target = !requested || requested.length === 0
+      ? pending
+      : requested.filter((p) => pending.includes(p))
+    if (pending.length > 0 && target.length === 0) {
+      badRequest('Onaylanacak parça bulunamadı.')
+    }
+    if (pending.length > 0) {
+      // Per-parça ledger (migration 069): record the leader's sign-off for the
+      // requested parçalar without advancing the stage yet. Reject the round
+      // (target='designer' on ekran, since there is no matbaa leg) to send it
+      // back without dumping the ledger.
+      const nextApprovals = appendOzalitParcaApprovals(
+        project.ozalit_parca_approvals ?? {},
+        target,
+        actor,
+        actorName,
+        now,
+        'ekran',
+      )
+      return {
+        project: {
+          ...project,
+          ozalit_parca_approvals: pruneApprovalsToSnapshot(nextApprovals, snapshotParcalar, true),
+          updated_at: now,
+        },
+        history: makeEntry(project, {
+          action: 'approve',
+          from_stage: 'ozalit_onay',
+          to_stage: 'ozalit_onay',
+          done_by_name: actorName,
+          note: pending.length > target.length
+            ? `Ekran ozalit parçaları onaylandı: ${target.join(', ')} — bekleyen: ${pending.filter((p) => !target.includes(p)).join(', ') || '—'}`
+            : `Ekran ozalit parçaları onaylandı: ${target.join(', ')}`,
+        }),
+      }
+    }
+    // All parçalar done — advance. Cleared ledger so a future round starts
+    // fresh (same shape as the physical ozalit completion path below).
     assertCanEnterProductionLocal('baski_onay', project.progress)
     return {
       project: {
         ...project,
         stage: 'baski_onay',
-        // Consumed with the round — a later ozalit must declare its own route.
         ekran_ozalit: false,
         ozalit_approvals: [],
         ozalit_leader_approved: false,
         ozalit_leader_approved_by: null,
         ozalit_leader_approved_at: null,
         ozalit_designer_approvals: [],
+        ozalit_parca_approvals: pruneApprovalsToSnapshot(
+          project.ozalit_parca_approvals ?? {},
+          snapshotParcalar,
+          true,
+        ),
         updated_at: now,
       },
       history: makeEntry(project, {
@@ -1903,12 +2107,21 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
   }
 
   // Multi-party approval: EVERY active team leader AND every assigned designer
-  // must approve before the project advances to Üretime Hazır, and a team
-  // leader has to go FIRST (see the leader-first gate below). ctx carries the
-  // required approver ids (the approve route loads them). Each approval is
-  // recorded; the project stays at ozalit_onay until the set is complete.
+  // must approve every parça on the latest ozalit snapshot before the
+  // project advances to Üretime Hazır, and a team leader has to go FIRST.
+  // The per-parça ledger (`ozalit_parca_approvals`, migration 069) holds the
+  // sign-off rows per parça; `ctx.snapshot` carries the parça list, and
+  // `ctx.teamLeaderIds` + `ctx.designerIds` carry the required approvers.
+  // Each approval is recorded per parça; the project stays at ozalit_onay
+  // until every parça has every required party signed off.
   const teamLeaderIds = ctx.teamLeaderIds ?? []
   const designerIds = ctx.designerIds ?? []
+  const snapshotParcalar = Array.isArray(ctx?.snapshot?.selectedComponents)
+    ? ctx.snapshot.selectedComponents
+    : []
+  const requestedParcalar = sanitiseParcalar(ctx?.parcalar, snapshotParcalar)
+  const required = [...new Set([...teamLeaderIds, ...designerIds])]
+  const requiredIds = new Set(required)
 
   const isLeader = actor?.role === 'team_leader'
   const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
@@ -1923,73 +2136,160 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
     badRequest('Önce ozalit "Teslim Alındı" olarak işaretlenmelidir.')
   }
 
-  const approvals = Array.isArray(project.ozalit_approvals) ? project.ozalit_approvals : []
-
   // Leader-first: the ozalit is the leadership's call, and a designer only
-  // counter-signs a proof a team leader has already accepted. Until one leader
-  // has approved, a designer's Onayla is refused — the required set is
-  // unchanged (everyone still signs), this only fixes the ORDER, so the ledger
-  // can never show designer sign-offs on a proof no leader has looked at.
-  // Any one leader opens the gate; the rest can approve in any order after.
-  //
-  // Skipped when there is no active team leader at all: none would be in the
-  // required set either, so enforcing it would strand the project at
-  // ozalit_onay with nobody able to open the gate.
-  const leaderApproved = approvals.some(
-    (a) => a.role === 'team_leader' || teamLeaderIds.includes(a.id),
-  )
-  if (isAssignedDesigner && teamLeaderIds.length > 0 && !leaderApproved) {
-    badRequest('Önce ekip lideri onaylamalıdır, tasarımcı onayı ondan sonra verilebilir.')
+  // counter-signs a proof a team leader has already accepted. Per-parça:
+  // until SOME parça has a leader sign-off, the designer's click is refused
+  // — same rule, scoped to one parça. On the legacy path (no snapshot) we
+  // still check the project-level `ozalit_approvals` ledger for a leader
+  // row, so a single-parça legacy project behaves identically to before.
+  if (isAssignedDesigner && teamLeaderIds.length > 0) {
+    let anyLeaderSigned
+    if (snapshotParcalar.length > 0) {
+      anyLeaderSigned = snapshotParcalar.some((parca) =>
+        (project.ozalit_parca_approvals?.[parca] ?? []).some(
+          (a) => a?.role === 'team_leader' || teamLeaderIds.includes(a?.id),
+        ),
+      )
+    } else {
+      const approvals = Array.isArray(project.ozalit_approvals) ? project.ozalit_approvals : []
+      anyLeaderSigned = approvals.some(
+        (a) => a?.role === 'team_leader' || teamLeaderIds.includes(a?.id),
+      )
+    }
+    if (!anyLeaderSigned) {
+      badRequest('Önce ekip lideri onaylamalıdır, tasarımcı onayı ondan sonra verilebilir.')
+    }
   }
 
-  // Record this approver (idempotent — approving twice is a no-op).
-  const already = approvals.some((a) => a.id === actor?.id)
-  const nextApprovals = already
-    ? approvals
-    : [...approvals, { id: actor?.id, role: actor?.role, name: actorName, at: now }]
+  // What the leader/designer is approving on this click. `parcalar` default
+  // is "all pending parçalar on the snapshot" (the bulk-approve shortcut).
+  // Empty snapshot falls through to the project-level legacy path so legacy
+  // rows without a parça list still advance on a single click.
+  const ctxForGate = { snapshot: { selectedComponents: snapshotParcalar } }
+  const pending = ozalitPendingParcalar(project, {
+    snapshot: { selectedComponents: snapshotParcalar },
+    required: { leaderIds: teamLeaderIds, designerIds },
+  })
+  const target = requestedParcalar.length === 0
+    ? pending
+    : requestedParcalar.filter((p) => pending.includes(p))
+  if (pending.length > 0 && target.length === 0) {
+    badRequest('Onaylanacak parça bulunamadı.')
+  }
 
-  // Required = every active team leader + every assigned designer.
-  const required = [...new Set([...teamLeaderIds, ...designerIds])]
-  const approvedIds = new Set(nextApprovals.map((a) => a.id))
-  const allApproved = required.length > 0 && required.every((id) => approvedIds.has(id))
+  // Append the new approver row to each targeted parça (idempotent: the
+  // helper skips an existing actor+via duplicate).
+  const nextApprovals = appendOzalitParcaApprovals(
+    project.ozalit_parca_approvals ?? {},
+    target,
+    actor,
+    actorName,
+    now,
+  )
 
-  if (!allApproved) {
-    // Not everyone has signed off yet — stay at ozalit_onay, record the approval.
-    const remaining = required.filter((id) => !approvedIds.has(id)).length
+  // No per-parça parça on the snapshot (legacy) AND no project-level ledger
+  // expected set (required is empty): nothing to gate on. Keep the old
+  // project-level counter-sign behaviour so a legacy single-parça project
+  // still advances.
+  if (snapshotParcalar.length === 0) {
+    const approvals = Array.isArray(project.ozalit_approvals) ? project.ozalit_approvals : []
+    const already = approvals.some((a) => a.id === actor?.id)
+    const nextLegacyApprovals = already
+      ? approvals
+      : [...approvals, { id: actor?.id, role: actor?.role, name: actorName, at: now }]
+    const approvedIds = new Set(nextLegacyApprovals.map((a) => a.id))
+    const allApproved = required.length > 0 && required.every((id) => approvedIds.has(id))
+    if (!allApproved) {
+      const remaining = required.filter((id) => !approvedIds.has(id)).length
+      return {
+        project: {
+          ...project,
+          ozalit_approvals: nextLegacyApprovals,
+          ozalit_parca_approvals: pruneApprovalsToSnapshot(nextApprovals, [], true),
+          updated_at: now,
+        },
+        history: makeEntry(project, {
+          action: 'approve',
+          from_stage: 'ozalit_onay',
+          to_stage: 'ozalit_onay',
+          done_by_name: actorName,
+          note: `Ozalit onayı verildi, ${remaining} onay daha bekleniyor`,
+        }),
+      }
+    }
+    // Everyone approved → baskı_onay. The per-parça ledger is empty (no
+    // snapshot), the project-level ledger is the source of truth here.
+    assertCanEnterProductionLocal('baski_onay', project.progress)
     return {
-      project: { ...project, ozalit_approvals: nextApprovals, updated_at: now },
+      project: {
+        ...project,
+        stage: 'baski_onay',
+        ozalit_approvals: [],
+        ozalit_leader_approved: false,
+        ozalit_leader_approved_by: null,
+        ozalit_leader_approved_at: null,
+        ozalit_designer_approvals: [],
+        updated_at: now,
+      },
       history: makeEntry(project, {
         action: 'approve',
         from_stage: 'ozalit_onay',
-        to_stage: 'ozalit_onay',
+        to_stage: 'baski_onay',
         done_by_name: actorName,
-        note: `Ozalit onayı verildi, ${remaining} onay daha bekleniyor`,
+        note: 'Ozalit onaylandı, baskı onayına gönderildi',
       }),
     }
   }
 
-  // Everyone approved → the print proof itself is settled, but production
-  // doesn't start yet: the project lands on baski_onay first, where a team
-  // leader (Serpil Hanım / Ayşenur — see computeApproval's baski_onay branch)
-  // gives the final, single-signature "Baskı Onayı" before Üretime Hazır.
-  assertCanEnterProductionLocal('baski_onay', project.progress)
+  // Per-parça path. After appending the new approver, recompute the
+  // outstanding set; if every parça has every required party, advance.
+  // nextApprovals is keyed by parça name (object shape), unlike the demo
+  // list — `stillPending` checks key membership rather than row.parca.
+  const remaining = snapshotParcalar.filter((parca) => {
+    const row = nextApprovals[parca]
+    if (!Array.isArray(row) || row.length === 0) return true
+    const got = new Set(row.map((a) => a?.id))
+    return [...requiredIds].some((id) => !got.has(id))
+  })
+  if (remaining.length === 0) {
+    assertCanEnterProductionLocal('baski_onay', project.progress)
+    return {
+      project: {
+        ...project,
+        stage: 'baski_onay',
+        ozalit_approvals: [],
+        ozalit_leader_approved: false,
+        ozalit_leader_approved_by: null,
+        ozalit_leader_approved_at: null,
+        ozalit_designer_approvals: [],
+        ozalit_parca_approvals: pruneApprovalsToSnapshot(nextApprovals, snapshotParcalar, true),
+        updated_at: now,
+      },
+      history: makeEntry(project, {
+        action: 'approve',
+        from_stage: 'ozalit_onay',
+        to_stage: 'baski_onay',
+        done_by_name: actorName,
+        note: 'Ozalit onaylandı, baskı onayına gönderildi',
+      }),
+    }
+  }
+
+  // Still pending — record and stay put.
   return {
     project: {
       ...project,
-      stage: 'baski_onay',
-      ozalit_approvals: [],
-      ozalit_leader_approved: false,
-      ozalit_leader_approved_by: null,
-      ozalit_leader_approved_at: null,
-      ozalit_designer_approvals: [],
+      ozalit_parca_approvals: pruneApprovalsToSnapshot(nextApprovals, snapshotParcalar, true),
       updated_at: now,
     },
     history: makeEntry(project, {
       action: 'approve',
       from_stage: 'ozalit_onay',
-      to_stage: 'baski_onay',
+      to_stage: 'ozalit_onay',
       done_by_name: actorName,
-      note: 'Ozalit onaylandı, baskı onayına gönderildi',
+      note: target.length > 0
+        ? `Ozalit parçaları onaylandı: ${target.join(', ')} — bekleyen: ${remaining.join(', ') || '—'}`
+        : `Ozalit onayı verildi, ${remaining.length} parça daha bekleniyor`,
     }),
   }
 }
@@ -1998,7 +2298,7 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
  *  reject(project, reason, revizeIds, target, ctx) → next project state
  * ========================================================================== */
 
-export function computeRejection(project, reason, revizeIds, target, { actorName, actor = null }) {
+export function computeRejection(project, reason, revizeIds, target, { actorName, actor = null, parcalar = null } = {}) {
   // Role guard: only team_leader may reject.
   if (!canRejectAt(project.stage, actor)) {
     badRequest('Reddi yalnızca ekip lideri yapabilir.')
@@ -2020,6 +2320,27 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
     !project.demo_received
   ) {
     badRequest('Önce demo "Teslim Alındı" olarak işaretlenmelidir.')
+  }
+
+  // Per-parça payload (migrations 068/069/070): an array of parçalar
+  // to reject THIS round. The rejected parçalar's approval rows across
+  // the three per-parça ledgers are cleared; the others stay locked so
+  // a designer can rebuild just one parça and leave the rest of the
+  // round at the leader's sign-off. Null/empty = whole-round reject.
+  // sanitiseParcalar returns [] when input is null and `fallback = []`,
+  // so length checks below stay safe.
+  const rejectedParcalar = sanitiseParcalar(parcalar, [])
+  const isPartial = rejectedParcalar.length > 0
+  // A partial reject only makes sense on the demo/ozalit approval
+  // stages — there's nothing per-parça to reject before then, and the
+  // legacy stage-level reject ledger (ozalit_approvals etc.) is meant
+  // to be wiped wholesale on a whole-round bounce. Route handlers send
+  // `parcalar` only on those stages; defensively refuse elsewhere.
+  if (isPartial
+    && project.stage !== 'demo_onay'
+    && project.stage !== 'cin_demo_onay'
+    && project.stage !== 'ozalit_onay') {
+    badRequest('Parça bazlı red yalnızca demo ve ozalit onay aşamalarında yapılabilir.')
   }
 
   const isOzalit = project.stage === 'ozalit_onay'
@@ -2110,10 +2431,52 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
           ozalit_leader_approved_at: null,
           ozalit_designer_approvals: [],
           // Multi-party ledger: a rejection wipes any partial approvals so the
-          // next ozalit round starts fresh.
-          ozalit_approvals: [],
+          // next ozalit round starts fresh. On a per-parça reject only the
+          // targeted parçalar's approvals are cleared; the rest stay locked.
+          ozalit_approvals: isPartial ? project.ozalit_approvals : [],
         }
       : {}),
+    // Per-parça ledgers (migrations 068/069/070): same rule, scoped to one
+    // parça at a time. A whole-round reject wipes the ledger; a per-parça
+    // reject clears only the rejected parçalar's rows, leaving the
+    // leader's sign-offs on the rest of the round intact for the next
+    // round of redelivery / re-demo / re-design.
+    ...(isPartial
+      ? {
+          demo_parca_approvals: isOzalit
+            ? project.demo_parca_approvals
+            : dropParcaFromList(project.demo_parca_approvals, rejectedParcalar),
+          demo_parca_rejections: appendParcaRejections(
+            project.demo_parca_rejections ?? [],
+            rejectedParcalar,
+            actor,
+            actorName,
+            nowIso,
+            reason,
+            target,
+          ),
+          ozalit_parca_approvals: dropParcaFromObject(
+            project.ozalit_parca_approvals ?? {},
+            rejectedParcalar,
+          ),
+          ozalit_parca_rejections: isOzalit
+            ? appendParcaRejections(
+              project.ozalit_parca_rejections ?? [],
+              rejectedParcalar,
+              actor,
+              actorName,
+              nowIso,
+              reason,
+              target,
+            )
+            : project.ozalit_parca_rejections,
+        }
+      : {
+          demo_parca_approvals: [],
+          demo_parca_rejections: [],
+          ozalit_parca_approvals: {},
+          ozalit_parca_rejections: [],
+        }),
   }
 
   const counter = isOzalit

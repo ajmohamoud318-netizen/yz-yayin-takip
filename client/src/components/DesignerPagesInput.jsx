@@ -4,16 +4,22 @@ import { Check, Loader2, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import UserAvatar from '@/components/UserAvatar.jsx'
 import { cn, formatDateTr } from '@/lib/utils'
+import { parsePageRange } from '@/lib/page-range'
 
 /**
- * migration 067 — the "İç Sayfalar" subtask renders as a session log.
+ * migration 067/068 — the "İç Sayfalar" subtask renders as a session log.
  *
  * Top of the card: each prior batch (id + designer + pages + when),
  * each with its own "Yeniden Çalıştım" affordance when `redone_at` is
- * null. Bottom of the card: a per-designer "+N ekledim" input. One
- * blur / Enter / explicit save = one POST to the new
- * `/subtasks/:id/designer-batches` endpoint = one tickbox appended to
- * the top of the list.
+ * null. Bottom of the card: a per-designer range input. A range like
+ * "1-5" or a single page "5" lands as one POST to the new
+ * `/subtasks/:id/designer-batches` endpoint = one row appended to the
+ * top of the list.
+ *
+ * Migration 068 — the row also pins to a page range `[start_page,
+ * start_page + pages - 1]`. The server rejects any save whose range
+ * overlaps an existing batch on this subtask, so the designer's log
+ * can never double-count a page.
  *
  * Props:
  *   • subtask — kind='pages' row from project.subtasks:
@@ -21,12 +27,12 @@ import { cn, formatDateTr } from '@/lib/utils'
  *         assigned_to, … }
  *       `designer_batches` is the server-derived per-session log
  *       (newest first). Each entry:
- *         { id, designer_id, designer_name, pages, created_at,
- *           redone_at, redone_by, redone_by_name }
+ *         { id, designer_id, designer_name, pages, start_page,
+ *           created_at, redone_at, redone_by, redone_by_name }
  *   • canEdit — boolean. Stages where the input is read-only still
  *       render the batch log so the team can see who shipped what.
- *   • onAddBatch — async (designerId, pages) => Promise. Hook wires the
- *       API call + optimistic merge + revert on failure.
+ *   • onAddBatch — async (designerId, pages, startPage) => Promise.
+ *       Hook wires the API call + optimistic merge + revert on failure.
  *   • onRedoneBatch — async (batchId) => Promise. Idempotent — a second
  *       call after the first is a no-op.
  */
@@ -71,18 +77,21 @@ export default function DesignerPagesInput({
   async function commitAdd(e) {
     if (e) e.preventDefault()
     if (!canEdit || saving) return
-    const trimmed = String(draftPage ?? '').trim()
-    if (!trimmed) {
-      setError('Lütfen bir sayı girin.')
+    const parsed_range = parsePageRange(draftPage)
+    if (!parsed_range) {
+      setError('Sayfa numarası veya aralığı girin (örn. 5 veya 1-5).')
       return
     }
-    const parsed = Number(trimmed)
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      setError('Sayı pozitif bir tam sayı olmalı.')
-      return
-    }
-    if (total > 0 && parsed > total) {
-      setError(`Sayı toplam sayfa sayısını (${total}) aşamaz.`)
+    const { start: startPage, pages } = parsed_range
+    // Migration 068 — the route checks both the range bounds (start + pages
+    // - 1 ≤ total) and the overlap with existing batches. We mirror the
+    // bounds check here so the designer gets feedback before the round
+    // trip; the server still re-validates inside the FOR UPDATE lock,
+    // so a concurrent bump of total_pages can't sneak past.
+    if (total > 0 && startPage + pages - 1 > total) {
+      setError(
+        `Sayfa aralığı (${startPage}-${startPage + pages - 1}) toplam sayfa sayısını (${total}) aşamaz.`,
+      )
       return
     }
     if (!draftDesignerId) {
@@ -92,7 +101,7 @@ export default function DesignerPagesInput({
     setSaving(true)
     setError(null)
     try {
-      await onAddBatch(draftDesignerId, Math.floor(parsed))
+      await onAddBatch(draftDesignerId, pages, startPage)
       setDraftPage('')
     } catch (e2) {
       setError(e2?.message || 'Sayfa eklenemedi.')
@@ -177,6 +186,16 @@ export default function DesignerPagesInput({
               if (!d || Number.isNaN(d.getTime())) return ''
               return formatDateTr(d)
             })()
+            // Migration 068 — each batch knows the page range it covers.
+            // Render "1-5" when start_page is known (new writes and
+            // backfilled rows); fall back to "+N sayfa" only for legacy
+            // rows where start_page is null.
+            const rangeLabel = (() => {
+              if (b.start_page == null) return `+${b.pages} sayfa`
+              const start = Number(b.start_page)
+              const end = start + Number(b.pages ?? 0) - 1
+              return start === end ? `${start} sayfa` : `${start}-${end} sayfa`
+            })()
             return (
               <li
                 key={b.id}
@@ -185,7 +204,7 @@ export default function DesignerPagesInput({
                 <UserAvatar user={user} size="xs" />
                 <span className="font-medium">{user.name || b.designer_name || b.designer_id}</span>
                 <span className="rounded bg-primary/10 px-1.5 py-0.5 font-semibold tabular-nums text-primary">
-                  +{b.pages} sayfa
+                  {rangeLabel}
                 </span>
                 <span className="text-muted-foreground">{whenLabel}</span>
                 {b.redone_at ? (
@@ -249,11 +268,12 @@ export default function DesignerPagesInput({
           <div className="flex items-center gap-1">
             <span className="text-xs text-muted-foreground">+</span>
             <input
-              type="number"
+              type="text"
               inputMode="numeric"
-              min={1}
-              max={total || undefined}
-              step={1}
+              // Migration 068 — accept either "5" or "1-5". Anything else
+              // falls through to parsePageRange returning null and the
+              // route's "Sayfa numarası veya aralığı girin" message. A
+              // number-type input would refuse the dash, hence text.
               value={draftPage}
               disabled={saving}
               onChange={(e) => {
@@ -261,12 +281,12 @@ export default function DesignerPagesInput({
                 if (error) setError(null)
               }}
               onBlur={() => {
-                if (draftPage && Number(draftPage) > 0) commitAdd()
+                if (draftPage && parsePageRange(draftPage)) commitAdd()
               }}
               onKeyDown={onKeyDown}
-              placeholder="+ sayfa"
+              placeholder="5 veya 1-5"
               className={cn(
-                'h-8 w-20 rounded-md border bg-background px-2 text-right tabular-nums text-sm shadow-sm',
+                'h-8 w-24 rounded-md border bg-background px-2 text-right tabular-nums text-sm shadow-sm',
                 'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
                 'disabled:cursor-not-allowed disabled:opacity-60',
                 error ? 'border-rose-300 ring-1 ring-rose-200' : 'border-input',

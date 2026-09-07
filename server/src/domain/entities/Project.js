@@ -127,9 +127,15 @@ export class Project {
     return this._record(event)
   }
 
-  /** Approve a pending Ekran Demo Onayı — advances to ozalit_teslim (TR) / baskida (ÇİN). */
-  ekranDemoApprove(actor) {
-    const event = runFsm(this, computeEkranDemoApprove, [actor], 'project.ekran_demo_approved', {
+  /**
+   * Approve a pending Ekran Demo Onayı — advances to ozalit_teslim (TR) / baskida (ÇİN).
+   *
+   * ctx: { parcalar, snapshot } — per-parça payload (migrations 068/069/070).
+   * The route loads the latest demo snapshot via the prepare hook; the entity
+   * just forwards the payload to the FSM.
+   */
+  ekranDemoApprove(actor, ctx = {}) {
+    const event = runFsm(this, computeEkranDemoApprove, [actor, ctx], 'project.ekran_demo_approved', {
       kind: 'transition',
     })
     if (!event) return null
@@ -359,7 +365,14 @@ export class Project {
    * route, mutates subtasks in-place and carries them on the event so
    * the service writes them in the same tx.
    *
-   * ctx: { reason, rejectTarget, revizeIds }
+   * `parcalar` (migrations 068/069/070, optional): an array of parça
+   * names to reject THIS round. The rejected parçalar's approval rows
+   * across the three per-parça ledgers are cleared; the others stay
+   * locked, so a designer can rebuild just KUTU and leave the rest of
+   * the round at the leader's sign-off. Null/omitted = whole-round
+   * reject (full ledger reset, same as the old behaviour).
+   *
+   * ctx: { reason, rejectTarget, revizeIds, parcalar }
    */
   reject(actor, ctx = {}) {
     const isMatbaaTarget = ctx.rejectTarget === 'matbaa'
@@ -368,7 +381,7 @@ export class Project {
       ctx.reason,
       ctx.revizeIds ?? [],
       ctx.rejectTarget ?? null,
-      { actorName: actor?.name ?? 'Bilinmeyen', actor },
+      { actorName: actor?.name ?? 'Bilinmeyen', actor, parcalar: ctx.parcalar ?? null },
     )
     if (!result || result.history === null) return null
     Object.assign(this, result.project)

@@ -102,7 +102,7 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
    * "X / Y tamamlandı" header is in lockstep with the DB before the
    * response lands.
    */
-  async function handleDesignerBatchAdd(sub, designerId, pages) {
+  async function handleDesignerBatchAdd(sub, designerId, pages, startPage) {
     if (!canEditSubtask(sub)) return
     // Optimistic pre-state for revert.
     const before = project?.subtasks?.find((s) => s.id === sub.id) ?? null
@@ -111,6 +111,7 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
       designer_id: designerId,
       designer_name: null,
       pages,
+      start_page: startPage ?? null,
       created_at: new Date().toISOString(),
       redone_at: null,
       redone_by: null,
@@ -134,7 +135,7 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
       return { ...prev, subtasks: subs, progress: subtaskProgress(subs) }
     })
     try {
-      const res = await api.addSubtaskDesignerBatch(sub.id, { designerId, pages })
+      const res = await api.addSubtaskDesignerBatch(sub.id, { designerId, pages, startPage })
       if (res) {
         setProject((prev) => {
           if (!prev) return prev

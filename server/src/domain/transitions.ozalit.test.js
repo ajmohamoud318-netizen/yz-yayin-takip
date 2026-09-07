@@ -407,3 +407,149 @@ describe('ekran ozalit', () => {
     assert.equal(afterD1.stage, 'baski_onay', 'complete only when everyone signed')
   })
 })
+
+// Per-parça gate (migrations 068/069/070): the ozalit round refuses to
+// advance to baski_onay until every parça on the latest snapshot's
+// `_selectedComponents` has every required party (every active team leader
+// + every assigned designer) signed off. The legacy multi-party ledger
+// still works for projects without a per-parça snapshot (see the
+// `'advances only once every leader AND designer has approved'` test
+// above).
+describe('per-parça ozalit approval gate (migrations 068/069/070)', () => {
+  const PARCALAR = ['KAPAK', 'KUTU', 'KILAVUZ']
+  const ctxWithSnapshot = {
+    teamLeaderIds: ['L1', 'L2'],
+    designerIds: ['D1'],
+    snapshot: { selectedComponents: PARCALAR },
+  }
+
+  function perParcaOzalitProject(overrides = {}) {
+    return ozalitProject({
+      ozalit_parca_approvals: {},
+      ...overrides,
+    })
+  }
+
+  it('refuses to advance while any parça is missing any required party', () => {
+    // KAPAK + KUTU have every required sign-off; KILAVUZ is missing L2.
+    const p = perParcaOzalitProject({
+      ozalit_parca_approvals: {
+        KAPAK: [
+          { id: 'L1', role: 'team_leader', name: 'Ayşenur', at: 't1' },
+          { id: 'L2', role: 'team_leader', name: 'İkinci Lider', at: 't2' },
+          { id: 'D1', role: 'designer', name: 'Abdijibar', at: 't3' },
+        ],
+        KUTU: [
+          { id: 'L1', role: 'team_leader', name: 'Ayşenur', at: 't1' },
+          { id: 'L2', role: 'team_leader', name: 'İkinci Lider', at: 't2' },
+          { id: 'D1', role: 'designer', name: 'Abdijibar', at: 't3' },
+        ],
+      },
+    })
+    // The leader approves KILAVUZ (one of the missing parties). KILAVUZ
+    // still needs L2 + D1 → stays at ozalit_onay.
+    const { project: next, history } = computeApproval(p, L1, ctxWithSnapshot)
+    assert.equal(next.stage, 'ozalit_onay', 'still waiting on KILAVUZ')
+    assert.equal(history.from_stage, 'ozalit_onay')
+    assert.equal(history.to_stage, 'ozalit_onay')
+    // KILAVUZ now has L1; L2 + D1 still missing.
+    assert.equal(next.ozalit_parca_approvals.KILAVUZ.length, 1)
+  })
+
+  it('advances once every parça has every required party', () => {
+    // KAPAK + KUTU + KILAVUZ all have the full multi-party set.
+    const fullSet = [
+      { id: 'L1', role: 'team_leader', name: 'Ayşenur', at: 't1' },
+      { id: 'L2', role: 'team_leader', name: 'İkinci Lider', at: 't2' },
+      { id: 'D1', role: 'designer', name: 'Abdijibar', at: 't3' },
+    ]
+    const p = perParcaOzalitProject({
+      ozalit_parca_approvals: { KAPAK: fullSet, KUTU: fullSet, KILAVUZ: fullSet },
+    })
+    // A re-click on the same parçalar — already done, so an idempotent
+    // re-approve should advance to baski_onay once the multi-party
+    // ledger is satisfied.
+    const { project: next } = computeApproval(p, L1, ctxWithSnapshot)
+    assert.equal(next.stage, 'baski_onay')
+  })
+
+  it('per-parça leader-first: designer cannot approve a parça with no leader sign-off', () => {
+    // Designer tries to approve KAPAK; no leader has signed any parça
+    // yet → refused with the leader-first message.
+    const p = perParcaOzalitProject({
+      ozalit_parca_approvals: {},
+    })
+    assert.throws(
+      () => computeApproval(p, D1, ctxWithSnapshot),
+      /Önce ekip lideri onaylamalıdır/,
+    )
+  })
+
+  it('per-parça designer can approve after SOME parça gets a leader sign-off', () => {
+    // L1 signs KAPAK. Designer D1 is now allowed to approve KUTU.
+    const p = perParcaOzalitProject({
+      ozalit_parca_approvals: {
+        KAPAK: [{ id: 'L1', role: 'team_leader', name: 'Ayşenur', at: 't1' }],
+      },
+    })
+    const { project: next } = computeApproval(p, D1, ctxWithSnapshot)
+    // D1 appended to KUTU; project still pending overall → stays at ozalit_onay.
+    assert.equal(next.stage, 'ozalit_onay')
+    // D1's row landed on KUTU (one record). Compare the shape minus the
+    // `at` timestamp, which the FSM writes fresh on every call.
+    const row = next.ozalit_parca_approvals.KUTU[0]
+    assert.equal(row.id, 'D1')
+    assert.equal(row.role, 'designer')
+    assert.equal(row.name, 'Abdijibar')
+    assert.ok(row.at, 'at timestamp is stamped')
+  })
+
+  it('bulk-approve sends all required approvers per parça in one call', () => {
+    // Walking the round in three clicks — the bulk shortcut should clear
+    // all 3 parçalar in one call when parcalar is omitted.
+    const p = perParcaOzalitProject({
+      ozalit_parca_approvals: {
+        KAPAK: [
+          { id: 'L1', role: 'team_leader', name: 'Ayşenur', at: 't1' },
+          { id: 'L2', role: 'team_leader', name: 'İkinci Lider', at: 't2' },
+          { id: 'D1', role: 'designer', name: 'Abdijibar', at: 't3' },
+        ],
+      },
+    })
+    // The remaining parçalar (KUTU, KILAVUZ) need all three approvers.
+    // Walk them one party at a time; eventually KUTU + KILAVUZ are full
+    // and the project advances.
+    const r1 = computeApproval(p, L1, ctxWithSnapshot)
+    const r2 = computeApproval(r1.project, L2, ctxWithSnapshot)
+    const r3 = computeApproval(r2.project, D1, ctxWithSnapshot)
+    assert.equal(r3.project.stage, 'baski_onay')
+  })
+
+  it('a per-parça reject keeps the leader sign-offs on the rest of the round', () => {
+    // KAPAK has full multi-party sign-off; KUTU has L1 only; KILAVUZ is
+    // pending. Leader rejects only KAPAK — KUTU + KILAVUZ stay locked.
+    const p = perParcaOzalitProject({
+      ozalit_approvals: [
+        { id: 'L1', role: 'team_leader', name: 'Ayşenur', at: 't1' },
+      ],
+      ozalit_parca_approvals: {
+        KAPAK: [
+          { id: 'L1', role: 'team_leader', name: 'Ayşenur', at: 't1' },
+          { id: 'L2', role: 'team_leader', name: 'İkinci Lider', at: 't2' },
+          { id: 'D1', role: 'designer', name: 'Abdijibar', at: 't3' },
+        ],
+        KUTU: [{ id: 'L1', role: 'team_leader', name: 'Ayşenur', at: 't1' }],
+      },
+    })
+    const { project: next } = computeRejection(
+      p, 'KAPAK hatalı', [], 'designer',
+      { actorName: L1.name, actor: L1, parcalar: ['KAPAK'] },
+    )
+    // Whole-round reject still drops to ozalit_onay (rejection to designer
+    // keeps the stage here).
+    assert.equal(next.stage, 'ozalit_onay')
+    // KAPAK's sign-offs are cleared; KUTU's L1 row stays.
+    assert.equal(next.ozalit_parca_approvals.KAPAK, undefined)
+    assert.equal(next.ozalit_parca_approvals.KUTU.length, 1)
+  })
+})

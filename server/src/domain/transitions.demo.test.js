@@ -198,3 +198,149 @@ describe('reject "Teslim Alındı" gate', () => {
     assert.equal(next.stage, 'tasarim')
   })
 })
+
+// Per-parça gate (migrations 068/069/070): the demo_onay / cin_demo_onay
+// advance refuses to leave demo_onay until every parça on the latest
+// snapshot's `_selectedComponents` has the leader's sign-off in the
+// per-parça ledger. The legacy single-parça shortcut (no snapshot) still
+// advances on a single click — see the `'approves and advances once
+// received at 100%'` test above.
+describe('per-parça demo approval gate (migrations 068/069/070)', () => {
+  const PARCALAR = ['KAPAK', 'KUTU', 'KILAVUZ']
+  const leaderCtx = {
+    actorName: 'Ayşenur',
+    actor: { id: 'u-l', role: 'team_leader', name: 'Ayşenur' },
+    snapshot: { selectedComponents: PARCALAR },
+  }
+  // The prepare hook passes ctx.snapshot, so use that shape here.
+  function multiParcaProject(overrides = {}) {
+    return demoProject({
+      demo_parca_approvals: [],
+      ...overrides,
+    })
+  }
+
+  it('refuses to advance while any parça is unsigned', () => {
+    // KAPAK already approved. The leader explicitly clicks "Onayla" on
+    // KAPAK again (no-op by design — already approved) — KUTU + KILAVUZ
+    // stay pending → the project stays at demo_onay.
+    const p = multiParcaProject({
+      demo_parca_approvals: [
+        { parca: 'KAPAK', by: 'u-l', by_name: 'Ayşenur', at: '2026-01-01T00:00:00.000Z' },
+      ],
+      progress: 100,
+    })
+    const { project: next, history } = computeApproval(
+      p,
+      leader,
+      { ...leaderCtx, parcalar: ['KUTU'] },
+    )
+    assert.equal(next.stage, 'demo_onay', 'stays put while parçalar pending')
+    assert.equal(history.from_stage, 'demo_onay')
+    assert.equal(history.to_stage, 'demo_onay')
+    // The KAPAK + KUTU rows are recorded; KILAVUZ is still pending.
+    const approved = next.demo_parca_approvals.map((r) => r.parca).sort()
+    assert.deepEqual(approved, ['KAPAK', 'KUTU'])
+  })
+
+  it('advances once every parça is approved', () => {
+    const p = multiParcaProject({
+      demo_parca_approvals: [
+        { parca: 'KAPAK', by: 'u-l', by_name: 'Ayşenur', at: '2026-01-01T00:00:00.000Z' },
+        { parca: 'KUTU', by: 'u-l', by_name: 'Ayşenur', at: '2026-01-01T00:00:01.000Z' },
+        { parca: 'KILAVUZ', by: 'u-l', by_name: 'Ayşenur', at: '2026-01-01T00:00:02.000Z' },
+      ],
+      progress: 100,
+    })
+    const { project: next } = computeApproval(p, leader, leaderCtx)
+    assert.equal(next.stage, 'ozalit_teslim', 'all parçalar signed off → advance')
+  })
+
+  it('bulk-approve (parcalar omitted) signs off every pending parça at once', () => {
+    const p = multiParcaProject({
+      demo_parca_approvals: [
+        { parca: 'KAPAK', by: 'u-l', by_name: 'Ayşenur', at: '2026-01-01T00:00:00.000Z' },
+      ],
+      progress: 100,
+    })
+    // No parcalar in ctx → server defaults to "approve all still-pending".
+    const { project: next } = computeApproval(p, leader, leaderCtx)
+    assert.equal(next.stage, 'ozalit_teslim')
+  })
+
+  it('a subset (parcalar) only approves the chosen parça', () => {
+    // KAPAK already approved; user explicitly approves KUTU only — KILAVUZ
+    // stays pending, so the project stays at demo_onay.
+    const p = multiParcaProject({
+      demo_parca_approvals: [
+        { parca: 'KAPAK', by: 'u-l', by_name: 'Ayşenur', at: '2026-01-01T00:00:00.000Z' },
+      ],
+      progress: 100,
+    })
+    const { project: next } = computeApproval(
+      p,
+      leader,
+      { ...leaderCtx, parcalar: ['KUTU'] },
+    )
+    assert.equal(next.stage, 'demo_onay')
+    const approvedParcalar = next.demo_parca_approvals.map((r) => r.parca).sort()
+    assert.deepEqual(approvedParcalar, ['KAPAK', 'KUTU'])
+  })
+
+  it('re-sending the demo with a different _selectedComponents drops orphaned approvals', () => {
+    // A designer re-sends a demo without KILAVUZ. KILAVUZ's prior sign-off
+    // must NOT count toward the next round's gate (the plan's "single source
+    // of truth for the parça list" rule).
+    const p = multiParcaProject({
+      demo_parca_approvals: [
+        { parca: 'KAPAK', by: 'u-l', by_name: 'Ayşenur', at: '2026-01-01T00:00:00.000Z' },
+        { parca: 'KILAVUZ', by: 'u-l', by_name: 'Ayşenur', at: '2026-01-01T00:00:01.000Z' },
+      ],
+      progress: 100,
+    })
+    // The next round's snapshot lists only KAPAK + KUTU; KILAVUZ is gone.
+    const newSnap = { selectedComponents: ['KAPAK', 'KUTU'] }
+    const { project: next, history } = computeApproval(p, leader, {
+      ...leaderCtx,
+      snapshot: newSnap,
+      parcalar: ['KAPAK', 'KUTU'],
+    })
+    // KUTU newly approved; KAPAK already approved → all signed off → advance.
+    assert.equal(next.stage, 'ozalit_teslim')
+    // The ledger is pruned — KILAVUZ no longer counts.
+    const approvedParcalar = next.demo_parca_approvals.map((r) => r.parca).sort()
+    assert.deepEqual(approvedParcalar, ['KAPAK', 'KUTU'])
+  })
+
+  it('at <100% progress: per-parça approve holds the demo', () => {
+    const p = multiParcaProject({
+      progress: 50,
+      demo_parca_approvals: [],
+    })
+    const { project: next } = computeApproval(p, leader, leaderCtx)
+    assert.equal(next.stage, 'demo_onay', 'held below 100%')
+    assert.equal(next.demo_held, true)
+    assert.equal(next.demo_parca_approvals.length, PARCALAR.length)
+  })
+
+  it('a partial reject clears only the rejected parça’s approval', () => {
+    const p = multiParcaProject({
+      demo_parca_approvals: [
+        { parca: 'KAPAK', by: 'u-l', by_name: 'Ayşenur', at: '2026-01-01T00:00:00.000Z' },
+        { parca: 'KUTU', by: 'u-l', by_name: 'Ayşenur', at: '2026-01-01T00:00:01.000Z' },
+      ],
+      demo_received: true,
+    })
+    // Leader rejects only KAPAK — KUTU's approval must stay locked.
+    const { project: next } = computeRejection(
+      p, 'KAPAK tasarımı hatalı', [], 'designer',
+      { actorName: 'Ayşenur', actor: leader, parcalar: ['KAPAK'] },
+    )
+    // Whole-round reject still drops the project back to tasarim.
+    assert.equal(next.stage, 'tasarim')
+    const approvedParcalar = next.demo_parca_approvals.map((r) => r.parca).sort()
+    assert.deepEqual(approvedParcalar, ['KUTU'])
+    const rejectedParcalar = next.demo_parca_rejections.map((r) => r.parca).sort()
+    assert.deepEqual(rejectedParcalar, ['KAPAK'])
+  })
+})

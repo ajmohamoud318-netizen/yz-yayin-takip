@@ -350,6 +350,10 @@ export function rejectProject(projectId, actor, ctx = {}, client = null) {
       rejectTarget: ctx.rejectTarget ?? null,
       revizeIds: ctx.revizeIds ?? [],
       note: ctx.note ?? '',
+      // Per-parça reject (migrations 068/069/070): null/omitted =
+      // whole-round reject; an array = partial, only those parçalar's
+      // approval rows get cleared.
+      parcalar: ctx.parcalar ?? null,
     }),
   }, client)
 }

@@ -729,6 +729,14 @@ const projectsReject = {
       // rejected every reject request with a 400.
       revizeIds: { type: 'array', items: { type: 'string' }, default: [] },
       note: { type: 'string', maxLength: 1000 },
+      // Per-parça payload (migrations 068/069/070): a subset of parçalar
+      // whose approval rows should be cleared on this reject. null =
+      // whole-round reject (the default; matches the old behaviour).
+      // Only meaningful on demo_onay / cin_demo_onay / ozalit_onay.
+      parcalar: {
+        type: ['array', 'null'],
+        items: { type: 'string', minLength: 1, maxLength: 200 },
+      },
     },
   },
 }
@@ -817,11 +825,20 @@ const subtasksRevize = {
 // on the subtask is the SUM of every batch's `pages`, kept in sync by
 // the trigger `recompute_subtask_pages_counter` (migration 067).
 //
+// Migration 068 — every batch now carries `start_page`. The route
+// refuses any save whose [start_page, start_page + pages - 1] range
+// intersects an existing batch on the same subtask, so pages_done is
+// the count of DISTINCT pages covered (no double-counting across
+// designers). Legacy rows were backfilled with chronological
+// start_page values; see migration 068.
+//
 // Two endpoints, two schemas:
 //
 //   POST /api/subtasks/:id/designer-batches
-//     Body: { designer_id, pages }. One batch per call — designers can
-//     queue multiple batches in the SPA without a per-call round-trip.
+//     Body: { designer_id, pages, start_page }. One batch per call —
+//     designers can queue multiple batches in the SPA without a
+//     per-call round-trip. `start_page` is the page number at the
+//     start of the range; `pages` is the count.
 //
 //   POST /api/subtasks/:id/designer-batches/:batchId/redone
 //     No body. Stamps "Yeniden Çalıştım" on a single saved batch.
@@ -829,7 +846,10 @@ const subtasksRevize = {
 // Both endpoints enforce ownership in the route (designer may only
 // touch their own slot; team_leader may touch any).
 //
-// Per-batch cap of `pages <= total_pages` is enforced in the route;
+// Per-batch cap of `pages_done + pages <= total_pages` is enforced in the
+// route; a single batch that would push the running sum past the book is
+// rejected with 400. Enforced in JS rather than via a CHECK so the leader
+// can still raise total_pages mid-stream without orphaning prior batches.
 // the column CHECK only constrains `pages > 0`.
 
 const subtasksDesignerBatchCreate = {
@@ -842,7 +862,7 @@ const subtasksDesignerBatchCreate = {
   body: {
     type: 'object',
     additionalProperties: false,
-    required: ['designer_id', 'pages'],
+    required: ['designer_id', 'pages', 'start_page'],
     properties: {
       designer_id: { type: 'string', minLength: 1, maxLength: 64 },
       // Fastify v4's ajv coerces only when `type` is an array of types;
@@ -851,6 +871,17 @@ const subtasksDesignerBatchCreate = {
       // 1–100000; `Number()` in the handler turns the validated string
       // back into a number (and the column CHECK rejects 0 / negative).
       pages: {
+        type: ['integer', 'string'],
+        pattern: '^[1-9][0-9]{0,5}$',
+        minimum: 1,
+        maximum: 100000,
+      },
+      // Migration 068 — first page in the batch's range. The range
+      // [start_page, start_page + pages - 1] must fit in total_pages
+      // and not overlap any existing batch's range on this subtask;
+      // both are enforced in the route handler below. Same coerce
+      // pattern as `pages` — the handler converts with `Number()`.
+      start_page: {
         type: ['integer', 'string'],
         pattern: '^[1-9][0-9]{0,5}$',
         minimum: 1,

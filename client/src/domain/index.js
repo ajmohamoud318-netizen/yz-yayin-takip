@@ -40,6 +40,15 @@ export {
   isDemoApprover,
   canRejectAtStage,
   canEditProductInfo,
+  // Per-parça approval helpers (migrations 068/069/070): pure twin of the
+  // server-side per-parça ledger helpers. The UI uses these to render the
+  // per-parça grid and the bulk-approve shortcut; the server still
+  // authoritatively gates every advance.
+  parcaNames,
+  pendingParcalar,
+  approvedParcalar,
+  rejectedParcalar,
+  bulkApproveAvailable,
 } from './services/pipeline.js'
 export { subtaskProgress } from './services/progress.js'
 export { statusKeyForProject, groupKeyForProject } from './services/project-status.js'

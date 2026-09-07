@@ -8,6 +8,7 @@ import {
   markSubtaskDesignerBatchRedone,
   loadSubtaskDesignerBatches,
   getSubtaskDesignerBatches,
+  findOverlappingBatches,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
 import { subtaskProgress } from '../domain/progress.js'
@@ -622,9 +623,15 @@ export async function subtaskRoutes(fastify) {
    * daily log; ship another 3, save → another tick. The first batch
    * of 8 doesn't vanish when the second arrives.
    *
-   * Body: `{ designer_id: string, pages: number }`. The route
-   * ignores multi-row payloads (one POST = one tickbox). The leader
-   * can correct multiple designers' numbers with separate calls.
+   * Migration 068 — every batch now carries `start_page`. The route
+   * refuses any save whose [start_page, start_page + pages - 1] range
+   * intersects an existing batch on the same subtask, so pages_done
+   * counts DISTINCT pages covered, not the raw sum (no double-counting
+   * across designers logging the same page).
+   *
+   * Body: `{ designer_id: string, pages: number, start_page: number }`.
+   * The route ignores multi-row payloads (one POST = one batch). The
+   * leader can correct multiple designers' numbers with separate calls.
    *
    * Gating:
    *   • team_leader role may add a batch for any active designer;
@@ -634,11 +641,11 @@ export async function subtaskRoutes(fastify) {
    * Inside the transaction:
    *   1. Lock the subtask (FOR UPDATE) and the parent project.
    *   2. Validate the body — `designer_id` is an active designer;
-   *     `pages` is a positive integer ≤ the subtask's total_pages
-   *     (a designer can ship at most one full book in one go; the
-   *     cumulative sum is allowed to grow past total_pages because
-   *     the leader can raise total_pages mid-stream without
-   *     orphaning prior batches).
+   *     `pages` and `start_page` are positive integers; the range
+   *     [start_page, start_page + pages - 1] fits inside total_pages
+   *     and does not overlap any existing batch on this subtask.
+   *     Enforced in JS, not via CHECK, so the leader can raise
+   *     total_pages mid-stream without orphaning prior batches.
    *   3. addSubtaskDesignerBatch — single INSERT that triggers the
    *      subtask-pages counter recompute (subtasks.pages_done /
    *      is_done handled by migration 067's trigger).
@@ -646,13 +653,14 @@ export async function subtaskRoutes(fastify) {
    *      the trigger, no extra SELECT needed beyond the row we
    *      already touched for the lock).
    *   5. logHistory — one row per save, e.g.
-   *      "İç Sayfalar: Ayşe +8 sayfa ekledi". This is read on
+   *      "İç Sayfalar: Ayşe sayfa 1-8 ekledi". This is read on
    *      everything but no-ops on nothing.
    *
    * Returns a slim shape so the SPA can merge into state without
    * hitting /projects/:id for the full payload:
    *   { subtask_id, project_id, total_pages, pages_done, is_done,
-   *     batch: { id, designer_id, designer_name, pages, created_at },
+   *     batch: { id, designer_id, designer_name, pages, start_page,
+   *              created_at, ... },
    *     project_progress, project: { id, progress, version } }
    */
   fastify.post('/subtasks/:id/designer-batches', {
@@ -662,8 +670,10 @@ export async function subtaskRoutes(fastify) {
     const subtaskId = request.params.id
     const designerId = String(request.body?.designer_id ?? '').trim()
     const pagesRaw = Number(request.body?.pages)
+    const startPageRaw = Number(request.body?.start_page)
     if (!designerId) badRequest('designer_id gerekli.')
     if (!Number.isFinite(pagesRaw)) badRequest('pages bir sayı olmalı.')
+    if (!Number.isFinite(startPageRaw)) badRequest('start_page bir sayı olmalı.')
 
     const result = await withTx(async (client) => {
       const { rows: subRows } = await client.query(
@@ -690,9 +700,39 @@ export async function subtaskRoutes(fastify) {
       // a friendlier error before the INSERT fails with a bare
       // constraint violation.
       const pages = Math.floor(pagesRaw)
+      const startPage = Math.floor(startPageRaw)
       if (pages <= 0) badRequest('pages sıfırdan büyük olmalı.')
-      if (total > 0 && pages > total) {
-        badRequest(`pages (${pages}) total_pages (${total}) değerinden büyük olamaz.`)
+      if (startPage < 1) badRequest('start_page en az 1 olmalı.')
+      // Migration 068 — the new batch covers [start_page, start_page + pages - 1].
+      // Range must fit inside the book. The "remaining pages" cap
+      // (`pages_done + pages ≤ total`) still applies, but in this model
+      // it's a stricter version of "start_page + pages - 1 ≤ total":
+      // pages_done is the sum of all batches' `pages` (no overlap, so
+      // it equals the highest covered page index — 1 if everything is
+      // contiguous from page 1). The simplest correct check is on the
+      // range itself.
+      if (total > 0 && startPage + pages - 1 > total) {
+        badRequest(
+          `Sayfa aralığı (${startPage}-${startPage + pages - 1}) toplam sayfa sayısını (${total}) aşamaz.`,
+        )
+      }
+      // Migration 068 — refuse any save whose range overlaps an existing
+      // batch on this subtask. Without this, two designers shipping the
+      // same page would silently double-count in pages_done. The query
+      // joins users so the error can name the conflicting party.
+      const overlaps = await findOverlappingBatches(client, {
+        subtaskId, newStart: startPage, newPages: pages,
+      })
+      const conflict = overlaps.find((o) => o.designer_id !== designerId)
+        || overlaps[0]
+      if (conflict) {
+        const cStart = conflict.start_page
+        const cEnd = conflict.start_page + conflict.pages - 1
+        badRequest(
+          `Sayfa aralığı (${startPage}-${startPage + pages - 1}) zaten `
+          + `${conflict.designer_name ?? conflict.designer_id} tarafından `
+          + `(${cStart}-${cEnd}) tamamlandı.`,
+        )
       }
       // Batched existence/role check — one round-trip verifies the
       // designer exists, is role='designer', and is_active=true.
@@ -724,6 +764,7 @@ export async function subtaskRoutes(fastify) {
         subtaskId,
         designerId,
         pages,
+        startPage,
       })
       if (!inserted) badRequest('Sayfa eklenemedi.')
       const { rows: refreshedSub } = await client.query(
@@ -751,9 +792,9 @@ export async function subtaskRoutes(fastify) {
           to_stage: project.stage,
           action: 'system',
           event: 'subtask_progress',
-          note: pagesRaw === 1
-            ? `${sub.title}: ${designerName ?? designerId} 1 sayfa ekledi`
-            : `${sub.title}: ${designerName ?? designerId} +${pages} sayfa ekledi`,
+          note: pages === 1
+            ? `${sub.title}: ${designerName ?? designerId} sayfa ${startPage} ekledi`
+            : `${sub.title}: ${designerName ?? designerId} sayfa ${startPage}-${startPage + pages - 1} ekledi`,
         },
         request.user,
       )
@@ -769,6 +810,7 @@ export async function subtaskRoutes(fastify) {
           designer_id: inserted.designer_id,
           designer_name: designerName,
           pages: inserted.pages,
+          start_page: inserted.start_page,
           created_at: inserted.created_at instanceof Date
             ? inserted.created_at.toISOString()
             : inserted.created_at,

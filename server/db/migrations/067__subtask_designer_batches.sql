@@ -33,9 +33,10 @@
 -- table exists, so a fresh DB and a re-applied DB both end up clean.
 --
 -- The `pages > 0` CHECK keeps a fat-fingered zero or negative entry out
--- of the table; the route's per-batch cap (`pages <= total_pages`) is a
--- softer business rule enforced in JS, not via CHECK, so a leader can
--- still raise `total_pages` mid-stream without orphaning prior batches.
+-- of the table; the route's per-batch cap (`pages_done + pages
+-- <= total_pages`) is a softer business rule enforced in JS, not via
+-- CHECK, so a leader can still raise `total_pages` mid-stream without
+-- orphaning prior batches.
 DROP TABLE IF EXISTS subtask_designer_counts CASCADE;
 
 CREATE TABLE IF NOT EXISTS subtask_designer_batches (

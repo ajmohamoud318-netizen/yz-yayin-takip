@@ -30,6 +30,13 @@
  * silently vanished from the audit. The batch shape preserves the
  * timeline and lets a designer run "Yeniden Çalıştım" against a
  * specific saved session.
+ *
+ * Migration 068 — every batch also carries `start_page`. The route
+ * refuses any save whose [start_page, start_page + pages - 1] range
+ * intersects an existing batch on the same subtask, so pages_done is
+ * the count of DISTINCT pages covered (no double-counting across
+ * designers). Legacy rows were backfilled with chronological
+ * start_page values; see migration 068.
  */
 
 const DESIGNER_BATCH_LIMIT = 256
@@ -48,7 +55,7 @@ const DESIGNER_BATCH_LIMIT = 256
 export async function loadSubtaskDesignerBatches(client, subtaskIds) {
   if (!subtaskIds.length) return new Map()
   const { rows } = await client.query(
-    `SELECT sdb.id, sdb.subtask_id, sdb.designer_id, sdb.pages, sdb.created_at,
+    `SELECT sdb.id, sdb.subtask_id, sdb.designer_id, sdb.pages, sdb.start_page, sdb.created_at,
             sdb.redone_at, sdb.redone_by, sdb.redone_by_name,
             u.name AS designer_name,
             r.name AS redone_by_name_live
@@ -67,6 +74,7 @@ export async function loadSubtaskDesignerBatches(client, subtaskIds) {
       designer_id: r.designer_id,
       designer_name: r.designer_name ?? null,
       pages: r.pages,
+      start_page: r.start_page ?? null,
       created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
       redone_at: r.redone_at instanceof Date ? r.redone_at.toISOString() : r.redone_at,
       redone_by: r.redone_by ?? null,
@@ -86,8 +94,9 @@ export async function loadSubtaskDesignerBatches(client, subtaskIds) {
  *   • actor permissions (designer = own id; team_leader = any),
  *   • `pages > 0` (the column CHECK refuses non-positive inputs
  *     anyway, but the route surfaces a friendlier error),
- *   • `pages <= total_pages` (per-batch cap so a designer can't
- *     ship "the whole book and then some" in one go),
+ *   • `start_page` is a known positive integer (migration 068 — the
+ *     per-batch range must fit inside the book and not overlap an
+ *     existing batch; both checks live in the route, not here),
  *   • designer_id is a known active designer.
  *
  * `actorId` / `actorName` are unused here — the designer_id on the
@@ -99,18 +108,50 @@ export async function loadSubtaskDesignerBatches(client, subtaskIds) {
  * INSERT, so the route's slim response can read those values back
  * without writing them itself.
  */
-export async function addSubtaskDesignerBatch(client, { subtaskId, designerId, pages }) {
+export async function addSubtaskDesignerBatch(client, { subtaskId, designerId, pages, startPage }) {
   if (!subtaskId || !designerId || !Number.isFinite(pages) || pages <= 0) return null
+  if (!Number.isFinite(startPage) || startPage < 1) return null
   if (pages > DESIGNER_BATCH_LIMIT * 1000) {
     throw new Error(`refusing to insert a batch with pages > ${DESIGNER_BATCH_LIMIT * 1000}`)
   }
   const { rows } = await client.query(
-    `INSERT INTO subtask_designer_batches (subtask_id, designer_id, pages)
-     VALUES ($1::text, $2::text, $3::int)
-     RETURNING id, subtask_id, designer_id, pages, created_at, redone_at, redone_by, redone_by_name`,
-    [subtaskId, designerId, Math.floor(pages)],
+    `INSERT INTO subtask_designer_batches (subtask_id, designer_id, pages, start_page)
+     VALUES ($1::text, $2::text, $3::int, $4::int)
+     RETURNING id, subtask_id, designer_id, pages, start_page, created_at, redone_at, redone_by, redone_by_name`,
+    [subtaskId, designerId, Math.floor(pages), Math.floor(startPage)],
   )
   return rows[0] ?? null
+}
+
+/**
+ * Return every batch on this subtask whose [start_page, start_page + pages - 1]
+ * range overlaps the proposed [newStart, newStart + newPages - 1] range.
+ *
+ * Used by the POST route to refuse double-counting before the INSERT runs
+ * (migration 068). Joins users for designer_name so the error message
+ * can name the conflicting party.
+ *
+ * Legacy rows with NULL start_page (a re-applied migration's brief
+ * window, or pre-068 data that survived the backfill oddly) are
+ * excluded — we don't know their range, so we can't tell whether they
+ * overlap. The leader can spot-fix from the UI.
+ */
+export async function findOverlappingBatches(client, { subtaskId, newStart, newPages }) {
+  if (!subtaskId || !Number.isFinite(newStart) || !Number.isFinite(newPages)) return []
+  const newEnd = newStart + newPages - 1
+  const { rows } = await client.query(
+    `SELECT b.id, b.designer_id, b.pages, b.start_page,
+            u.name AS designer_name
+       FROM subtask_designer_batches b
+       LEFT JOIN users u ON u.id = b.designer_id
+      WHERE b.subtask_id = $1::text
+        AND b.start_page IS NOT NULL
+        AND b.start_page <= $3::int
+        AND (b.start_page + b.pages - 1) >= $2::int
+      ORDER BY b.start_page, b.created_at`,
+    [subtaskId, newStart, newEnd],
+  )
+  return rows
 }
 
 /**

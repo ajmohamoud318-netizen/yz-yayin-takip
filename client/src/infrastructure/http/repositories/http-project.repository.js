@@ -236,10 +236,20 @@ export function createHttpProjectRepository(userRepo) {
       cache.set(id, data)
       return data
     },
-    async approveProject(id) {
+    // Per-parça approval (migrations 068/069/070): `parcalar` is the list of
+    // parça names the leader is signing off on THIS click. null/omitted =
+    // "approve all still-pending parçalar on this round" (the bulk shortcut).
+    // The server resolves the snapshot's `_selectedComponents` independently
+    // via its prepare hook, so the client only forwards the leader's subset.
+    async approveProject(id, parcalar = null) {
       const cached = cache.get(id)
       if (!cached) badRequest('Proje bilinmiyor, listeyi yenileyin.')
-      const { data } = await httpClient.post(`/projects/${id}/approve`, { stage: cached.stage })
+      // snapshotKind lets the prepare hook read the right snapshot: 'demo'
+      // for demo_onay, 'ozalit' for ozalit_onay (and ekran), 'baski_onay'
+      // for baski_onay.
+      const snapshotKind = pickSnapshotKind(cached.stage)
+      const body = { stage: cached.stage, parcalar, snapshotKind }
+      const { data } = await httpClient.post(`/projects/${id}/approve`, body)
       cache.set(id, data)
       return data
     },
@@ -349,8 +359,11 @@ export function createHttpProjectRepository(userRepo) {
     // Mark the Baskı Onay Formu "hazırlandı" — the dual-approval gate: any
     // team leader may prepare it, but only notifies OTHER team leaders that
     // approval is now needed (see computeApproval's baski_onay branch).
-    async prepareBaskiOnay(id) {
-      const { data } = await httpClient.post(`/projects/${id}/baski-onay-prepare`, {})
+    // Per-parça payload (migration 070): the leader picks which parçalar
+    // they prepared; the maker-checker rule (approver ≠ preparer) applies
+    // per parça on the matching approve branch.
+    async prepareBaskiOnay(id, parcalar = null) {
+      const { data } = await httpClient.post(`/projects/${id}/baski-onay-prepare`, { parcalar })
       cache.set(id, data)
       return data
     },
@@ -361,8 +374,12 @@ export function createHttpProjectRepository(userRepo) {
       cache.set(id, data)
       return data
     },
-    async approveEkranDemo(id) {
-      const { data } = await httpClient.post(`/projects/${id}/ekran-demo-approve`, {})
+    // Per-parça approve (migrations 068/069/070): the leader signs off the
+    // chosen parçalar (or all still-pending when null). The prepare hook
+    // already loaded the demo snapshot, so the server can resolve the
+    // pending set on its own.
+    async approveEkranDemo(id, parcalar = null) {
+      const { data } = await httpClient.post(`/projects/${id}/ekran-demo-approve`, { parcalar })
       cache.set(id, data)
       return data
     },
@@ -371,14 +388,34 @@ export function createHttpProjectRepository(userRepo) {
       cache.set(id, data)
       return data
     },
-    async rejectProject(id, reason, revizeIds, target) {
+    // Per-parça reject (migrations 068/069/070): `parcalar` is the subset
+    // whose approval rows get cleared on this click; null = whole-round
+    // reject (full ledger reset, the original behaviour).
+    async rejectProject(id, reason, revizeIds, target, parcalar = null) {
       const cached = cache.get(id)
       if (!cached) badRequest('Proje bilinmiyor, listeyi yenileyin.')
       const { data } = await httpClient.post(`/projects/${id}/reject`, {
-        stage: cached.stage, reason, reject_target: target, revizeIds,
+        stage: cached.stage, reason, reject_target: target, revizeIds, parcalar,
       })
       cache.set(id, data)
       return data
     },
   }
+}
+
+/**
+ * Which `demos` snapshot kind to read for the per-parça approve / reject
+ * gate. Mirrors the route's stage-to-snapshotKind mapping inside
+ * `routes/projects.js#approveProject`. Lives here so the http repository can
+ * send the right hint in one place.
+ *
+ *   demo_onay / cin_demo_onay  → 'demo'
+ *   ozalit_onay                → 'ozalit' (covers the ekran_ozalit branch too;
+ *                                 the screen round uses the same ozalit snapshot)
+ *   baski_onay / cin_baski_onay → 'baski_onay'
+ */
+function pickSnapshotKind(stage) {
+  if (stage === 'ozalit_onay') return 'ozalit'
+  if (stage === 'baski_onay' || stage === 'cin_baski_onay') return 'baski_onay'
+  return 'demo'
 }

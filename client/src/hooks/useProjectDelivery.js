@@ -169,6 +169,97 @@ export function useProjectDelivery(project, refetch, user) {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Per-parça approval handlers (migrations 068/069/070)
+  //
+  // The same per-parça FSM gates demo_onay, ozalit_onay, baski_onay and the
+  // screen-side equivalents. The route accepts an optional `parcalar` body
+  // field; null/omitted defaults to "all still-pending parçalar on the
+  // current round" (drives the bulk shortcut). The project's stage picks the
+  // matching gate; the snapshot's `_selectedComponents` arrives server-side
+  // via the prepare hook, so we only need to forward the leader's selection.
+  //
+  // Returns the updated project (or null on failure) so the caller can
+  // branch on the new stage without a second refetch.
+  // ---------------------------------------------------------------------------
+
+  async function handleApproveParcalar(parcalar) {
+    if (!project) return null
+    setProcessingEkranDemo(true)
+    try {
+      const updated = await api.approveProject(project.id, parcalar)
+      await refetch()
+      const remaining = (updated?.stage === project.stage)
+        ? 'Onayınız kaydedildi, diğer onaylar bekleniyor.'
+        : 'Proje bir sonraki aşamaya geçti.'
+      toast.success(remaining)
+      return updated
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+      return null
+    } finally {
+      setProcessingEkranDemo(false)
+    }
+  }
+
+  async function handleRejectParcalar(parcalar, reason, target) {
+    if (!project) return null
+    setProcessingEkranDemo(true)
+    try {
+      // parcalar is an array of parça names; null/omitted = whole-round reject.
+      const updated = await api.rejectProject(
+        project.id,
+        reason,
+        [], // revizeIds — designer-led sub-flagging, separate from per-parça reject
+        target ?? 'designer',
+        parcalar,
+      )
+      await refetch()
+      toast.success('Red kaydedildi.')
+      return updated
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+      return null
+    } finally {
+      setProcessingEkranDemo(false)
+    }
+  }
+
+  async function handleEkranApproveParcalar(parcalar) {
+    if (!project) return null
+    setProcessingEkranDemo(true)
+    try {
+      const updated = await api.approveEkranDemo(project.id, parcalar)
+      await refetch()
+      const remaining = (updated?.stage === project.stage)
+        ? 'Onayınız kaydedildi, bekleyen parçalar var.'
+        : 'Ekran demo onaylandı, proje ilerledi.'
+      toast.success(remaining)
+      return updated
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+      return null
+    } finally {
+      setProcessingEkranDemo(false)
+    }
+  }
+
+  async function handlePrepareBaskiParcalar(parcalar) {
+    if (!project) return null
+    setProcessingEkranDemo(true)
+    try {
+      const updated = await api.prepareBaskiOnay(project.id, parcalar)
+      await refetch()
+      toast.success('Baskı onay formu hazırlandı.')
+      return updated
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+      return null
+    } finally {
+      setProcessingEkranDemo(false)
+    }
+  }
+
   async function handleDemoCancel() {
     if (!project) return
     setCancellingRequest(true)
@@ -406,5 +497,10 @@ export function useProjectDelivery(project, refetch, user) {
     handleRequestChange,
     handleDemoChangeAccept, handleDemoChangeDecline,
     handleOzalitChangeAccept, handleOzalitChangeDecline,
+    // Per-parça approval handlers (migrations 068/069/070): the per-parça
+    // grid + bulk button use these. `parcalar` is `string[]` (or null for
+    // "all still-pending parçalar").
+    handleApproveParcalar, handleRejectParcalar,
+    handleEkranApproveParcalar, handlePrepareBaskiParcalar,
   }
 }

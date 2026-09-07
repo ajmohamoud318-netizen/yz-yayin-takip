@@ -223,6 +223,10 @@ export async function projectRoutes(fastify) {
       rejectTarget: request.body.reject_target,
       revizeIds: request.body.revizeIds,
       note: request.body.note,
+      // Per-parça payload (migrations 068/069/070): null = whole-round
+      // reject (full ledger reset, the original behaviour); an array =
+      // partial, only those parçalar's approval rows are cleared.
+      parcalar: request.body.parcalar ?? null,
     })
   })
 }

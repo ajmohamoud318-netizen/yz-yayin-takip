@@ -20,11 +20,13 @@ import OzalitFormDialog from '@/components/OzalitFormDialog'
 import BaskiOnayFormDialog from '@/components/BaskiOnayFormDialog'
 import TalepSignDialog from '@/components/TalepSignDialog'
 import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
+import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
 import {
   canRejectAtStage, isDemoApprover, isOzalitApprover, ozalitLeaderApproved,
   canRequestEkranDemo, canRespondEkranDemo, canRespondDemoChange, canRespondOzalitChange,
   canMarkDemoStarted, canMarkOzalitStarted,
+  bulkApproveAvailable, parcaNames,
 } from '@/domain'
 import { cn, formatTargetDate, formatNumber } from '@/lib/utils'
 
@@ -57,6 +59,17 @@ export default function Approvals({ tab = 'demo' }) {
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [signOrder, setSignOrder] = useState(null)
 
+  // Per-parça approval (migrations 068/069/070): the queue needs the latest
+  // snapshot's `_selectedComponents` for every project that hits demo/ozalit/
+  // baski_onay, so the per-parça grid can render. Pulled once on mount +
+  // when projects change; the map keys by `${projectId}|${kind}` so demo /
+  // ozalit / baski_onay each have their own latest snapshot.
+  const [snapshots, setSnapshots] = useState(new Map())
+  // Per-parça action loading — disables the whole grid while a leader click
+  // is in flight, so the same parça can't get double-clicked by the bulk
+  // shortcut and the per-row button.
+  const [parcaBusyId, setParcaBusyId] = useState(null)
+
   const isPrinter = user?.role === 'printer'
   const isLeader = user?.role === 'team_leader'
   const isDesigner = user?.role === 'designer'
@@ -65,6 +78,42 @@ export default function Approvals({ tab = 'demo' }) {
   // team_leader only — the same person who may edit the form itself.
   const canActOnDemo = isLeader || isPrinter
   const canActOnOzalit = isLeader || isDesigner
+
+  // Refresh the snapshot map whenever the projects list changes (a new
+  // project may have appeared in the queue) or the user lands on the
+  // page. GET /demos returns the full list; we project it down to the
+  // (project, kind) pairs we care about and keep only the most recent row
+  // per pair (server-side ordering is created_at DESC, but we re-sort
+  // defensively to handle ties).
+  useEffect(() => {
+    let cancelled = false
+    api.listDemos()
+      .then((rows) => {
+        if (cancelled) return
+        const latest = new Map()
+        for (const row of rows ?? []) {
+          if (!row?.project_id) continue
+          const key = `${row.project_id}|${row.kind}`
+          const at = row.created_at ? new Date(row.created_at).getTime() : 0
+          const existing = latest.get(key)
+          if (!existing || at > existing.at) {
+            latest.set(key, {
+              at,
+              selectedComponents: parcaNames(row?.payload?._selectedComponents),
+            })
+          }
+        }
+        setSnapshots(latest)
+      })
+      .catch(() => { /* listDemos is optional for the queue */ })
+    return () => { cancelled = true }
+  }, [projects])
+
+  // Lookup helpers — used by the per-parça grid below to resolve the
+  // current snapshot's parça list for a given (project, kind) pair.
+  function snapshotFor(projectId, kind) {
+    return snapshots.get(`${projectId}|${kind}`)?.selectedComponents ?? []
+  }
 
   useEffect(() => {
     if (!isPrinter || tab !== 'siparis') return
@@ -203,6 +252,78 @@ export default function Approvals({ tab = 'demo' }) {
     }
   }
 
+  // Per-parça handlers (migrations 068/069/070): the grid passes either a
+  // subset (single-row click) or `null` (bulk shortcut). Server-side, null
+  // defaults to "all still-pending parçalar on this round". The route
+  // forwards the snapshot's `_selectedComponents` via its prepare hook,
+  // so we only need to forward the leader's selection here.
+  async function handleApproveParcalar(project, parcalar, sub) {
+    if (!project) return
+    setParcaBusyId(project.id)
+    try {
+      // `sub` is the queue tab ('demo' | 'ozalit' | 'baski-onay'); map it
+      // onto the snapshotKind the route's prepare hook reads.
+      const snapshotKind = sub === 'demo'
+        ? 'demo'
+        : sub === 'ozalit' ? 'ozalit' : 'baski_onay'
+      const updated = await api.approveProject(project.id, parcalar, { snapshotKind })
+      updateOne(updated)
+      // The toast matches what ProjectDetail surfaces for a partial
+      // approve — "kaydedildi" while still collecting, "geçti" on advance.
+      const advanced = updated?.stage !== project.stage
+      toast.success(advanced
+        ? sub === 'demo' ? 'Demo onaylandı, proje ilerledi.'
+          : sub === 'ozalit' ? 'Ozalit onaylandı, proje ilerledi.'
+            : 'Baskı onaylandı, proje ilerledi.'
+        : 'Onayınız kaydedildi, bekleyen parçalar var.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setParcaBusyId(null)
+    }
+  }
+
+  // Per-parça reject (migrations 068/069/070): the leader picks which
+  // parçalar to bounce. For the queue UI we don't prompt for a reason +
+  // target inline; the leader falls back to the existing ApprovalDialog
+  // (whole-round) when they want to add narrative.
+  async function handleRejectParcalar(project, parcalar) {
+    if (!project) return
+    setParcaBusyId(project.id)
+    try {
+      // Default target is the designer — the round most commonly needs a
+      // redelivery of the offending parça. The "Hepsini Reddedin" button
+      // passes `null` which the server maps to whole-round reject.
+      const updated = await api.rejectProject(
+        project.id,
+        'Parça bazlı red',
+        [],
+        'designer',
+        parcalar,
+      )
+      updateOne(updated)
+      toast.success('Red kaydedildi.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setParcaBusyId(null)
+    }
+  }
+
+  async function handlePrepareBaskiParcalar(project, parcalar) {
+    if (!project) return
+    setParcaBusyId(project.id)
+    try {
+      const updated = await api.prepareBaskiOnay(project.id, parcalar)
+      updateOne(updated)
+      toast.success('Baskı onay formu hazırlandı.')
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setParcaBusyId(null)
+    }
+  }
+
   // Designers only have the ozalit queue — force them onto it. Baskı Onayı
   // is team_leader only, so it's never a printer/designer's active tab.
   const activeTab = isDesigner
@@ -275,38 +396,61 @@ export default function Approvals({ tab = 'demo' }) {
     }
     return (
       <div className="stagger-children space-y-2.5">
-        {queue.map((p) => (
-          <ApprovalRow
-            key={p.id}
-            project={p}
-            sub={sub}
-            user={user}
-            isLeader={isLeader}
-            isDesigner={isDesigner}
-            isPrinter={isPrinter}
-            ekranBusy={ekranBusyId === p.id}
-            onApprove={() => {
-              if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
-              else if (sub === 'baski-onay') setBaskiOnayForm({ project: p, mode: 'approve' })
-              else setDialog({ project: p, mode: 'approve' })
-            }}
-            onReject={() => setDialog({ project: p, mode: 'reject' })}
-            onAdvance={() => {
-              if (sub === 'demo') setDemoForm({ project: p, mode: 'advance' })
-              else setOzalitForm({ project: p, mode: 'advance' })
-            }}
-            onStartWork={() => {
-              // Review-then-start: the spec form opens (read-only for the
-              // printer) with "İşlemi Başlatın" in its footer.
-              if (sub === 'demo') setDemoForm({ project: p, mode: 'view', startWork: true })
-              else setOzalitForm({ project: p, mode: 'view', startWork: true })
-            }}
-            onEkranRequest={() => handleEkranDemoRequest(p)}
-            onEkranApprove={() => handleEkranDemoApprove(p)}
-            onEkranReject={() => setEkranDemoRejectFor(p)}
-            onNavigate={() => navigate(`/projects/${p.id}`)}
-          />
-        ))}
+        {queue.map((p) => {
+          // Per-parça gate (migrations 068/069/070): pick the matching
+          // snapshot kind for the queue tab, then decide whether to render
+          // the per-parça grid (≥2 parçalar on the snapshot) or fall through
+          // to the single-parça button row.
+          const snapshotKind = sub === 'demo'
+            ? 'demo'
+            : sub === 'ozalit' ? 'ozalit' : 'baski_onay'
+          const snap = snapshotFor(p.id, snapshotKind)
+          const showParcaGrid = snap.length >= 2 && (
+            sub === 'demo'
+              ? canActOnDemo
+              : sub === 'ozalit'
+                ? canActOnOzalit
+                : isLeader
+          )
+          return (
+            <ApprovalRow
+              key={p.id}
+              project={p}
+              sub={sub}
+              user={user}
+              isLeader={isLeader}
+              isDesigner={isDesigner}
+              isPrinter={isPrinter}
+              ekranBusy={ekranBusyId === p.id}
+              showParcaGrid={showParcaGrid}
+              snapshotParcalar={snap}
+              parcaBusy={parcaBusyId === p.id}
+              onApproveParcalar={(parcalar) => handleApproveParcalar(p, parcalar, sub)}
+              onRejectParcalar={(parcalar) => handleRejectParcalar(p, parcalar)}
+              onPrepareBaskiParcalar={(parcalar) => handlePrepareBaskiParcalar(p, parcalar)}
+              onApprove={() => {
+                if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
+                else if (sub === 'baski-onay') setBaskiOnayForm({ project: p, mode: 'approve' })
+                else setDialog({ project: p, mode: 'approve' })
+              }}
+              onReject={() => setDialog({ project: p, mode: 'reject' })}
+              onAdvance={() => {
+                if (sub === 'demo') setDemoForm({ project: p, mode: 'advance' })
+                else setOzalitForm({ project: p, mode: 'advance' })
+              }}
+              onStartWork={() => {
+                // Review-then-start: the spec form opens (read-only for the
+                // printer) with "İşlemi Başlatın" in its footer.
+                if (sub === 'demo') setDemoForm({ project: p, mode: 'view', startWork: true })
+                else setOzalitForm({ project: p, mode: 'view', startWork: true })
+              }}
+              onEkranRequest={() => handleEkranDemoRequest(p)}
+              onEkranApprove={() => handleEkranDemoApprove(p)}
+              onEkranReject={() => setEkranDemoRejectFor(p)}
+              onNavigate={() => navigate(`/projects/${p.id}`)}
+            />
+          )
+        })}
       </div>
     )
   }
@@ -522,6 +666,12 @@ function ApprovalRow({
   isDesigner,
   isPrinter,
   ekranBusy,
+  showParcaGrid,
+  snapshotParcalar,
+  parcaBusy,
+  onApproveParcalar,
+  onRejectParcalar,
+  onPrepareBaskiParcalar,
   onApprove, onReject, onAdvance, onStartWork,
   onEkranRequest, onEkranApprove, onEkranReject,
   onNavigate,
@@ -582,73 +732,95 @@ function ApprovalRow({
       )}
       onClick={onNavigate}
     >
-      <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-4">
-        <StateDisc tone={state.tone} Icon={state.Icon} />
+      <CardContent className="flex flex-col gap-3 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+          <StateDisc tone={state.tone} Icon={state.Icon} />
 
-        {/* Title + meta — flex-1 keeps the action area flush-right on sm+,
-            stacked below on phones. */}
-        <div className="min-w-0 flex-1">
-          <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground sm:line-clamp-1">
-            {p.title}
-          </p>
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            <span className="truncate">{p.assigned_name}</span>
-            <span aria-hidden className="h-0.5 w-0.5 rounded-full bg-muted-foreground/40" />
-            <span>{formatTargetDate(p.target_month)}</span>
-            <span aria-hidden className="h-0.5 w-0.5 rounded-full bg-muted-foreground/40" />
-            <ProjectMeta project={p} />
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <StatusChip tone={state.tone}>{state.status}</StatusChip>
-            {receiptFirst && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
-                <PackageCheck className="h-3 w-3" />
-                Teslim alınmadı
-              </span>
-            )}
+          {/* Title + meta — flex-1 keeps the action area flush-right on sm+,
+              stacked below on phones. */}
+          <div className="min-w-0 flex-1">
+            <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground sm:line-clamp-1">
+              {p.title}
+            </p>
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <span className="truncate">{p.assigned_name}</span>
+              <span aria-hidden className="h-0.5 w-0.5 rounded-full bg-muted-foreground/40" />
+              <span>{formatTargetDate(p.target_month)}</span>
+              <span aria-hidden className="h-0.5 w-0.5 rounded-full bg-muted-foreground/40" />
+              <ProjectMeta project={p} />
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <StatusChip tone={state.tone}>{state.status}</StatusChip>
+              {receiptFirst && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+                  <PackageCheck className="h-3 w-3" />
+                  Teslim alınmadı
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Action area — full-width on mobile (stacks below meta), inline on
+              sm+. stopPropagation keeps button clicks from bubbling to the row
+              onClick (which would also navigate to detail). */}
+          <div
+            className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Actions
+              sub={sub}
+              p={p}
+              user={user}
+              isLeader={isLeader}
+              isDesigner={isDesigner}
+              isPrinter={isPrinter}
+              isAssignedDesigner={isAssignedDesigner}
+              alreadyApproved={alreadyApproved}
+              awaitingLeader={awaitingLeader}
+              heldDemo={heldDemo}
+              receiptFirst={receiptFirst}
+              canApprove={canApprove}
+              ekranBusy={ekranBusy}
+              onApprove={onApprove}
+              onReject={onReject}
+              onAdvance={onAdvance}
+              onStartWork={onStartWork}
+              onEkranRequest={onEkranRequest}
+              onEkranApprove={onEkranApprove}
+              onEkranReject={onEkranReject}
+              onNavigate={onNavigate}
+            />
+            <Button
+              size="sm"
+              variant="ghost"
+              className="w-full gap-1.5 text-muted-foreground sm:w-auto"
+              onClick={onNavigate}
+            >
+              <Eye className="h-3.5 w-3.5" />
+              Detay
+            </Button>
           </div>
         </div>
 
-        {/* Action area — full-width on mobile (stacks below meta), inline on
-            sm+. stopPropagation keeps button clicks from bubbling to the row
-            onClick (which would also navigate to detail). */}
-        <div
-          className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Actions
-            sub={sub}
-            p={p}
-            user={user}
-            isLeader={isLeader}
-            isDesigner={isDesigner}
-            isPrinter={isPrinter}
-            isAssignedDesigner={isAssignedDesigner}
-            alreadyApproved={alreadyApproved}
-            awaitingLeader={awaitingLeader}
-            heldDemo={heldDemo}
-            receiptFirst={receiptFirst}
-            canApprove={canApprove}
-            ekranBusy={ekranBusy}
-            onApprove={onApprove}
-            onReject={onReject}
-            onAdvance={onAdvance}
-            onStartWork={onStartWork}
-            onEkranRequest={onEkranRequest}
-            onEkranApprove={onEkranApprove}
-            onEkranReject={onEkranReject}
-            onNavigate={onNavigate}
-          />
-          <Button
-            size="sm"
-            variant="ghost"
-            className="w-full gap-1.5 text-muted-foreground sm:w-auto"
-            onClick={onNavigate}
+        {/* Per-parça approval grid (migrations 068/069/070): rendered below
+            the row's existing horizontal strip when the project has a
+            multi-parça snapshot. stopPropagation keeps grid clicks from
+            bubbling into the row-level navigate. */}
+        {showParcaGrid && (
+          <div
+            className="border-t border-border/60 pt-3"
+            onClick={(e) => e.stopPropagation()}
           >
-            <Eye className="h-3.5 w-3.5" />
-            Detay
-          </Button>
-        </div>
+            <ParcaApprovalGrid
+              project={p}
+              kind={sub === 'demo' ? 'demo' : sub === 'ozalit' ? 'ozalit' : 'baski_onay'}
+              snapshotParcalar={snapshotParcalar}
+              busy={parcaBusy}
+              onApproveParcalar={onApproveParcalar}
+              onRejectParcalar={isLeader ? onRejectParcalar : undefined}
+            />
+          </div>
+        )}
       </CardContent>
     </Card>
   )

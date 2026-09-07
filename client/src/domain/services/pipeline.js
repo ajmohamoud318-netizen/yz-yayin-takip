@@ -495,3 +495,180 @@ export function canEditProductInfo(user) {
   if (user.role === 'team_leader') return true
   return false
 }
+
+/* ============================================================================
+ *  Per-parça approval helpers (migrations 068/069/070)
+ *
+ *  Client twin of the same-named helpers in `server/src/domain/transitions.js`.
+ *  The FSM is the authority — these functions exist so the UI can render the
+ *  same pending/approved/rejected sets the server will gate on, and so the
+ *  bulk-approve shortcut button can hide itself on single-parça rounds.
+ *
+ *  `kind` ∈ {'demo' | 'ozalit' | 'baski_onay' | 'cin_baski_onay'} picks the
+ *  matching ledger. `snapshotParcalar` is the parça list from the latest
+ *  snapshot (loaded via `loadLatestDemoSnapshot` server-side; on the client
+ *  the spec-sheet hook already exposes it).
+ * ========================================================================== */
+
+/**
+ * Normalise the snapshot's `_selectedComponents` shape to plain parça names.
+ * The payload stores either string parça names or `{ component, ... }`
+ * objects (server's `loadLatestDemoSnapshot` extracts `.component`); the
+ * client sees the full object shape from `useSpecSheet`. Default to `[]` so
+ * the helpers stay safe on a legacy project without a snapshot.
+ *
+ * @param {Array<string | { component?: string }> | null | undefined} snapshotParcalar
+ * @returns {string[]}
+ */
+export function parcaNames(snapshotParcalar) {
+  if (!Array.isArray(snapshotParcalar)) return []
+  return snapshotParcalar
+    .map((c) => (typeof c === 'string' ? c : c?.component))
+    .filter(Boolean)
+}
+
+/**
+ * Per-parça set still owed on a given gate.
+ *
+ * `kind`:
+ *   'demo'         → uses `demo_parca_approvals` (list-shaped; `via` ignored)
+ *   'ozalit'       → uses `ozalit_parca_approvals` (object-shaped; counts
+ *                    approvers per parça; for the simple "is this parça
+ *                    signed" the row presence is enough)
+ *   'baski_onay'   → uses `baski_parca_preparers` + `baski_parca_approvals`
+ *                    (a parça needs both, AND the approver must differ from
+ *                    the preparer — mirrors the server maker-checker)
+ *   'cin_baski_onay' → same as baski_onay, with the `cin_*` mirror
+ *
+ * On demo and ozalit, "approved" = there's at least one row in the ledger
+ * for the parça. The exact required-set rule (every active leader + every
+ * designer, for ozalit) is server-only — we don't have the active-leader
+ * list on the client — but for the UI it doesn't matter: an un-signed parça
+ * is un-signed, and once the server has it, the project hasn't advanced.
+ *
+ * @param {{ demo_parca_approvals?: Array<{ parca: string }>,
+ *           ozalit_parca_approvals?: Record<string, unknown[]>,
+ *           baski_parca_preparers?: Record<string, unknown>,
+ *           baski_parca_approvals?: Record<string, unknown>,
+ *           cin_baski_parca_preparers?: Record<string, unknown>,
+ *           cin_baski_parca_approvals?: Record<string, unknown> }} project
+ * @param {'demo' | 'ozalit' | 'baski_onay' | 'cin_baski_onay'} kind
+ * @param {Array<string | { component?: string }>} [snapshotParcalar]
+ * @returns {string[]}
+ */
+export function pendingParcalar(project, kind, snapshotParcalar = []) {
+  const set = parcaNames(snapshotParcalar)
+  if (!project || set.length === 0) return []
+  if (kind === 'demo') {
+    const approved = new Set(
+      (project.demo_parca_approvals ?? []).map((a) => a?.parca).filter(Boolean),
+    )
+    return set.filter((p) => !approved.has(p))
+  }
+  if (kind === 'ozalit') {
+    const ledger = project.ozalit_parca_approvals ?? {}
+    return set.filter((p) => {
+      const row = ledger[p]
+      return !Array.isArray(row) || row.length === 0
+    })
+  }
+  if (kind === 'baski_onay' || kind === 'cin_baski_onay') {
+    const isCin = kind === 'cin_baski_onay'
+    const preparers = isCin
+      ? (project.cin_baski_parca_preparers ?? {})
+      : (project.baski_parca_preparers ?? {})
+    const approvals = isCin
+      ? (project.cin_baski_parca_approvals ?? {})
+      : (project.baski_parca_approvals ?? {})
+    return set.filter((parca) => {
+      const p = preparers[parca]
+      const a = approvals[parca]
+      if (!p || !a) return true // preparer missing OR approver missing
+      // Same actor on both sides — maker-checker blocks the advance.
+      return a.by === p.by
+    })
+  }
+  return []
+}
+
+/**
+ * Per-parça set the leader (and designers, for ozalit) has already signed on
+ * the current round. For UI feedback only — the server still authoritatively
+ * gates the advance.
+ *
+ * @param {object} project
+ * @param {'demo' | 'ozalit' | 'baski_onay' | 'cin_baski_onay'} kind
+ * @returns {string[]}
+ */
+export function approvedParcalar(project, kind) {
+  if (!project) return []
+  if (kind === 'demo') {
+    return Array.from(
+      new Set(
+        (project.demo_parca_approvals ?? []).map((a) => a?.parca).filter(Boolean),
+      ),
+    )
+  }
+  if (kind === 'ozalit') {
+    return Object.keys(project.ozalit_parca_approvals ?? {})
+      .filter((parca) => {
+        const row = project.ozalit_parca_approvals?.[parca]
+        return Array.isArray(row) && row.length > 0
+      })
+  }
+  if (kind === 'baski_onay' || kind === 'cin_baski_onay') {
+    const isCin = kind === 'cin_baski_onay'
+    const approvals = isCin
+      ? (project.cin_baski_parca_approvals ?? {})
+      : (project.baski_parca_approvals ?? {})
+    return Object.keys(approvals).filter((parca) => {
+      const a = approvals[parca]
+      const p = isCin
+        ? project.cin_baski_parca_preparers?.[parca]
+        : project.baski_parca_preparers?.[parca]
+      return a && p && a.by !== p.by
+    })
+  }
+  return []
+}
+
+/**
+ * Per-parça set the leader has bounced (the current-round rejection list).
+ *
+ * @param {object} project
+ * @param {'demo' | 'ozalit' | 'baski_onay' | 'cin_baski_onay'} [kind]
+ * @returns {string[]}
+ */
+export function rejectedParcalar(project, kind = 'demo') {
+  if (!project) return []
+  if (kind === 'ozalit') {
+    return Array.from(
+      new Set(
+        (project.ozalit_parca_rejections ?? []).map((r) => r?.parca).filter(Boolean),
+      ),
+    )
+  }
+  return Array.from(
+    new Set(
+      (project.demo_parca_rejections ?? []).map((r) => r?.parca).filter(Boolean),
+    ),
+  )
+}
+
+/**
+ * True when the per-parça grid + the "Tüm parçaları onaylayın" bulk button
+ * are worth showing for this round. False on a single-parça sheet (the
+ * existing single button is enough) and on a round with nothing pending
+ * (nothing to bulk-approve). Threshold = ≥2 pending, matching the
+ * "Tüm parçaları onaylayın (N)" label the bulk shortcut renders.
+ *
+ * @param {object} project
+ * @param {'demo' | 'ozalit' | 'baski_onay' | 'cin_baski_onay'} kind
+ * @param {Array<string | { component?: string }>} [snapshotParcalar]
+ * @returns {boolean}
+ */
+export function bulkApproveAvailable(project, kind, snapshotParcalar = []) {
+  const set = parcaNames(snapshotParcalar)
+  if (set.length < 2) return false
+  return pendingParcalar(project, kind, snapshotParcalar).length >= 2
+}

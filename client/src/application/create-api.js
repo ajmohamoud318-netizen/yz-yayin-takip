@@ -150,7 +150,10 @@ export function createApi() {
     // Sales without touching the project itself. See AGENTS.md → "Ürünler".
     setProductCatalogHidden: (id, hidden) => projectRepo.setProductCatalogHidden(id, hidden),
     advanceProject: (id, route = null) => projectRepo.advanceProject(id, route),
-    approveProject: (id) => projectRepo.approveProject(id),
+    // Per-parça approval (migrations 068/069/070): `parcalar` is the subset
+    // of parçalar the leader is signing off THIS click; null/omitted =
+    // "approve all still-pending parçalar" (the bulk shortcut).
+    approveProject: (id, parcalar = null) => projectRepo.approveProject(id, parcalar),
     receiveDemo: (id) => projectRepo.receiveDemo(id),
     reportDemoNotReceived: (id) => projectRepo.reportDemoNotReceived(id),
     receiveOzalit: (id) => projectRepo.receiveOzalit(id),
@@ -168,13 +171,21 @@ export function createApi() {
     declineDemoChangeRequest: (id) => projectRepo.declineDemoChangeRequest(id),
     acceptOzalitChangeRequest: (id) => projectRepo.acceptOzalitChangeRequest(id),
     declineOzalitChangeRequest: (id) => projectRepo.declineOzalitChangeRequest(id),
-    prepareBaskiOnay: (id) => projectRepo.prepareBaskiOnay(id),
+    // Per-parça preparer ledger (migration 070): `parcalar` is the subset of
+    // parçalar the leader prepared; null = "all parçalar on the snapshot".
+    prepareBaskiOnay: (id, parcalar = null) => projectRepo.prepareBaskiOnay(id, parcalar),
     // Ekran Demo Onayı — lightweight digital alternative to a physical
     // re-demo for a held demo at 100% progress (migration 050).
     requestEkranDemoOnay: (id) => projectRepo.requestEkranDemoOnay(id),
-    approveEkranDemo: (id) => projectRepo.approveEkranDemo(id),
+    // Per-parça approve (migrations 068/069/070): same null-vs-subset
+    // convention as approveProject.
+    approveEkranDemo: (id, parcalar = null) => projectRepo.approveEkranDemo(id, parcalar),
     rejectEkranDemo: (id, reason) => projectRepo.rejectEkranDemo(id, reason),
-    rejectProject: (id, reason, revizeIds, target) => projectRepo.rejectProject(id, reason, revizeIds, target),
+    // Per-parça reject (migrations 068/069/070): `parcalar` is the subset
+    // of parçalar whose approval rows get cleared on this click; null =
+    // whole-round reject (full ledger reset, original behaviour).
+    rejectProject: (id, reason, revizeIds, target, parcalar = null) =>
+      projectRepo.rejectProject(id, reason, revizeIds, target, parcalar),
 
     // Subtasks
     toggleSubtask: (projectId, subtaskId, isDone) =>
@@ -182,12 +193,14 @@ export function createApi() {
     setSubtaskDone: (subtaskId, isDone) => subtaskRepo.setSubtaskDone(subtaskId, isDone),
     setSubtaskStickers: (subtaskId, stickersDone) =>
       subtaskRepo.setSubtaskStickers(subtaskId, stickersDone),
-    // migration 067 — designer pages-done input. Each save appends one
+    // migration 067/068 — designer pages-done input. Each save appends one
     // batch row; the running total on the parent subtask is the SUM of
-    // every batch's `pages`. Body is `{ designer_id, pages }`. Yeniden
-    // Çalıştım on a saved batch uses the second method below.
-    addSubtaskDesignerBatch: (subtaskId, { designerId, pages }) =>
-      subtaskRepo.addSubtaskDesignerBatch(subtaskId, { designerId, pages }),
+    // every batch's `pages`. Body is `{ designer_id, pages, start_page }`.
+    // Migration 068 adds `start_page` — the server pins each batch to a
+    // page range and refuses any save that overlaps an existing batch.
+    // Yeniden Çalıştım on a saved batch uses the second method below.
+    addSubtaskDesignerBatch: (subtaskId, { designerId, pages, startPage }) =>
+      subtaskRepo.addSubtaskDesignerBatch(subtaskId, { designerId, pages, startPage }),
     markSubtaskDesignerBatchRedone: (subtaskId, batchId) =>
       subtaskRepo.markSubtaskDesignerBatchRedone(subtaskId, batchId),
     reviseSubtask: (subtaskId) => subtaskRepo.reviseSubtask(subtaskId),
