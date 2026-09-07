@@ -256,6 +256,42 @@ test('an approver who already signed is not asked again on the next sign-off', a
   assert.deepEqual(client.rows.map((r) => r.userId), ['u-feyza'])
 })
 
+test('a rejected ozalit tells the designer it bounced, not that a proof arrived', async () => {
+  // Migration 038's in-place redo leg: a reject-to-designer at ozalit_onay
+  // leaves the project on that stage instead of bouncing to tasarım, so the
+  // rejection branch (which keys on toStage === 'tasarim') no longer catches
+  // it and the switch's `ozalit_onay` case announced a matbaa delivery that
+  // never happened — telling the designer to press "Teslim Alındı" on the very
+  // round they now have to revize.
+  const client = fakeClient()
+  await notifyProjectTransition(client, {
+    project: { ...project, last_reject_type: 'ozalit' },
+    fromStage: 'ozalit_onay', toStage: 'ozalit_onay', action: 'reject',
+    actor: { id: 'u-ayse', name: 'Ayşenur' }, assignees,
+  })
+  assert.deepEqual(client.rows.map((r) => r.userId).sort(), ['u-aylin', 'u-feyza'])
+  for (const r of client.rows) {
+    assert.equal(r.type, 'rejection')
+    assert.equal(r.tone, 'rose')
+    assert.match(r.body, /reddedildi/)
+    assert.ok(!/Teslim Alındı/.test(r.body), `asked for a receipt on a rejection: ${r.body}`)
+  }
+})
+
+test('a reject-to-matbaa still reads as a re-delivery request, not a rejection ping', async () => {
+  // The other ozalit reject target leaves for ozalit_teslim with the matbaa
+  // lock, so it must keep landing in the printer's queue — the new branch
+  // above must not swallow it.
+  const client = fakeClient()
+  await notifyProjectTransition(client, {
+    project: { ...project, reject_target: 'matbaa' },
+    fromStage: 'ozalit_onay', toStage: 'ozalit_teslim', action: 'reject',
+    actor: { id: 'u-ayse', name: 'Ayşenur' }, assignees,
+  })
+  assert.deepEqual(client.rows.map((r) => r.userId), ['u-oktay'])
+  assert.equal(client.rows[0].type, 'ozalit_delivery_pending')
+})
+
 /* ==========================================================================
  *  Baskı Onay Formu — dual-approval (migration 045)
  *

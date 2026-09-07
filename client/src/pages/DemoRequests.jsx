@@ -23,6 +23,7 @@ import {
 import ApprovalDialog from '@/components/ApprovalDialog'
 import DemoFormDialog from '@/components/DemoFormDialog'
 import api, { STAGE_LABELS, STATUS_META, TYPE_LABELS, statusKeyForProject } from '@/api'
+import { ozalitDecidable } from '@/domain'
 import { cn } from '@/lib/utils'
 
 const IN_FLOW = [
@@ -237,11 +238,16 @@ export default function DemoRequests() {
                     // destructive side too — Reddet disappears while the
                     // "Teslim Alın" step is still owed, so both buttons wait
                     // for the same precondition.
+                    // An ozalit round is signable once the proof is received
+                    // OR when it's a screen round (no proof, no receipt —
+                    // migration 061); a round parked here for revision after a
+                    // reject-to-designer is neither, so both buttons wait for
+                    // the resubmit. Same rule as Approvals.jsx + ProjectDetail.
                     const receiptFirst =
                       (p.stage === 'demo_onay' || p.stage === 'cin_demo_onay')
                         ? p.demo_received !== true
                         : p.stage === 'ozalit_onay'
-                          ? p.ozalit_received !== true
+                          ? !ozalitDecidable(p)
                           : false
                     return (
                       <div key={p.id} className="rounded-xl border bg-card shadow-sm">

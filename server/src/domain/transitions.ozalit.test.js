@@ -553,3 +553,60 @@ describe('per-parça ozalit approval gate (migrations 068/069/070)', () => {
     assert.equal(next.ozalit_parca_approvals.KUTU.length, 1)
   })
 })
+
+/* ============================================================================
+ *  The redo leg is a revision window, not a delivery.
+ *
+ *  A reject-to-designer at ozalit_onay leaves the project on that same stage
+ *  with last_reject_type='ozalit' while the designer revizes. The stage and
+ *  the falsey ozalit_received it shares with a freshly delivered proof used to
+ *  be enough to open the receipt actions — so a leader could "take delivery"
+ *  of the round they had just rejected (re-opening Onayla/Reddet on it), or
+ *  report it missing and strand the revision at the matbaa.
+ * ========================================================================== */
+describe('ozalit redo leg blocks the receipt actions', () => {
+  const inRevision = (overrides = {}) => ozalitProject({
+    ozalit_received: false, last_reject_type: 'ozalit', ozalit_attempt: 2, ...overrides,
+  })
+
+  it('refuses "Teslim Alındı" — the rejected proof is spent and nothing was delivered', () => {
+    assert.throws(
+      () => computeOzalitReceive(inRevision(), L1, ctx),
+      /Reddedilen ozalit teslim alınamaz/,
+    )
+    assert.throws(
+      () => computeOzalitReceive(inRevision(), D1, ctx),
+      /Reddedilen ozalit teslim alınamaz/,
+    )
+  })
+
+  it('refuses "Teslim Alınamadı" — no delivery was outstanding to go missing', () => {
+    assert.throws(
+      () => computeOzalitNotReceived(inRevision(), L1, ctx),
+      /revize bekleniyor/,
+    )
+  })
+
+  it('a real rejection leaves exactly that state, so the guards apply to it', () => {
+    const { project: rejected } = computeRejection(
+      ozalitProject({ ozalit_approvals: [{ id: 'L1', role: 'team_leader', name: 'Ayşenur' }] }),
+      'kapak rengi yanlış', [], 'designer', { actorName: L1.name, actor: L1 },
+    )
+    assert.equal(rejected.stage, 'ozalit_onay')
+    assert.equal(rejected.ozalit_received, false)
+    assert.throws(() => computeOzalitReceive(rejected, L1, ctx), /Reddedilen ozalit/)
+    assert.throws(() => computeOzalitNotReceived(rejected, L1, ctx), /revize bekleniyor/)
+  })
+
+  it('both open again on the next physical round, once the flag is cleared', () => {
+    // computeAdvance's route picker clears last_reject_type on the resubmit;
+    // the matbaa then delivers, and the proof is receivable like any other.
+    const { project: sent } = computeAdvance(
+      { ...inRevision(), progress: 100 }, D1, { route: 'ozalit' },
+    )
+    assert.equal(sent.last_reject_type, null)
+    const { project: delivered } = computeAdvance(sent, printer)
+    const { project: received } = computeOzalitReceive(delivered, L1, ctx)
+    assert.equal(received.ozalit_received, true)
+  })
+})

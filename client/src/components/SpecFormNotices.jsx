@@ -171,9 +171,21 @@ export function SpecFormGates({
     <>
       {/* Ozalit receipt gate — the approve below stays disabled until the
           proof is acknowledged. The confirm is inline (a second click on the
-          same spot) rather than a nested dialog. */}
+          same spot) rather than a nested dialog. A screen round (Ekran Ozalit,
+          migration 061) has no proof and no receipt: it says so and leaves the
+          approve enabled, since the gate it would otherwise sit behind can
+          never be opened. */}
       {isOzalitApproval && (
-        ozalitReceived ? (
+        round.screenRound ? (
+          <div className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">
+            <Check className="h-4 w-4 shrink-0" />
+            <span>
+              {user?.role === 'team_leader'
+                ? 'Ekran ozalit: matbaa teslimi yoktur, ekrandan inceleyip onaylayabilirsiniz.'
+                : 'Ekran ozalit: matbaa teslimi yoktur, onayı ekip lideri verir.'}
+            </span>
+          </div>
+        ) : ozalitReceived ? (
           ozalitAwaitingLeader ? (
             <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
               <Check className="h-4 w-4 shrink-0" />

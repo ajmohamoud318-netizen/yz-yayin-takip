@@ -155,6 +155,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       // ozalitLeaderApproved(project) on the main pipeline.
       leaderApproved: (order.matbaa_approvals ?? []).some((a) => a.role === 'team_leader'),
       designerIds: Array.isArray(order.assignee_ids) ? order.assignee_ids : [],
+      // The sipariş's screen route is a status of its own (ekran_onayinda),
+      // signed in TalepSignDialog rather than in this sheet, so an order
+      // opened here is always a physical round.
+      screenRound: false,
     }
     : {
       attempt: project?.[variant.attemptField],
@@ -164,6 +168,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       receivedBy: project?.ozalit_received_by,
       leaderApproved: ozalitLeaderApproved(project),
       designerIds: (project?.assignees ?? []).map((a) => a.id),
+      // Ekran Ozalit (migration 061): nothing is printed and nothing is
+      // delivered, so this round has no receipt to wait on — see the gate
+      // below, which would otherwise never open.
+      screenRound: variant.kind === 'ozalit' && !!project?.ekran_ozalit,
     }
   const celebrate = useDesignerCelebration()
   const [busy, setBusy] = useState(false)
@@ -458,7 +466,11 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    */
   const isOzalitApproval = mode === 'approve' && variantName === 'ozalit'
   const ozalitReceived = round.received || receivedLocal
-  const needsOzalitReceive = isOzalitApproval && !ozalitReceived
+  // A screen round is exempt: there is no proof to acknowledge and the server
+  // refuses the acknowledgment ("Ekran ozalitte teslim alma yapılmaz"), so
+  // gating the sign-off on it left the round unapprovable from anywhere in
+  // the UI — the one leader who owes the decision had no working button.
+  const needsOzalitReceive = isOzalitApproval && !ozalitReceived && !round.screenRound
   const canAckOzalit =
     user?.role === 'team_leader' ||
     (user?.role === 'designer' && round.designerIds.includes(user?.id))

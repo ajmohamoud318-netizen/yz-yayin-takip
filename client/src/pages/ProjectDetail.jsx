@@ -22,9 +22,11 @@ import TalepSignDialog from '@/components/TalepSignDialog'
 import SiparisBaskiOnayFormDialog from '@/components/SiparisBaskiOnayFormDialog'
 import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import ProjectHistory from '@/components/ProjectHistory'
-import { orderOzalitFormMode } from '@/domain'
+import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
+import { isDemoApprover, orderOzalitFormMode } from '@/domain'
 
 import { useProjectDetail } from '@/hooks/useProjectDetail'
+import { useParcaSnapshot } from '@/hooks/useParcaSnapshot'
 import ProjectDetailHeader from '@/components/ProjectDetailHeader'
 import DesignerPanel from '@/components/DesignerPanel'
 import SubtaskCard from '@/components/SubtaskCard'
@@ -45,7 +47,7 @@ export default function ProjectDetail() {
   const d = useProjectDetail(id)
   const {
     project, loading,
-    user, isAssigned,
+    user, isAssigned, isLeader,
     setDialog, setProject, refetch,
     dialog, editOpen, setEditOpen, deleteOpen, setDeleteOpen, deleting,
     ozalitFormOpen, setOzalitFormOpen, ozalitFormMode, ozalitFormAttempt, ozalitFormRound, ozalitFormSnapshot, ozalitFormNotify, ozalitFormStartWork,
@@ -62,6 +64,27 @@ export default function ProjectDetail() {
     handleRequestChange,
     confirmDeleteProject, onActionDone,
   } = d
+
+  // Per-parça approval (migrations 068/069/070) — the same grid the Onaylar
+  // queue shows, on the project's own page. It is additive: it renders only
+  // on a round whose snapshot lists 2+ parçalar, where the single whole-round
+  // Onayla button can't express "KUTU is fine, KİTAP isn't". A single-parça
+  // sheet keeps the header's Onayla/Reddet pair and nothing changes.
+  //
+  // Hook order: this must run before the loading/empty early-returns below,
+  // so it is called here and no-ops while `project` is still null.
+  const { parcalar: parcaSnapshot, ledgerKind } = useParcaSnapshot(project)
+  // Role gate mirrors the queue's (Approvals.jsx): demo is leader-or-matbaa,
+  // ozalit is leader-or-designer (the server enforces leader-first and the
+  // assigned-designer rule on top), baskı is leader-only. Reject stays
+  // leader-only, as it is everywhere else.
+  const showParcaGrid = parcaSnapshot.length >= 2 && (
+    ledgerKind === 'demo'
+      ? isDemoApprover(user)
+      : ledgerKind === 'ozalit'
+        ? (isLeader || user?.role === 'designer')
+        : isLeader
+  )
 
   // ---------------------------------------------------------------------------
   // Loading / empty states
@@ -100,6 +123,28 @@ export default function ProjectDetail() {
       <div className="space-y-6">
         {/* Header section: back button, deleted banner, header card */}
         <ProjectDetailHeader d={d} />
+
+        {/* Per-parça onay/red — sits directly under the header's action row,
+            the same place the queue puts it relative to its own row. */}
+        {showParcaGrid && (
+          <div className="rounded-xl border bg-card p-4">
+            <ParcaApprovalGrid
+              project={project}
+              kind={ledgerKind}
+              snapshotParcalar={parcaSnapshot}
+              busy={d.processingEkranDemo}
+              onApproveParcalar={d.handleApproveParcalar}
+              // `reason` is required by the reject schema (minLength 1), so the
+              // grid's bare onRejectParcalar([parca]) needs one supplied here.
+              // Same default the queue uses, so both surfaces write the same
+              // history line; a leader who wants narrative uses the header's
+              // whole-round Reddet dialog.
+              onRejectParcalar={isLeader
+                ? (parcalar) => d.handleRejectParcalar(parcalar, 'Parça bazlı red', 'designer')
+                : undefined}
+            />
+          </div>
+        )}
 
         {/* Body grid */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

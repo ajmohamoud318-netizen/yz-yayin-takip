@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
 
-import { ozalitLeaderApproved } from '@/domain'
+import { awaitsOzalitReceipt, ozalitLeaderApproved } from '@/domain'
 
 /**
  * Context-aware status banners shown below the action row in the project
@@ -36,8 +36,11 @@ export default function HeaderBanners({ d }) {
 
       {/* Ozalit delivered but not yet acknowledged — the receipt step
           comes before any sign-off, so the approval progress panel below
-          would be misleading here (nobody can approve yet). */}
-      {isOzalitOnayStage && !project.ozalit_received && (
+          would be misleading here (nobody can approve yet). A falsey
+          ozalit_received is NOT enough on its own: a screen round has nothing
+          to receive, and a rejected one is parked here while the designer
+          revizes — awaitsOzalitReceipt tells the three apart. */}
+      {awaitsOzalitReceipt(project) && (
         <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div className="min-w-0 flex-1">
@@ -48,6 +51,27 @@ export default function HeaderBanners({ d }) {
               {canReceiveOzalit
                 ? 'Ozalit elinize ulaştıysa "Teslim Alındı"ya basın; onay adımı ondan sonra açılır. Ulaşmadıysa "Teslim Alınamadı" ile matbaaya geri gönderin.'
                 : 'Ekip lideri veya atanmış tasarımcı ozaliti teslim aldı olarak işaretleyene kadar onay verilemez.'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Ekran Ozalit (migration 061) — no matbaa, no proof, no receipt: a
+          single team leader signs it off (the server's computeOzalitOnayApproval
+          ekran branch). The multi-party panel below would misdescribe it, and
+          the receipt banner above is deliberately silent on it, so this round
+          needs a line of its own. */}
+      {isOzalitOnayStage && project.ekran_ozalit && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-amber-800">
+              Ekran ozalit onayı bekleniyor
+            </p>
+            <p className="mt-0.5 text-xs text-amber-700">
+              {user?.role === 'team_leader'
+                ? 'Revize ekran üzerinden gönderildi; matbaa teslimi yok, onayınızla baskı onayına geçer.'
+                : 'Revize ekran üzerinden gönderildi; ekip liderlerinden birinin onayı bekleniyor.'}
             </p>
           </div>
         </div>

@@ -22,6 +22,8 @@ import {
   isOzalitApprover,
   ozalitLeaderApproved,
   canApproveOzalitNow,
+  awaitsOzalitReceipt,
+  ozalitDecidable,
   canMarkDemoStarted,
   canMarkOzalitStarted,
   canEditSentDemoRequest,
@@ -536,6 +538,50 @@ describe('ekran ozalit', () => {
     }
     expect(ozalitLeaderApproved(afterLeader)).toBe(true)
     expect(canApproveOzalitNow(designer, afterLeader)).toBe(true)
+  })
+})
+
+/**
+ * Receipt vs. decidability at ozalit_onay.
+ *
+ * Three different rounds share the stage and a falsey `ozalit_received`, and
+ * the UI used to treat all three as "a proof is waiting to be taken delivery
+ * of": a delivered physical proof (true), a screen round (nothing arrives),
+ * and a rejected round parked here while the designer revizes. Reading the
+ * flag alone offered the receipt buttons on rounds the server refuses, and
+ * gated the screen round's sign-off shut forever.
+ */
+describe('ozalit receipt gate vs. decidability', () => {
+  const delivered = { stage: 'ozalit_onay', ozalit_received: false }
+  const received = { stage: 'ozalit_onay', ozalit_received: true }
+  const screen = { stage: 'ozalit_onay', ozalit_received: false, ekran_ozalit: true }
+  const inRevision = { stage: 'ozalit_onay', ozalit_received: false, last_reject_type: 'ozalit' }
+
+  it('only a delivered physical proof owes a "Teslim Alındı"', () => {
+    expect(awaitsOzalitReceipt(delivered)).toBe(true)
+    expect(awaitsOzalitReceipt(received)).toBe(false)
+    expect(awaitsOzalitReceipt(screen)).toBe(false)
+    expect(awaitsOzalitReceipt(inRevision)).toBe(false)
+    expect(awaitsOzalitReceipt({ stage: 'ozalit_teslim', ozalit_received: false })).toBe(false)
+    expect(awaitsOzalitReceipt(null)).toBe(false)
+  })
+
+  it('a round is decidable once received, or straight away on a screen round', () => {
+    expect(ozalitDecidable(received)).toBe(true)
+    expect(ozalitDecidable(screen)).toBe(true)
+    expect(ozalitDecidable(delivered)).toBe(false)
+    expect(ozalitDecidable(inRevision)).toBe(false)
+    expect(ozalitDecidable({ stage: 'baski_onay', ozalit_received: true })).toBe(false)
+    expect(ozalitDecidable(null)).toBe(false)
+  })
+
+  it('the two are mutually exclusive, and both are false during the revision', () => {
+    for (const p of [delivered, received, screen, inRevision]) {
+      expect(awaitsOzalitReceipt(p) && ozalitDecidable(p)).toBe(false)
+    }
+    expect(awaitsOzalitReceipt(inRevision) || ozalitDecidable(inRevision)).toBe(false)
+    // ...and that revision window is exactly where the route picker lives.
+    expect(needsOzalitRouteChoice(inRevision)).toBe(true)
   })
 })
 

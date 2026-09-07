@@ -186,6 +186,13 @@ export function assertDemoCanAdvance(progress) {
  *                     — sign off at `ozalit_onay` (multi-party, leader-first;
  *                       a single leader when the round is an Ekran Ozalit)
  *                       owner: team_leader, then the assigned designers
+ *   awaitsOzalitReceipt
+ *                     — is a physical proof still owed a "Teslim Alındı"?
+ *                       (false on a screen round and on the post-reject redo
+ *                       leg, where nothing was delivered)
+ *   ozalitDecidable    — may Onayla / Reddet be offered on this round at all?
+ *                       (a received proof or a screen round; never during the
+ *                       post-reject revision)
  *   needsOzalitRouteChoice
  *                     — the post-revize resubmit must pick physical vs ekran
  *                       owner: the assigned designer making the resubmit
@@ -245,6 +252,50 @@ export function canApproveOzalitNow(user, project) {
   const isAssignedDesigner =
     user.role === 'designer' && (project.assignees ?? []).some((a) => a.id === user.id)
   return isAssignedDesigner && ozalitLeaderApproved(project)
+}
+
+/**
+ * Is a physical ozalit actually waiting to be marked "Teslim Alındı"? Three
+ * states share `stage === 'ozalit_onay'` with a falsey `ozalit_received`, and
+ * only the first of them owes a receipt:
+ *
+ *   delivered  — the matbaa handed a proof over; someone must acknowledge it
+ *   ekran      — a screen round (migration 061): nothing physical arrives, so
+ *                the receipt step is skipped and one leader signs off
+ *   redo leg   — a REJECTED ozalit parked on the stage while the designer
+ *                revizes (last_reject_type='ozalit'); the rejected proof is
+ *                spent and the next round hasn't been requested yet
+ *
+ * The server refuses the acknowledgment in both of the latter two
+ * (computeOzalitReceive / computeOzalitNotReceived), so offering the buttons —
+ * or the "Matbaa ozaliti teslim etti" banner that goes with them — announces a
+ * delivery that never happened and dead-ends on an error toast.
+ *
+ * @param {{ stage?: string, ozalit_received?: boolean, ekran_ozalit?: boolean, last_reject_type?: string|null }} project
+ */
+export function awaitsOzalitReceipt(project) {
+  if (!project || project.stage !== 'ozalit_onay') return false
+  if (project.ozalit_received) return false
+  if (project.ekran_ozalit) return false
+  return project.last_reject_type !== 'ozalit'
+}
+
+/**
+ * Is the ozalit round decidable — can Onayla / Reddet be offered at all? Two
+ * roads reach a signable round: a physical proof that's been marked "Teslim
+ * Alındı" (migration 035), or a screen round, which has no proof and no
+ * receipt step (migration 061). A round parked on the stage for revision after
+ * a reject-to-designer is neither, so nothing is signable until the designer
+ * resubmits — see needsOzalitRouteChoice below for that leg.
+ *
+ * The counterpart of awaitsOzalitReceipt: exactly one of the two is true on a
+ * live round, and both are false during the revision.
+ *
+ * @param {{ stage?: string, ozalit_received?: boolean, ekran_ozalit?: boolean }} project
+ */
+export function ozalitDecidable(project) {
+  if (!project || project.stage !== 'ozalit_onay') return false
+  return project.ozalit_received === true || project.ekran_ozalit === true
 }
 
 /**

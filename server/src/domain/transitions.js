@@ -1301,6 +1301,15 @@ export function computeOzalitReceive(project, actor, ctx = {}) {
   if (project.ekran_ozalit === true) {
     badRequest('Ekran ozalitte teslim alma yapılmaz, doğrudan onaylayın.')
   }
+  // The in-place redo leg (computeRejection) parks a REJECTED ozalit on this
+  // same stage with last_reject_type='ozalit' while the designer revizes.
+  // Nothing is in flight then — the rejected proof is spent, the next round
+  // hasn't been requested — so an acknowledgment here would resurrect the
+  // round that was just rejected: ozalit_received flips back to true and
+  // Onayla/Reddet re-open on it (computeOzalitOnayApproval's only gate).
+  if (project.last_reject_type === 'ozalit') {
+    badRequest('Reddedilen ozalit teslim alınamaz, önce revize tamamlanmalı.')
+  }
   const designerIds = ctx.designerIds ?? []
   const isLeader = actor?.role === 'team_leader'
   const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
@@ -1352,6 +1361,15 @@ export function computeOzalitNotReceived(project, actor, ctx = {}) {
   // was never part of.
   if (project.ekran_ozalit === true) {
     badRequest('Ekran ozalitte matbaa teslimi yoktur.')
+  }
+  // Same reason as computeOzalitReceive's guard one function up: during the
+  // redo leg there is no delivery outstanding that could have failed to
+  // arrive, and this report's fallback (ozalit_teslim + the matbaa lock)
+  // would strand the revision — the designer's route picker lives on
+  // ozalit_onay, and the matbaa would be asked to re-print the unrevised
+  // design.
+  if (project.last_reject_type === 'ozalit') {
+    badRequest('Reddedilen ozalit için bu işlem yapılamaz, revize bekleniyor.')
   }
   const designerIds = ctx.designerIds ?? []
   const isLeader = actor?.role === 'team_leader'

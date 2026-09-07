@@ -391,6 +391,20 @@ export async function notifyProjectTransition(client, {
     })
   }
 
+  // Ozalit rejected back to the DESIGNER. Unlike the demo leg above, this one
+  // doesn't bounce to tasarım — the project stays on ozalit_onay with
+  // last_reject_type='ozalit' (computeRejection's in-place redo leg), so it
+  // must be caught before the switch: `case 'ozalit_onay'` would tell the
+  // designer the matbaa had just DELIVERED a proof and ask them to mark it
+  // "Teslim Alındı", which is the opposite of what happened. A reject to the
+  // matbaa leaves for ozalit_teslim instead, so it never reaches here.
+  if (action === 'reject' && toStage === 'ozalit_onay') {
+    return emit(client, {
+      ...base, recipientIds: designers, type: 'rejection', tone: 'rose',
+      body: 'Ozalit reddedildi, revizyon gerekiyor', link: `/projects/${project.id}`,
+    })
+  }
+
   // Demo approved but HELD: the leader signed off at <100% progress, so the
   // stage doesn't move and a second demo is owed once the design is finished.
   // Caught before the switch because from === to here — falling through to

@@ -11,6 +11,7 @@ import {
   isActiveOrder, availableActions, advanceActionLabel, approveActionLabel,
   demoOzalitStatusLabel,
 } from '@/domain/services/project-detail'
+import { awaitsOzalitReceipt } from '@/domain'
 
 import { useProjectDetailData, useProjectDetailSSE } from './useProjectDetailData'
 import { useProjectDelivery } from './useProjectDelivery'
@@ -147,8 +148,13 @@ export function useProjectDetail(id) {
     isDemoOnayStage && !project?.demo_received && (isLeader || (user?.role === 'designer' && isAssigned))
 
   const isOzalitOnayStage = project?.stage === 'ozalit_onay'
+  // Not every un-received ozalit is awaiting a receipt: a screen round never
+  // had a proof, and a rejected one is parked on this stage while the designer
+  // revizes. The server refuses both (computeOzalitReceive /
+  // computeOzalitNotReceived), so the Teslim Alındı / Alınamadı pair must stay
+  // hidden there instead of erroring on click.
   const canReceiveOzalit =
-    isOzalitOnayStage && !project?.ozalit_received && (isLeader || (user?.role === 'designer' && isAssigned))
+    awaitsOzalitReceipt(project) && (isLeader || (user?.role === 'designer' && isAssigned))
 
   // Available actions + labels
   const actions = availableActions({ project, user })

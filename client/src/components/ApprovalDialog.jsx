@@ -167,7 +167,14 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
     reject:
       rejectTarget === 'matbaa'
         ? `Proje "${teslimLabel}" aşamasına döner; matbaa yeniden teslim eder. Tasarım değişmez. Bir red sebebi yazın.`
-        : 'Proje tasarım aşamasına döner; seçtiğiniz alt görevler revize edilir. Bir red sebebi yazın.',
+        // An ozalit rejection to the designer no longer bounces to Tasarım
+        // (the in-place redo leg): the project stays on Ozalit Onayı, the
+        // designer revizes the flagged subtasks there and then picks the next
+        // round's route. Saying "tasarım aşamasına döner" described the demo
+        // leg's behaviour on a screen the leader only sees for the ozalit.
+        : isOzalitReject
+          ? 'Proje Ozalit Onayı aşamasında kalır; seçtiğiniz alt görevler tasarımcıya revize için açılır. Revize bitince tasarımcı yeni ozalit ya da ekran ozalit gönderir. Bir red sebebi yazın.'
+          : 'Proje tasarım aşamasına döner; seçtiğiniz alt görevler revize edilir. Bir red sebebi yazın.',
     advance: needsOzalitRouteChoice(project)
       ? 'Revizeyi nasıl kontrol ettireceğinizi seçin: matbaadan yeni bir fiziksel ozalit isteyin, ya da ekran üzerinden ekip liderinin onayına gönderin.'
       : 'Bu projeyi sonraki aşamaya elle ilerleteceksiniz. Devam edilsin mi?',

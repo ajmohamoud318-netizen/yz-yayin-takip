@@ -12,6 +12,7 @@ import {
 import {
   isLegacyProject,
   canApproveOzalitNow,
+  ozalitDecidable,
 } from './pipeline.js'
 
 // ---------------------------------------------------------------------------
@@ -145,7 +146,13 @@ export function availableActions({ project, user }) {
   // Alındı" (migration 035) — the same rule the demo leg has: you can't sign
   // off on a proof nobody has taken delivery of. Until then the action row
   // shows the Teslim Alındı / Teslim Alınamadı pair instead.
-  if (stage === 'ozalit_onay' && project.ozalit_received === true) {
+  //
+  // An EKRAN OZALIT (migration 061) has no proof and no receipt step, so the
+  // receipt flag would gate it shut forever — ozalitDecidable takes the screen
+  // round's own flag as the gate instead, and canApproveOzalitNow / the
+  // server's reject gate both already carry the "one leader decides a screen
+  // round" rule.
+  if (ozalitDecidable(project)) {
     const alreadyApproved = (project.ozalit_approvals ?? []).some((a) => a.id === user.id)
     // Each leader/designer approves once. A leader who hasn't decided yet sees
     // both Onayla and Reddet; once they approve, BOTH disappear (they've

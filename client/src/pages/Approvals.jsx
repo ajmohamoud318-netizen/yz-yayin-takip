@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   ThumbsUp, ThumbsDown, Inbox, Send, ShoppingCart, CheckCircle2, PackageCheck,
-  ClipboardCheck, Hourglass, Eye, ArrowRight,
+  ClipboardCheck, Hourglass, Eye, ArrowRight, RotateCcw,
 } from 'lucide-react'
 
 import api from '@/api'
@@ -21,9 +21,11 @@ import BaskiOnayFormDialog from '@/components/BaskiOnayFormDialog'
 import TalepSignDialog from '@/components/TalepSignDialog'
 import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
+import { ledgerKindForStage } from '@/hooks/useParcaSnapshot'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
 import {
   canRejectAtStage, isDemoApprover, isOzalitApprover, ozalitLeaderApproved,
+  awaitsOzalitReceipt, ozalitDecidable, needsOzalitRouteChoice,
   canRequestEkranDemo, canRespondEkranDemo, canRespondDemoChange, canRespondOzalitChange,
   canMarkDemoStarted, canMarkOzalitStarted,
   bulkApproveAvailable, parcaNames,
@@ -409,7 +411,13 @@ export default function Approvals({ tab = 'demo' }) {
             sub === 'demo'
               ? canActOnDemo
               : sub === 'ozalit'
-                ? canActOnOzalit
+                // Every button in the grid is an approve or a reject, and both
+                // ride the same gates as the whole-round pair below it: no
+                // sign-off before the proof is received, and none at all while
+                // a rejected round waits on the designer's revision. Without
+                // this the grid kept offering per-parça Onayla on rounds the
+                // server refuses (computeApproval's "Teslim Alındı" gate).
+                ? canActOnOzalit && ozalitDecidable(p)
                 : isLeader
           )
           return (
@@ -558,7 +566,11 @@ export default function Approvals({ tab = 'demo' }) {
  */
 function awaitsReceipt(sub, p) {
   if (sub === 'demo') return p.demo_received !== true
-  if (sub === 'ozalit') return p.ozalit_received !== true
+  // Not every un-received ozalit owes a receipt: a screen round has no proof
+  // to take delivery of, and a rejected one is parked on the stage while the
+  // designer revizes. Both used to read "Ozaliti Teslim Alın" — an action the
+  // server refuses outright.
+  if (sub === 'ozalit') return awaitsOzalitReceipt(p)
   return false
 }
 
@@ -685,6 +697,11 @@ function ApprovalRow({
   const awaitingLeader =
     sub === 'ozalit' && isDesigner && !alreadyApproved && !ozalitLeaderApproved(p)
   const heldDemo = sub === 'demo' && p.demo_held === true
+  // Ozalit redo leg: the round was rejected back to the designer and the
+  // project stays on ozalit_onay while they revize (needsOzalitRouteChoice).
+  // There is nothing to approve, receive or reject until it's resubmitted, so
+  // the row reports the wait instead of offering a sign-off that would 400.
+  const inOzalitRevision = sub === 'ozalit' && needsOzalitRouteChoice(p)
   // Demo/ozalit both gate their sign-off behind a "Teslim Alındı" — when
   // that's still owed the action is a receipt step, not an approval.
   const receiptFirst = awaitsReceipt(sub, p)
@@ -701,6 +718,11 @@ function ApprovalRow({
   } else if (heldDemo && isLeader) {
     if (canRespondEkranDemo(user, p)) state = { tone: 'bg-violet-50 text-violet-700 ring-violet-200', Icon: Send, status: 'Ekran demo onayı istendi' }
     else state = { tone: 'bg-violet-50 text-violet-700 ring-violet-200', Icon: Hourglass, status: 'Ekran demo onayı bekleniyor' }
+  } else if (inOzalitRevision) {
+    state = {
+      tone: 'bg-amber-50 text-amber-700 ring-amber-200', Icon: RotateCcw,
+      status: isAssignedDesigner ? 'Revize sizde' : 'Tasarımcı revizesi bekleniyor',
+    }
   } else if (receiptFirst) {
     state = { tone: 'bg-amber-50 text-amber-700 ring-amber-200', Icon: PackageCheck, status: 'Teslim alınmadı' }
   } else if (alreadyApproved) {
@@ -779,6 +801,7 @@ function ApprovalRow({
               awaitingLeader={awaitingLeader}
               heldDemo={heldDemo}
               receiptFirst={receiptFirst}
+              inOzalitRevision={inOzalitRevision}
               canApprove={canApprove}
               ekranBusy={ekranBusy}
               onApprove={onApprove}
@@ -813,7 +836,11 @@ function ApprovalRow({
           >
             <ParcaApprovalGrid
               project={p}
-              kind={sub === 'demo' ? 'demo' : sub === 'ozalit' ? 'ozalit' : 'baski_onay'}
+              // Ledger key, NOT the snapshot kind: TR and ÇİN both store the
+              // baskı sheet under kind `baski_onay` but keep separate ledgers
+              // (`baski_parca_*` vs `cin_baski_parca_*`), so a ÇİN project read
+              // through the TR key showed every parça unsigned.
+              kind={ledgerKindForStage(p.stage)}
               snapshotParcalar={snapshotParcalar}
               busy={parcaBusy}
               onApproveParcalar={onApproveParcalar}
@@ -850,7 +877,7 @@ function StatusChip({ tone, children }) {
 function Actions({
   sub, p, user, isLeader, isDesigner, isPrinter,
   isAssignedDesigner, alreadyApproved, awaitingLeader, heldDemo, receiptFirst,
-  canApprove, ekranBusy,
+  inOzalitRevision, canApprove, ekranBusy,
   onApprove, onReject, onAdvance, onStartWork,
   onEkranRequest, onEkranApprove, onEkranReject,
   onNavigate,
@@ -924,6 +951,24 @@ function Actions({
 
   // Standard approval lane.
   const primary = (() => {
+    // Revision in flight — the work is the designer's revize plus the route
+    // picker (physical ozalit vs Ekran Ozalit), and both live on the project
+    // page: the queue row can't see the subtasks the server gates that
+    // resubmit on, so it sends them there rather than opening a form that
+    // would refuse to submit.
+    if (inOzalitRevision) {
+      return isAssignedDesigner ? (
+        <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={onNavigate}>
+          <RotateCcw className="h-4 w-4" />
+          Revizeyi tamamlayın
+        </Button>
+      ) : (
+        <Button size="sm" variant="ghost" className="w-full justify-start gap-1.5 text-muted-foreground sm:w-auto" disabled>
+          <Hourglass className="h-4 w-4" />
+          Tasarımcı revizesi bekleniyor
+        </Button>
+      )
+    }
     if (alreadyApproved) {
       return (
         <Button size="sm" variant="ghost" className="w-full justify-start gap-1.5 text-emerald-700 sm:w-auto" disabled>
@@ -962,8 +1007,11 @@ function Actions({
   // reject a demo/ozalit proof they haven't acknowledged receiving yet — the
   // primary button leads with "Teslim Alın" in that case, so the matching
   // Reddet has to wait too.
+  // A round already rejected back to the designer can't be rejected again —
+  // the server's reject gate needs a received proof or a screen round, and
+  // this one is neither while the revision is in flight.
   const reject =
-    isLeader && !alreadyApproved && sub !== 'baski-onay' && !receiptFirst ? (
+    isLeader && !alreadyApproved && sub !== 'baski-onay' && !receiptFirst && !inOzalitRevision ? (
       <Button size="sm" variant="destructive" className="w-full sm:w-auto" onClick={onReject}>
         <ThumbsDown className="h-4 w-4" />
         {sub === 'ozalit' ? 'Ozaliti Reddedin' : 'Demoyu Reddedin'}
