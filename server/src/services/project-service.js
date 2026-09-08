@@ -228,7 +228,14 @@ async function runProjectCommand(projectId, actor, { prepare, run, after } = {},
     // values prepare loaded are NOT in the diff because they're not writable
     // project columns (the repo filters via PROJECT_WRITABLE_COLUMNS, and
     // `subtasks` is in NON_DIFFED_COLUMNS).
-    const ctx = prepare ? await prepare({ client, row, actor }) : {}
+    // `?? {}` because a prepare hook that needs no context returns nothing
+    // (`noContext` in project-service/transitions.js is an empty async fn).
+    // Without it, `ctx.teamLeaderIds` below threw a TypeError on the HAPPY
+    // path of every verb using such a hook — ozalitCancel and
+    // ozalitChangeRequest — so a leader cancelling an ozalit request or
+    // asking the matbaa for a change got a 500 and a rolled-back transaction,
+    // while the refusal paths (which return before that line) looked fine.
+    const ctx = (prepare ? await prepare({ client, row, actor }) : {}) ?? {}
     const before = { ...row }
     const project = new Project(row)
     project.__prevStage = row.stage

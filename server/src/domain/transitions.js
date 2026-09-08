@@ -495,6 +495,16 @@ export function computeAdvance(project, actor, { route = null } = {}) {
         ekran_demo_requested_at: null,
         ekran_demo_requested_by: null,
         ekran_demo_requested_by_name: null,
+        // The per-parça ledgers describe the round that just ended, and this
+        // leg is only reachable on a HELD demo — so every row in here is a
+        // sign-off given at <100% progress, on a demo that is now superseded
+        // by a freshly printed one. Carrying them meant the new round arrived
+        // pre-approved: `demoPendingParcalar` found nothing owed and the next
+        // Onayla advanced the project without anyone having looked at the new
+        // demo. A new physical demo needs fresh eyes, so the round starts with
+        // an empty ledger — the same reset a whole-round reject performs.
+        demo_parca_approvals: [],
+        demo_parca_rejections: [],
         reject_target: null,
         last_reject_reason: null,
         last_reject_type: null,
@@ -1122,15 +1132,23 @@ export function computeEkranDemoApprove(project, actor, ctx = {}) {
   if (pending.length > 0 && target.length === 0) {
     badRequest('Onaylanacak parça bulunamadı.')
   }
-  if (pending.length > 0) {
-    const nextApprovals = appendParcaApprovals(
-      project.demo_parca_approvals ?? [],
-      target,
-      actor,
-      actorName,
-      now,
-      'ekran',
-    )
+  // Record this click's sign-offs FIRST, then ask what is still owed — the
+  // same order the physical demo/ozalit branches use. Asking before appending
+  // (as this branch used to) meant the click that signed the LAST parça always
+  // took the "still pending" exit, so the leader had to click Onayla a second
+  // time — a click that approved nothing — before the project would move.
+  const nextApprovals = appendParcaApprovals(
+    project.demo_parca_approvals ?? [],
+    target,
+    actor,
+    actorName,
+    now,
+    'ekran',
+  )
+  const stillPending = snapshotParcalar.filter(
+    (p) => !nextApprovals.some((row) => row?.parca === p && row?.via === 'ekran'),
+  )
+  if (stillPending.length > 0) {
     return {
       project: {
         ...project,
@@ -1142,9 +1160,7 @@ export function computeEkranDemoApprove(project, actor, ctx = {}) {
         from_stage: project.stage,
         to_stage: project.stage,
         done_by_name: actorName,
-        note: pending.length > target.length
-          ? `Ekran demo parçaları onaylandı: ${target.join(', ')} — bekleyen: ${pending.filter((p) => !target.includes(p)).join(', ') || '—'}`
-          : `Ekran demo parçaları onaylandı: ${target.join(', ')}`,
+        note: `Ekran demo parçaları onaylandı: ${target.join(', ')} — bekleyen: ${stillPending.join(', ') || '—'}`,
       }),
     }
   }
@@ -1157,7 +1173,10 @@ export function computeEkranDemoApprove(project, actor, ctx = {}) {
       ...project,
       stage: next,
       demo_held: false,
-      demo_parca_approvals: pruneApprovalsToSnapshot(project.demo_parca_approvals ?? [], snapshotParcalar, false),
+      // `nextApprovals`, not the pre-click ledger: on the completing click the
+      // last parça's sign-off lives only in here, and persisting the old array
+      // would drop the very approval that let the project advance.
+      demo_parca_approvals: pruneApprovalsToSnapshot(nextApprovals, snapshotParcalar, false),
       ekran_demo_requested_at: null,
       ekran_demo_requested_by: null,
       ekran_demo_requested_by_name: null,
@@ -1305,6 +1324,13 @@ export function computeDemoNotReceived(project, actor, ctx = {}) {
       ekran_demo_requested_at: null,
       ekran_demo_requested_by: null,
       ekran_demo_requested_by_name: null,
+      // Same reset as the resend leg in computeAdvance: this bumps
+      // demo_attempt, so the per-parça ledgers below belong to a round that is
+      // over. Any rows in here were signed on an EARLIER round (the approve
+      // gate requires demo_received, which is false by definition here), and
+      // leaving them meant the redelivered demo counted as already approved.
+      demo_parca_approvals: [],
+      demo_parca_rejections: [],
       updated_at: now,
     },
     history: makeEntry(project, {
@@ -1431,6 +1457,13 @@ export function computeOzalitNotReceived(project, actor, ctx = {}) {
       ozalit_leader_approved_at: null,
       ozalit_designer_approvals: [],
       ozalit_approvals: [],
+      // The per-parça ledgers answer to the same rule as the project-level
+      // one right above: a new physical proof needs everyone's sign-off again.
+      // Wiping only the project-level ledger left the per-parça rows behind,
+      // and those are what `ozalitPendingParcalar` actually gates on — so the
+      // redelivered proof arrived carrying the previous round's signatures.
+      ozalit_parca_approvals: {},
+      ozalit_parca_rejections: [],
       // Started stays set — see computeDemoNotReceived. The proof was made,
       // it just never arrived, so the matbaa owes a re-delivery, not a restart.
       ozalit_change_requested_at: null,
@@ -2099,19 +2132,25 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
     if (pending.length > 0 && target.length === 0) {
       badRequest('Onaylanacak parça bulunamadı.')
     }
-    if (pending.length > 0) {
-      // Per-parça ledger (migration 069): record the leader's sign-off for the
-      // requested parçalar without advancing the stage yet. Reject the round
-      // (target='designer' on ekran, since there is no matbaa leg) to send it
-      // back without dumping the ledger.
-      const nextApprovals = appendOzalitParcaApprovals(
-        project.ozalit_parca_approvals ?? {},
-        target,
-        actor,
-        actorName,
-        now,
-        'ekran',
-      )
+    // Per-parça ledger (migration 069): record the leader's sign-off for the
+    // requested parçalar, THEN ask what is still owed — the same order the
+    // physical branches below use. Asking first (as this branch used to) made
+    // the click that signed the last parça take the "still pending" exit, so
+    // the project only moved on a second, no-op Onayla. A reject
+    // (target='designer' on ekran, since there is no matbaa leg) still sends
+    // the round back without dumping the ledger.
+    const nextApprovals = appendOzalitParcaApprovals(
+      project.ozalit_parca_approvals ?? {},
+      target,
+      actor,
+      actorName,
+      now,
+      'ekran',
+    )
+    const stillPending = snapshotParcalar.filter(
+      (p) => !(nextApprovals[p] ?? []).some((a) => a?.via === 'ekran'),
+    )
+    if (stillPending.length > 0) {
       return {
         project: {
           ...project,
@@ -2123,9 +2162,7 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
           from_stage: 'ozalit_onay',
           to_stage: 'ozalit_onay',
           done_by_name: actorName,
-          note: pending.length > target.length
-            ? `Ekran ozalit parçaları onaylandı: ${target.join(', ')} — bekleyen: ${pending.filter((p) => !target.includes(p)).join(', ') || '—'}`
-            : `Ekran ozalit parçaları onaylandı: ${target.join(', ')}`,
+          note: `Ekran ozalit parçaları onaylandı: ${target.join(', ')} — bekleyen: ${stillPending.join(', ') || '—'}`,
         }),
       }
     }
@@ -2142,8 +2179,9 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
         ozalit_leader_approved_by: null,
         ozalit_leader_approved_at: null,
         ozalit_designer_approvals: [],
+        // `nextApprovals`, not the pre-click ledger — see the demo twin.
         ozalit_parca_approvals: pruneApprovalsToSnapshot(
-          project.ozalit_parca_approvals ?? {},
+          nextApprovals,
           snapshotParcalar,
           true,
         ),

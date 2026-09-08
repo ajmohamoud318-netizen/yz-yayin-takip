@@ -11,7 +11,9 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { computeAdvance, computeApproval, computeDemoReceive, computeRejection } from './transitions.js'
+import {
+  computeAdvance, computeApproval, computeDemoReceive, computeDemoNotReceived, computeRejection,
+} from './transitions.js'
 
 const leader = { id: 'u-l', role: 'team_leader', name: 'Ayşenur' }
 const ctx = { actorName: leader.name, actor: leader }
@@ -344,5 +346,64 @@ describe('per-parça demo approval gate (migrations 068/069/070)', () => {
     assert.deepEqual(approvedParcalar, ['KUTU'])
     const rejectedParcalar = next.demo_parca_rejections.map((r) => r.parca).sort()
     assert.deepEqual(rejectedParcalar, ['KAPAK'])
+  })
+})
+
+/**
+ * Regression: a new demo round must not inherit the previous round's per-parça
+ * sign-offs.
+ *
+ * Nothing cleared `demo_parca_approvals` when a round ended any way other than
+ * a whole-round reject. The damaging case is the HELD demo: an approve at
+ * <100% progress deliberately records every parça and holds the project, so
+ * the ledger arrives at the NEXT round already full — `demoPendingParcalar`
+ * then found nothing owed, and the first Onayla on a freshly printed demo
+ * advanced the project with nobody having looked at it.
+ */
+describe('a new demo round starts with an empty per-parça ledger', () => {
+  const SNAPSHOT = ['KİTAP', 'KUTU']
+  const heldWithLedger = (overrides = {}) => demoProject({
+    demo_held: true,
+    progress: 100,
+    demo_parca_approvals: SNAPSHOT.map((parca) => ({ parca, by: 'u-l', by_name: 'Ayşenur' })),
+    demo_parca_rejections: [{ parca: 'KUTU', target: 'matbaa' }],
+    ...overrides,
+  })
+
+  it('clears it on a re-send ("Demo İste") of a held demo', () => {
+    const { project: next } = computeAdvance(heldWithLedger(), leader)
+    assert.equal(next.stage, 'demo_teslim')
+    assert.equal(next.demo_attempt, 6)
+    assert.deepEqual(next.demo_parca_approvals, [])
+    assert.deepEqual(next.demo_parca_rejections, [])
+  })
+
+  it('clears it on "Teslim Alınamadı"', () => {
+    const { project: next } = computeDemoNotReceived(
+      heldWithLedger({ demo_received: false }), leader, { designerIds: ['u-d'] },
+    )
+    assert.equal(next.stage, 'demo_teslim')
+    assert.deepEqual(next.demo_parca_approvals, [])
+    assert.deepEqual(next.demo_parca_rejections, [])
+  })
+
+  // The point of the reset, end to end: the round that follows a hold has to
+  // collect real signatures before it can move.
+  it('so the next round needs fresh signatures before it can advance', () => {
+    const resent = computeAdvance(heldWithLedger(), leader).project
+    const delivered = {
+      ...resent, stage: 'demo_onay', demo_received: true, progress: 100,
+    }
+    const snap = { snapshot: { selectedComponents: SNAPSHOT } }
+
+    // Signing one parça holds the project — previously this advanced it,
+    // because the old ledger already covered both.
+    const partial = computeApproval(delivered, leader, { ...snap, parcalar: ['KİTAP'] })
+    assert.equal(partial.project.stage, 'demo_onay')
+    assert.equal(partial.project.demo_parca_approvals.length, 1)
+
+    // Signing the rest advances it, on that same click.
+    const done = computeApproval(partial.project, leader, { ...snap, parcalar: ['KUTU'] })
+    assert.equal(done.project.stage, 'ozalit_teslim')
   })
 })

@@ -610,3 +610,80 @@ describe('ozalit redo leg blocks the receipt actions', () => {
     assert.equal(received.ozalit_received, true)
   })
 })
+
+/**
+ * Regression, ekran ozalit twin of the ekran demo case in
+ * transitions.ekran-demo.test.js: the branch asked what was pending before
+ * recording the click's sign-offs, so the click signing the last parça never
+ * advanced — a second, empty Onayla was required.
+ */
+describe('ekran ozalit — the completing click advances (no second, empty click)', () => {
+  const SNAPSHOT = ['KİTAP', 'KUTU']
+  const snap = { snapshot: { selectedComponents: SNAPSHOT }, ...ctx }
+
+  const ekranProject = (overrides = {}) => ozalitProject({
+    ekran_ozalit: true, ozalit_received: false, ...overrides,
+  })
+
+  it('holds while a parça is still unsigned, then advances on the last one', () => {
+    const first = computeApproval(ekranProject(), L1, { ...snap, parcalar: ['KİTAP'] })
+    assert.equal(first.project.stage, 'ozalit_onay', 'KUTU hâlâ bekliyor')
+
+    const second = computeApproval(first.project, L1, { ...snap, parcalar: ['KUTU'] })
+    assert.equal(second.project.stage, 'baski_onay', 'son imza aynı tıklamada ilerletmeli')
+    assert.equal(second.project.ekran_ozalit, false)
+    // The completing click's sign-off must survive the advance.
+    assert.deepEqual(new Set(Object.keys(second.project.ozalit_parca_approvals)), new Set(SNAPSHOT))
+  })
+
+  it('advances in ONE click when the bulk shortcut covers every parça', () => {
+    const { project: next } = computeApproval(ekranProject(), L1, snap)
+    assert.equal(next.stage, 'baski_onay')
+    assert.deepEqual(new Set(Object.keys(next.ozalit_parca_approvals)), new Set(SNAPSHOT))
+  })
+})
+
+/**
+ * Regression: a redelivered ozalit must not arrive pre-approved.
+ *
+ * `computeOzalitNotReceived` wiped the project-level `ozalit_approvals` but
+ * left `ozalit_parca_approvals` behind — and the per-parça ledger is what
+ * `ozalitPendingParcalar` actually gates on, so the previous round's
+ * signatures carried onto a brand-new physical proof.
+ */
+describe('ozalit teslim alınamadı — per-parça ledger resets', () => {
+  it('clears the per-parça ledgers alongside the project-level one', () => {
+    const { project: next } = computeOzalitNotReceived(
+      ozalitProject({
+        ozalit_received: false,
+        ozalit_approvals: [{ id: 'L1', role: 'team_leader' }],
+        ozalit_parca_approvals: { KİTAP: [{ id: 'L1', role: 'team_leader' }] },
+        ozalit_parca_rejections: [{ parca: 'KUTU', target: 'matbaa' }],
+      }),
+      L1,
+      { designerIds: ['D1'] },
+    )
+    assert.equal(next.stage, 'ozalit_teslim')
+    assert.deepEqual(next.ozalit_approvals, [])
+    assert.deepEqual(next.ozalit_parca_approvals, {})
+    assert.deepEqual(next.ozalit_parca_rejections, [])
+  })
+
+  it('so the redelivered proof still needs every party again', () => {
+    const bounced = computeOzalitNotReceived(
+      ozalitProject({
+        ozalit_received: false,
+        ozalit_parca_approvals: { KİTAP: [{ id: 'L1' }, { id: 'D1' }] },
+      }),
+      L1,
+      { designerIds: ['D1'] },
+    ).project
+    // Matbaa redelivers, leader takes delivery, leader signs — one signature
+    // short of the designer, so the project must stay put.
+    const redelivered = { ...bounced, stage: 'ozalit_onay', ozalit_received: true }
+    const { project: next } = computeApproval(redelivered, L1, {
+      ...ctx, teamLeaderIds: ['L1'], snapshot: { selectedComponents: ['KİTAP'] },
+    })
+    assert.equal(next.stage, 'ozalit_onay')
+  })
+})

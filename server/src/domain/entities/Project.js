@@ -350,9 +350,20 @@ export class Project {
    * Prepare the Baskı Onay Formu (migration 045). No stage change; the
    * later approve branch requires a DIFFERENT team leader than the
    * preparer, unless the preparer is the only active one.
+   *
+   * ctx: { parcalar, snapshot }
+   *
+   * The ctx is not optional in practice: `computeBaskiOnayPrepare` reads the
+   * round's parça list off `ctx.snapshot` to write the per-parça preparer
+   * ledger (migrations 068/069/070). This method used to take `actor` alone
+   * and drop the ctx the service passes, so `baski_parca_preparers` stayed
+   * `{}` — and since the approve branch treats a parça with no preparer as
+   * pending, ANY project carrying a `baski_onay` spec-sheet snapshot could
+   * never leave Baskı Onayı. Only projects with no snapshot advanced, via the
+   * legacy single-parça path.
    */
-  baskiOnayPrepare(actor) {
-    const event = runFsm(this, computeBaskiOnayPrepare, [actor], 'project.baski_onay_prepared', {
+  baskiOnayPrepare(actor, ctx = {}) {
+    const event = runFsm(this, computeBaskiOnayPrepare, [actor, ctx], 'project.baski_onay_prepared', {
       kind: 'baskiOnayPrepared',
     })
     if (!event) return null

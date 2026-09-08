@@ -195,3 +195,51 @@ describe('computeEkranDemoReject', () => {
     )
   })
 })
+
+/**
+ * Regression: the ekran branches used to ask "what is still pending?" BEFORE
+ * recording the click's sign-offs, then return early whenever anything had
+ * been pending. The click that signed the LAST parça therefore only recorded
+ * it — the leader had to press Onayla a second time, approving nothing, before
+ * the project moved. The physical demo/ozalit branches stamp first and check
+ * after; these now match.
+ */
+describe('ekran demo — the completing click advances (no second, empty click)', () => {
+  const SNAPSHOT = ['KİTAP', 'KUTU']
+  const snap = { snapshot: { selectedComponents: SNAPSHOT } }
+
+  function pendingRequest(overrides = {}) {
+    return heldDemoProject({
+      ekran_demo_requested_at: '2026-01-01T00:00:00Z',
+      ekran_demo_requested_by: 'u-l',
+      ekran_demo_requested_by_name: 'Ayşenur',
+      ...overrides,
+    })
+  }
+
+  it('holds while a parça is still unsigned, then advances on the last one', () => {
+    const first = computeEkranDemoApprove(pendingRequest(), leader, { ...snap, parcalar: ['KİTAP'] })
+    assert.equal(first.project.stage, 'demo_onay', 'KUTU hâlâ bekliyor')
+    assert.equal(first.project.demo_parca_approvals.length, 1)
+
+    const second = computeEkranDemoApprove(first.project, leader, { ...snap, parcalar: ['KUTU'] })
+    assert.equal(second.project.stage, 'ozalit_teslim', 'son imza aynı tıklamada ilerletmeli')
+    assert.equal(second.project.demo_held, false)
+    assert.equal(second.project.ekran_demo_requested_at, null)
+    // Both sign-offs survive the advance — the completing click's approval
+    // lived only in the freshly-built ledger, and the advance branch used to
+    // persist the pre-click one instead.
+    assert.equal(second.project.demo_parca_approvals.length, 2)
+    assert.deepEqual(
+      new Set(second.project.demo_parca_approvals.map((a) => a.parca)),
+      new Set(SNAPSHOT),
+    )
+  })
+
+  it('advances in ONE click when the bulk shortcut covers every parça', () => {
+    const { project: next } = computeEkranDemoApprove(pendingRequest(), leader, snap)
+    assert.equal(next.stage, 'ozalit_teslim')
+    assert.equal(next.demo_parca_approvals.length, 2)
+    assert.ok(next.demo_parca_approvals.every((a) => a.via === 'ekran'))
+  })
+})
