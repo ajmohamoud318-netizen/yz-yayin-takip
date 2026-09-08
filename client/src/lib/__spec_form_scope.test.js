@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { hiddenParcaNames, scopeComponents } from '@/lib/spec-form-scope'
+import { hiddenParcaNames, scopeComponents, opensNarrowed } from '@/lib/spec-form-scope'
 
 const comp = (component) => ({ id: component, component, rows: [] })
 const sheet = [comp('KİTAP'), comp('KUTU'), comp('KILAVUZ')]
@@ -63,5 +63,27 @@ describe('hiddenParcaNames', () => {
   it('is empty when nothing is hidden', () => {
     expect(hiddenParcaNames(sheet, sheet)).toEqual([])
     expect(hiddenParcaNames(sheet, scopeComponents(sheet, null))).toEqual([])
+  })
+})
+
+describe('opensNarrowed', () => {
+  it('opens on the parça when the sheet is about exactly one', () => {
+    // The leader's per-row Onayla / Reddedin, the designer's send-back, and
+    // the correction a released parça is waiting for.
+    expect(opensNarrowed(['KUTU'])).toBe(true)
+  })
+
+  it('opens on the whole round when the sheet is about several', () => {
+    // "Tüm parçaları onaylayın" and the matbaa's "Hepsini Başlatın" are
+    // decisions about the round, so the round is what has to be read.
+    expect(opensNarrowed(['KUTU', 'KİTAP'])).toBe(false)
+  })
+
+  it('is not a scope at all when empty or absent', () => {
+    expect(opensNarrowed([])).toBe(false)
+    expect(opensNarrowed(null)).toBe(false)
+    expect(opensNarrowed(undefined)).toBe(false)
+    // A list of nothing but blanks is the same as no list.
+    expect(opensNarrowed([null, ''])).toBe(false)
   })
 })

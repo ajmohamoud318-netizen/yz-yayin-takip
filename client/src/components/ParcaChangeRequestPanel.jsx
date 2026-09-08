@@ -47,12 +47,13 @@ import { cn } from '@/lib/utils'
  *   canAct?: boolean,
  *   busyParca?: string | null,
  *   onRequestChange: (parca: string, note: string) => void,
+ *   onSendFix?: (parca: string, gate: string) => void,
  *   className?: string,
  * }} props
  */
 export default function ParcaChangeRequestPanel({
   rows = [], snapshotParcalar = [], canAct = false, busyParca = null,
-  onRequestChange, className,
+  onRequestChange, onSendFix, className,
 }) {
   // Only rows the matbaa is actually holding this round. An approved parça, or
   // one back with the designer, has nothing to do with "can I still change the
@@ -97,6 +98,7 @@ export default function ParcaChangeRequestPanel({
             canAct={canAct}
             busy={busyParca === row.parca}
             onRequestChange={onRequestChange}
+            onSendFix={onSendFix}
           />
         ))}
       </div>
@@ -105,7 +107,7 @@ export default function ParcaChangeRequestPanel({
 }
 
 /** One parça the matbaa holds, and whatever the leader may still do about it. */
-function HeldRow({ row, canAct, busy, onRequestChange }) {
+function HeldRow({ row, canAct, busy, onRequestChange, onSendFix }) {
   // The ask form is opened per row rather than shown inline for every locked
   // parça: on a 390px screen three open textareas push the parça names off the
   // first screen, and the leader is normally asking about one of them.
@@ -183,6 +185,23 @@ function HeldRow({ row, canAct, busy, onRequestChange }) {
           Matbaa bu parçayı bıraktı ve düzeltilmiş formu bekliyor. Formu
           güncelleyip gönderene kadar yeniden başlayamazlar.
         </p>
+      )}
+
+      {/* The way to actually send it. Without this the row announced a debt
+          and offered no means of paying it: the only route was the header's
+          whole-sheet button, which opens all three parçalar and says nothing
+          about which one the matbaa is waiting on. This opens the sheet on
+          THIS parça, with the footer already set to notify. */}
+      {canAct && awaitingFix && onSendFix && (
+        <Button
+          size="sm"
+          className="mt-2.5 w-full gap-1.5 sm:w-auto"
+          disabled={busy}
+          onClick={() => onSendFix(row.parca, row.gate)}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          {row.parca} Formunu Düzenleyin
+        </Button>
       )}
 
       {canAsk && !asking && (

@@ -28,6 +28,7 @@ import ProjectHistory from '@/components/ProjectHistory'
 import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
 import ParcaJobBoard from '@/components/ParcaJobBoard'
 import ParcaChangeRequestPanel from '@/components/ParcaChangeRequestPanel'
+import { opensNarrowed } from '@/lib/spec-form-scope'
 import ParcaRejectDialog from '@/components/ParcaRejectDialog'
 import ParcaReturnedPanel from '@/components/ParcaReturnedPanel'
 import {
@@ -143,6 +144,9 @@ export default function ProjectDetail() {
   // record who SIGNED what, this records whose turn it is.
   const { parcaRows, refetchParcaRows } = d
   const [parcaRoundBusy, setParcaRoundBusy] = useState(null)
+  // Which parça the edit-and-notify sheet was opened for, if any — see
+  // openParcaFixSheet. Cleared when either sheet closes.
+  const [editParcaScope, setEditParcaScope] = useState(null)
   // A designer may send back only a parça on a project they are assigned to;
   // a leader may do it on the designer's behalf, matching the latitude
   // canRequestOzalit gives them on the project-level round.
@@ -167,6 +171,32 @@ export default function ProjectDetail() {
       toast.error(err.message || 'Teslim alma tamamlanamadı.')
     } finally {
       setParcaRoundBusy(null)
+    }
+  }
+
+  /**
+   * Open the sheet to send the correction the matbaa is waiting for
+   * (migration 077).
+   *
+   * Kept separate from `parcaSheet` on purpose: that state drives the leader's
+   * approve / reject / review decisions, and its footer hands off to whichever
+   * of those opened it (`commitParcaSheet`). This one is an ordinary
+   * edit-and-notify — the footer's own "Düzeltmeyi Matbaaya Gönderin" does the
+   * work — so it only needs to say which parça the sheet should open on.
+   *
+   * Without it the panel told the leader a correction was owed and offered no
+   * way to send it: the only route was the header's whole-sheet button, which
+   * opens all three parçalar and says nothing about which one is waiting.
+   */
+  function openParcaFixSheet(parca, gate) {
+    setParcaSheet(null)
+    setEditParcaScope([parca])
+    if (gate === 'ozalit') {
+      d.setOzalitFormMode('view'); d.setOzalitFormAttempt(null)
+      d.setOzalitFormNotify(true); setOzalitFormOpen(true)
+    } else {
+      d.setDemoFormMode('view'); d.setDemoFormAttempt(null)
+      d.setDemoFormNotify(true); setDemoFormOpen(true)
     }
   }
 
@@ -359,6 +389,7 @@ export default function ProjectDetail() {
             canAct={isLeader}
             busyParca={parcaRoundBusy}
             onRequestChange={handleRequestParcaChange}
+            onSendFix={openParcaFixSheet}
           />
         )}
 
@@ -480,7 +511,7 @@ export default function ProjectDetail() {
 
       <OzalitFormDialog
         open={ozalitFormOpen}
-        onOpenChange={(v) => { d.setOzalitFormOpen(v); if (!v) { d.setOzalitFormAttempt(null); d.setOzalitFormRound(null); d.setOzalitFormSnapshot(null); d.setOzalitFormNotify(false); d.setOzalitFormStartWork(false); setParcaSheet(null) } }}
+        onOpenChange={(v) => { d.setOzalitFormOpen(v); if (!v) { d.setOzalitFormAttempt(null); d.setOzalitFormRound(null); d.setOzalitFormSnapshot(null); d.setOzalitFormNotify(false); d.setOzalitFormStartWork(false); setParcaSheet(null); setEditParcaScope(null) } }}
         project={project}
         mode={ozalitFormMode}
         viewAttempt={ozalitFormAttempt}
@@ -504,12 +535,17 @@ export default function ProjectDetail() {
         // Sheet-first, and the sheet is the parça: a leader deciding KUTU (or a
         // designer sending it back round) opens KUTU's block, not the whole
         // round it was sent on. Same source as the button's own label above.
-        parcaScope={parcaSheet?.parcalar ?? null}
-        // Reject opens narrowed to the parça being sent back: the reason the
-        // leader is about to write names one block, so the sheet should show
-        // that block. Approve and the matbaa's start/deliver keep the whole
-        // round — see SpecFormDialog's `showAllParca`.
-        parcaScopeOnly={parcaSheet?.action === 'reject'}
+        parcaScope={parcaSheet?.parcalar ?? editParcaScope}
+        // A sheet opened for ONE parça opens on that parça — approve, reject
+        // and the designer's send-back alike. The leader tapping a single
+        // row's thumbs-up is deciding that block, and a document showing all
+        // three while the footer says "KUTU · Onaylayın" invites signing off
+        // against the wrong one. The bulk shortcut passes every parça it
+        // covers, so it still opens as the whole round — which is exactly what
+        // someone approving the lot needs to read. Same for the correction a
+        // released parça is waiting for. See SpecFormDialog's `showAllParca`;
+        // the other view is one tap away in the banner either way.
+        parcaScopeOnly={opensNarrowed(parcaSheet ? parcaSheet.parcalar : editParcaScope)}
         // Which parça blocks the sheet must render read-only on the leader's
         // edit-and-notify path (migration 077).
         parcaRows={parcaRows}
@@ -528,7 +564,7 @@ export default function ProjectDetail() {
 
       <DemoFormDialog
         open={demoFormOpen}
-        onOpenChange={(v) => { setDemoFormOpen(v); if (!v) { d.setDemoFormAttempt(null); d.setDemoFormRound(null); d.setDemoFormSnapshot(null); d.setDemoFormNotify(false); d.setDemoFormStartWork(false); setParcaSheet(null) } }}
+        onOpenChange={(v) => { setDemoFormOpen(v); if (!v) { d.setDemoFormAttempt(null); d.setDemoFormRound(null); d.setDemoFormSnapshot(null); d.setDemoFormNotify(false); d.setDemoFormStartWork(false); setParcaSheet(null); setEditParcaScope(null) } }}
         project={project}
         mode={demoFormMode}
         viewAttempt={demoFormAttempt}
@@ -544,12 +580,17 @@ export default function ProjectDetail() {
               setDemoFormOpen(false); d.setDemoFormStartWork(false)
             }
             : undefined}
-        parcaScope={parcaSheet?.parcalar ?? null}
-        // Reject opens narrowed to the parça being sent back: the reason the
-        // leader is about to write names one block, so the sheet should show
-        // that block. Approve and the matbaa's start/deliver keep the whole
-        // round — see SpecFormDialog's `showAllParca`.
-        parcaScopeOnly={parcaSheet?.action === 'reject'}
+        parcaScope={parcaSheet?.parcalar ?? editParcaScope}
+        // A sheet opened for ONE parça opens on that parça — approve, reject
+        // and the designer's send-back alike. The leader tapping a single
+        // row's thumbs-up is deciding that block, and a document showing all
+        // three while the footer says "KUTU · Onaylayın" invites signing off
+        // against the wrong one. The bulk shortcut passes every parça it
+        // covers, so it still opens as the whole round — which is exactly what
+        // someone approving the lot needs to read. Same for the correction a
+        // released parça is waiting for. See SpecFormDialog's `showAllParca`;
+        // the other view is one tap away in the banner either way.
+        parcaScopeOnly={opensNarrowed(parcaSheet ? parcaSheet.parcalar : editParcaScope)}
         // Which parça blocks the sheet must render read-only on the leader's
         // edit-and-notify path (migration 077).
         parcaRows={parcaRows}

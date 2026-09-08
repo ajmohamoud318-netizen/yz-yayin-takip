@@ -111,19 +111,50 @@ describe('the grid on an unfinished round', () => {
     expect(el.textContent).toContain('Tasarımcıda')
   })
 
-  it('scopes the bulk button to what is actually decidable, and names those parçalar', () => {
-    const seen = []
+  // Changed deliberately. The bulk button used to appear as soon as ANY parça
+  // was decidable, scoped to that subset — so a three-parça round with one
+  // still on the press rendered "Tüm parçaları onaylayın (2)": a button
+  // promising the whole round while signing off part of it, with the count as
+  // the only hint. On a round the matbaa is still producing, the leader's move
+  // is the single row's own thumbs-up.
+  it('hides the bulk button while any parça is still out', () => {
     render({
       parcaRows: [receivedRow('KUTU'), receivedRow('KAPAK'), outRow('KILAVUZ')],
+      onReceiveParca: () => {},
+    })
+    expect(buttons().filter((b) => (b.getAttribute('aria-label') ?? '').includes('Tüm parçaları')))
+      .toHaveLength(0)
+    // The per-parça decisions are still there — this hides a shortcut, not the work.
+    expect(labelled('KUTU parçasını onayla')).toHaveLength(1)
+    expect(labelled('KAPAK parçasını onayla')).toHaveLength(1)
+  })
+
+  it('hides it while a delivered parça still owes a receipt', () => {
+    // Delivered but un-receipted cannot be approved either (parcaDecidable),
+    // so a bulk covering it would half-fail.
+    render({
+      // `row` defaults to delivered-but-unreceipted, which is the case here.
+      parcaRows: [receivedRow('KUTU'), receivedRow('KAPAK'), row('KILAVUZ')],
+      onReceiveParca: () => {},
+    })
+    expect(buttons().filter((b) => (b.getAttribute('aria-label') ?? '').includes('Tüm parçaları')))
+      .toHaveLength(0)
+  })
+
+  it('offers it once the whole round is in the leader\'s hands, naming every parça', () => {
+    const seen = []
+    render({
+      parcaRows: SNAPSHOT.map((p) => receivedRow(p)),
       onReceiveParca: () => {},
       onApproveParcalar: (parcalar) => seen.push(parcalar),
     })
     const bulk = buttons().find((b) => (b.getAttribute('aria-label') ?? '').includes('Tüm parçaları'))
-    expect(bulk.textContent).toContain('(2)')
+    expect(bulk.textContent).toContain(`(${SNAPSHOT.length})`)
     act(() => { bulk.click() })
     // Never null here: to the server null means "everything still pending",
-    // which on this round includes the parça still in the press.
-    expect(seen).toEqual([['KAPAK', 'KUTU']])
+    // which on an unfinished round can include parçalar in the press.
+    // In the round's own order, which is what the grid renders and prints.
+    expect(seen).toEqual([[...SNAPSHOT]])
   })
 
   it('hides the bulk button when nothing has been received yet', () => {

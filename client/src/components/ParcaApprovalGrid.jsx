@@ -128,8 +128,23 @@ export default function ParcaApprovalGrid({
   const bulkTarget = routingAware
     ? pending.filter((p) => statusOf(p) === 'pending')
     : pending
+
+  // …and the button only appears when that set is ALL of them.
+  //
+  // It says "Tüm parçaları onaylayın", and on a round the matbaa is still
+  // producing it did not mean it: a two-parça sheet with one still on the
+  // press rendered "Tüm parçaları onaylayın (1)" — a button promising the
+  // whole round while signing off half of it, with the count as the only hint.
+  // The leader's real move there is the single row's own thumbs-up.
+  //
+  // Parçalar the leader has already sent back are not counted: `pending` drops
+  // them (see pendingParcalar), because a rejected parça is not a decision
+  // still owed — it is one already taken, and waiting for it would make the
+  // shortcut unreachable for the rest of the round.
+  const everyPendingDecidable = !routingAware || bulkTarget.length === pending.length
   const showBulk = bulkApproveAvailable(project, kind, snapshotParcalar)
-    && (!routingAware || bulkTarget.length > 0)
+    && bulkTarget.length > 0
+    && everyPendingDecidable
   const orderedParcalar = useMemo(() => {
     // Pending first (so the to-do list reads top-down), then approved, then
     // rejected. Stable order matters: the same parça keeps the same row

@@ -169,6 +169,59 @@ describe('ParcaChangeRequestPanel', () => {
     expect(buttonByText(/Değişiklik İste/)).toBeUndefined()
   })
 
+  // The row used to announce the debt and offer no way to pay it: the only
+  // route was the header's whole-sheet button, which opens every parça and
+  // says nothing about which one the matbaa is waiting on.
+  it('offers the way to send that correction, naming the parça', () => {
+    const calls = []
+    render(
+      <ParcaChangeRequestPanel
+        rows={[held('KUTU', { fix_pending: true })]}
+        canAct onRequestChange={() => {}}
+        onSendFix={(parca, gate) => calls.push([parca, gate])}
+      />,
+    )
+    const btn = buttonByText(/KUTU Formunu Düzenleyin/)
+    expect(btn).toBeTruthy()
+    click(btn)
+    // The gate rides along so the caller opens the right sheet — a project can
+    // carry both a demo and an ozalit round.
+    expect(calls).toEqual([['KUTU', 'demo']])
+  })
+
+  it('offers it on the ozalit leg with that gate', () => {
+    const calls = []
+    render(
+      <ParcaChangeRequestPanel
+        rows={[held('KAPAK', { fix_pending: true, gate: 'ozalit' })]}
+        canAct onRequestChange={() => {}}
+        onSendFix={(parca, gate) => calls.push([parca, gate])}
+      />,
+    )
+    click(buttonByText(/KAPAK Formunu Düzenleyin/))
+    expect(calls).toEqual([['KAPAK', 'ozalit']])
+  })
+
+  it('does not offer it on a parça that owes nothing', () => {
+    render(
+      <ParcaChangeRequestPanel
+        rows={[onPress('KUTU'), held('KİTAP')]}
+        canAct onRequestChange={() => {}} onSendFix={() => {}}
+      />,
+    )
+    expect(buttonByText(/Formunu Düzenleyin/)).toBeUndefined()
+  })
+
+  it('does not offer it to someone who may not act', () => {
+    render(
+      <ParcaChangeRequestPanel
+        rows={[held('KUTU', { fix_pending: true })]}
+        canAct={false} onRequestChange={() => {}} onSendFix={() => {}}
+      />,
+    )
+    expect(buttonByText(/Formunu Düzenleyin/)).toBeUndefined()
+  })
+
   it('shows the round read-only to someone who may not act', () => {
     render(
       <ParcaChangeRequestPanel rows={[onPress('KUTU')]} canAct={false} onRequestChange={() => {}} />,

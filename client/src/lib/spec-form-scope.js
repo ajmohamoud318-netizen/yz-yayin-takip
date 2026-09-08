@@ -65,3 +65,31 @@ export function hiddenParcaNames(selectedComponents, shown) {
     .map((c) => c?.component)
     .filter(Boolean)
 }
+
+/**
+ * Should a sheet opened for these parçalar OPEN on them, or on the whole round?
+ *
+ * `scopeComponents` above decides which blocks a scope covers; this decides
+ * whether the sheet starts there. The two are separate because narrowing is
+ * always available — the banner above the sheet toggles it — and only the
+ * default changes.
+ *
+ * The rule is the size of the decision. One parça means the reader is acting
+ * on one block: the leader's per-row Onayla or Reddedin, the designer's send-
+ * back, the correction a released parça is waiting for. A document showing
+ * three blocks while the footer says "KUTU · Onaylayın" invites signing off
+ * against the wrong one, and the reason typed into a reject dialog behind it
+ * names a parça the reader was not looking at.
+ *
+ * Many parçalar means the opposite: "Tüm parçaları onaylayın" and the matbaa's
+ * "Hepsini Başlatın" are decisions about the round, and the round is what has
+ * to be read before taking them.
+ *
+ * Empty or absent is not a scope at all — the sheet was opened without one, so
+ * there is nothing to narrow to.
+ *
+ * @param {string[] | null | undefined} parcaScope
+ */
+export function opensNarrowed(parcaScope) {
+  return (parcaScope ?? []).filter(Boolean).length === 1
+}
