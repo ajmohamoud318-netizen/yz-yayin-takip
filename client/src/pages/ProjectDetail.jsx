@@ -505,6 +505,9 @@ export default function ProjectDetail() {
         // designer sending it back round) opens KUTU's block, not the whole
         // round it was sent on. Same source as the button's own label above.
         parcaScope={parcaSheet?.parcalar ?? null}
+        // Which parça blocks the sheet must render read-only on the leader's
+        // edit-and-notify path (migration 077).
+        parcaRows={parcaRows}
         startWorkLabel={parcaSheetLabel}
         startingWork={d.startingWork || d.processingEkranDemo}
         onDone={onActionDone}
@@ -537,6 +540,9 @@ export default function ProjectDetail() {
             }
             : undefined}
         parcaScope={parcaSheet?.parcalar ?? null}
+        // Which parça blocks the sheet must render read-only on the leader's
+        // edit-and-notify path (migration 077).
+        parcaRows={parcaRows}
         startWorkLabel={parcaSheetLabel}
         startingWork={d.startingWork || d.processingEkranDemo}
         onDone={onActionDone}

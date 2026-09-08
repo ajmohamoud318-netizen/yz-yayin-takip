@@ -29,6 +29,7 @@ import {
   parcaRejectPatch, parcaGateForStage, parcaDecidable,
   parcaEditLocked, parcaFixSettledPatch,
 } from './parca-routing.js'
+import { lockedParcalarTouched } from './spec-parca-diff.js'
 
 /** Match the client's badRequest semantics — throw a 400. */
 function badRequest(message) {
@@ -885,9 +886,18 @@ function lockedParcalar(project) {
  * Only rows that owe something are returned: an empty array means the third
  * write path has nothing to do, and the orchestrator skips it.
  */
-function settleParcaFixes(project) {
+function settleParcaFixes(project, changedParcalar) {
+  // A save that corrected KİTAP does not discharge the correction owed on
+  // KUTU. When there is no baseline to diff against (`null`) the save is
+  // treated as covering the whole sheet, which is the same fallback
+  // lockedParcalarTouched makes for the guard.
+  const touched = changedParcalar === null || changedParcalar === undefined
+    ? null
+    : new Set(changedParcalar.map((n) => String(n ?? '').trim().toLocaleUpperCase('tr')))
   return parcaStateRows(project)
     .filter((r) => r?.fix_pending)
+    .filter((r) => touched === null
+      || touched.has(String(r.parca ?? '').trim().toLocaleUpperCase('tr')))
     .map((r) => ({ parca: r.parca, patch: parcaFixSettledPatch(r) }))
 }
 
@@ -2064,9 +2074,16 @@ export function computeDemoEdit(project, actor, ctx = {}) {
   // 077). See lockedParcalar: on a split round `demo_started` is structurally
   // false, so this is the only guard standing between the leader and a silent
   // rewrite of a parça that is already on the press.
-  const demoLocked = lockedParcalar(project)
-  if (demoLocked.length > 0) {
-    badRequest(`Matbaa şu parçalara başladı: ${demoLocked.join(', ')}. Bu parçalar için değişiklik isteyin.`)
+  //
+  // Scoped to the parçalar this save actually TOUCHES, not to every locked one.
+  // A three-parça round with KUTU on the press leaves KİTAP and KILAVUZ nobody's
+  // work but the leader's, and refusing the whole sheet over KUTU took away the
+  // free edit they still have on the other two. `ctx.changedParcalar` is
+  // computed against the payload the matbaa is holding — see
+  // domain/spec-parca-diff.js and `withDemoSnapshot`.
+  const demoTouched = lockedParcalarTouched(lockedParcalar(project), ctx.changedParcalar)
+  if (demoTouched.length > 0) {
+    badRequest(`Matbaa şu parçalara başladı: ${demoTouched.join(', ')}. Bu parçalar için değişiklik isteyin.`)
   }
   // Reject-to-matbaa created this round automatically — the design is
   // unchanged, the matbaa gets the file exactly as they had it when they
@@ -2084,7 +2101,7 @@ export function computeDemoEdit(project, actor, ctx = {}) {
     // include.
     project: { ...project, demo_fix_pending: false, updated_at: now },
     // The per-parça twin of the flag above — see settleParcaFixes.
-    parcaState: settleParcaFixes(project),
+    parcaState: settleParcaFixes(project, ctx.changedParcalar),
     history: makeEntry(project, {
       action: 'system',
       event: 'demo_form_edited',
@@ -2122,9 +2139,9 @@ export function computeOzalitEdit(project, actor, ctx = {}) {
     badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
   }
   // Per-parça twin of the guard above — see computeDemoEdit's comment.
-  const ozalitLocked = lockedParcalar(project)
-  if (ozalitLocked.length > 0) {
-    badRequest(`Matbaa şu parçalara başladı: ${ozalitLocked.join(', ')}. Bu parçalar için değişiklik isteyin.`)
+  const ozalitTouched = lockedParcalarTouched(lockedParcalar(project), ctx.changedParcalar)
+  if (ozalitTouched.length > 0) {
+    badRequest(`Matbaa şu parçalara başladı: ${ozalitTouched.join(', ')}. Bu parçalar için değişiklik isteyin.`)
   }
   // Same auto-reject lock as the demo twin — see computeDemoEdit's comment.
   // canEditSentOzalitRequest gates the client button; this guard closes the
@@ -2136,7 +2153,7 @@ export function computeOzalitEdit(project, actor, ctx = {}) {
     // See computeDemoEdit's comment — this submission is the fix.
     project: { ...project, ozalit_fix_pending: false, updated_at: now },
     // See computeDemoEdit — the per-parça twin of the flag above.
-    parcaState: settleParcaFixes(project),
+    parcaState: settleParcaFixes(project, ctx.changedParcalar),
     history: makeEntry(project, {
       action: 'system',
       event: 'ozalit_form_edited',

@@ -208,6 +208,16 @@ export function lockedParcaNames(rows) {
  */
 export function parcaChangeRequestPatch({ note, actor, actorName, now, startedAt = null }) {
   return {
+    // Restated for the same reason `started_at` is, and it bites harder:
+    // `upsertParcaState` writes owner_role and route VERBATIM (a parça
+    // returning to the gate has to be able to clear them), so a patch that
+    // omits them hands the row to nobody. That drops it out of
+    // `listParcaStateByOwner('printer')` — and `deriveTeslimParcalar` then
+    // rebuilds a synthetic card from the round's snapshot with no
+    // change-request fields on it, so the matbaa is shown an ordinary
+    // "Teslim Edin" and never sees the question at all.
+    owner_role: 'printer',
+    route: 'physical',
     started_at: startedAt,
     change_requested_at: now,
     change_requested_by: actor?.id ?? null,
@@ -249,6 +259,10 @@ export function parcaChangeAcceptPatch() {
  */
 export function parcaChangeDeclinePatch({ startedAt }) {
   return {
+    // See parcaChangeRequestPatch — declining leaves the parça exactly where
+    // it was, so the owner has to be restated or the row leaves their queue.
+    owner_role: 'printer',
+    route: 'physical',
     started_at: startedAt,
     change_requested_at: null,
     change_requested_by: null,
@@ -271,6 +285,13 @@ export function parcaChangeDeclinePatch({ startedAt }) {
 export function parcaFixSettledPatch(row) {
   return {
     fix_pending: false,
+    // Echoed for the same reason the stamps below are, and it is the same trap
+    // parcaChangeRequestPatch documents: owner_role and route are written
+    // VERBATIM, so a pure flag-clear that omits them hands the parça to nobody
+    // — and the matbaa's very next "İşlemi Başlatın" is refused with "Bu parça
+    // sizde değil" on a parça that is unmistakably theirs.
+    owner_role: row?.owner_role ?? null,
+    route: row?.route ?? null,
     started_at: row?.started_at ?? null,
     delivered_at: row?.delivered_at ?? null,
     received_at: row?.received_at ?? null,

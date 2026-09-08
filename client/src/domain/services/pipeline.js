@@ -421,29 +421,30 @@ export function canCancelOzalitRequest(user, project, parcaRows = []) {
  * this button on an auto-round lands the leader on a server 400 instead of
  * a silent rewrite.
  */
-export function canEditSentDemoRequest(user, project, parcaRows = []) {
+/*
+ * Note on the parça locks (migration 077): the EDIT gates below deliberately
+ * do NOT consult them, while the CANCEL gates above do. The asymmetry is the
+ * point. Cancel withdraws the whole round — there is no partial version of it,
+ * so one parça on the press has to shut it. An edit is per parça: on a
+ * three-parça round with KUTU printing, KİTAP and KILAVUZ are still the
+ * leader's to correct, and hiding the button over KUTU took away a free edit
+ * they were entitled to. The sheet renders the locked blocks read-only
+ * (SpecSheetBody's `lockedParcalar`) and the server refuses a save that
+ * actually rewrites one (computeDemoEdit + domain/spec-parca-diff.js).
+ */
+export function canEditSentDemoRequest(user, project) {
   if (!project) return false
   if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') return false
   if (project.demo_started) return false
-  // The same rule, read off the parçalar (migration 077). `demo_started` is a
-  // whole-sheet flag and `startParca` deliberately never sets it — otherwise
-  // one started parça would hide "İşlemi Başlatın" on all the others — so on a
-  // split round the check above is structurally false and this is the one that
-  // does the work. A locked parça's route is the per-parça change request; the
-  // server refuses the sheet-wide edit either way (computeDemoEdit), so the
-  // button would only be a dead end.
-  if (lockedParcaNames(parcaRows).length > 0) return false
   return user?.role === 'team_leader'
 }
 
-export function canEditSentOzalitRequest(user, project, parcaRows = []) {
+export function canEditSentOzalitRequest(user, project) {
   if (!project) return false
   if (project.stage !== 'ozalit_teslim') return false
   // Liveness, not `ozalit_requested` — see isOzalitRoundLive. Cancel keeps the
   // stricter flag on purpose; correcting a sheet the matbaa holds does not.
   if (!isOzalitRoundLive(project) || project.ozalit_started) return false
-  // Per-parça twin of the flag above — see canEditSentDemoRequest.
-  if (lockedParcaNames(parcaRows).length > 0) return false
   return user?.role === 'team_leader'
 }
 

@@ -56,25 +56,57 @@ function ozalitRound(parcaState) {
   }
 }
 
-describe('computeDemoEdit refuses a sheet-wide edit over a started parça', () => {
-  it('throws when one parça of the round is on the press', () => {
-    const project = demoRound([
-      row('KUTU', { state: 'in_round', started_at: '2026-09-01T10:00:00Z' }),
-      row('KİTAP'),
-    ])
+// `ctx.changedParcalar` is what the prepare hook computes by diffing the sheet
+// being saved against the one the matbaa is holding (domain/spec-parca-diff.js).
+// `null` means there was no baseline to diff, which the guard treats as "this
+// save touches everything".
+const touching = (...parcalar) => ({ changedParcalar: parcalar })
+const NO_BASELINE = { changedParcalar: null }
+
+describe('computeDemoEdit refuses only the locked parçalar a save rewrites', () => {
+  const kutuOnPress = () => demoRound([
+    row('KUTU', { state: 'in_round', started_at: '2026-09-01T10:00:00Z' }),
+    row('KİTAP'),
+  ])
+
+  it('throws when the save rewrites the parça on the press', () => {
     assert.throws(
-      () => computeDemoEdit(project, leader),
+      () => computeDemoEdit(kutuOnPress(), leader, touching('KUTU')),
       /Matbaa şu parçalara başladı: KUTU/,
     )
   })
 
-  it('names every locked parça, not just the first', () => {
+  // The regression this scoping exists for: refusing the whole sheet took away
+  // the free edit the leader still has on every parça the matbaa has NOT
+  // started, which is the point of splitting a round in the first place.
+  it('allows a save that only touches the parçalar nobody started', () => {
+    const { history } = computeDemoEdit(kutuOnPress(), leader, touching('KİTAP'))
+    assert.equal(history.event, 'demo_form_edited')
+  })
+
+  it('allows a save that changes no parça block at all', () => {
+    // Sheet-level fields only — a new teslim date, a custom row. Nothing the
+    // matbaa is producing moves.
+    const { history } = computeDemoEdit(kutuOnPress(), leader, touching())
+    assert.equal(history.event, 'demo_form_edited')
+  })
+
+  it('refuses when it cannot tell what changed', () => {
+    // No baseline to diff against: a save that cannot be shown to be safe is
+    // not one to wave through on a round already on the press.
+    assert.throws(() => computeDemoEdit(kutuOnPress(), leader, NO_BASELINE), /KUTU/)
+  })
+
+  it('names every locked parça the save touches, not just the first', () => {
     const project = demoRound([
       row('KUTU', { state: 'in_round', started_at: '2026-09-01T10:00:00Z' }),
       row('KİTAP', { state: 'in_round', started_at: '2026-09-01T11:00:00Z' }),
       row('KILAVUZ'),
     ])
-    assert.throws(() => computeDemoEdit(project, leader), /KUTU, KİTAP/)
+    assert.throws(
+      () => computeDemoEdit(project, leader, touching('KUTU', 'KİTAP', 'KILAVUZ')),
+      /KUTU, KİTAP/,
+    )
   })
 
   it('allows the edit when no parça has been started', () => {
@@ -104,14 +136,22 @@ describe('computeDemoEdit refuses a sheet-wide edit over a started parça', () =
       row('KUTU', { fix_pending: true }),
       row('KİTAP'),
     ])
-    const { parcaState } = computeDemoEdit(project, leader)
+    const { parcaState } = computeDemoEdit(project, leader, touching('KUTU'))
     assert.equal(parcaState.length, 1)
     assert.equal(parcaState[0].parca, 'KUTU')
     assert.equal(parcaState[0].patch.fix_pending, false)
   })
 
+  it('does not settle a debt the save never addressed', () => {
+    // Correcting KİTAP does not discharge the correction still owed on KUTU —
+    // the matbaa must stay blocked from restarting it.
+    const project = demoRound([row('KUTU', { fix_pending: true }), row('KİTAP')])
+    const { parcaState } = computeDemoEdit(project, leader, touching('KİTAP'))
+    assert.deepEqual(parcaState, [])
+  })
+
   it('writes no parça rows when nothing owed a correction', () => {
-    const { parcaState } = computeDemoEdit(demoRound([row('KUTU')]), leader)
+    const { parcaState } = computeDemoEdit(demoRound([row('KUTU')]), leader, touching())
     assert.deepEqual(parcaState, [])
   })
 
@@ -125,22 +165,25 @@ describe('computeDemoEdit refuses a sheet-wide edit over a started parça', () =
 })
 
 describe('computeOzalitEdit carries the same per-parça guard', () => {
-  it('throws when one parça of the round is on the press', () => {
+  it('throws when the save rewrites the parça on the press', () => {
     const project = ozalitRound([
       row('KAPAK', { gate: 'ozalit', state: 'in_round', started_at: '2026-09-01T10:00:00Z' }),
       row('İÇ', { gate: 'ozalit' }),
     ])
     assert.throws(
-      () => computeOzalitEdit(project, leader),
+      () => computeOzalitEdit(project, leader, touching('KAPAK')),
       /Matbaa şu parçalara başladı: KAPAK/,
     )
+    // …and lets the leader correct the other one meanwhile.
+    const { history } = computeOzalitEdit(project, leader, touching('İÇ'))
+    assert.equal(history.event, 'ozalit_form_edited')
   })
 
   it('settles the correction debt on the released parça', () => {
     const project = ozalitRound([
       row('KAPAK', { gate: 'ozalit', fix_pending: true }),
     ])
-    const { parcaState } = computeOzalitEdit(project, leader)
+    const { parcaState } = computeOzalitEdit(project, leader, touching('KAPAK'))
     assert.deepEqual(parcaState.map((p) => p.parca), ['KAPAK'])
   })
 })

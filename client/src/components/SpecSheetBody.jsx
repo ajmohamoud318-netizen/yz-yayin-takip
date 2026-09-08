@@ -42,6 +42,7 @@ export default function SpecSheetBody({
   onMoveCustomRow,
   catalogComponents,
   hideParcaPicker = false,
+  lockedParcalar = [],
   selectedComponents,
   onToggleComponent,
   onSelectAllComponents,
@@ -52,6 +53,19 @@ export default function SpecSheetBody({
   onMoveComponentRow,
 }) {
   const hasCatalog = catalogComponents.length > 0
+  /* Parçalar the matbaa is producing right now (migration 077). Their blocks
+     render read-only while the rest of the sheet stays editable: the leader
+     may still correct KİTAP while KUTU is on the press, and the server refuses
+     exactly the same set (computeDemoEdit + domain/spec-parca-diff.js).
+     Name-keyed and Turkish-folded for the same reason lib/spec-form-scope.js
+     is — a KILAVUZ that came back as "Kılavuz" must still match its block. */
+  const lockedParcaSet = new Set(
+    (lockedParcalar ?? [])
+      .filter(Boolean)
+      .map((n) => String(n).trim().toLocaleUpperCase('tr')),
+  )
+  const isParcaLocked = (c) => lockedParcaSet.size > 0
+    && lockedParcaSet.has(String(c?.component ?? '').trim().toLocaleUpperCase('tr'))
   // Parça blocks replace the single İŞİN ADI + custom-rows body: with them on
   // the sheet there is no one job name for the künye to carry, since each
   // block names its own (and prints as that sheet's İŞİN ADI — see
@@ -315,7 +329,9 @@ export default function SpecSheetBody({
           and the card chrome would only print a box around it. */}
       {showsComponentCards && (
         <div className={`grid grid-cols-1 gap-3 border-b bg-muted/20 p-3 print:block print:gap-0 print:border-0 print:bg-transparent print:p-0 ${stacksParca ? '' : 'sm:grid-cols-2'}`}>
-          {selectedComponents.map((c, ci) => (
+          {selectedComponents.map((c, ci) => {
+          const parcaLocked = isParcaLocked(c)
+          return (
           <div
             key={c.id}
             className="overflow-hidden rounded-lg border bg-white print:rounded-none print:border-0"
@@ -381,6 +397,12 @@ export default function SpecSheetBody({
                 ) : null}
               />
             </FormSheetBlock>
+            {parcaLocked && (
+              <p className="bg-amber-50 px-3 py-1.5 text-[11px] font-medium leading-snug text-amber-800 print:hidden">
+                Matbaa bu parçanın baskısına başladı — düzenlemek için değişiklik
+                isteyin. Diğer parçaları düzenlemeye devam edebilirsiniz.
+              </p>
+            )}
             <FormSheetBlock className="border-b-0 px-3">
               {(c.rows ?? []).length === 0 && readOnly && (
                 <p className="py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
@@ -395,11 +417,11 @@ export default function SpecSheetBody({
                   onRemove={() => onRemoveComponentRow(c.id, r.id)}
                   onMoveUp={(c.rows ?? []).length > 1 && i > 0 ? () => onMoveComponentRow(c.id, r.id, -1) : null}
                   onMoveDown={(c.rows ?? []).length > 1 && i < (c.rows ?? []).length - 1 ? () => onMoveComponentRow(c.id, r.id, 1) : null}
-                  readOnly={readOnly || (livePageCountLocks(c) && isSayfaSayisiRow(r.label))}
+                  readOnly={readOnly || parcaLocked || (livePageCountLocks(c) && isSayfaSayisiRow(r.label))}
                   required={isRequiredRow(r.label)}
                 />
               ))}
-              {!readOnly && (
+              {!readOnly && !parcaLocked && (
                 <SheetAddRow
                   onClick={() => onAddComponentRow(c.id)}
                   suggestions={missingTemplateLabels(parcaKind(c), c.rows)}
@@ -423,7 +445,8 @@ export default function SpecSheetBody({
               </div>
             )}
           </div>
-          ))}
+          )
+          })}
         </div>
       )}
 

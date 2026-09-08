@@ -156,7 +156,7 @@ export default function HeaderActionRow({ d }) {
         </span>
       )}
       {/* Undo a mistaken request outright */}
-      {canEditSentDemoRequest(user, project, parcaRows) && (
+      {canEditSentDemoRequest(user, project) && (
         <Button
           size="sm" variant="outline"
           onClick={() => { setDemoFormMode('view'); setDemoFormAttempt(null); setDemoFormNotify(true); setDemoFormOpen(true) }}
@@ -165,14 +165,14 @@ export default function HeaderActionRow({ d }) {
           Gönderilen Demoyu Düzenleyin
         </Button>
       )}
-      {/* The sheet edit is off because the matbaa is producing part of this
-          round. Without this line the button just disappears, which reads as a
-          bug — and the way forward (ask for that parça) is a panel further down
-          the page, not another button here. */}
+      {/* Which parçalar the sheet edit above will NOT let them touch. The
+          button stays — the rest of the round is still theirs to correct — so
+          without this the leader opens the form, finds two blocks editable and
+          one greyed, and has to guess why. */}
       {isLeader && sheetLockedParcalar.length > 0 && (
         <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700">
           <Printer className="h-4 w-4" />
-          Matbaa {sheetLockedParcalar.join(', ')} baskısına başladı — aşağıdan değişiklik isteyin
+          Matbaa {sheetLockedParcalar.join(', ')} baskısına başladı — o parçalar için aşağıdan değişiklik isteyin
         </span>
       )}
       {canCancelDemoRequest(user, project, parcaRows) && (
@@ -185,7 +185,7 @@ export default function HeaderActionRow({ d }) {
           {cancellingRequest ? 'İşleniyor…' : 'Demo İsteğini İptal Edin'}
         </Button>
       )}
-      {canEditSentOzalitRequest(user, project, parcaRows) && (
+      {canEditSentOzalitRequest(user, project) && (
         <Button
           size="sm" variant="outline"
           onClick={() => { setOzalitFormMode('view'); setOzalitFormAttempt(null); setOzalitFormNotify(true); setOzalitFormOpen(true) }}

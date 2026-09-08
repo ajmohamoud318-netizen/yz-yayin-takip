@@ -189,6 +189,30 @@ describe('the change-request handshake (migration 077)', () => {
     assert.equal(patch.state, undefined, 'the parça does not move')
   })
 
+  // Regression, found end-to-end and invisible to a patch-shape test alone:
+  // upsertParcaState writes owner_role and route VERBATIM so a parça returning
+  // to the gate can clear them. Both patches below leave the parça WITH the
+  // matbaa, so omitting the pair handed the row to nobody — it dropped out of
+  // listParcaStateByOwner('printer'), deriveTeslimParcalar rebuilt a synthetic
+  // card from the round's snapshot with no change-request fields, and the
+  // matbaa was shown an ordinary "Teslim Edin" instead of the question.
+  it('every patch that leaves the parça with the matbaa restates the owner', () => {
+    for (const [label, patch] of [
+      ['request', parcaChangeRequestPatch({ note: 'x', actor: leader, now: NOW, startedAt: NOW })],
+      ['decline', parcaChangeDeclinePatch({ startedAt: NOW })],
+      ['accept', parcaChangeAcceptPatch()],
+      ['start', parcaStartPatch({ now: NOW })],
+    ]) {
+      assert.equal(patch.owner_role, 'printer', `${label} must keep the parça with the matbaa`)
+      assert.equal(patch.route, 'physical', `${label} must keep the route`)
+    }
+  })
+
+  it('and every patch that hands it back clears the owner', () => {
+    assert.equal(parcaDeliverPatch({ now: NOW }).owner_role, null)
+    assert.equal(parcaApprovePatch().owner_role, null)
+  })
+
   it('an empty note is stored as null, not as an empty string', () => {
     const patch = parcaChangeRequestPatch({ note: '   ', actor: leader, now: NOW })
     assert.equal(patch.change_requested_note, null)
@@ -212,12 +236,21 @@ describe('the change-request handshake (migration 077)', () => {
   })
 
   it('the correction landing clears the debt without erasing the round', () => {
-    const row = { parca: 'KUTU', started_at: null, delivered_at: null, received_at: null, fix_pending: true }
+    // The shape parcaChangeAcceptPatch leaves behind: still the matbaa's,
+    // un-started, owing the fix.
+    const row = {
+      parca: 'KUTU', state: 'with_matbaa', owner_role: 'printer', route: 'physical',
+      started_at: null, delivered_at: null, received_at: null, fix_pending: true,
+    }
     const patch = parcaFixSettledPatch(row)
     assert.equal(patch.fix_pending, false)
     // The stamps are restated because the repository writes them verbatim —
     // a bare flag-clear would wipe the round it is settling.
     assert.ok('started_at' in patch && 'delivered_at' in patch && 'received_at' in patch)
+    // …and so is the owner, or the matbaa's next "İşlemi Başlatın" is refused
+    // with "Bu parça sizde değil" on a parça that is plainly theirs.
+    assert.equal(patch.owner_role, 'printer')
+    assert.equal(patch.route, 'physical')
   })
 
   it('every leg that ends a round drops a stale correction debt', () => {

@@ -71,50 +71,38 @@ describe('parça lock predicates', () => {
   })
 })
 
-describe('canEditSentDemoRequest with a split round', () => {
-  it('still allows the sheet edit while the matbaa has started nothing', () => {
-    expect(canEditSentDemoRequest(AYSE, demoRound, [row('KUTU'), row('KİTAP')])).toBe(true)
-  })
-
-  // The regression itself: demo_started is false here, which is exactly why
-  // the old gate said yes.
-  it('closes the sheet edit once ONE parça is on the press', () => {
-    expect(canEditSentDemoRequest(AYSE, demoRound, [onPress('KUTU'), row('KİTAP')])).toBe(false)
-  })
-
-  it('reopens it once the matbaa accepts the change request', () => {
-    // What acceptParcaChange leaves behind: un-started, carrying the debt.
-    const released = [row('KUTU', { fix_pending: true }), row('KİTAP')]
-    expect(canEditSentDemoRequest(AYSE, demoRound, released)).toBe(true)
-  })
-
-  it('is unchanged with no parça rows — legacy and single-parça rounds', () => {
-    expect(canEditSentDemoRequest(AYSE, demoRound, [])).toBe(true)
+// The edit gates deliberately ignore the locks — see the note above them in
+// pipeline.js. A locked parça costs the leader that block, not the button:
+// the sheet greys the block out (SpecSheetBody) and the server refuses a save
+// that rewrites it (computeDemoEdit). Hiding the button instead took away the
+// free edit they still have on every parça the matbaa has not started, which
+// is the whole point of splitting a round.
+describe('canEditSentDemoRequest keeps the sheet open on a split round', () => {
+  it('stays available while one parça is on the press', () => {
     expect(canEditSentDemoRequest(AYSE, demoRound)).toBe(true)
-    expect(canEditSentDemoRequest(AYSE, { ...demoRound, demo_started: true }, [])).toBe(false)
+    expect(canEditSentDemoRequest(AYSE, demoRound, [onPress('KUTU'), row('KİTAP')])).toBe(true)
+  })
+
+  it('still closes on the whole-sheet flag, which is all-or-nothing', () => {
+    expect(canEditSentDemoRequest(AYSE, { ...demoRound, demo_started: true })).toBe(false)
   })
 
   it('stays team-leader-only', () => {
-    expect(canEditSentDemoRequest(OKTAY, demoRound, [row('KUTU')])).toBe(false)
+    expect(canEditSentDemoRequest(OKTAY, demoRound)).toBe(false)
   })
 
   it('covers the ÇİN demo leg too', () => {
-    const cin = { stage: 'cin_demo_teslim', demo_started: false }
-    expect(canEditSentDemoRequest(AYSE, cin, [onPress('KUTU')])).toBe(false)
-    expect(canEditSentDemoRequest(AYSE, cin, [row('KUTU')])).toBe(true)
+    expect(canEditSentDemoRequest(AYSE, { stage: 'cin_demo_teslim', demo_started: false })).toBe(true)
   })
 })
 
-describe('canEditSentOzalitRequest carries the same lock', () => {
-  it('closes once one parça is on the press, reopens on accept', () => {
-    expect(canEditSentOzalitRequest(AYSE, ozalitRound, [row('KAPAK')])).toBe(true)
-    expect(canEditSentOzalitRequest(AYSE, ozalitRound, [onPress('KAPAK')])).toBe(false)
-    expect(canEditSentOzalitRequest(AYSE, ozalitRound, [row('KAPAK', { fix_pending: true })])).toBe(true)
+describe('canEditSentOzalitRequest behaves the same way', () => {
+  it('stays available with a parça on the press', () => {
+    expect(canEditSentOzalitRequest(AYSE, ozalitRound)).toBe(true)
   })
 
   it('does not resurrect the edit on a round nobody requested', () => {
-    const idle = { stage: 'ozalit_teslim', ozalit_requested: false }
-    expect(canEditSentOzalitRequest(AYSE, idle, [row('KAPAK')])).toBe(false)
+    expect(canEditSentOzalitRequest(AYSE, { stage: 'ozalit_teslim', ozalit_requested: false })).toBe(false)
   })
 })
 

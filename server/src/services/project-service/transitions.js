@@ -21,6 +21,7 @@ import {
 } from '../project-repository.js'
 import { activeUserIdsByRole } from '../notifications.js'
 import { listParcaState } from '../parca-state-repository.js'
+import { changedParcaBlocks } from '../../domain/spec-parca-diff.js'
 import { runProjectCommand } from '../project-service.js'
 
 /**
@@ -166,7 +167,15 @@ function withDemoSnapshot(kind, body) {
     // edit the FSM has to authorize, and it is exactly the shape a stale
     // client sends.
     row.parca_state = await listParcaState(client, row.id)
-    if (!body?.payload) return { demoId: null }
+
+    // The sheet the matbaa is currently holding, read BEFORE the correction is
+    // written over it. The edit guard refuses only the locked parçalar this
+    // save actually rewrites (migration 077), and that question is unanswerable
+    // once the new snapshot is the latest one.
+    const baseline = await loadLatestDemoSnapshot(client, row.id, kind)
+    const changedParcalar = changedParcaBlocks(baseline?.payload, body?.payload)
+
+    if (!body?.payload) return { demoId: null, changedParcalar }
     const snapshot = await insertDemoSnapshot(client, {
       project_id: row.id,
       kind,
@@ -176,7 +185,7 @@ function withDemoSnapshot(kind, body) {
         : (row.ozalit_attempt ?? 0) + 1),
       created_by: actor?.id,
     })
-    return { demoId: snapshot?.id ?? null }
+    return { demoId: snapshot?.id ?? null, changedParcalar }
   }
 }
 
@@ -312,7 +321,10 @@ export function ozalitCancel(projectId, actor, client = null) {
 export function demoEditNotify(projectId, actor, body = {}, client = null) {
   return runProjectCommand(projectId, actor, {
     prepare: withDemoSnapshot('demo', body),
-    run: (project, pCtx) => project.demoEdit(actor, { demoId: pCtx.demoId ?? null }),
+    run: (project, pCtx) => project.demoEdit(actor, {
+      demoId: pCtx.demoId ?? null,
+      changedParcalar: pCtx.changedParcalar,
+    }),
   }, client)
 }
 
@@ -320,7 +332,10 @@ export function demoEditNotify(projectId, actor, body = {}, client = null) {
 export function ozalitEditNotify(projectId, actor, body = {}, client = null) {
   return runProjectCommand(projectId, actor, {
     prepare: withDemoSnapshot('ozalit', body),
-    run: (project, pCtx) => project.ozalitEdit(actor, { demoId: pCtx.demoId ?? null }),
+    run: (project, pCtx) => project.ozalitEdit(actor, {
+      demoId: pCtx.demoId ?? null,
+      changedParcalar: pCtx.changedParcalar,
+    }),
   }, client)
 }
 

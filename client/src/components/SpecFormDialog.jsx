@@ -20,7 +20,7 @@ import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { incompleteSpecBlocks } from '@/lib/spec-form-completeness'
 import { useSpecSheet } from '@/hooks/useSpecSheet'
 import { saveEditedComponents } from '@/data/productCatalog'
-import { ozalitLeaderApproved, needsOzalitRouteChoice } from '@/domain'
+import { ozalitLeaderApproved, needsOzalitRouteChoice, lockedParcaNames } from '@/domain'
 import { buildChangeSummary } from '@/lib/spec-form-diff'
 import { openMultiPrint } from '@/lib/spec-form-print'
 import { hiddenParcaNames, scopeComponents } from '@/lib/spec-form-scope'
@@ -94,6 +94,10 @@ export { stampSpecSignature } from '@/lib/spec-form-storage'
  *   (the printer may still mark demo-start/ozalit-start), the footer offers
  *   an "İşlemi Başlatın" button so they review the spec sheet before
  *   confirming they've begun physical work, instead of starting blind.
+ * parcaRows — this project's `parca_state` rows (migration 077). Only read on
+ * the edit-and-notify path, to grey out the blocks of parçalar the matbaa has
+ * already started; see `lockedParcalar` below.
+ *
  * parcaScope — parça NAMES this sheet was opened for (migration 074). Every
  *   per-parça button in the app opens this dialog first, and the document has
  *   to say what the button says: "KUTU · İşlemi Başlatın" for the matbaa,
@@ -113,7 +117,7 @@ export { stampSpecSignature } from '@/lib/spec-form-storage'
  *   ship a different file). The saved sheet still loads as-is (like a
  *   read-only viewer would) instead of the normal "fresh compose" reset.
  */
-export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, order = null, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, startWorkLabel = null, parcaScope = null, rejectContext = null }) {
+export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, order = null, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, startWorkLabel = null, parcaScope = null, parcaRows = [], rejectContext = null }) {
   const variant = VARIANTS[variantName]
   const { user } = useAuth()
   const { updateOne } = useProjectsStore()
@@ -414,6 +418,14 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     () => scopeComponents(selectedComponents, parcaScopeKey ? parcaScopeKey.split('|') : null),
     [selectedComponents, parcaScopeKey],
   )
+  /* Parçalar the matbaa is producing right now (migration 077). Only the
+     edit-and-notify path cares: it is the one save that rewrites the sheet the
+     printer is working from, and a parça already on the press is not the
+     leader's to change silently. Every other opening of this dialog — a draft,
+     a history view, the matbaa's own start/deliver — either writes nothing to
+     that sheet or is not the leader's edit, so the blocks stay live there. */
+  const lockedParcalar = notifyOnSave ? lockedParcaNames(parcaRows) : []
+
   const parcaNarrowed = scopedComponents.length < selectedComponents.length
   const sheetComponents = parcaNarrowed && !showAllParca ? scopedComponents : selectedComponents
   const hiddenParca = parcaNarrowed ? hiddenParcaNames(selectedComponents, scopedComponents) : []
@@ -1040,6 +1052,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           onMoveCustomRow={moveCustomRow}
           catalogComponents={catalogComponents}
           hideParcaPicker={parcaNarrowed && !showAllParca}
+          lockedParcalar={lockedParcalar}
           selectedComponents={sheetComponents}
           onToggleComponent={toggleComponent}
           onSelectAllComponents={selectAllComponents}

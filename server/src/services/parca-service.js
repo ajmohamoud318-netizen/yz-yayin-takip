@@ -156,6 +156,16 @@ async function deriveTeslimParcalar(routed) {
         started_at: row?.started_at ?? null,
         delivered_at: null,
         reason: null,
+        // A derived row has no handshake on it by definition — a parça anybody
+        // has asked about HAS a real row, because the ask materialises one.
+        // Stated rather than left undefined so every row the queue hands the
+        // client has the same shape, and ParcaJobCard does not have to tell a
+        // missing field from a false one (migration 077).
+        change_requested_at: null,
+        change_requested_by: null,
+        change_requested_by_name: null,
+        change_requested_note: null,
+        fix_pending: false,
         project_title: p.title,
         project_stage: p.stage,
         project_type: p.type,

@@ -759,7 +759,10 @@ export async function loadLatestDemoSnapshot(client, projectId, kind) {
         .map((c) => (typeof c === 'string' ? c : c?.component))
         .filter(Boolean)
     : []
-  return { selectedComponents: selected, attempt: rows[0].attempt }
+  // `payload` rides along for the per-parça edit diff (migration 077): the
+  // guard has to compare the sheet being saved against the one the matbaa is
+  // holding, and the names alone cannot answer whether a block changed.
+  return { selectedComponents: selected, attempt: rows[0].attempt, payload }
 }
 
 export async function reconcileOzalitApprovals(actor) {
