@@ -23,6 +23,13 @@ export default function SpecFormFooter({
   printable,
   missingRequired,
   incompleteSpec,
+  // No parça ticked on a product that has them: there is no sheet to send yet
+  // (SpecFormDialog → noParcaSelected). It disables exactly what a send
+  // disables, and like `incompleteSpec` it arrives already scoped — empty for
+  // a read-only reader and for a rejection, so no button needs its own
+  // exemption. A plain "Taslağı Kaydedin" stays open: parking a draft is how
+  // a leader comes back to the pick.
+  noParcaSelected,
   onClose,
   onPrint,
   onSave,
@@ -64,7 +71,7 @@ export default function SpecFormFooter({
             // Only the save that SHIPS the sheet (notifyEdit) answers to the
             // completeness gate — a plain Kaydet parks a draft, which is
             // exactly what a leader working through the template needs.
-            || (!!notifyEdit && incompleteSpec?.length > 0)
+            || (!!notifyEdit && (incompleteSpec?.length > 0 || noParcaSelected))
             // Once the diff is known to be empty, the matbaa notification
             // is meaningless; the handleSave guard catches the race where
             // someone clicks before this state lands.
@@ -102,7 +109,7 @@ export default function SpecFormFooter({
         <Button
           type="button"
           variant="outline"
-          disabled={busy || missingRequired.length > 0 || incompleteSpec?.length > 0}
+          disabled={busy || missingRequired.length > 0 || incompleteSpec?.length > 0 || noParcaSelected}
           onClick={() => onAdvance('ekran_onayinda')}
         >
           {busy ? 'Gönderiliyor…' : 'Ekran Onayı İsteyin'}
@@ -112,7 +119,7 @@ export default function SpecFormFooter({
         <Button
           type="button"
           variant="outline"
-          disabled={busy || missingRequired.length > 0 || incompleteSpec?.length > 0}
+          disabled={busy || missingRequired.length > 0 || incompleteSpec?.length > 0 || noParcaSelected}
           onClick={() => onAdvance('ekran')}
         >
           {busy ? 'Gönderiliyor…' : 'Ekran Ozalit İsteyin'}
@@ -132,7 +139,7 @@ export default function SpecFormFooter({
           // `route` is computed once here and reused for both the click
           // and the label below, so the button may not say one thing and
           // do another (footer contract — see the file docblock above).
-          disabled={busy || (!rejectContext && missingRequired.length > 0) || incompleteSpec?.length > 0}
+          disabled={busy || (!rejectContext && missingRequired.length > 0) || incompleteSpec?.length > 0 || noParcaSelected}
           onClick={() => onAdvance(
             offersOzalitRoute
               ? 'ozalit'
@@ -152,7 +159,7 @@ export default function SpecFormFooter({
         </Button>
       )}
       {isBaskiOnayApproval && !baskiOnayPrepared && (
-        <Button disabled={busy || missingRequired.length > 0} onClick={onPrepareBaskiOnay}>
+        <Button disabled={busy || missingRequired.length > 0 || noParcaSelected} onClick={onPrepareBaskiOnay}>
           <Send className="h-4 w-4" />
           {busy ? 'Kaydediliyor…' : 'Hazırlayın ve Onaya Gönderin'}
         </Button>

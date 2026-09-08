@@ -421,7 +421,28 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const specBlocks = selectedComponents.length > 0
     ? selectedComponents
     : [{ component: form.isinAdi, rows: customRows }]
-  const missingRequired = missingRequiredFields(variant, form, specBlocks)
+
+  /* ── Nothing ticked, and there IS something to tick ──────────────────────
+   * With a catalog on the project the parçalar are the sheet; the custom-row
+   * fallback above is what a product with no Ürün Bilgileri gets instead (see
+   * SpecSheetBody → awaitingParcaPick, which drops the body for the same
+   * reason). So this is not an incomplete form — it is not a form yet, and no
+   * write path may ship it.
+   *
+   * Measured on the whole round, like every other gate here: a send ships
+   * every parça on the sheet, whoever happens to be looking at one of them.
+   * Read-only readers are exempt because they compose nothing (the matbaa's
+   * sheet, a history snapshot), and so is "Reddedin ve Gönderin" — a rejection
+   * confirms what came back rather than authoring a new spec.
+   */
+  const noParcaSelected =
+    catalogComponents.length > 0 && selectedComponents.length === 0 && !readOnly && !rejectContext
+
+  // Both gates below would otherwise describe the fallback block — a body the
+  // sheet no longer shows while this holds. One blocker at a time, and it is
+  // the pick: fill in the ADET / BASIM YERİ of a form that doesn't exist yet
+  // is not an instruction anyone can follow.
+  const missingRequired = noParcaSelected ? [] : missingRequiredFields(variant, form, specBlocks)
   function requiredFilled() {
     if (missingRequired.length === 0) return true
     toast.error(`${missingRequired.join(' ve ')} boş bırakılamaz.`)
@@ -437,12 +458,18 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    * "Reddedin ve Gönderin" confirms a rejection rather than composing
    * anything — the same two exemptions the required-field gate makes.
    */
-  const incompleteSpec = variant.requiresFilledSpec && !readOnly && !rejectContext
+  const incompleteSpec = variant.requiresFilledSpec && !readOnly && !rejectContext && !noParcaSelected
     ? incompleteSpecBlocks(specBlocks)
     : []
   function specFilled() {
     if (incompleteSpec.length === 0) return true
     toast.error(`Form boş satırlarla gönderilemez — ${incompleteSpec[0]}.`)
+    return false
+  }
+  /** The gate `noParcaSelected` describes, for the handlers the buttons call. */
+  function parcaChosen() {
+    if (!noParcaSelected) return true
+    toast.error('Formu göndermeden önce en az bir parça seçin.')
     return false
   }
   // Saves go back to the slot the sheet was READ from, not blindly to
@@ -659,6 +686,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     // "Reddedin ve Gönderin" button stays enabled for a real re-delivery.
     if (!rejectContext && !requiredFilled()) return
     if (!specFilled()) return
+    if (!parcaChosen()) return
     setBusy(true)
     try {
       // When the printer (matbaa) is the one advancing, stamp the
@@ -808,6 +836,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   async function handlePrepareBaskiOnay() {
     if (!project) return
     if (!requiredFilled()) return
+    if (!parcaChosen()) return
     setBusy(true)
     try {
       const updated = await api.prepareBaskiOnay(project.id)
@@ -832,6 +861,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     // `notifyEdit` is the save that ships the revised sheet to the matbaa
     // (the "Gönderilen Demoyu/Ozaliti Düzenleyin" path), and that is a send.
     if (notifyEdit && !specFilled()) return
+    // Same split for the pick: a plain Kaydet may park a sheet with nothing
+    // ticked (the user cleared the picker and will come back to it), but the
+    // save that SHIPS one may not.
+    if (notifyEdit && !parcaChosen()) return
     // Guard the "Gönderilen Demoyu/Ozaliti Düzenleyin" path against an empty
     // submit. Opening this dialog and pressing Kaydet without editing used to
     // write a history row and notify the matbaa with nothing to review — every
@@ -915,6 +948,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     if (!project) return
     // A printout is the sheet leaving the app — same bar as sending it.
     if (!readOnly && !requiredFilled()) return
+    // …including the pick: with nothing ticked the screen shows no document,
+    // and openMultiPrint would fall back to the custom-row body — paper saying
+    // something the sheet on screen does not.
+    if (!parcaChosen()) return
     if (!readOnly) {
       saveForm(variant, scopeId, form, customRows, selectedComponents)
       persistCatalogEdits()
@@ -1027,6 +1064,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           onStartWork={onStartWork}
           missingRequired={missingRequired}
           incompleteSpec={incompleteSpec}
+          noParcaSelected={noParcaSelected}
         />
 
         <SpecFormFooter
@@ -1039,6 +1077,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           printable={printable}
           missingRequired={missingRequired}
           incompleteSpec={incompleteSpec}
+          noParcaSelected={noParcaSelected}
           onClose={() => onOpenChange(false)}
           onPrint={handlePrint}
           onSave={handleSave}

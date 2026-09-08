@@ -166,6 +166,7 @@ export function SpecFormGates({
   onStartWork,
   missingRequired,
   incompleteSpec,
+  noParcaSelected,
 }) {
   return (
     <>
@@ -334,6 +335,17 @@ export function SpecFormGates({
           that needs work can be a screen away on a phone. Only ever non-empty
           for someone composing the sheet (SpecFormDialog), so there is no
           read-only branch to write here. */}
+      {/* Nothing ticked in the parça picker. It comes before the two gates
+          below and replaces them (SpecFormDialog empties both while it holds):
+          they would name rows in a body this sheet is no longer showing, and
+          the one thing to do here is pick. */}
+      {noParcaSelected && (
+        <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+          <FileText className="h-4 w-4 shrink-0" />
+          <span>Bu ürün parçalardan oluşuyor. Formu göndermeden önce en az bir parça seçin.</span>
+        </div>
+      )}
+
       {incompleteSpec?.length > 0 && (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
           <div className="flex items-center gap-2">

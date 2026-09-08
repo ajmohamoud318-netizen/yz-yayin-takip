@@ -63,6 +63,21 @@ export default function SpecSheetBody({
   // selection. Gating on the catalog too made such a sheet fall back to the
   // İŞİN ADI + custom-rows body on screen while still printing parça pages.
   const showsComponentCards = selectedComponents.length > 0
+  // The picker is on screen only for someone who may still change the
+  // selection — see the block that renders it below for why each of these
+  // three conditions is there.
+  const showsPicker = hasCatalog && !readOnly && !hideParcaPicker
+  // …and while it is up with nothing ticked, this sheet has no body at all.
+  //
+  // The İŞİN ADI + custom-rows body below is the fallback for a product with
+  // NO Ürün Bilgileri, not a second way to spec one that has parçalar: ticking
+  // a single box already replaces it. Leaving it on screen while every box was
+  // unticked offered a whole form — job name, "Satır Ekleyin", künye — that
+  // nobody would ever send, under a send gate refusing it in the name of a
+  // block ("X: en az 2 satır doldurun") the sheet isn't really made of. So the
+  // document waits for the pick and says so, and the dialog's gates say the
+  // same thing above the footer (SpecFormDialog → noParcaSelected).
+  const awaitingParcaPick = showsPicker && !showsComponentCards
   // The SAYFA SAYISI row is owned by project düzenleme (the "Toplam iç sayfa"
   // input under the İç Sayfalar subtask). When the project carries a live
   // count, the spec form displays it read-only — the resolver in
@@ -150,7 +165,7 @@ export default function SpecSheetBody({
           one of three parçalar it would tick three boxes and contradict the
           document under it. The dialog's "Tüm parçaları gösterin" brings both
           back together. */}
-      {hasCatalog && !readOnly && !hideParcaPicker && (
+      {showsPicker && (
         <div className="border-b bg-muted/20 px-4 py-3 print:hidden">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -209,11 +224,33 @@ export default function SpecSheetBody({
         </div>
       )}
 
+      {/* Nothing to fill in yet: the parçalar ARE this sheet, so until one is
+          ticked there is no form under the picker — just the reason there
+          isn't, and the one-tap way out of it. Screen only; it is part of the
+          picker, and the picker never goes on paper. */}
+      {awaitingParcaPick && (
+        <div className="flex flex-col items-center gap-2 border-b bg-muted/10 px-4 py-8 text-center print:hidden">
+          <FileText className="h-6 w-6 text-muted-foreground/50" />
+          <p className="text-sm font-semibold">Önce parça seçin</p>
+          <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">
+            Bu ürün {catalogComponents.length} parçadan oluşuyor. Formu seçtiğiniz
+            parçalar oluşturur — her biri kendi sayfasında.
+          </p>
+          <button
+            type="button"
+            onClick={onSelectAllComponents}
+            className="mt-1 rounded-md border border-primary/40 px-3 py-1.5 text-xs font-semibold text-primary transition active:scale-[0.99] hover:bg-primary/5"
+          >
+            Tümünü Seçin
+          </button>
+        </div>
+      )}
+
       {/* One continuous sheet: the job name, the rows the user added, then
           the fixed rows as its foot — all on the same block so every rule
           between them is the same hairline and the form reads as one
           document, not as sections stacked on top of each other. */}
-      {!showsComponentCards && (
+      {!showsComponentCards && !awaitingParcaPick && (
         <FormSheetBlock className="bg-muted/10">
           <SheetRow label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={onChange} readOnly={systemRowReadOnly} />
           {customRows.map((r, i) => (
