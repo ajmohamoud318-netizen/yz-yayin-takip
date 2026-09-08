@@ -38,6 +38,7 @@ export default function SpecFormFooter({
   isBaskiOnayApproval,
   baskiOnayPrepared,
   baskiOnayEditOverride,
+  canEditBaskiOnay = false,
   onToggleBaskiOnayEdit,
   onPrepareBaskiOnay,
   needsOzalitReceive,
@@ -156,12 +157,14 @@ export default function SpecFormFooter({
           {busy ? 'Kaydediliyor…' : 'Hazırlayın ve Onaya Gönderin'}
         </Button>
       )}
-      {/* Baskı Onay approve step: the approver signs what was prepared, so the
-          form is locked by default. This button lets them opt in to editing if
-          they spot something that needs a fix before signing — and re-lock
-          after. Never shown in the prepare step (baskiOnayPrepared === false),
-          where the leader is meant to be authoring, not signing. */}
-      {isBaskiOnayApproval && baskiOnayPrepared && (
+      {/* Baskı Onay approve step: the form is locked once prepared, because the
+          approver signs what was prepared rather than authoring it. The override
+          belongs to the leader who PREPARED it, so they can still fix a field
+          they spot — and only until somebody approves (canEditBaskiOnay). Never
+          shown in the prepare step (baskiOnayPrepared === false), where that
+          leader is authoring anyway, and never to the approver, whose write the
+          server refuses. */}
+      {isBaskiOnayApproval && baskiOnayPrepared && canEditBaskiOnay && (
         <Button type="button" variant="outline" onClick={onToggleBaskiOnayEdit} disabled={busy}>
           <Pencil className="h-4 w-4" />
           {baskiOnayEditOverride ? 'Kilitleyin' : 'Düzenleyin'}

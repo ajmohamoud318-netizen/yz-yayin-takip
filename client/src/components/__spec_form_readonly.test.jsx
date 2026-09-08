@@ -34,6 +34,7 @@ import { describe, it, expect } from 'vitest'
 import {
   VARIANTS,
   computeBaskiOnayLocked,
+  canEditPreparedBaskiOnay,
   isDemoAlreadyApproved,
   isRejectToMatbaaReview,
 } from '@/components/SpecFormDialog'
@@ -108,17 +109,97 @@ describe('computeBaskiOnayLocked — dialog-level gate for baskı onay approve',
     })).toBe(false)
   })
 
-  it('lets the approver opt back in to editing via the override', () => {
+  // The override used to be the APPROVER's, which quietly undid the two-person
+  // gate: they could rewrite the sheet and then sign their own edit. It now
+  // belongs to whoever prepared the form, and the server refuses everyone
+  // else's write, so an override offered to the approver would only build a
+  // button that fails.
+  it('ignores the override when the viewer may not edit (the approver)', () => {
     expect(computeBaskiOnayLocked({
       isBaskiOnayApproval: true,
       baskiOnayPrepared: true,
       editOverride: true,
+      canEdit: false,
+    })).toBe(true)
+  })
+
+  it('lets the PREPARER opt back in to editing via the override', () => {
+    expect(computeBaskiOnayLocked({
+      isBaskiOnayApproval: true,
+      baskiOnayPrepared: true,
+      editOverride: true,
+      canEdit: true,
     })).toBe(false)
+  })
+
+  it('still locks the preparer until they ask to edit', () => {
+    expect(computeBaskiOnayLocked({
+      isBaskiOnayApproval: true,
+      baskiOnayPrepared: true,
+      editOverride: false,
+      canEdit: true,
+    })).toBe(true)
   })
 
   it('coerces missing/undefined flags to false rather than crashing', () => {
     expect(computeBaskiOnayLocked({})).toBe(false)
     expect(computeBaskiOnayLocked({ isBaskiOnayApproval: true })).toBe(false)
+  })
+})
+
+describe('canEditPreparedBaskiOnay — who owns the Düzenleyin override', () => {
+  const A = { id: 'u-a' }
+  const B = { id: 'u-b' }
+  const prepared = (by) => ({
+    stage: 'baski_onay',
+    baski_parca_preparers: { KAPAK: { by, by_name: by }, KUTU: { by, by_name: by } },
+    baski_parca_approvals: {},
+  })
+
+  it('the leader who prepared it may still correct it', () => {
+    expect(canEditPreparedBaskiOnay(prepared('u-a'), A)).toBe(true)
+  })
+
+  it('the approving leader may not', () => {
+    expect(canEditPreparedBaskiOnay(prepared('u-a'), B)).toBe(false)
+  })
+
+  it('nobody may once an approval has been recorded', () => {
+    const p = { ...prepared('u-a'), baski_parca_approvals: { KAPAK: { by: 'u-b' } } }
+    expect(canEditPreparedBaskiOnay(p, A)).toBe(false)
+  })
+
+  // One sheet covers every parça, so either leader editing would change
+  // content the other has already put their name to.
+  it('two leaders having prepared different parçalar closes it for both', () => {
+    const p = {
+      stage: 'baski_onay',
+      baski_parca_preparers: { KAPAK: { by: 'u-a' }, KUTU: { by: 'u-b' } },
+      baski_parca_approvals: {},
+    }
+    expect(canEditPreparedBaskiOnay(p, A)).toBe(false)
+    expect(canEditPreparedBaskiOnay(p, B)).toBe(false)
+  })
+
+  it('reads the ÇİN ledgers at the ÇİN gate', () => {
+    const p = {
+      stage: 'cin_baski_onay',
+      cin_baski_parca_preparers: { KAPAK: { by: 'u-a' } },
+      cin_baski_parca_approvals: {},
+    }
+    expect(canEditPreparedBaskiOnay(p, A)).toBe(true)
+    expect(canEditPreparedBaskiOnay(p, B)).toBe(false)
+  })
+
+  it('falls back to the legacy scalar on projects with no per-parça ledger', () => {
+    const p = { stage: 'baski_onay', baski_onay_prepared: true, baski_onay_prepared_by: 'u-a' }
+    expect(canEditPreparedBaskiOnay(p, A)).toBe(true)
+    expect(canEditPreparedBaskiOnay(p, B)).toBe(false)
+  })
+
+  it('is safe on a missing project or signed-out user', () => {
+    expect(canEditPreparedBaskiOnay(null, A)).toBe(false)
+    expect(canEditPreparedBaskiOnay(prepared('u-a'), null)).toBe(false)
   })
 })
 

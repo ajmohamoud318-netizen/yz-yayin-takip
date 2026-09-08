@@ -232,9 +232,16 @@ export default function MatbaaIsleri() {
    *
    * Never acts directly. The matbaa commits to producing what is on the sheet,
    * so the sheet opens first and the action is stamped from its footer — the
-   * same rule the project-level "İşlemi Başlatın" follows. Because a per-parça
-   * round's snapshot carries only that parça in `_selectedComponents`, the
-   * sheet they open is already narrowed to their parça; no extra filtering.
+   * same rule the project-level "İşlemi Başlatın" follows.
+   *
+   * The sheet opens narrowed to the parçalar of THIS click (`parcaScope`
+   * below): one card sends one parça, "Hepsini Başlatın" sends every row it is
+   * about to stamp. A round's snapshot carries all of its parçalar — a re-round
+   * for KUTU alone reuses the sheet the whole round was sent on
+   * (requestParcaRound writes no new snapshot) — so without the scope the
+   * printer opened a three-parça document from a button that names one, and had
+   * to work out which page was theirs. The narrowing is display-only; the sheet
+   * itself still carries the round (see lib/spec-form-scope.js).
    */
   function handleParcaAct(rowOrRows) {
     const list = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows]
@@ -244,6 +251,7 @@ export default function MatbaaIsleri() {
       project: { id: first.project_id, title: first.project_title },
       mode: 'view',
       parca: list,
+      scope: list.map((r) => r.parca),
     }
     if (first.gate === 'ozalit') setOzalitForm(form)
     else setDemoForm(form)
@@ -478,6 +486,10 @@ export default function MatbaaIsleri() {
               ? () => handleStartWork(demoForm.project, 'demo')
               : undefined
         }
+        // The sheet shows the parçalar this click covers — the same ones the
+        // footer button above names. Empty for a project-level job, which is
+        // the whole sheet by definition.
+        parcaScope={demoForm?.scope ?? null}
         startWorkLabel={parcaFooterLabel(demoForm?.parca)}
         startingWork={startingWork || !!parcaBusy}
         onDone={() => setDemoForm(null)}
@@ -494,6 +506,7 @@ export default function MatbaaIsleri() {
               ? () => handleStartWork(ozalitForm.project, 'ozalit')
               : undefined
         }
+        parcaScope={ozalitForm?.scope ?? null}
         startWorkLabel={parcaFooterLabel(ozalitForm?.parca)}
         startingWork={startingWork || !!parcaBusy}
         onDone={() => setOzalitForm(null)}

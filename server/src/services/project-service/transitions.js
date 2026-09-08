@@ -34,7 +34,14 @@ function withSnapshot(snapshotKind = 'demo') {
   return async function snapshotPrepare({ client, row }) {
     const base = await withAssigneesAndLeaders({ client, row })
     const snapshot = await loadLatestDemoSnapshot(client, row.id, snapshotKind)
-    return { ...base, snapshot }
+    // Per-parça routing rows (migration 074), stamped onto `row` the same way
+    // `withSubtasks` does it for reject. Approve needs them for a different
+    // question than reject does: which parçalar are out for rework right now,
+    // and so must be kept out of the set a click can sign off. Without this the
+    // bulk shortcut approved the very parçalar the leader had just bounced.
+    const parcaState = await listParcaState(client, row.id)
+    row.parca_state = parcaState
+    return { ...base, snapshot, parcaState }
   }
 }
 

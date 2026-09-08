@@ -610,15 +610,30 @@ export function parcaNames(snapshotParcalar) {
 export function pendingParcalar(project, kind, snapshotParcalar = []) {
   const set = parcaNames(snapshotParcalar)
   if (!project || set.length === 0) return []
+  // A rejected parça has no approval row — which is what holds the project at
+  // its gate — but it is NOT waiting on the leader: it is on the designer's or
+  // the matbaa's desk. Counting it as pending put a green thumbs-up on the
+  // parça the leader had just bounced and folded it into
+  // "Tüm parçaları onaylayın (N)". The server refuses those clicks now
+  // (approvableTarget, server/src/domain/transitions.js); this keeps the UI
+  // from offering them in the first place. Safe to read from the ledger: the
+  // per-parça routing verbs drop a parça's rejection row the moment the rework
+  // lands (settleParcaAtGate, server/src/services/parca-service.js), so this
+  // set means "rejected and not yet back", not "was ever rejected".
+  // Baskı onayı is absent on purpose — it is a leader-to-leader maker-checker
+  // with no designer or matbaa leg, so nothing there is ever out for rework.
   if (kind === 'demo') {
     const approved = new Set(
       (project.demo_parca_approvals ?? []).map((a) => a?.parca).filter(Boolean),
     )
-    return set.filter((p) => !approved.has(p))
+    const out = new Set(rejectedParcalar(project, 'demo'))
+    return set.filter((p) => !approved.has(p) && !out.has(p))
   }
   if (kind === 'ozalit') {
     const ledger = project.ozalit_parca_approvals ?? {}
+    const out = new Set(rejectedParcalar(project, 'ozalit'))
     return set.filter((p) => {
+      if (out.has(p)) return false
       const row = ledger[p]
       return !Array.isArray(row) || row.length === 0
     })

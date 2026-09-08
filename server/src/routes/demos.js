@@ -1,7 +1,29 @@
 import { attachUser } from '../middleware/auth.js'
 import { badRequest, notFound } from '../domain/errors.js'
 import { getPool, withTx } from '../db/pool.js'
-import { getProjectForUpdate, insertDemoSnapshot, logHistory } from '../services/project-repository.js'
+import {
+  getProjectForUpdate,
+  insertDemoSnapshot,
+  logHistory,
+  loadLatestDemoSnapshot,
+} from '../services/project-repository.js'
+
+/**
+ * Which sheet an approval gate reads, by stage.
+ *
+ * Deliberately not `parcaGateForStage` (domain/parca-routing.js): that answers
+ * "which gate is this parça being ROUTED on", and it returns null for baskı
+ * onayı because that gate has no designer or matbaa leg to route to. The
+ * question here is different — "is a round sitting in front of an approver
+ * right now, and off which sheet" — and baskı onayı very much is one.
+ */
+const APPROVAL_GATE_SHEET = {
+  demo_onay: 'demo',
+  cin_demo_onay: 'demo',
+  ozalit_onay: 'ozalit',
+  baski_onay: 'baski_onay',
+  cin_baski_onay: 'baski_onay',
+}
 import { schemas } from '../schemas/index.js'
 
 /**
@@ -97,6 +119,96 @@ export async function demoRoutes(fastify) {
           }
           if (kind === 'ozalit' && project.ozalit_started && stage === 'ozalit_teslim') {
             badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
+          }
+        }
+      }
+      // Baskı onayı freeze (migration 070's maker-checker, enforced here).
+      //
+      // Every other gate keeps its sheet writable while it waits — that is how
+      // each signature gets stamped onto the form, and a leader is meant to be
+      // able to correct a sheet they have sent. Baskı onayı is the exception:
+      // one leader PREPARES the form and a DIFFERENT one approves it, and that
+      // guarantee is only worth anything if the second leader signs the sheet
+      // the first one prepared. Nothing on the server enforced that, so a
+      // prepared form could be rewritten underneath its own approval.
+      //
+      // The rule, narrowest thing that holds the guarantee:
+      //   • nothing prepared yet  → authoring, anyone who may open it may write
+      //   • prepared              → only the leader who prepared it may correct it
+      //   • any approval recorded → frozen for everyone, preparer included
+      //
+      // Two leaders having prepared different parçalar freezes it for both:
+      // one sheet covers every parça, so either of them editing would change
+      // content the other has already put their name to.
+      //
+      // The SPA mirrors this (canEditPreparedBaskiOnay in
+      // client/src/lib/spec-form-variants.js) so the "Düzenleyin" override
+      // only renders for the person this allows.
+      if (
+        !order && kind === 'baski_onay' &&
+        (project.stage === 'baski_onay' || project.stage === 'cin_baski_onay')
+      ) {
+        const isCin = project.stage === 'cin_baski_onay'
+        const preparers = (isCin ? project.cin_baski_parca_preparers : project.baski_parca_preparers) ?? {}
+        const approvals = (isCin ? project.cin_baski_parca_approvals : project.baski_parca_approvals) ?? {}
+        const preparedBy = new Set(
+          Object.values(preparers).map((row) => row?.by).filter(Boolean),
+        )
+        // Legacy single-parça projects carry the same fact in a scalar rather
+        // than the per-parça ledger — same rule, older shape.
+        if (preparedBy.size === 0 && project.baski_onay_prepared && project.baski_onay_prepared_by) {
+          preparedBy.add(project.baski_onay_prepared_by)
+        }
+        if (preparedBy.size > 0) {
+          if (Object.keys(approvals).length > 0) {
+            badRequest('Baskı onay formu onaylanmaya başlandı, artık değiştirilemez.')
+          }
+          if (preparedBy.size > 1 || !preparedBy.has(request.user.id)) {
+            badRequest('Hazırlanmış baskı onay formunu yalnızca hazırlayan ekip lideri düzeltebilir.')
+          }
+        }
+      }
+      // Parça-list pin (migrations 068/069/070 + 074).
+      //
+      // Once a round reaches its approval gate, the per-parça gates read the
+      // parça list off the LATEST snapshot — `loadLatestDemoSnapshot` orders by
+      // `attempt DESC, created_at DESC`, so the newest write decides what the
+      // leader is being asked to sign off. Writing at the gate is legitimate
+      // (the spec sheet is stamped with each signature as it is given, see
+      // client/src/lib/spec-form-storage.js#stampAndPersist), but re-scoping
+      // the round from that same write is not: dropping two parçalar off the
+      // list took a project to Baskı Onayı with one parça still out with the
+      // matbaa on an open rejection and one nobody had ever signed.
+      //
+      // So: at the gate the sheet stays writable and the parça list does not.
+      // A new list belongs to a new round, which is what /advance is for — it
+      // bumps the attempt and moves the project off the gate first.
+      //
+      // Baskı onayı is included even though it has no routing leg: its gate
+      // counts a prepare + a DIFFERENT leader's approval per parça, so dropping
+      // a parça off the sheet retires that parça's maker-checker pair without
+      // anyone having done either half.
+      //
+      // A payload carrying `_selectedComponents: null` is let through: the
+      // snapshot query requires a JSON array, so such a row can never become
+      // the list the gate reads. An ABSENT key is not the same thing — it
+      // COALESCEs to `[]`, which is an array, and an empty list drops the gate
+      // to its legacy single-click path. That one is refused.
+      if (!order && APPROVAL_GATE_SHEET[project.stage] === kind) {
+        const pinned = (await loadLatestDemoSnapshot(client, project_id, kind))?.selectedComponents ?? []
+        const raw = payload?._selectedComponents
+        if (pinned.length > 0 && raw !== null) {
+          const incoming = Array.isArray(raw)
+            ? raw.map((c) => (typeof c === 'string' ? c : c?.component)).filter(Boolean)
+            : []
+          const sameSet =
+            incoming.length === pinned.length && pinned.every((c) => incoming.includes(c))
+          if (!sameSet) {
+            badRequest(
+              'Onay aşamasındaki bir turun parça listesi değiştirilemez. ' +
+              `Bu tur şu parçaları taşıyor: ${pinned.join(', ')}. ` +
+              'Farklı parçalarla yeni bir tur göndermek için önce turu ilerletin.',
+            )
           }
         }
       }

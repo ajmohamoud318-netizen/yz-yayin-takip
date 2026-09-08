@@ -187,6 +187,79 @@ function ekranOzalitPendingParcalar(project, ctx) {
   return [...set].filter((p) => !approved.has(p))
 }
 
+/** Every `parca_state.state` that means "not at the gate — somebody is working on it". */
+const PARCA_OUT_FOR_REWORK = new Set(['with_designer', 'with_matbaa', 'in_round'])
+
+/**
+ * Parçalar that are out for rework right now.
+ *
+ * A per-parça reject hands the parça to the designer or the matbaa and clears
+ * its approval row. Clearing that row is what makes the parça "not approved"
+ * for the advance gate — but it also made it "pending", and pending is the set
+ * the bulk shortcut signs off. So "Tüm parçaları onaylayın" approved exactly
+ * the parçalar the leader had just rejected, and the project advanced with the
+ * matbaa still holding one and the designer still holding another.
+ *
+ * Read from `parca_state` rather than the `*_parca_rejections` ledger on
+ * purpose. The routing table returns a parça to 'pending' the moment the rework
+ * lands (`deliverParca` / `requestParcaRound`); the rejection ledger is
+ * append-only, so gating on it would leave the parça un-approvable forever.
+ * `project.parca_state` is stamped by the approve prepare hook, the same way
+ * `parcaAttemptOf` reads it on the reject path — absent (a legacy project, or
+ * one with no routing rows) means nothing is out, which is the pre-074 truth.
+ */
+function parcalarOutForRework(project) {
+  return new Set(
+    (project?.parca_state ?? [])
+      .filter((r) => PARCA_OUT_FOR_REWORK.has(r?.state))
+      .map((r) => r?.parca)
+      .filter(Boolean),
+  )
+}
+
+/**
+ * Narrow one approve click to the parçalar it may actually sign off.
+ *
+ * `pending` is everything the round still owes — that set stays untouched, and
+ * it is what the advance gate keeps measuring, so a parça out for rework still
+ * holds the project at its stage. This only decides what a click may TOUCH:
+ *
+ *   bulk ("Tüm parçaları onaylayın") — means "sign off what is in front of me",
+ *   and a parça on somebody else's desk is not in front of anyone. Skip those
+ *   silently; refuse only when that leaves nothing at all, so the leader is told
+ *   why rather than getting a bare "parça bulunamadı".
+ *
+ *   explicit — naming a parça that is out for rework is a mistake worth a
+ *   message. There is always a way forward: the matbaa delivers it back, or the
+ *   designer sends it round, and either lands it at the gate as 'pending'.
+ *
+ * Takes `rawParcalar` — the request body's own value — rather than a sanitised
+ * list, because those two cases are only distinguishable BEFORE the fallback is
+ * applied: `sanitiseParcalar(null, snapshot)` answers with the whole snapshot,
+ * so a bulk click and a leader who named every parça by hand arrive identical.
+ * Reading the sanitised list made every bulk click take the explicit branch and
+ * throw the moment anything was out for rework, instead of quietly skipping it.
+ */
+function approvableTarget(project, pending, rawParcalar, snapshotParcalar = []) {
+  const out = parcalarOutForRework(project)
+  const atGate = pending.filter((p) => !out.has(p))
+  const isBulk = rawParcalar == null || (Array.isArray(rawParcalar) && rawParcalar.length === 0)
+  if (isBulk) {
+    if (atGate.length === 0 && pending.length > 0) {
+      badRequest(
+        `Onaylanacak parça yok: ${[...out].join(', ')} revizede, geri gelmesi bekleniyor.`,
+      )
+    }
+    return atGate
+  }
+  const requested = sanitiseParcalar(rawParcalar, snapshotParcalar)
+  const blocked = requested.filter((p) => out.has(p))
+  if (blocked.length > 0) {
+    badRequest(`Revizede olan parça onaylanamaz, önce geri gelmeli: ${blocked.join(', ')}`)
+  }
+  return requested.filter((p) => atGate.includes(p))
+}
+
 /** Validate the per-parça payload: array of non-empty strings. */
 function sanitiseParcalar(parcalar, fallback = []) {
   if (parcalar == null) return fallback
@@ -892,10 +965,7 @@ export function computeApproval(project, actor, ctx = {}) {
     // the next round knows what's done. If the leader picked specific
     // parçalar (ctx.parcalar), only approve those — the rest stay pending.
     if ((project.progress ?? 0) < 100) {
-      const requested = sanitiseParcalar(ctx?.parcalar, snapshotParcalar)
-      const target = requested.length === 0
-        ? pending
-        : requested.filter((p) => pending.includes(p))
+      const target = approvableTarget(project, pending, ctx?.parcalar, snapshotParcalar)
       if (pending.length > 0 && target.length === 0) {
         badRequest('Onaylanacak parça bulunamadı.')
       }
@@ -934,10 +1004,7 @@ export function computeApproval(project, actor, ctx = {}) {
     // append below; the stage advances only when the remaining set is
     // empty (recomputed AFTER the append — a partial `target` leaves
     // the rest pending).
-    const requested = sanitiseParcalar(ctx?.parcalar, snapshotParcalar)
-    const target = requested.length === 0
-      ? pending
-      : requested.filter((p) => pending.includes(p))
+    const target = approvableTarget(project, pending, ctx?.parcalar, snapshotParcalar)
     if (pending.length > 0 && target.length === 0) {
       badRequest('Onaylanacak parça bulunamadı.')
     }
@@ -1126,9 +1193,7 @@ export function computeEkranDemoApprove(project, actor, ctx = {}) {
     : (Array.isArray(actor?._parcalar) ? actor._parcalar : null)
   const ctxForGate = { snapshot: { selectedComponents: snapshotParcalar } }
   const pending = ekranDemoPendingParcalar(project, ctxForGate)
-  const target = !requested || requested.length === 0
-    ? pending
-    : requested.filter((p) => pending.includes(p))
+  const target = approvableTarget(project, pending, requested, snapshotParcalar)
   if (pending.length > 0 && target.length === 0) {
     badRequest('Onaylanacak parça bulunamadı.')
   }
@@ -2126,9 +2191,7 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
       : (Array.isArray(actor?._parcalar) ? actor._parcalar : null)
     const ctxForGate = { snapshot: { selectedComponents: snapshotParcalar } }
     const pending = ekranOzalitPendingParcalar(project, ctxForGate)
-    const target = !requested || requested.length === 0
-      ? pending
-      : requested.filter((p) => pending.includes(p))
+    const target = approvableTarget(project, pending, requested, snapshotParcalar)
     if (pending.length > 0 && target.length === 0) {
       badRequest('Onaylanacak parça bulunamadı.')
     }
@@ -2211,7 +2274,6 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
   const snapshotParcalar = Array.isArray(ctx?.snapshot?.selectedComponents)
     ? ctx.snapshot.selectedComponents
     : []
-  const requestedParcalar = sanitiseParcalar(ctx?.parcalar, snapshotParcalar)
   const required = [...new Set([...teamLeaderIds, ...designerIds])]
   const requiredIds = new Set(required)
 
@@ -2262,9 +2324,7 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
     snapshot: { selectedComponents: snapshotParcalar },
     required: { leaderIds: teamLeaderIds, designerIds },
   })
-  const target = requestedParcalar.length === 0
-    ? pending
-    : requestedParcalar.filter((p) => pending.includes(p))
+  const target = approvableTarget(project, pending, ctx?.parcalar, snapshotParcalar)
   if (pending.length > 0 && target.length === 0) {
     badRequest('Onaylanacak parça bulunamadı.')
   }

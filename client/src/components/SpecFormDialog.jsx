@@ -23,7 +23,8 @@ import { saveEditedComponents } from '@/data/productCatalog'
 import { ozalitLeaderApproved, needsOzalitRouteChoice } from '@/domain'
 import { buildChangeSummary } from '@/lib/spec-form-diff'
 import { openMultiPrint } from '@/lib/spec-form-print'
-import { VARIANTS, computeBaskiOnayLocked, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
+import { hiddenParcaNames, scopeComponents } from '@/lib/spec-form-scope'
+import { VARIANTS, computeBaskiOnayLocked, canEditPreparedBaskiOnay, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
 import {
   fetchServerSnapshot,
   loadSaved,
@@ -48,6 +49,7 @@ import {
  *  - `lib/spec-form-storage.js`  — localStorage + /api/demos, and the stamps
  *  - `lib/spec-form-print.js`    — putting the sheet on paper
  *  - `lib/spec-form-diff.js`     — what changed since the matbaa's copy
+ *  - `lib/spec-form-scope.js`    — narrowing the sheet to one parça
  *  - `hooks/useSpecSheet.js`     — the sheet's content, and the load that fills it
  *  - `SpecSheetBody.jsx`         — the sheet, rendered
  *  - `SpecFormNotices.jsx`       — intro / diff panel / gate banners
@@ -57,7 +59,7 @@ import {
  * specVariantForStage, stampSpecSignature — are re-exported below, so every
  * existing `from '@/components/SpecFormDialog'` keeps working unchanged.
  */
-export { VARIANTS, specVariantForStage, computeBaskiOnayLocked, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
+export { VARIANTS, specVariantForStage, computeBaskiOnayLocked, canEditPreparedBaskiOnay, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
 export { stampSpecSignature } from '@/lib/spec-form-storage'
 
 /* ------------------------------------------------------------------ */
@@ -92,6 +94,13 @@ export { stampSpecSignature } from '@/lib/spec-form-storage'
  *   (the printer may still mark demo-start/ozalit-start), the footer offers
  *   an "İşlemi Başlatın" button so they review the spec sheet before
  *   confirming they've begun physical work, instead of starting blind.
+ * parcaScope — parça NAMES this sheet was opened for (migration 074). The
+ *   matbaa's queue is per-parça, so "KUTU · İşlemi Başlatın" must open KUTU's
+ *   sheet, not the three-parça sheet KUTU happens to live on; a bulk
+ *   "Hepsini Başlatın" passes every row it will stamp and so scopes to all of
+ *   them. Display only — see lib/spec-form-scope.js — and only honoured on a
+ *   read-only sheet, since the parça picker governs the whole selection and
+ *   would contradict a narrowed view. Null means the whole sheet.
  * rejectContext — { reason, target } — used with mode='advance' when a
  *   team-leader reject-to-matbaa (ApprovalDialog) hands off here instead of
  *   submitting blind: THIS dialog's submit is what actually calls
@@ -103,7 +112,7 @@ export { stampSpecSignature } from '@/lib/spec-form-storage'
  *   ship a different file). The saved sheet still loads as-is (like a
  *   read-only viewer would) instead of the normal "fresh compose" reset.
  */
-export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, order = null, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, startWorkLabel = null, rejectContext = null }) {
+export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, order = null, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, startWorkLabel = null, parcaScope = null, rejectContext = null }) {
   const variant = VARIANTS[variantName]
   const { user } = useAuth()
   const { updateOne } = useProjectsStore()
@@ -185,6 +194,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    * they spot something that needs fixing before signing. Reset on every
    * (re)open so a stale unlock from a previous project never carries over. */
   const [baskiOnayEditOverride, setBaskiOnayEditOverride] = useState(false)
+  /* `parcaScope` narrows the sheet to the parça the reader was handed; this is
+   * their way back to the whole document. Off on every (re)open, so the sheet
+   * always opens as the job in front of them. */
+  const [showAllParca, setShowAllParca] = useState(false)
 
   // Matbaa "Başladım" gate (migration 048): once the printer has started
   // physical work, the leader/assigned designer can no longer silently save
@@ -240,10 +253,16 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // the approver opt back in to editing if a field really needs a fix
   // before they sign. The formula is in spec-form-variants.js so it's a
   // pure helper and can be tested without mounting this dialog.
+  // Who the override belongs to: the leader who PREPARED the sheet, until
+  // somebody approves it. The approver signing a prepared form gets no way in
+  // — that is the two-person gate — and the server refuses their write anyway,
+  // so offering it here would only build a button that fails.
+  const canEditBaskiOnay = canEditPreparedBaskiOnay(project, user)
   const baskiOnayLocked = computeBaskiOnayLocked({
     isBaskiOnayApproval,
     baskiOnayPrepared,
     editOverride: baskiOnayEditOverride,
+    canEdit: canEditBaskiOnay,
   })
   // Demo form past the demo_onay gate: the signed round is a snapshot, not a
   // draft. Locking here stops a designer (or anyone opening the form via
@@ -361,6 +380,29 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     readOnly, viewingSentSheet, showsLiveTeslimat,
     attemptNo, liveAttempts,
   })
+
+  /* ── The parça this sheet was opened FOR (migration 074) ────────────────
+   * The matbaa's queue hands out parçalar, not projects, so the sheet behind
+   * "KUTU · İşlemi Başlatın" opens as KUTU's sheet — the document then says
+   * the same thing the button does. Everything below still works from the full
+   * `selectedComponents`: the gates measure the round, and every save writes
+   * the round back (persistAfterStep → the snapshot and Ürün Bilgileri), so
+   * narrowing that state would delete the parçalar this reader isn't holding.
+   * Only what is RENDERED and PRINTED is narrowed.
+   *
+   * Read-only sheets only. The parça picker is the editor's control over this
+   * very selection, and a sheet showing one parça while the picker ticks three
+   * contradicts itself — the matbaa (and every other reader who gets a scope)
+   * has no picker, so the question doesn't arise there. Keyed on the names
+   * rather than the array, which callers rebuild on every render. */
+  const parcaScopeKey = (parcaScope ?? []).filter(Boolean).join('|')
+  const scopedComponents = useMemo(
+    () => scopeComponents(selectedComponents, parcaScopeKey ? parcaScopeKey.split('|') : null),
+    [selectedComponents, parcaScopeKey],
+  )
+  const parcaNarrowed = readOnly && scopedComponents.length < selectedComponents.length
+  const sheetComponents = parcaNarrowed && !showAllParca ? scopedComponents : selectedComponents
+  const hiddenParca = parcaNarrowed ? hiddenParcaNames(selectedComponents, scopedComponents) : []
 
   // Empty for every variant but baski_onay — see missingRequiredFields. Each
   // write path below refuses while it is non-empty, and the footer disables
@@ -492,6 +534,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     setReceivedLocal(false)
     setConfirmReceive(false)
     setBaskiOnayEditOverride(false)
+    setShowAllParca(false)
   }, [open, scopeId])
 
   async function handleReceiveOzalit() {
@@ -869,7 +912,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
       saveForm(variant, scopeId, form, customRows, selectedComponents)
       persistCatalogEdits()
     }
-    openMultiPrint({ form, customRows, project, attemptNo: shownAttemptNo, kind: variant.kind, selectedComponents })
+    // Paper follows the screen: a matbaa printing KUTU's sheet gets KUTU's
+    // page, not the whole round. `saveForm` above still keeps the full
+    // selection — printing is not editing.
+    openMultiPrint({ form, customRows, project, attemptNo: shownAttemptNo, kind: variant.kind, selectedComponents: sheetComponents })
   }
 
   if (!project) return null
@@ -905,6 +951,27 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
 
         <SpecChangeSummary changeSummary={changeSummary} />
 
+        {/* Nothing leaves this document silently: when the sheet has been
+            narrowed to the parça the reader was handed, it says which parçalar
+            it is not showing and offers them back. Screen only — what goes on
+            paper is the sheet as displayed. */}
+        {parcaNarrowed && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs print:hidden">
+            <p className="min-w-0 text-muted-foreground">
+              {showAllParca
+                ? <>Bu turun <strong className="font-semibold text-foreground">tüm parçaları</strong> gösteriliyor.</>
+                : <>Yalnızca <strong className="font-semibold text-foreground">{scopedComponents.map((c) => c.component).join(', ')}</strong> gösteriliyor. Diğer parçalar: {hiddenParca.join(', ')}.</>}
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowAllParca((v) => !v)}
+              className="shrink-0 font-semibold text-primary hover:underline"
+            >
+              {showAllParca ? 'Yalnızca benim parçalarım' : 'Tüm parçaları gösterin'}
+            </button>
+          </div>
+        )}
+
         <SpecSheetBody
           variant={variant}
           project={project}
@@ -920,7 +987,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           onRemoveCustomRow={removeCustomRow}
           onMoveCustomRow={moveCustomRow}
           catalogComponents={catalogComponents}
-          selectedComponents={selectedComponents}
+          selectedComponents={sheetComponents}
           onToggleComponent={toggleComponent}
           onSelectAllComponents={selectAllComponents}
           onClearComponents={clearComponents}
@@ -979,6 +1046,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           isBaskiOnayApproval={isBaskiOnayApproval}
           baskiOnayPrepared={baskiOnayPrepared}
           baskiOnayEditOverride={baskiOnayEditOverride}
+          canEditBaskiOnay={canEditBaskiOnay}
           onToggleBaskiOnayEdit={() => setBaskiOnayEditOverride((v) => !v)}
           onPrepareBaskiOnay={handlePrepareBaskiOnay}
           needsOzalitReceive={needsOzalitReceive}

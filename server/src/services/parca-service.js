@@ -21,6 +21,7 @@ import {
   parcaStartPatch,
   parcaDeliverPatch,
   canActOnParca,
+  parcaGateForStage,
 } from '../domain/parca-routing.js'
 import {
   listParcaState,
@@ -31,6 +32,7 @@ import {
   getProjectForUpdate,
   loadProjectAssignees,
   loadLatestDemoSnapshot,
+  patchProject,
 } from './project-repository.js'
 import { advanceProject } from './project-service/transitions.js'
 import { emit, activeUserIdsByRole } from './notifications.js'
@@ -201,6 +203,50 @@ async function allParcalarDelivered(client, project, gate) {
 }
 
 /**
+ * A parça has landed back at the approval gate — bring the PROJECT columns the
+ * gate reads back in step with it.
+ *
+ * Two things go stale otherwise, and both were live bugs:
+ *
+ *   `*_received` — the receipt gate. The whole-round legs
+ *   (`computeDemoTeslimAdvance` / `computeOzalitTeslimAdvance`) clear it on
+ *   every fresh delivery, so "anything coming from the matbaa forces a Teslim
+ *   Alındı step" held for round one and quietly stopped holding after that:
+ *   the flag stayed true from the first acknowledgment, and every parça the
+ *   matbaa reprinted could be approved without anyone confirming it arrived.
+ *   Only a physical delivery clears it — an ekran round has nothing to receive.
+ *
+ *   `*_parca_rejections` — append-only, and read by the SPA to decide whether a
+ *   parça still shows "Reddedildi". Leaving the row behind means a parça that
+ *   was rejected, reworked and handed back reads as rejected for the life of
+ *   the project. Dropping it here makes the ledger mean "rejected and not yet
+ *   back", which is what both the badge and the client-side pending set want.
+ *
+ * This is the one place per-parça routing touches a project column, and it is
+ * deliberate: these are not routing state, they are the gate's own inputs, and
+ * nothing else is going to reset them on a leg that never moves the stage.
+ */
+async function settleParcaAtGate(client, project, parca, { received }) {
+  const gate = parcaGateForStage(project.stage)
+  if (!gate) return null
+  const ledgerCol = gate === 'ozalit' ? 'ozalit_parca_rejections' : 'demo_parca_rejections'
+  const rejections = (project[ledgerCol] ?? []).filter((r) => r?.parca !== parca)
+  const fields = { [ledgerCol]: rejections }
+  if (received) {
+    if (gate === 'ozalit') {
+      Object.assign(fields, {
+        ozalit_received: false, ozalit_received_by: null, ozalit_received_at: null,
+      })
+    } else {
+      Object.assign(fields, {
+        demo_received: false, demo_received_by: null, demo_received_at: null,
+      })
+    }
+  }
+  return patchProject(client, project.id, fields, { expectedVersion: project.version })
+}
+
+/**
  * POST /api/projects/:id/parca/:parca/start — the matbaa began this parça.
  *
  * The per-parça counterpart of `computeDemoStart`. Note what it does NOT do:
@@ -244,6 +290,12 @@ export async function deliverParca(projectId, parca, actor) {
     const updated = await upsertParcaState(
       client, projectId, parca, parcaDeliverPatch({ now: new Date().toISOString() }),
     )
+
+    // Something physical just arrived from the matbaa: the leader owes a fresh
+    // "Teslim Alındı" before they can sign it off, and this parça is no longer
+    // a rejected one. No-op on a *_teslim round, where the whole-round advance
+    // below owns both.
+    await settleParcaAtGate(client, project, parca, { received: true })
 
     // The project only follows once the LAST parça is off their desk. Deliver
     // KUTU while KİTAP is still unstarted and the project stays at its teslim
@@ -300,6 +352,14 @@ export async function requestParcaRound(projectId, parca, actor, { route } = {})
     const updated = await upsertParcaState(
       client, projectId, parca, parcaRequestRoundPatch({ route, now: new Date().toISOString() }),
     )
+    // An ekran round skips the matbaa entirely, so the parça is back at the
+    // gate the moment the designer sends it — clear its rejection row now. A
+    // physical round keeps it: the parça is still out, just with the matbaa
+    // instead of the designer, and `deliverParca` clears it on arrival. Neither
+    // touches the receipt flag; nothing has been printed.
+    if (route === 'ekran') {
+      await settleParcaAtGate(client, project, parca, { received: false })
+    }
     if (route === 'physical') {
       const printers = await activeUserIdsByRole(client, 'printer')
       await emit(client, {

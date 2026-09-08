@@ -188,14 +188,63 @@ export function specVariantForStage(stage) {
  * approver is signing what was prepared — not authoring — so the form is
  * read-only by default, with an opt-in "Düzenleyin" override.
  *
+ * `canEdit` is the second half of the rule and comes from
+ * `canEditPreparedBaskiOnay` below: the override belongs to the leader who
+ * PREPARED the form, not to whoever opens it. The approver signing a prepared
+ * sheet gets no way in — that is the whole point of the two-person gate, and
+ * the server refuses the write regardless (server/src/routes/demos.js), so an
+ * override offered here would only produce a button that fails.
+ *
  * Inputs are intentionally booleans already computed in the dialog so this
  * helper is pure and testable without mounting SpecFormDialog.
  *
- * @param {{ isBaskiOnayApproval: boolean, baskiOnayPrepared: boolean, editOverride: boolean }} flags
+ * @param {{ isBaskiOnayApproval: boolean, baskiOnayPrepared: boolean,
+ *           editOverride: boolean, canEdit?: boolean }} flags
  * @returns {boolean}
  */
-export function computeBaskiOnayLocked({ isBaskiOnayApproval, baskiOnayPrepared, editOverride }) {
-  return Boolean(isBaskiOnayApproval && baskiOnayPrepared && !editOverride)
+export function computeBaskiOnayLocked({
+  isBaskiOnayApproval, baskiOnayPrepared, editOverride, canEdit = false,
+}) {
+  if (!isBaskiOnayApproval || !baskiOnayPrepared) return false
+  if (!canEdit) return true
+  return !editOverride
+}
+
+/**
+ * May this user still correct a PREPARED baskı onay form?
+ *
+ * Mirrors the server rule in `server/src/routes/demos.js` exactly — keep the
+ * two in step, because this one decides whether the "Düzenleyin" button is
+ * offered and that one decides whether the save survives:
+ *
+ *   • nothing prepared yet  → authoring; this helper is not consulted
+ *   • prepared by you alone → yes, until somebody approves
+ *   • prepared by anyone else, or by two leaders, or already being approved
+ *     → no
+ *
+ * Two leaders having prepared different parçalar closes it for both: one sheet
+ * covers every parça, so either editing would change content the other has
+ * already put their name to.
+ *
+ * @param {object} project
+ * @param {{ id?: string } | null | undefined} user
+ * @returns {boolean}
+ */
+export function canEditPreparedBaskiOnay(project, user) {
+  if (!project || !user?.id) return false
+  const isCin = project.stage === 'cin_baski_onay'
+  const preparers = (isCin ? project.cin_baski_parca_preparers : project.baski_parca_preparers) ?? {}
+  const approvals = (isCin ? project.cin_baski_parca_approvals : project.baski_parca_approvals) ?? {}
+  if (Object.keys(approvals).length > 0) return false
+  const preparedBy = new Set(
+    Object.values(preparers).map((row) => row?.by).filter(Boolean),
+  )
+  // Legacy single-parça projects carry the same fact in a scalar.
+  if (preparedBy.size === 0 && project.baski_onay_prepared && project.baski_onay_prepared_by) {
+    preparedBy.add(project.baski_onay_prepared_by)
+  }
+  if (preparedBy.size !== 1) return false
+  return preparedBy.has(user.id)
 }
 
 /**

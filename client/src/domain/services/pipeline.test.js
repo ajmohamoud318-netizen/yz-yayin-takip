@@ -642,6 +642,42 @@ describe('pendingParcalar', () => {
     expect(pendingParcalar({ demo_parca_approvals: [] }, 'demo', [])).toEqual([])
   })
 
+  // A rejected parça has no approval row — which is what holds the project at
+  // its gate — but it is NOT waiting on the leader: it is on the designer's or
+  // the matbaa's desk. Counting it as pending put a green thumbs-up on the
+  // parça the leader had just bounced and folded it into the
+  // "Tüm parçaları onaylayın (N)" count, which is exactly the click the server
+  // now refuses. The ledger is safe to read because the per-parça routing verbs
+  // drop a parça's rejection row the moment the rework lands.
+  it('demo: drops parçalar that are out for rework', () => {
+    const p = {
+      demo_parca_approvals: [{ parca: 'KAPAK' }],
+      demo_parca_rejections: [{ parca: 'KUTU', target: 'matbaa' }],
+    }
+    expect(pendingParcalar(p, 'demo', SNAPSHOT)).toEqual(['KILAVUZ'])
+  })
+
+  it('demo: a parça that came back from rework is pending again', () => {
+    const p = { demo_parca_approvals: [], demo_parca_rejections: [] }
+    expect(pendingParcalar(p, 'demo', SNAPSHOT)).toEqual(SNAPSHOT)
+  })
+
+  it('ozalit: drops parçalar that are out for rework', () => {
+    const p = {
+      ozalit_parca_approvals: { KAPAK: [{ id: 'u-l' }] },
+      ozalit_parca_rejections: [{ parca: 'KUTU', target: 'designer' }],
+    }
+    expect(pendingParcalar(p, 'ozalit', SNAPSHOT)).toEqual(['KILAVUZ'])
+  })
+
+  it('baskı onayı has no rework leg, so a demo rejection never hides a parça there', () => {
+    const p = {
+      demo_parca_rejections: [{ parca: 'KUTU', target: 'matbaa' }],
+      baski_parca_preparers: {}, baski_parca_approvals: {},
+    }
+    expect(pendingParcalar(p, 'baski_onay', SNAPSHOT)).toEqual(SNAPSHOT)
+  })
+
   it('ozalit: returns every parça when no rows exist for them', () => {
     const p = { ozalit_parca_approvals: {} }
     expect(pendingParcalar(p, 'ozalit', SNAPSHOT)).toEqual(SNAPSHOT)

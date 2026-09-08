@@ -107,6 +107,16 @@ export async function listParcaStateByOwner(client, ownerRole, states = null) {
  * check-then-act here would be the same race `routes/demos.js` documents at
  * length. COALESCE on the update side means a patch that omits a field leaves
  * it alone instead of nulling it.
+ *
+ * That last promise only holds if the INSERT list hands the conflict branch a
+ * NULL to fall through. `EXCLUDED.x` is the value this statement WOULD have
+ * inserted — so a literal fallback in VALUES (`COALESCE($n, 1)`) makes
+ * `EXCLUDED.x` permanently non-NULL and the guard on the update side can never
+ * fire. `attempt` was written that way, and every state-only patch (start,
+ * deliver, request-round) silently reset a parça's round counter to 1: a parça
+ * on its fifth round still read "Tur 2". Both defaulted columns therefore fall
+ * back through the STORED row first — the same shape `gate` already used —
+ * and only reach the literal when there is no row to keep.
  */
 export async function upsertParcaState(client, projectId, parca, patch = {}) {
   const q = client ?? getPool()
@@ -122,7 +132,15 @@ export async function upsertParcaState(client, projectId, parca, patch = {}) {
        -- cannot create a parça without saying which gate it is cycling on.
        COALESCE($3, (SELECT ps2.gate FROM parca_state ps2
                       WHERE ps2.project_id = $1 AND ps2.parca = $2)),
-       COALESCE($4,'pending'),$5,$6,COALESCE($7,1),$8,$9,$10,$11,$12,$13)
+       -- Fall through to the stored value before the literal: see the note
+       -- above on EXCLUDED. A patch that omits state or attempt must leave the
+       -- row's own value in place; only a first insert gets the default.
+       COALESCE($4, (SELECT ps3.state FROM parca_state ps3
+                      WHERE ps3.project_id = $1 AND ps3.parca = $2), 'pending'),
+       $5,$6,
+       COALESCE($7, (SELECT ps4.attempt FROM parca_state ps4
+                      WHERE ps4.project_id = $1 AND ps4.parca = $2), 1),
+       $8,$9,$10,$11,$12,$13)
      ON CONFLICT (project_id, parca) DO UPDATE SET
        gate             = COALESCE(EXCLUDED.gate,             parca_state.gate),
        state            = COALESCE(EXCLUDED.state,            parca_state.state),
