@@ -94,13 +94,14 @@ export { stampSpecSignature } from '@/lib/spec-form-storage'
  *   (the printer may still mark demo-start/ozalit-start), the footer offers
  *   an "İşlemi Başlatın" button so they review the spec sheet before
  *   confirming they've begun physical work, instead of starting blind.
- * parcaScope — parça NAMES this sheet was opened for (migration 074). The
- *   matbaa's queue is per-parça, so "KUTU · İşlemi Başlatın" must open KUTU's
- *   sheet, not the three-parça sheet KUTU happens to live on; a bulk
- *   "Hepsini Başlatın" passes every row it will stamp and so scopes to all of
- *   them. Display only — see lib/spec-form-scope.js — and only honoured on a
- *   read-only sheet, since the parça picker governs the whole selection and
- *   would contradict a narrowed view. Null means the whole sheet.
+ * parcaScope — parça NAMES this sheet was opened for (migration 074). Every
+ *   per-parça button in the app opens this dialog first, and the document has
+ *   to say what the button says: "KUTU · İşlemi Başlatın" for the matbaa,
+ *   "KUTU · Onaylayın" / "· Reddedin" for the leader at the gate, "· Gönderin"
+ *   for the designer sending one back round. A bulk action passes every parça
+ *   it covers. Display only — see lib/spec-form-scope.js — and it hides the
+ *   parça picker while it applies, since that control governs the whole
+ *   selection. Null means the whole sheet.
  * rejectContext — { reason, target } — used with mode='advance' when a
  *   team-leader reject-to-matbaa (ApprovalDialog) hands off here instead of
  *   submitting blind: THIS dialog's submit is what actually calls
@@ -390,19 +391,25 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    * narrowing that state would delete the parçalar this reader isn't holding.
    * Only what is RENDERED and PRINTED is narrowed.
    *
-   * Read-only sheets only. The parça picker is the editor's control over this
-   * very selection, and a sheet showing one parça while the picker ticks three
-   * contradicts itself — the matbaa (and every other reader who gets a scope)
-   * has no picker, so the question doesn't arise there. Keyed on the names
-   * rather than the array, which callers rebuild on every render. */
+   * The parça picker goes away while this applies (`hideParcaPicker` below):
+   * it is the editor's control over this very selection, and a sheet showing
+   * one parça under a picker ticking three contradicts itself. The matbaa
+   * never had one (their sheet is read-only); the leader at the gate does, and
+   * gets it back with the whole sheet from the toggle above the form.
+   *
+   * The send gates below stay measured on the WHOLE round, not the narrowed
+   * view — a send ships every parça on the sheet, whoever happens to be
+   * looking at one of them. Keyed on the names rather than the array, which
+   * callers rebuild on every render. */
   const parcaScopeKey = (parcaScope ?? []).filter(Boolean).join('|')
   const scopedComponents = useMemo(
     () => scopeComponents(selectedComponents, parcaScopeKey ? parcaScopeKey.split('|') : null),
     [selectedComponents, parcaScopeKey],
   )
-  const parcaNarrowed = readOnly && scopedComponents.length < selectedComponents.length
+  const parcaNarrowed = scopedComponents.length < selectedComponents.length
   const sheetComponents = parcaNarrowed && !showAllParca ? scopedComponents : selectedComponents
   const hiddenParca = parcaNarrowed ? hiddenParcaNames(selectedComponents, scopedComponents) : []
+  const scopedParcaNames = scopedComponents.map((c) => c.component).join(', ')
 
   // Empty for every variant but baski_onay — see missingRequiredFields. Each
   // write path below refuses while it is non-empty, and the footer disables
@@ -960,14 +967,14 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             <p className="min-w-0 text-muted-foreground">
               {showAllParca
                 ? <>Bu turun <strong className="font-semibold text-foreground">tüm parçaları</strong> gösteriliyor.</>
-                : <>Yalnızca <strong className="font-semibold text-foreground">{scopedComponents.map((c) => c.component).join(', ')}</strong> gösteriliyor. Diğer parçalar: {hiddenParca.join(', ')}.</>}
+                : <>Yalnızca <strong className="font-semibold text-foreground">{scopedParcaNames}</strong> gösteriliyor. Diğer parçalar: {hiddenParca.join(', ')}.</>}
             </p>
             <button
               type="button"
               onClick={() => setShowAllParca((v) => !v)}
               className="shrink-0 font-semibold text-primary hover:underline"
             >
-              {showAllParca ? 'Yalnızca benim parçalarım' : 'Tüm parçaları gösterin'}
+              {showAllParca ? `Yalnızca ${scopedParcaNames}` : 'Tüm parçaları gösterin'}
             </button>
           </div>
         )}
@@ -987,6 +994,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           onRemoveCustomRow={removeCustomRow}
           onMoveCustomRow={moveCustomRow}
           catalogComponents={catalogComponents}
+          hideParcaPicker={parcaNarrowed && !showAllParca}
           selectedComponents={sheetComponents}
           onToggleComponent={toggleComponent}
           onSelectAllComponents={selectAllComponents}

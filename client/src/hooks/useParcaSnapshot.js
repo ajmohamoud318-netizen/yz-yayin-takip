@@ -59,9 +59,17 @@ export function useParcaSnapshot(project) {
   return { parcalar, ledgerKind: ledgerKindForStage(stage) }
 }
 
-/** Stages that actually run a per-parça approval gate. */
+/**
+ * Stages that actually run a per-parça approval gate.
+ *
+ * The *_teslim stages joined the list with migration 076. The round is still
+ * out at the matbaa there, but the parçalar that have come back are decided
+ * individually, and the grid that renders them needs the same snapshot list —
+ * `specVariantForStage` already maps those stages to the right sheet.
+ */
 const GATE_STAGES = new Set([
   'demo_onay', 'cin_demo_onay', 'ozalit_onay', 'baski_onay', 'cin_baski_onay',
+  'demo_teslim', 'cin_demo_teslim', 'ozalit_teslim',
 ])
 
 /**
@@ -71,7 +79,11 @@ const GATE_STAGES = new Set([
  * @param {string | undefined} stage
  */
 export function ledgerKindForStage(stage) {
-  if (stage === 'ozalit_onay') return 'ozalit'
+  // `ozalit_teslim` reads the ozalit ledger for the same reason `ozalit_onay`
+  // does — it is the same round, one step earlier (migration 076). Falling
+  // through to 'demo' there put an ozalit round's early sign-offs against the
+  // demo ledger, which would render every parça as unsigned.
+  if (stage === 'ozalit_onay' || stage === 'ozalit_teslim') return 'ozalit'
   if (stage === 'cin_baski_onay') return 'cin_baski_onay'
   if (stage === 'baski_onay') return 'baski_onay'
   return 'demo'

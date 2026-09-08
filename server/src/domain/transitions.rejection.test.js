@@ -240,8 +240,9 @@ describe('per-parça ozalit rejection (migrations 068/069/070)', () => {
 
 describe('per-parça reject gate', () => {
   it('refuses per-parça reject on a stage that doesn’t support it', () => {
-    // The plan limits per-parça reject to demo/ozalit approve stages.
-    // Anywhere else (e.g. tasarim) is defensively refused.
+    // Per-parça reject belongs to the demo/ozalit round — its approval gates,
+    // and since migration 076 the teslim stages a delivered parça can be
+    // decided on. Anywhere else (e.g. tasarim) is defensively refused.
     const p = {
       id: 'p-3', type: 'TR', stage: 'tasarim',
       demo_received: true,
@@ -254,8 +255,88 @@ describe('per-parça reject gate', () => {
         p, 'test', [], 'designer',
         { actorName: leader.name, actor: leader, parcalar: ['KAPAK'] },
       ),
-      /Parça bazlı red yalnızca demo ve ozalit onay aşamalarında yapılabilir/,
+      /Parça bazlı red yalnızca demo ve ozalit aşamalarında yapılabilir/,
     )
+  })
+
+  it('refuses a parça the leader has not taken delivery of yet', () => {
+    // The teslim-stage twin of the demo_received / ozalit_received gates: on an
+    // unfinished round there is no project-level receipt to check, so the
+    // parça's own answers for it (migration 076).
+    const p = {
+      id: 'p-4', type: 'TR', stage: 'demo_teslim',
+      demo_parca_approvals: [], demo_parca_rejections: [],
+      assignees: [{ id: 'u-d', name: 'Aylin' }],
+      subtasks: [],
+      parca_state: [
+        { parca: 'KUTU', state: 'pending', delivered_at: '2026-09-08T09:00:00Z', received_at: null },
+      ],
+    }
+    assert.throws(
+      () => computeRejection(
+        p, 'yeniden bas', [], 'matbaa',
+        { actorName: leader.name, actor: leader, parcalar: ['KUTU'] },
+      ),
+      /KUTU teslim alınmadı/,
+    )
+  })
+
+  it('bounces a received parça back to the matbaa without moving the project', () => {
+    const p = {
+      id: 'p-5', type: 'TR', stage: 'demo_teslim',
+      demo_parca_approvals: [], demo_parca_rejections: [],
+      assignees: [{ id: 'u-d', name: 'Aylin' }],
+      subtasks: [],
+      parca_state: [
+        {
+          parca: 'KUTU', state: 'pending', attempt: 1,
+          delivered_at: '2026-09-08T09:00:00Z', received_at: '2026-09-08T10:00:00Z',
+        },
+      ],
+    }
+    const { project: next, parcaState } = computeRejection(
+      p, 'baskı kirli', [], 'matbaa',
+      { actorName: leader.name, actor: leader, parcalar: ['KUTU'] },
+    )
+    // The round is still out at the matbaa — the project must not move, and
+    // none of its whole-round scalars may be touched.
+    assert.equal(next.stage, 'demo_teslim')
+    assert.equal(next.last_reject_type, undefined)
+    assert.equal(next.demo_parca_rejections.length, 1)
+    assert.equal(next.demo_parca_rejections[0].parca, 'KUTU')
+    // …and the parça goes back to the printer's desk on a fresh round.
+    assert.equal(parcaState.length, 1)
+    assert.equal(parcaState[0].parca, 'KUTU')
+    assert.equal(parcaState[0].patch.state, 'with_matbaa')
+    assert.equal(parcaState[0].patch.gate, 'demo')
+    assert.equal(parcaState[0].patch.attempt, 2)
+  })
+
+  it('writes an ozalit_teslim reject into the ozalit ledger, not the demo one', () => {
+    const p = {
+      id: 'p-6', type: 'TR', stage: 'ozalit_teslim',
+      demo_parca_approvals: [], demo_parca_rejections: [],
+      ozalit_parca_approvals: { KUTU: [{ id: 'u-l' }] }, ozalit_parca_rejections: [],
+      assignees: [{ id: 'u-d', name: 'Aylin' }],
+      subtasks: [],
+      parca_state: [
+        {
+          parca: 'KUTU', state: 'pending', attempt: 2,
+          delivered_at: '2026-09-08T09:00:00Z', received_at: '2026-09-08T10:00:00Z',
+        },
+      ],
+    }
+    const { project: next, parcaState } = computeRejection(
+      p, 'renk tutmadı', [], 'matbaa',
+      { actorName: leader.name, actor: leader, parcalar: ['KUTU'] },
+    )
+    assert.equal(next.stage, 'ozalit_teslim')
+    assert.equal(next.ozalit_parca_rejections.length, 1)
+    assert.deepEqual(next.demo_parca_rejections, [])
+    // The rejected parça's ozalit sign-off is dropped; the demo ledger is not
+    // this round's and stays as it was.
+    assert.deepEqual(next.ozalit_parca_approvals, {})
+    assert.equal(parcaState[0].patch.gate, 'ozalit')
   })
 })
 

@@ -1,10 +1,10 @@
-import { Check, ThumbsUp, ThumbsDown, Hourglass, AlertCircle } from 'lucide-react'
+import { Check, ThumbsUp, ThumbsDown, Hourglass, AlertCircle, PackageCheck, Clock } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 /**
- * Per-parça approval chip — the per-parça grid's atomic row. Three states:
+ * Per-parça approval chip — the per-parça grid's atomic row. Five states:
  *
  *   pending  → amber dot + Onayla/Reddet buttons. The leader's primary
  *              control surface on a multi-parça round.
@@ -13,6 +13,19 @@ import { cn } from '@/lib/utils'
  *              next"), not as a status that disappears after every click.
  *   rejected → red chip + "Reddedildi" badge. Same read-only rationale.
  *
+ * The last two belong to a round that is still out at the matbaa (migration
+ * 076), where the parçalar arrive one at a time and each is decided as it
+ * lands:
+ *
+ *   awaiting_receipt → the matbaa handed this parça back and nobody has
+ *              confirmed it arrived. One button, "Teslim Alın", because that is
+ *              genuinely the only thing to do: approving a proof you haven't
+ *              got is what the receipt gate exists to prevent.
+ *   out      → still on somebody else's desk (`outLabel` says whose). Shown,
+ *              never actionable — a leader who can only see the parçalar in
+ *              front of them cannot tell whether the round is waiting on the
+ *              matbaa or on them.
+ *
  * `signers` is the list of approver rows for this parça — the demo list shape
  * `{ by, by_name, at }` for the demo gate, the ozalit-object shape
  * `{ id, role, name, at }` for the ozalit gate. Normalised by the caller to
@@ -20,11 +33,13 @@ import { cn } from '@/lib/utils'
  *
  * @param {{
  *   parca: string,
- *   status: 'pending' | 'approved' | 'rejected',
+ *   status: 'pending' | 'approved' | 'rejected' | 'awaiting_receipt' | 'out',
  *   signers?: Array<{ name: string, at: string }>,
  *   busy?: boolean,
  *   onApprove?: () => void,
  *   onReject?: () => void,
+ *   onReceive?: () => void,
+ *   outLabel?: string,
  *   className?: string,
  * }} props
  */
@@ -35,11 +50,15 @@ export default function ParcaApprovalRow({
   busy = false,
   onApprove,
   onReject,
+  onReceive,
+  outLabel = 'Matbaada',
   className,
 }) {
   const isPending = status === 'pending'
   const isApproved = status === 'approved'
   const isRejected = status === 'rejected'
+  const isAwaitingReceipt = status === 'awaiting_receipt'
+  const isOut = status === 'out'
   return (
     <div
       className={cn(
@@ -47,6 +66,9 @@ export default function ParcaApprovalRow({
         isPending && 'border-amber-200 bg-amber-50/40',
         isApproved && 'border-emerald-200 bg-emerald-50/30',
         isRejected && 'border-rose-200 bg-rose-50/30',
+        isAwaitingReceipt && 'border-sky-200 bg-sky-50/40',
+        // Somebody else's work: present, legible, visibly not yours.
+        isOut && 'opacity-60',
         className,
       )}
     >
@@ -73,6 +95,31 @@ export default function ParcaApprovalRow({
           <span className="inline-flex items-center gap-1 rounded-md bg-rose-100 px-1.5 py-0.5 text-[11px] font-medium text-rose-700 ring-1 ring-inset ring-rose-200">
             <AlertCircle className="h-3 w-3" />
             Reddedildi
+          </span>
+        )}
+        {isOut && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground ring-1 ring-inset ring-border">
+            <Clock className="h-3 w-3" />
+            {outLabel}
+          </span>
+        )}
+        {isAwaitingReceipt && onReceive && (
+          <Button
+            size="sm"
+            className="h-7 gap-1.5 px-2.5 text-xs"
+            onClick={onReceive}
+            disabled={busy}
+            title="Bu parçayı teslim aldığınızı onaylayın"
+            aria-label={`${parca} parçasını teslim alın`}
+          >
+            <PackageCheck className="h-3.5 w-3.5" />
+            Teslim Alın
+          </Button>
+        )}
+        {isAwaitingReceipt && !onReceive && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-sky-100 px-1.5 py-0.5 text-[11px] font-medium text-sky-700 ring-1 ring-inset ring-sky-200">
+            <PackageCheck className="h-3 w-3" />
+            Teslim bekliyor
           </span>
         )}
         {isPending && (
@@ -116,6 +163,12 @@ function StatusDot({ status }) {
   }
   if (status === 'rejected') {
     return <AlertCircle className="h-3.5 w-3.5 text-rose-600" strokeWidth={2.5} />
+  }
+  if (status === 'awaiting_receipt') {
+    return <PackageCheck className="h-3.5 w-3.5 text-sky-600" strokeWidth={2.5} />
+  }
+  if (status === 'out') {
+    return <Clock className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={2.5} />
   }
   return <Hourglass className="h-3.5 w-3.5 text-amber-600" strokeWidth={2.5} />
 }

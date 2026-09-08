@@ -41,6 +41,7 @@ export default function SpecSheetBody({
   onRemoveCustomRow,
   onMoveCustomRow,
   catalogComponents,
+  hideParcaPicker = false,
   selectedComponents,
   onToggleComponent,
   onSelectAllComponents,
@@ -143,7 +144,13 @@ export default function SpecSheetBody({
           top the moment a box was ticked — on a phone, the control you just
           used teleported a full scroll away and the whole form reflowed
           under your thumb. */}
-      {hasCatalog && !readOnly && (
+      {/* Hidden while the sheet is narrowed to one parça (SpecFormDialog's
+          `parcaScope`): this picker governs the WHOLE selection — what the
+          round carries and what a save writes back — so above a sheet showing
+          one of three parçalar it would tick three boxes and contradict the
+          document under it. The dialog's "Tüm parçaları gösterin" brings both
+          back together. */}
+      {hasCatalog && !readOnly && !hideParcaPicker && (
         <div className="border-b bg-muted/20 px-4 py-3 print:hidden">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">

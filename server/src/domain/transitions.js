@@ -25,7 +25,7 @@ import { randomUUID } from 'node:crypto'
 import { STAGE_PIPELINE, STAGES_REQUIRING_FULL_PROGRESS } from './stages.js'
 import { subtaskProgress } from './progress.js'
 import { HttpError } from './errors.js'
-import { parcaRejectPatch, parcaGateForStage } from './parca-routing.js'
+import { parcaRejectPatch, parcaGateForStage, parcaDecidable } from './parca-routing.js'
 
 /** Match the client's badRequest semantics — throw a 400. */
 function badRequest(message) {
@@ -755,9 +755,142 @@ function computeOzalitTeslimAdvance(project, actor, now) {
  *  approve(project, actor) → next project state
  * ========================================================================== */
 
+/* ============================================================================
+ *  Early per-parça sign-off (migration 076)
+ *
+ *  The gate stages below assume a round arrives in one piece: the matbaa
+ *  delivers, the project moves to *_onay, the leader receives it and decides.
+ *  Migration 074 broke the first half of that — parçalar are delivered one at a
+ *  time and the project deliberately waits at *_teslim for the last one — but
+ *  left the second half untouched, so a parça that came back early could not be
+ *  received, approved or rejected until every other parça landed. The leader
+ *  saw nothing but a notification.
+ *
+ *  So the decision moves to where the parça is. A delivered parça that its
+ *  holder has acknowledged (`parca_state.received_at`, migration 076) can be
+ *  signed off on its own, at the teslim stage, and the signature goes into the
+ *  same ledger the gate reads. Nothing else changes: the stage does not move,
+ *  the round still ends when the last parça is delivered, and the gate's own
+ *  pending logic — which recomputes from that ledger — finds the early parçalar
+ *  already done and asks only for the rest.
+ * ========================================================================== */
+
+/** Teslim stages where a delivered parça may be decided ahead of its round. */
+const EARLY_PARCA_GATES = {
+  demo_teslim: 'demo',
+  cin_demo_teslim: 'demo',
+  ozalit_teslim: 'ozalit',
+}
+
+/** The routing rows the service hydrated onto the project (migration 074). */
+function parcaStateRows(project) {
+  return Array.isArray(project?.parca_state) ? project.parca_state : []
+}
+
+/**
+ * The parçalar that may be decided right now on an unfinished round: delivered
+ * by the matbaa AND acknowledged by whoever is holding them.
+ */
+function earlyDecidableParcalar(project) {
+  return parcaStateRows(project).filter(parcaDecidable).map((r) => r.parca).filter(Boolean)
+}
+
+/** Has this actor already signed this parça in the round's ledger? */
+function alreadySignedByActor(project, gate, parca, actorId) {
+  if (gate === 'ozalit') {
+    return ozalitParcaApprovedBy(project, parca).some((a) => a?.id === actorId)
+  }
+  return (project.demo_parca_approvals ?? []).some(
+    (a) => a?.parca === parca && a?.by === actorId && !a?.via,
+  )
+}
+
+/**
+ * Narrow an early sign-off to the parçalar it may actually touch.
+ *
+ * Explicit (`ctx.parcalar`) and bulk are treated the way `narrowApproveParcalar`
+ * treats them at the gate: naming a parça that isn't ready is a mistake worth a
+ * message, while a bulk click means "sign off what is in front of me" and
+ * silently skips the rest. Either way an empty result is refused with the
+ * reason, never a bare "parça bulunamadı".
+ */
+function narrowEarlyParcalar(project, gate, actor, rawParcalar) {
+  const decidable = new Set(earlyDecidableParcalar(project))
+  const requested = sanitiseParcalar(rawParcalar, [])
+  const explicit = requested.length > 0
+  if (explicit) {
+    for (const parca of requested) {
+      if (!decidable.has(parca)) {
+        const row = parcaStateRows(project).find((r) => r?.parca === parca)
+        if (row && row.delivered_at && !row.received_at) {
+          badRequest(`${parca} teslim alınmadı — önce "Teslim Alındı" olarak işaretleyin.`)
+        }
+        badRequest(`${parca} şu anda karar verilebilecek durumda değil.`)
+      }
+    }
+  }
+  const target = (explicit ? requested : [...decidable])
+    .filter((parca) => !alreadySignedByActor(project, gate, parca, actor?.id))
+  if (target.length === 0) {
+    badRequest(explicit
+      ? 'Bu parçaları zaten onayladınız.'
+      : 'Onaylanacak, teslim alınmış parça yok.')
+  }
+  return target
+}
+
+/**
+ * Approve one or more parçalar while the round is still out at the matbaa.
+ *
+ * Records a signature and nothing else — no stage move, no round counter, no
+ * project-level receipt. When the last parça is finally delivered, the ordinary
+ * teslim advance carries the project to its gate with these signatures already
+ * in the ledger (neither `computeDemoTeslimAdvance` nor
+ * `computeOzalitTeslimAdvance` clears the per-parça ledgers), so the leader is
+ * asked only for what is genuinely still undecided.
+ */
+function computeEarlyParcaApproval(project, actor, now, actorName, ctx) {
+  const gate = EARLY_PARCA_GATES[project.stage]
+  // Deliberately narrower than `canApproveAt`, which lets the matbaa approve at
+  // demo_onay: this decision happens on a round the matbaa is still producing,
+  // so it is the leader's alone.
+  if (actor?.role !== 'team_leader') {
+    badRequest('Tamamlanmamış turda parça onayını yalnızca ekip lideri yapabilir.')
+  }
+  const target = narrowEarlyParcalar(project, gate, actor, ctx?.parcalar)
+  const ledger = gate === 'ozalit'
+    ? {
+        ozalit_parca_approvals: appendOzalitParcaApprovals(
+          project.ozalit_parca_approvals ?? {}, target, actor, actorName, now,
+        ),
+      }
+    : {
+        demo_parca_approvals: appendParcaApprovals(
+          project.demo_parca_approvals ?? [], target, actor, actorName, now,
+        ),
+      }
+  return {
+    project: { ...project, ...ledger, updated_at: now },
+    history: makeEntry(project, {
+      action: 'approve',
+      from_stage: project.stage,
+      to_stage: project.stage,
+      done_by_name: actorName,
+      parca: target.join(', '),
+      note: `${target.join(', ')} onaylandı — turun diğer parçaları bekleniyor`,
+    }),
+  }
+}
+
 export function computeApproval(project, actor, ctx = {}) {
   const now = new Date().toISOString()
   const actorName = actor?.name ?? 'Bilinmeyen'
+
+  // Before the stage machine: a parça that came back early is decided where it
+  // is, and the project is still at its teslim stage (migration 076).
+  if (EARLY_PARCA_GATES[project.stage]) {
+    return computeEarlyParcaApproval(project, actor, now, actorName, ctx)
+  }
 
   if (project.stage === 'ozalit_onay') {
     return computeOzalitOnayApproval(project, actor, now, actorName, ctx)
@@ -2488,14 +2621,40 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
   // legacy stage-level reject ledger (ozalit_approvals etc.) is meant
   // to be wiped wholesale on a whole-round bounce. Route handlers send
   // `parcalar` only on those stages; defensively refuse elsewhere.
+  // The teslim stages joined that list with migration 076: a parça the matbaa
+  // has handed back and the leader has taken delivery of can be bounced
+  // straight back without waiting for the rest of the round to arrive — the
+  // mirror of the early approve in `computeEarlyParcaApproval`.
   if (isPartial
     && project.stage !== 'demo_onay'
     && project.stage !== 'cin_demo_onay'
-    && project.stage !== 'ozalit_onay') {
-    badRequest('Parça bazlı red yalnızca demo ve ozalit onay aşamalarında yapılabilir.')
+    && project.stage !== 'ozalit_onay'
+    && !EARLY_PARCA_GATES[project.stage]) {
+    badRequest('Parça bazlı red yalnızca demo ve ozalit aşamalarında yapılabilir.')
+  }
+  // Receipt gate, per parça. The project-level checks above cover the onay
+  // stages; on an unfinished round there is no project-level receipt to check
+  // (the round hasn't been delivered as a whole), so each parça answers for
+  // itself — you cannot bounce a proof you never took delivery of.
+  if (isPartial && EARLY_PARCA_GATES[project.stage]) {
+    const decidable = new Set(earlyDecidableParcalar(project))
+    for (const parca of rejectedParcalar) {
+      if (decidable.has(parca)) continue
+      const row = parcaStateRows(project).find((r) => r?.parca === parca)
+      if (row && row.delivered_at && !row.received_at) {
+        badRequest(`${parca} teslim alınmadı — önce "Teslim Alındı" olarak işaretleyin.`)
+      }
+      badRequest(`${parca} şu anda karar verilebilecek durumda değil.`)
+    }
   }
 
   const isOzalit = project.stage === 'ozalit_onay'
+  // Which ledger a PARTIAL reject writes to. `isOzalit` answers a different
+  // question — which leg a WHOLE-round bounce takes, and that still belongs to
+  // the onay stages alone — but a per-parça reject can now also happen at
+  // `ozalit_teslim` (migration 076), where the round is an ozalit round even
+  // though the stage machine has not reached its gate.
+  const partialIsOzalit = isOzalit || project.stage === 'ozalit_teslim'
   const nowIso = new Date().toISOString()
 
   const pipeline = pipelineFor(project)
@@ -2636,7 +2795,7 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
     // round of redelivery / re-demo / re-design.
     ...(isPartial
       ? {
-          demo_parca_approvals: isOzalit
+          demo_parca_approvals: partialIsOzalit
             ? project.demo_parca_approvals
             : dropParcaFromList(project.demo_parca_approvals, rejectedParcalar),
           // Both halves of each gate's pair answer to `isOzalit`. They used to
@@ -2647,7 +2806,7 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
           // ParcaApprovalRow resolves `rejected` before `approved`. The ozalit
           // pair below had the mirror-image bug — approvals dropped on a demo
           // reject, rejections guarded.
-          demo_parca_rejections: isOzalit
+          demo_parca_rejections: partialIsOzalit
             ? project.demo_parca_rejections
             : appendParcaRejections(
               project.demo_parca_rejections ?? [],
@@ -2658,13 +2817,13 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
               reason,
               target,
             ),
-          ozalit_parca_approvals: isOzalit
+          ozalit_parca_approvals: partialIsOzalit
             ? dropParcaFromObject(
               project.ozalit_parca_approvals ?? {},
               rejectedParcalar,
             )
             : project.ozalit_parca_approvals,
-          ozalit_parca_rejections: isOzalit
+          ozalit_parca_rejections: partialIsOzalit
             ? appendParcaRejections(
               project.ozalit_parca_rejections ?? [],
               rejectedParcalar,
@@ -2709,7 +2868,9 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
           actor,
           actorName,
           now: nowIso,
-          gate: parcaGateForStage(project.stage),
+          // `parcaGateForStage` answers for the onay stages only; on an
+          // unfinished round (migration 076) the gate is the round's own kind.
+          gate: parcaGateForStage(project.stage) ?? (partialIsOzalit ? 'ozalit' : 'demo'),
           currentAttempt: parcaAttemptOf(project, parca),
         }),
       }))

@@ -306,8 +306,14 @@ export function SpecFormGates({
       {/* Printer reviews the spec sheet before marking demo/ozalit started —
           İşlemi Başlatın below locks the leader/designer's free cancel/edit
           behind a change-request (migration 048), so this warns them here
-          rather than only after the fact. */}
-      {onStartWork && (
+          rather than only after the fact.
+
+          Printer only. `onStartWork` stopped meaning "the matbaa is about to
+          start work" when the per-parça flows began reusing that footer slot
+          for the leader's own decisions (migrations 074/076): a leader
+          approving KUTU was told that starting work turns edits into change
+          requests, which is about neither them nor what they just clicked. */}
+      {onStartWork && user?.role === 'printer' && (
         <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           <span>

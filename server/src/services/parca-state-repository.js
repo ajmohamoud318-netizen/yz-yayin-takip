@@ -25,7 +25,7 @@ import { getPool } from '../db/pool.js'
 
 const COLUMNS = `
   project_id, parca, gate, state, owner_role, route, attempt,
-  started_at, delivered_at, reason,
+  started_at, delivered_at, received_at, received_by, received_by_name, reason,
   rejected_by, rejected_by_name, rejected_at,
   created_at, updated_at
 `
@@ -41,6 +41,9 @@ function rowToParcaState(r) {
     attempt: r.attempt ?? 1,
     started_at: r.started_at ?? null,
     delivered_at: r.delivered_at ?? null,
+    received_at: r.received_at ?? null,
+    received_by: r.received_by ?? null,
+    received_by_name: r.received_by_name ?? null,
     reason: r.reason ?? null,
     rejected_by: r.rejected_by ?? null,
     rejected_by_name: r.rejected_by_name ?? null,
@@ -79,7 +82,8 @@ export async function listParcaStateByOwner(client, ownerRole, states = null) {
   }
   const { rows } = await q.query(
     `SELECT ps.project_id, ps.parca, ps.gate, ps.state, ps.owner_role, ps.route,
-            ps.attempt, ps.started_at, ps.delivered_at, ps.reason,
+            ps.attempt, ps.started_at, ps.delivered_at,
+            ps.received_at, ps.received_by, ps.received_by_name, ps.reason,
             ps.rejected_by, ps.rejected_by_name, ps.rejected_at,
             ps.created_at, ps.updated_at,
             p.title AS project_title, p.stage AS project_stage, p.type AS project_type
@@ -123,7 +127,8 @@ export async function upsertParcaState(client, projectId, parca, patch = {}) {
   const { rows } = await q.query(
     `INSERT INTO parca_state
        (project_id, parca, gate, state, owner_role, route, attempt,
-        started_at, delivered_at, reason, rejected_by, rejected_by_name, rejected_at)
+        started_at, delivered_at, received_at, received_by, received_by_name,
+        reason, rejected_by, rejected_by_name, rejected_at)
      VALUES ($1,$2,
        -- Most patches are state-only (approve, deliver, start) and carry no
        -- gate — they update a row that already has one. Fall back to the
@@ -140,7 +145,7 @@ export async function upsertParcaState(client, projectId, parca, patch = {}) {
        $5,$6,
        COALESCE($7, (SELECT ps4.attempt FROM parca_state ps4
                       WHERE ps4.project_id = $1 AND ps4.parca = $2), 1),
-       $8,$9,$10,$11,$12,$13)
+       $8,$9,$10,$11,$12,$13,$14,$15,$16)
      ON CONFLICT (project_id, parca) DO UPDATE SET
        gate             = COALESCE(EXCLUDED.gate,             parca_state.gate),
        state            = COALESCE(EXCLUDED.state,            parca_state.state),
@@ -152,6 +157,15 @@ export async function upsertParcaState(client, projectId, parca, patch = {}) {
        attempt          = COALESCE(EXCLUDED.attempt,          parca_state.attempt),
        started_at       = EXCLUDED.started_at,
        delivered_at     = EXCLUDED.delivered_at,
+       -- The receipt belongs to ONE delivery (migration 076), so it takes
+       -- EXCLUDED verbatim alongside the two stamps above rather than being
+       -- COALESCE'd: every leg that takes the parça off the gate — a fresh
+       -- delivery, a reject, a new round — omits these and thereby clears
+       -- them, which is exactly the "a new proof owes a new Teslim Alındı"
+       -- rule the project-level columns follow.
+       received_at      = EXCLUDED.received_at,
+       received_by      = EXCLUDED.received_by,
+       received_by_name = EXCLUDED.received_by_name,
        reason           = COALESCE(EXCLUDED.reason,           parca_state.reason),
        rejected_by      = COALESCE(EXCLUDED.rejected_by,      parca_state.rejected_by),
        rejected_by_name = COALESCE(EXCLUDED.rejected_by_name, parca_state.rejected_by_name),
@@ -167,6 +181,9 @@ export async function upsertParcaState(client, projectId, parca, patch = {}) {
       patch.attempt ?? null,
       patch.started_at ?? null,
       patch.delivered_at ?? null,
+      patch.received_at ?? null,
+      patch.received_by ?? null,
+      patch.received_by_name ?? null,
       patch.reason ?? null,
       patch.rejected_by ?? null,
       patch.rejected_by_name ?? null,
@@ -199,6 +216,52 @@ export async function ensureParcaRows(client, projectId, parcalar, gate) {
     [projectId, parcalar, gate],
   )
   return rows.map(rowToParcaState)
+}
+
+/**
+ * Every parça standing at a gate on a round that is still out at the matbaa —
+ * the leader's own per-parça queue (migration 076).
+ *
+ * Migration 074 said a leader has no per-parça queue because their work is the
+ * approval gate. That stopped being true the moment the matbaa could deliver a
+ * round in pieces: the project waits at its *_teslim stage for the last parça,
+ * so the gate never opens, and a parça that came back early sat in nobody's
+ * list at all. These are those parçalar — delivered, at the gate, waiting for a
+ * receipt or a decision.
+ *
+ * `owner_role` is NULL for a row at the gate, which is exactly why
+ * `listParcaStateByOwner` cannot answer this: the whole point of a parça at the
+ * gate is that it is on no single person's desk.
+ *
+ * The round's ledgers come back on the row so the caller can drop parçalar it
+ * has already signed off without a second query per project.
+ */
+export async function listGateParcalarAwaitingLeader(client) {
+  const q = client ?? getPool()
+  const { rows } = await q.query(
+    `SELECT ps.project_id, ps.parca, ps.gate, ps.state, ps.owner_role, ps.route,
+            ps.attempt, ps.started_at, ps.delivered_at,
+            ps.received_at, ps.received_by, ps.received_by_name, ps.reason,
+            ps.rejected_by, ps.rejected_by_name, ps.rejected_at,
+            ps.created_at, ps.updated_at,
+            p.title AS project_title, p.stage AS project_stage, p.type AS project_type,
+            p.demo_parca_approvals, p.ozalit_parca_approvals
+       FROM parca_state ps
+       JOIN projects p ON p.id = ps.project_id
+      WHERE ps.state = 'pending'
+        AND ps.delivered_at IS NOT NULL
+        AND p.deleted_at IS NULL
+        AND p.stage IN ('demo_teslim', 'cin_demo_teslim', 'ozalit_teslim')
+      ORDER BY ps.delivered_at ASC`,
+  )
+  return rows.map((r) => ({
+    ...rowToParcaState(r),
+    project_title: r.project_title,
+    project_stage: r.project_stage,
+    project_type: r.project_type,
+    demo_parca_approvals: r.demo_parca_approvals ?? [],
+    ozalit_parca_approvals: r.ozalit_parca_approvals ?? {},
+  }))
 }
 
 /**

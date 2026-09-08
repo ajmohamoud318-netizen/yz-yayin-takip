@@ -578,6 +578,58 @@ export function parcaNames(snapshotParcalar) {
     .filter(Boolean)
 }
 
+/* ---------------------------------------------------------------------------
+ *  Deciding a parça before its round is finished (migration 076)
+ *
+ *  The matbaa delivers a multi-parça round one parça at a time and the project
+ *  deliberately stays at its *_teslim stage until the last one lands. These
+ *  helpers are the client's copy of the server rule that lets the leader act on
+ *  what has already arrived: a parça that was delivered AND taken delivery of
+ *  can be received, approved or rejected on its own. Everything else on the
+ *  round is somebody else's until it comes back.
+ * ------------------------------------------------------------------------- */
+
+/** Stages where a delivered parça may be decided ahead of its round. */
+export const EARLY_PARCA_STAGES = new Set(['demo_teslim', 'cin_demo_teslim', 'ozalit_teslim'])
+
+/**
+ * Is this parça waiting for the leader's "Teslim Alın"?
+ * Delivered by the matbaa, at the gate, nobody has acknowledged it yet.
+ *
+ * @param {{ state?: string, delivered_at?: string|null, received_at?: string|null }} row
+ */
+export function parcaAwaitsReceipt(row) {
+  return !!row && row.state === 'pending' && !!row.delivered_at && !row.received_at
+}
+
+/**
+ * May this parça be approved or rejected on its own right now?
+ * Mirrors `parcaDecidable` in server/src/domain/parca-routing.js — keep the two
+ * in step, because this one decides whether the buttons render and that one
+ * decides whether the click survives.
+ *
+ * @param {{ state?: string, delivered_at?: string|null, received_at?: string|null }} row
+ */
+export function parcaDecidable(row) {
+  return !!row && row.state === 'pending' && !!row.delivered_at && !!row.received_at
+}
+
+/**
+ * Does this project have parça work waiting for the leader on a round that is
+ * still out at the matbaa?
+ *
+ * The gate for showing the per-parça grid at a *_teslim stage. Without at least
+ * one parça back there is nothing to decide and the grid would be three rows of
+ * "Matbaada" — which the parça status panel already says.
+ *
+ * @param {{ stage?: string } | null | undefined} project
+ * @param {Array<object>} parcaRows
+ */
+export function earlyParcaGateOpen(project, parcaRows = []) {
+  if (!EARLY_PARCA_STAGES.has(project?.stage)) return false
+  return (parcaRows ?? []).some((r) => parcaAwaitsReceipt(r) || parcaDecidable(r))
+}
+
 /**
  * Per-parça set still owed on a given gate.
  *

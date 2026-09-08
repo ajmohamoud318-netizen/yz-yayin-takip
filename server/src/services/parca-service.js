@@ -20,12 +20,15 @@ import {
   parcaRequestRoundPatch,
   parcaStartPatch,
   parcaDeliverPatch,
+  parcaReceivePatch,
+  parcaAwaitsReceipt,
   canActOnParca,
   parcaGateForStage,
 } from '../domain/parca-routing.js'
 import {
   listParcaState,
   listParcaStateByOwner,
+  listGateParcalarAwaitingLeader,
   upsertParcaState,
 } from './parca-state-repository.js'
 import {
@@ -58,8 +61,25 @@ export async function listMyParcaQueue(actor) {
   if (actor?.role === 'designer') {
     return listParcaStateByOwner(null, 'designer', ['with_designer'])
   }
-  // A leader has no per-parça queue of their own: their work is the approval
-  // gate, which the parça grid on the project already shows.
+  // The leader's queue is the parçalar that came back on a round the matbaa is
+  // still producing (migration 076). Their work IS the approval gate — but on a
+  // split round the project never reaches it, so these parçalar would otherwise
+  // appear in nobody's list: the leader saw a "KUTU teslim edildi" notification
+  // and had no surface to act on it.
+  //
+  // A parça already signed off this round is dropped: it is standing at the gate
+  // only because the project cannot move until its siblings arrive, and it needs
+  // nothing further from anyone.
+  if (actor?.role === 'team_leader') {
+    const rows = await listGateParcalarAwaitingLeader(null)
+    return rows.filter((row) => {
+      const signed = row.gate === 'ozalit'
+        ? Array.isArray(row.ozalit_parca_approvals?.[row.parca])
+          && row.ozalit_parca_approvals[row.parca].length > 0
+        : (row.demo_parca_approvals ?? []).some((a) => a?.parca === row.parca)
+      return !signed
+    }).map(({ demo_parca_approvals, ozalit_parca_approvals, ...row }) => row)
+  }
   return []
 }
 
@@ -324,6 +344,57 @@ export async function deliverParca(projectId, parca, actor) {
       event: { type: 'project.parca_delivered', aggregateId: project.id },
     })
     return updated
+  })
+}
+
+/**
+ * POST /api/projects/:id/parca/:parca/receive — the leader took delivery of one
+ * parça (migration 076).
+ *
+ * The per-parça "Teslim Alındı". Until this exists nothing about a delivered
+ * parça can happen before the whole round lands: the project deliberately stays
+ * at its *_teslim stage while other parçalar are still being printed
+ * (`allParcalarDelivered` below), and every approval path refuses without a
+ * receipt. So a parça delivered on Monday sat untouchable until the last one
+ * arrived — the leader's half of "both parties work at once" simply did not
+ * exist.
+ *
+ * Who may: the same two parties the project-level receipt allows — a team
+ * leader, or a designer assigned to this project. It is a statement about
+ * physical possession, so it belongs to whoever is holding the thing.
+ *
+ * Idempotent: acknowledging twice is not an error, it is the same fact. Nobody
+ * is notified — the receipt is the receiver's own act, and the parça does not
+ * change hands.
+ */
+export async function receiveParca(projectId, parca, actor) {
+  return withTx(async (client) => {
+    const { project, row } = await loadParcaForUpdate(client, projectId, parca)
+    if (row.received_at) return row // idempotent — already acknowledged
+
+    const assignees = await loadProjectAssignees(client, project)
+    const isAssignedDesigner =
+      actor?.role === 'designer' && assignees.some((a) => a.id === actor?.id)
+    if (actor?.role !== 'team_leader' && !isAssignedDesigner) {
+      badRequest('Teslim almayı yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
+    }
+    if (!parcaAwaitsReceipt(row)) {
+      // Three ways to get here, and the message has to tell them apart: the
+      // parça is still on somebody's desk, it is an ekran round with no
+      // physical proof to receive, or the matbaa hasn't handed it back yet.
+      if (row.state !== 'pending') badRequest('Bu parça şu anda onay bekleyen bir parça değil.')
+      if (row.route === 'ekran') badRequest('Ekran turunda teslim alma yapılmaz.')
+      badRequest('Bu parça henüz teslim edilmedi.')
+    }
+
+    return upsertParcaState(client, projectId, parca, parcaReceivePatch({
+      actor,
+      actorName: actor?.name ?? 'Bilinmeyen',
+      now: new Date().toISOString(),
+      // Carried back in: the upsert writes the delivery stamps verbatim, so
+      // omitting this would erase the delivery we are acknowledging.
+      deliveredAt: row.delivered_at,
+    }))
   })
 }
 

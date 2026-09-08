@@ -164,6 +164,13 @@ export async function projectRoutes(fastify) {
     return parcaService.deliverParca(request.params.id, request.params.parca, request.user)
   })
 
+  // The leader's per-parça "Teslim Alındı" (migration 076) — what opens the
+  // approve/reject decision for a parça whose round is still incomplete.
+  fastify.post('/projects/:id/parca/:parca/receive', { schema: schemas.projectsParcaParams }, async (request) => {
+    await attachUser(request)
+    return parcaService.receiveParca(request.params.id, request.params.parca, request.user)
+  })
+
   fastify.post('/projects/:id/parca/:parca/request-round', { schema: schemas.projectsParcaRequestRound }, async (request) => {
     await attachUser(request)
     return parcaService.requestParcaRound(request.params.id, request.params.parca, request.user, {

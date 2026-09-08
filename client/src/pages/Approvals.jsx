@@ -23,6 +23,7 @@ import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
 import ParcaRejectDialog from '@/components/ParcaRejectDialog'
 import { ledgerKindForStage, parcaRoundDecidable } from '@/hooks/useParcaSnapshot'
+import { useParcaQueue } from '@/hooks/useParcaQueue'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
 import {
   canRejectAtStage, isDemoApprover, isOzalitApprover, ozalitLeaderApproved,
@@ -83,6 +84,45 @@ export default function Approvals({ tab = 'demo' }) {
   // team_leader only — the same person who may edit the form itself.
   const canActOnDemo = isLeader || isPrinter
   const canActOnOzalit = isLeader || isDesigner
+
+  /* ── Parçalar back from a round that is still out (migration 076) ────────
+   * The matbaa delivers a multi-parça round one parça at a time and the project
+   * waits at its *_teslim stage for the last one, so the approval gate this page
+   * is built around never opens. Those parçalar used to land in nobody's queue:
+   * the leader got a "KUTU teslim edildi" notification and had nowhere to act on
+   * it. `/parca-queue` answers for the leader too now — these are the parçalar
+   * waiting to be received or decided. */
+  const { rows: earlyParcaRows, refetch: refetchEarlyParca } = useParcaQueue(isLeader)
+  const earlyParcaGroups = useMemo(() => {
+    const byProject = new Map()
+    for (const row of earlyParcaRows) {
+      // The full project carries the ledgers and the stage the grid reads; the
+      // queue row only knows its own parça.
+      const project = projects.find((p) => p.id === row.project_id)
+      if (!project) continue
+      const group = byProject.get(row.project_id) ?? { project, rows: [] }
+      group.rows.push(row)
+      byProject.set(row.project_id, group)
+    }
+    return [...byProject.values()]
+  }, [earlyParcaRows, projects])
+  const earlyGroupsFor = (sub) => earlyParcaGroups.filter(
+    (g) => (g.rows[0]?.gate === 'ozalit') === (sub === 'ozalit'),
+  )
+
+  /** Per-parça "Teslim Alındı" — the receipt that opens this parça's decision. */
+  async function handleReceiveParca(project, parca) {
+    setParcaBusyId(project.id)
+    try {
+      await api.receiveParca(project.id, parca)
+      toast.success(`${parca} teslim alındı.`)
+      refetchEarlyParca()
+    } catch (err) {
+      toast.error(err.message || 'Teslim alma tamamlanamadı.')
+    } finally {
+      setParcaBusyId(null)
+    }
+  }
 
   // Refresh the snapshot map whenever the projects list changes (a new
   // project may have appeared in the queue) or the user lands on the
@@ -185,6 +225,11 @@ export default function Approvals({ tab = 'demo' }) {
 
   const demoQueue = useMemo(() => filterQueue('demo'), [projects, isPrinter])
   const ozalitQueue = useMemo(() => filterQueue('ozalit'), [projects, isPrinter])
+  // The tab badges count what the tab actually holds, and since migration 076
+  // that includes the parçalar sitting above the queue on an unfinished round.
+  // A leader whose only pending work was one early parça saw a bare tab.
+  const demoTabCount = demoQueue.length + earlyGroupsFor('demo').length
+  const ozalitTabCount = ozalitQueue.length + earlyGroupsFor('ozalit').length
   const baskiOnayQueue = useMemo(() => filterQueue('baski-onay'), [projects, isPrinter, isLeader])
 
   function onDone() {}
@@ -417,7 +462,62 @@ export default function Approvals({ tab = 'demo' }) {
     )
   }
 
+  /**
+   * Parçalar that came back before their round did (migration 076).
+   *
+   * Rendered above the gate queue rather than inside it: these projects are NOT
+   * at an approval gate — the matbaa is still printing the rest of the round —
+   * so the whole-round Onayla/Reddet buttons an ApprovalRow carries would every
+   * one of them be refused. What is real here is the parça grid, so that is all
+   * this shows, with the project title as the way through to the full page.
+   */
+  function renderEarlyParcaSection(sub) {
+    const groups = earlyGroupsFor(sub)
+    if (groups.length === 0) return null
+    return (
+      <div className="mb-4 space-y-2.5">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Turu tamamlanmadan gelen parçalar
+        </p>
+        {groups.map(({ project, rows }) => (
+          <Card key={project.id}>
+            <CardContent className="space-y-3 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                {/* Wraps, never truncates — this is the book they are deciding on. */}
+                <button
+                  type="button"
+                  onClick={() => navigate(`/projects/${project.id}`)}
+                  className="min-w-0 text-left text-sm font-semibold leading-snug text-foreground hover:underline"
+                >
+                  {project.title}
+                </button>
+                <Badge variant="outline" className="text-[10px]">
+                  {STAGE_LABELS[project.stage] ?? project.stage}
+                </Badge>
+              </div>
+              <ParcaApprovalGrid
+                project={project}
+                kind={sub === 'ozalit' ? 'ozalit' : 'demo'}
+                snapshotParcalar={snapshotFor(project.id, sub === 'ozalit' ? 'ozalit' : 'demo')}
+                parcaRows={rows}
+                busy={parcaBusyId === project.id}
+                showHeader={false}
+                onReceiveParca={(parca) => handleReceiveParca(project, parca)}
+                // Sheet-first, exactly as at the gate: the decision is taken
+                // from the spec form's footer, and reject then hands off to the
+                // reason/party dialog.
+                onApproveParcalar={(parcalar) => openParcaSheet(project, 'approve', parcalar, sub)}
+                onRejectParcalar={(parcalar) => openParcaSheet(project, 'reject', parcalar, sub)}
+              />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
+
   function renderQueue(queue, sub) {
+    const early = renderEarlyParcaSection(sub)
     if (loading) {
       return (
         <div className="space-y-2.5">
@@ -428,7 +528,7 @@ export default function Approvals({ tab = 'demo' }) {
       )
     }
     if (queue.length === 0) {
-      return (
+      return early ?? (
         <EmptyState
           icon={Inbox}
           title="Şu an bekleyen iş yok."
@@ -437,6 +537,8 @@ export default function Approvals({ tab = 'demo' }) {
       )
     }
     return (
+      <>
+      {early}
       <div className="stagger-children space-y-2.5">
         {queue.map((p) => {
           // Per-parça gate (migrations 068/069/070): pick the matching
@@ -511,6 +613,7 @@ export default function Approvals({ tab = 'demo' }) {
           )
         })}
       </div>
+      </>
     )
   }
 
@@ -533,12 +636,12 @@ export default function Approvals({ tab = 'demo' }) {
             {!isDesigner && (
               <TabsTrigger value="demo">
                 Demo Onayı
-                {demoQueue.length > 0 && <CountBadge count={demoQueue.length} />}
+                {demoTabCount > 0 && <CountBadge count={demoTabCount} />}
               </TabsTrigger>
             )}
             <TabsTrigger value="ozalit">
               Ozalit Onayı
-              {ozalitQueue.length > 0 && <CountBadge count={ozalitQueue.length} />}
+              {ozalitTabCount > 0 && <CountBadge count={ozalitTabCount} />}
             </TabsTrigger>
             {/* Baskı Onayı: team_leader only — the final sign-off after ozalit. */}
             {isLeader && (
@@ -584,6 +687,10 @@ export default function Approvals({ tab = 'demo' }) {
               ? () => handleStartWork(demoForm.project, 'demo')
               : undefined
         }
+        // The sheet opens as the parça the leader is deciding on — the same
+        // one the footer button names. A bulk "Tüm parçaları onaylayın" scopes
+        // to all of them, which is the whole sheet anyway.
+        parcaScope={demoForm?.parcaAction?.parcalar ?? null}
         startWorkLabel={parcaSheetLabel(demoForm)}
         startingWork={startingWork || parcaBusyId === demoForm?.project?.id}
         onDone={onDone}
@@ -600,6 +707,7 @@ export default function Approvals({ tab = 'demo' }) {
               ? () => handleStartWork(ozalitForm.project, 'ozalit')
               : undefined
         }
+        parcaScope={ozalitForm?.parcaAction?.parcalar ?? null}
         startWorkLabel={parcaSheetLabel(ozalitForm)}
         startingWork={startingWork || parcaBusyId === ozalitForm?.project?.id}
         onDone={onDone}

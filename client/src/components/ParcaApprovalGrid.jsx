@@ -3,7 +3,10 @@ import { ThumbsUp, AlertTriangle } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import ParcaApprovalRow from '@/components/ParcaApprovalRow'
-import { pendingParcalar, approvedParcalar, rejectedParcalar, bulkApproveAvailable } from '@/domain'
+import {
+  pendingParcalar, approvedParcalar, rejectedParcalar, bulkApproveAvailable,
+  parcaAwaitsReceipt, parcaDecidable,
+} from '@/domain'
 
 /**
  * Per-parça approval grid — the multi-parça surface for demo/ozalit/baski
@@ -25,6 +28,15 @@ import { pendingParcalar, approvedParcalar, rejectedParcalar, bulkApproveAvailab
  *                   button at the top so the leader can bounce the whole
  *                   round in one click. Calls onRejectParcalar(null, …).
  *
+ * `parcaRows` turns the grid into the surface for a round that is STILL OUT at
+ * the matbaa (migration 076). Pass the project's routing rows and each parça is
+ * rendered by where it actually is — waiting to be received, ready to decide, or
+ * on somebody else's desk — instead of by the ledger alone, which cannot tell
+ * "not approved yet" from "not here yet". Omit it at the *_onay gates, where the
+ * whole round has arrived and one project-level receipt covers it; passing rows
+ * there would offer "Teslim Alın" on parçalar that were already received that
+ * way.
+ *
  * @param {{
  *   project: object,
  *   kind: 'demo' | 'ozalit' | 'baski_onay' | 'cin_baski_onay',
@@ -34,6 +46,9 @@ import { pendingParcalar, approvedParcalar, rejectedParcalar, bulkApproveAvailab
  *   onRejectParcalar?: (parcalar: string[] | null, reason?: string, target?: 'designer' | 'matbaa') => void,
  *   onBulkApprove?: () => void,
  *   onBulkReject?: () => void,
+ *   parcaRows?: Array<{ parca: string, state: string, owner_role: string|null,
+ *                       delivered_at?: string|null, received_at?: string|null }>,
+ *   onReceiveParca?: (parca: string) => void,
  *   bulkApproveLabel?: string,
  *   showHeader?: boolean,
  *   className?: string,
@@ -48,6 +63,8 @@ export default function ParcaApprovalGrid({
   onRejectParcalar,
   onBulkApprove,
   onBulkReject,
+  parcaRows = null,
+  onReceiveParca,
   bulkApproveLabel = 'Tüm parçaları onaylayın',
   showHeader = true,
   className,
@@ -59,7 +76,60 @@ export default function ParcaApprovalGrid({
   const approved = useMemo(() => approvedParcalar(project, kind), [project, kind])
   const rejected = useMemo(() => rejectedParcalar(project, kind), [project, kind])
 
+  /* Where each parça physically is, when the caller knows (migration 076).
+     Empty map = the *_onay behaviour this grid has always had: the ledger is
+     the only thing that decides a row. */
+  const rowByParca = useMemo(() => {
+    const map = new Map()
+    for (const row of (parcaRows ?? [])) if (row?.parca) map.set(row.parca, row)
+    return map
+  }, [parcaRows])
+  const routingAware = !!parcaRows
+
+  /**
+   * A parça's state as the leader experiences it, most decided first.
+   *
+   * The ledger wins: a signed-off or bounced parça reads the same whatever its
+   * routing row says. Below that, routing answers the question the ledger
+   * cannot — a parça with no approval row is "not approved yet" at the gate,
+   * but on an unfinished round it is just as likely to be still in the press.
+   */
+  function statusOf(parca) {
+    if (rejected.includes(parca)) return 'rejected'
+    if (!pending.includes(parca)) return 'approved'
+    if (!routingAware) return 'pending'
+    const row = rowByParca.get(parca)
+    if (parcaDecidable(row)) return 'pending'
+    if (parcaAwaitsReceipt(row)) return 'awaiting_receipt'
+    // No row at all means the matbaa has not handed it back even once.
+    return 'out'
+  }
+  function outLabelOf(parca) {
+    const row = rowByParca.get(parca)
+    if (row?.state === 'with_designer') return 'Tasarımcıda'
+    if (row?.route === 'ekran') return 'Ekran turunda'
+    return 'Matbaada'
+  }
+
+  // What the leader still has to DO here. At the gate that is every un-signed
+  // parça; on an unfinished round it is only what is in their hands — a header
+  // reading "3 bekliyor" above two rows marked "Matbaada" describes the round,
+  // not the reader's to-do list, and the two are no longer the same thing.
+  const awaitingLeader = () => (parcaRows
+    ? orderedParcalar.filter((p) => {
+      const status = statusOf(p)
+      return status === 'pending' || status === 'awaiting_receipt'
+    })
+    : pending)
+
+  // What the bulk button may actually sign off. At the gate that is everything
+  // pending; on an unfinished round only what is in the leader's hands — the
+  // server refuses the rest, so offering them would build a button that fails.
+  const bulkTarget = routingAware
+    ? pending.filter((p) => statusOf(p) === 'pending')
+    : pending
   const showBulk = bulkApproveAvailable(project, kind, snapshotParcalar)
+    && (!routingAware || bulkTarget.length > 0)
   const orderedParcalar = useMemo(() => {
     // Pending first (so the to-do list reads top-down), then approved, then
     // rejected. Stable order matters: the same parça keeps the same row
@@ -103,10 +173,10 @@ export default function ParcaApprovalGrid({
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Parça onayı · {orderedParcalar.length} parça
           </p>
-          {pending.length > 0 && (
+          {awaitingLeader().length > 0 && (
             <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
               <AlertTriangle className="h-3 w-3" />
-              {pending.length} bekliyor
+              {awaitingLeader().length} bekliyor
             </span>
           )}
         </div>
@@ -118,14 +188,17 @@ export default function ParcaApprovalGrid({
             size="sm"
             variant="success"
             className="w-full gap-1.5 sm:w-auto"
-            disabled={busy || pending.length === 0}
-            onClick={onBulkApprove ?? (() => onApproveParcalar?.(null))}
+            disabled={busy || bulkTarget.length === 0}
+            // On an unfinished round the click has to NAME the parçalar: a null
+            // means "everything still pending" to the server, which includes the
+            // parçalar still in the press.
+            onClick={onBulkApprove ?? (() => onApproveParcalar?.(routingAware ? bulkTarget : null))}
             aria-label={bulkApproveLabel}
           >
             <ThumbsUp className="h-4 w-4" />
-            {bulkApproveLabel} ({pending.length})
+            {bulkApproveLabel} ({bulkTarget.length})
           </Button>
-          {onBulkReject && pending.length > 0 && (
+          {onBulkReject && !routingAware && pending.length > 0 && (
             <Button
               size="sm"
               variant="destructive"
@@ -141,20 +214,25 @@ export default function ParcaApprovalGrid({
 
       <div className="space-y-1.5">
         {orderedParcalar.map((parca) => {
-          const isPending = pending.includes(parca)
-          const isRejected = rejected.includes(parca)
-          const status = isPending ? 'pending' : isRejected ? 'rejected' : 'approved'
+          const status = statusOf(parca)
+          const decidable = status === 'pending'
           return (
             <ParcaApprovalRow
               key={parca}
               parca={parca}
               status={status}
+              outLabel={outLabelOf(parca)}
               signers={signersByParca.get(parca) ?? []}
               busy={busy}
-              onApprove={isPending ? () => onApproveParcalar?.([parca]) : undefined}
+              onApprove={decidable ? () => onApproveParcalar?.([parca]) : undefined}
               onReject={
-                isPending && onRejectParcalar
+                decidable && onRejectParcalar
                   ? () => onRejectParcalar([parca])
+                  : undefined
+              }
+              onReceive={
+                status === 'awaiting_receipt' && onReceiveParca
+                  ? () => onReceiveParca(parca)
                   : undefined
               }
             />

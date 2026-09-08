@@ -409,6 +409,19 @@ export function createHttpProjectRepository(userRepo) {
     },
 
     /**
+     * Leader (or the assigned designer): took delivery of ONE parça, on a round
+     * the matbaa is still producing (migration 076). The per-parça "Teslim
+     * Alındı" — what opens the approve/reject decision for that parça before
+     * the rest of the round has arrived.
+     */
+    async receiveParca(id, parca) {
+      const { data } = await httpClient.post(
+        `/projects/${id}/parca/${encodeURIComponent(parca)}/receive`, {},
+      )
+      return data
+    },
+
+    /**
      * Designer: revized this parça and is sending it back round.
      * `route` is 'physical' (matbaa produces it again) or 'ekran' (screen
      * check, straight back to the leader). Required — the server refuses

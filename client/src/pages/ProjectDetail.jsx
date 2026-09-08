@@ -28,7 +28,7 @@ import ProjectHistory from '@/components/ProjectHistory'
 import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
 import ParcaRejectDialog from '@/components/ParcaRejectDialog'
 import ParcaReturnedPanel from '@/components/ParcaReturnedPanel'
-import { isDemoApprover, orderOzalitFormMode } from '@/domain'
+import { isDemoApprover, orderOzalitFormMode, earlyParcaGateOpen } from '@/domain'
 
 import { useProjectDetail } from '@/hooks/useProjectDetail'
 import { useParcaSnapshot, parcaRoundDecidable } from '@/hooks/useParcaSnapshot'
@@ -143,6 +143,28 @@ export default function ProjectDetail() {
   // canRequestOzalit gives them on the project-level round.
   const canSendParcaBack = isLeader || (user?.role === 'designer' && isAssigned)
 
+  /**
+   * "Teslim Alın" on ONE parça (migration 076).
+   *
+   * The round is still out at the matbaa, so there is no whole-round receipt to
+   * give — the project sits at its teslim stage until the last parça lands. This
+   * is the per-parça one, and it is what opens Onayla/Reddedin for the parça
+   * that has actually arrived.
+   */
+  async function handleReceiveParca(parca) {
+    setParcaRoundBusy(parca)
+    try {
+      await api.receiveParca(project.id, parca)
+      toast.success(`${parca} teslim alındı.`)
+      refetchParcaRows()
+      refetch()
+    } catch (err) {
+      toast.error(err.message || 'Teslim alma tamamlanamadı.')
+    } finally {
+      setParcaRoundBusy(null)
+    }
+  }
+
   async function handleRequestParcaRound(parca, route) {
     setParcaRoundBusy(parca)
     try {
@@ -166,12 +188,22 @@ export default function ProjectDetail() {
   // parcaRoundDecidable first: an undelivered proof (or an ozalit parked on
   // the stage for revision) has nothing to sign, and offering Onayla there
   // gets a 400 back from a button that looked live.
-  const showParcaGrid = parcaSnapshot.length >= 2 && parcaRoundDecidable(project) && (
-    ledgerKind === 'demo'
-      ? isDemoApprover(user)
-      : ledgerKind === 'ozalit'
-        ? (isLeader || user?.role === 'designer')
-        : isLeader
+  /* The round is still out at the matbaa, and at least one parça has come back
+     (migration 076). The grid becomes the leader's surface for those: receive
+     what arrived, then sign it off or bounce it, without waiting for parçalar
+     that are still in the press. Leader-only — the server refuses an early
+     sign-off from anyone else, since the matbaa is still producing this round. */
+  const earlyParcaGate = earlyParcaGateOpen(project, parcaRows)
+  const showParcaGrid = parcaSnapshot.length >= 2 && (
+    earlyParcaGate
+      ? isLeader
+      : parcaRoundDecidable(project) && (
+        ledgerKind === 'demo'
+          ? isDemoApprover(user)
+          : ledgerKind === 'ozalit'
+            ? (isLeader || user?.role === 'designer')
+            : isLeader
+      )
   )
 
   // ---------------------------------------------------------------------------
@@ -234,6 +266,13 @@ export default function ProjectDetail() {
               onRejectParcalar={isLeader && ledgerKind !== 'baski_onay' && ledgerKind !== 'cin_baski_onay'
                 ? (parcalar) => openParcaSheet('reject', parcalar)
                 : undefined}
+              // Only while the round is unfinished: these rows say where each
+              // parça physically is, which is the difference between "not
+              // approved yet" and "not here yet". At the *_onay gates the whole
+              // round has arrived under one project-level receipt, and passing
+              // rows would offer "Teslim Alın" on parçalar already received.
+              parcaRows={earlyParcaGate ? parcaRows : null}
+              onReceiveParca={earlyParcaGate ? handleReceiveParca : undefined}
             />
           </div>
         )}
@@ -377,6 +416,10 @@ export default function ProjectDetail() {
               setOzalitFormOpen(false); d.setOzalitFormStartWork(false)
             }
             : undefined}
+        // Sheet-first, and the sheet is the parça: a leader deciding KUTU (or a
+        // designer sending it back round) opens KUTU's block, not the whole
+        // round it was sent on. Same source as the button's own label above.
+        parcaScope={parcaSheet?.parcalar ?? null}
         startWorkLabel={parcaSheetLabel}
         startingWork={d.startingWork || d.processingEkranDemo}
         onDone={onActionDone}
@@ -408,6 +451,7 @@ export default function ProjectDetail() {
               setDemoFormOpen(false); d.setDemoFormStartWork(false)
             }
             : undefined}
+        parcaScope={parcaSheet?.parcalar ?? null}
         startWorkLabel={parcaSheetLabel}
         startingWork={d.startingWork || d.processingEkranDemo}
         onDone={onActionDone}

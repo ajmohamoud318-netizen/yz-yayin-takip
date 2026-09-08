@@ -214,6 +214,7 @@ export function createApi() {
     listParcaQueue: () => projectRepo.listParcaQueue(),
     startParca: (projectId, parca) => projectRepo.startParca(projectId, parca),
     deliverParca: (projectId, parca) => projectRepo.deliverParca(projectId, parca),
+    receiveParca: (projectId, parca) => projectRepo.receiveParca(projectId, parca),
     requestParcaRound: (projectId, parca, route) =>
       projectRepo.requestParcaRound(projectId, parca, route),
 

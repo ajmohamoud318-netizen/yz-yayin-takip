@@ -141,6 +141,56 @@ export function parcaDeliverPatch({ now }) {
   }
 }
 
+/**
+ * The leader took delivery of this parça (migration 076).
+ *
+ * The per-parça twin of `computeDemoReceive` / `computeOzalitReceive`: nothing
+ * may be approved or rejected until somebody confirms the proof physically
+ * arrived, and with parçalar delivered one at a time that confirmation has to
+ * be per parça too.
+ *
+ * The parça does not move — it was already at the gate and it stays there;
+ * this only records the receipt. `deliveredAt` is passed back in because
+ * `upsertParcaState` writes the two delivery stamps verbatim, so a patch that
+ * omitted it would erase the very delivery being acknowledged.
+ */
+export function parcaReceivePatch({ actor, actorName, now, deliveredAt = null }) {
+  return {
+    state: 'pending',
+    owner_role: null,
+    route: null,
+    started_at: null,
+    delivered_at: deliveredAt,
+    received_at: now,
+    received_by: actor?.id ?? null,
+    received_by_name: actorName ?? null,
+  }
+}
+
+/**
+ * Is this parça waiting for the leader's "Teslim Alın"?
+ *
+ * Delivered by the matbaa, sitting at the gate, nobody has acknowledged it yet.
+ * An ekran round never satisfies this: it has no physical proof to receive
+ * (`delivered_at` stays null), and the server refuses the acknowledgment for
+ * the same reason the project-level one does.
+ */
+export function parcaAwaitsReceipt(row) {
+  return !!row && row.state === 'pending' && !!row.delivered_at && !row.received_at
+}
+
+/**
+ * May this parça be signed off on its own, before the round is complete?
+ *
+ * The receipt is the whole gate: it says a real proof is in the leader's hands.
+ * A parça still with the matbaa or the designer is not theirs to decide, and an
+ * unreceived delivery is the same refusal `computeApproval` makes at the *_onay
+ * gate — you cannot approve what you have not taken delivery of.
+ */
+export function parcaDecidable(row) {
+  return !!row && row.state === 'pending' && !!row.delivered_at && !!row.received_at
+}
+
 /** The leader signed this parça off. Terminal until a new round reopens it. */
 export function parcaApprovePatch() {
   return {
