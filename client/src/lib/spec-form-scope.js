@@ -93,3 +93,49 @@ export function hiddenParcaNames(selectedComponents, shown) {
 export function opensNarrowed(parcaScope) {
   return (parcaScope ?? []).filter(Boolean).length === 1
 }
+
+/**
+ * What the sheet must SAY while it is showing more than the decision covers.
+ *
+ * `opensNarrowed` above starts a one-parça decision on its own block, but the
+ * banner offers "Tüm parçaları gösterin" and reading the round is a legitimate
+ * thing to want before signing — the leader deciding KUTU may need to see what
+ * KİTAP says. The moment they take it, the document stops matching the button:
+ * three blocks on screen, one parça in the footer, and nothing on the page
+ * saying which. Widen it on a phone and the button is several screens below
+ * the blocks it does not cover.
+ *
+ * Nothing about the ACTION changes with the view — `commitParcaSheet` posts the
+ * parçalar the row's button was clicked for, and the footer label names them —
+ * so this is not a correctness hole. It is worse in a way: it is a UI that
+ * looks like it might be one. So the widened sheet states the scope in the
+ * banner, and every block on it is marked as either the one being decided or
+ * as context, which leaves nothing for the reader to remember.
+ *
+ * Returns null for anything that is not a decision, which is every other
+ * caller of this sheet.
+ *
+ * @param {null | undefined | { action?: 'approve' | 'reject' | 'review' }} decisionContext
+ */
+export function decisionScopeCopy(decisionContext) {
+  return DECISION_COPY[decisionContext?.action] ?? null
+}
+
+const DECISION_COPY = {
+  approve: {
+    // Reads inside "…ancak yalnızca KUTU <verb>."
+    verb: 'onaylanacak',
+    inScope: 'Onayınız bekleniyor — bu parça onaylanacak.',
+    outScope: 'Bilgi için gösteriliyor — bu parça onaylanmayacak.',
+  },
+  reject: {
+    verb: 'reddedilecek',
+    inScope: 'Bu parça matbaaya geri gönderilecek.',
+    outScope: 'Bilgi için gösteriliyor — bu parça reddedilmeyecek.',
+  },
+  review: {
+    verb: 'gönderilecek',
+    inScope: 'Bu parça gönderilecek.',
+    outScope: 'Bilgi için gösteriliyor — bu parça gönderilmeyecek.',
+  },
+}

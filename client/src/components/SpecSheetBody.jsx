@@ -43,6 +43,8 @@ export default function SpecSheetBody({
   catalogComponents,
   hideParcaPicker = false,
   lockedParcalar = [],
+  decisionParcalar = null,
+  decisionNotes = null,
   selectedComponents,
   onToggleComponent,
   onSelectAllComponents,
@@ -66,6 +68,21 @@ export default function SpecSheetBody({
   )
   const isParcaLocked = (c) => lockedParcaSet.size > 0
     && lockedParcaSet.has(String(c?.component ?? '').trim().toLocaleUpperCase('tr'))
+  /* Parçalar the pending decision actually covers (SpecFormDialog →
+     decisionParcalar). Marked per block only while the sheet is showing
+     something the decision does NOT cover — i.e. after the reader widened a
+     one-parça Onaylayın/Reddedin to read the round. Narrowed, every block on
+     screen is the decision and the strips would be noise; on a bulk decision
+     the scope is the whole sheet and there is nothing to distinguish. Same
+     name-keying and Turkish fold as the lock above, for the same reason. */
+  const decisionParcaSet = new Set(
+    (decisionParcalar ?? [])
+      .filter(Boolean)
+      .map((n) => String(n).trim().toLocaleUpperCase('tr')),
+  )
+  const isParcaDecided = (c) => decisionParcaSet.has(String(c?.component ?? '').trim().toLocaleUpperCase('tr'))
+  const marksDecision = !!decisionNotes && decisionParcaSet.size > 0
+    && selectedComponents.some((c) => !isParcaDecided(c))
   // Parça blocks replace the single İŞİN ADI + custom-rows body: with them on
   // the sheet there is no one job name for the künye to carry, since each
   // block names its own (and prints as that sheet's İŞİN ADI — see
@@ -331,10 +348,14 @@ export default function SpecSheetBody({
         <div className={`grid grid-cols-1 gap-3 border-b bg-muted/20 p-3 print:block print:gap-0 print:border-0 print:bg-transparent print:p-0 ${stacksParca ? '' : 'sm:grid-cols-2'}`}>
           {selectedComponents.map((c, ci) => {
           const parcaLocked = isParcaLocked(c)
+          // Context, not the decision: dimmed so a reader scrolling the round
+          // can tell the two apart before reading a word. Screen only — on
+          // paper this is an ordinary page of the sheet.
+          const parcaOutOfDecision = marksDecision && !isParcaDecided(c)
           return (
           <div
             key={c.id}
-            className="overflow-hidden rounded-lg border bg-white print:rounded-none print:border-0"
+            className={`overflow-hidden rounded-lg border bg-white print:rounded-none print:border-0 ${parcaOutOfDecision ? 'opacity-70 print:opacity-100' : ''}`}
             {...(ci > 0 ? { 'data-print-page': '' } : {})}
           >
             {/* Every parça starts a new page when the browser prints this
@@ -397,6 +418,19 @@ export default function SpecSheetBody({
                 ) : null}
               />
             </FormSheetBlock>
+            {/* What this block IS to the decision waiting in the footer. A
+                full-width strip rather than a pill beside İŞİN ADI: the parça
+                name is the one thing on the card that must never be squeezed,
+                and at 390px a badge next to it would do exactly that. Mirrors
+                the locked-parça strip below in shape and position. */}
+            {marksDecision && (
+              <p className={parcaOutOfDecision
+                ? 'bg-muted px-3 py-1.5 text-[11px] font-medium leading-snug text-muted-foreground print:hidden'
+                : 'bg-primary/10 px-3 py-1.5 text-[11px] font-semibold leading-snug text-primary print:hidden'}
+              >
+                {parcaOutOfDecision ? decisionNotes.outScope : decisionNotes.inScope}
+              </p>
+            )}
             {parcaLocked && (
               <p className="bg-amber-50 px-3 py-1.5 text-[11px] font-medium leading-snug text-amber-800 print:hidden">
                 Matbaa bu parçanın baskısına başladı — düzenlemek için değişiklik

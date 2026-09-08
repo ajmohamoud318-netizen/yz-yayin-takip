@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils'
  * round or an Ekran Ozalit straight to the leader. The footer renders both
  * buttons; the intro just makes the alternative visible at a glance.
  */
-export function SpecFormIntro({ authoringOrderOzalit, projectResubmitOzalit, order, rejectContext }) {
+export function SpecFormIntro({ authoringOrderOzalit, projectResubmitOzalit, order, rejectContext, decisionContext, decisionParcalar }) {
   return (
     <>
       {/* The designer's ozalit request (migration 054). The checks are
@@ -54,6 +54,28 @@ export function SpecFormIntro({ authoringOrderOzalit, projectResubmitOzalit, ord
           <p className="mt-0.5 text-muted-foreground">
             Formu gözden geçirin, gerekirse düzeltin ve gönderin.
             {' '}Revize sonrası olduğu için, fiziksel ozalit yerine ekip liderinden ekran ozalit onayı da isteyebilirsiniz.
+          </p>
+        </div>
+      )}
+
+      {/* A sheet opened to be DECIDED on (SpecFormDialog → decisionContext).
+          It is read-only, and a locked form with no reason given reads as a
+          bug — the leader tapping Onaylayın on a wrong spec needs to be told
+          where the fix lives instead of hunting for an input that will never
+          take a keystroke. See isDecisionReview in lib/spec-form-variants.js
+          for why the lock exists. */}
+      {decisionContext?.action && (
+        <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+          <p className="font-semibold text-foreground">
+            {decisionContext.action === 'approve' ? 'Onayınız bekleniyor'
+              : decisionContext.action === 'reject' ? 'Matbaaya geri gönderilecek'
+                : 'Tasarımcı incelemesi'}
+            {decisionParcalar ? ` · ${decisionParcalar}` : ''}
+          </p>
+          <p className="mt-0.5 text-muted-foreground">
+            {decisionContext.action === 'approve'
+              ? 'Bu form onaya gönderilmiş haliyle gösteriliyor — imzaladığınız belge bu, düzenlenemez. Bir yanlışlık varsa "Reddedin" ile matbaaya geri gönderin.'
+              : 'Bu form matbaanın çalıştığı haliyle gösteriliyor — düzenlenemez. Düzeltmeyi siz göndermek isterseniz, formu kapatıp "Gönderilen Demoyu/Ozaliti Düzenleyin" ile matbaaya bildirin.'}
           </p>
         </div>
       )}

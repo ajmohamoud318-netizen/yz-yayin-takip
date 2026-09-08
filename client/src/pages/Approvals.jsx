@@ -749,6 +749,9 @@ export default function Approvals({ tab = 'demo' }) {
         // one the footer button names. A bulk "Tüm parçaları onaylayın" scopes
         // to all of them, which is the whole sheet anyway.
         parcaScope={demoForm?.parcaAction?.parcalar ?? null}
+        // A sheet opened to DECIDE on is read-only: it is the record being
+        // signed, not a draft. See isDecisionReview in lib/spec-form-variants.js.
+        decisionContext={demoForm?.parcaAction ?? null}
         startWorkLabel={parcaSheetLabel(demoForm)}
         startingWork={startingWork || parcaBusyId === demoForm?.project?.id}
         onDone={onDone}
@@ -766,6 +769,9 @@ export default function Approvals({ tab = 'demo' }) {
               : undefined
         }
         parcaScope={ozalitForm?.parcaAction?.parcalar ?? null}
+        // A sheet opened to DECIDE on is read-only: it is the record being
+        // signed, not a draft. See isDecisionReview in lib/spec-form-variants.js.
+        decisionContext={ozalitForm?.parcaAction ?? null}
         startWorkLabel={parcaSheetLabel(ozalitForm)}
         startingWork={startingWork || parcaBusyId === ozalitForm?.project?.id}
         onDone={onDone}

@@ -296,3 +296,39 @@ export function isDemoAlreadyApproved(project) {
 export function isRejectToMatbaaReview(rejectContext) {
   return !!rejectContext
 }
+
+/**
+ * A sheet opened to DECIDE on it, not to author it.
+ *
+ * The app-wide rule: **a spec sheet that has been sent for approval is a
+ * record, not a draft.** Every per-parça button opens the sheet before it
+ * commits — the leader's "KUTU · Onaylayın" and "KUTU · Reddedin", the
+ * designer's "KUTU · Gönderin" — and what arrives on screen there is the sheet
+ * the matbaa produced against. It is the thing being signed, so it opens
+ * locked:
+ *
+ *   • an edit made while approving rewrites the record of what was actually
+ *     printed, and does it silently — the approve advances the round past
+ *     every path that tells the matbaa a sheet changed;
+ *   • an edit made while rejecting ships the matbaa a different file than the
+ *     one they worked from, under a reason written about the old one.
+ *
+ * Same rule `VARIANTS.ozalit` already states for `mode='approve'` and
+ * `isRejectToMatbaaReview` states for the reject-to-matbaa handoff. The
+ * per-parça decisions can't be expressed either way: they open at
+ * `mode='view'` (they reuse the footer slot the matbaa's "İşlemi Başlatın"
+ * uses), so no role/mode table can see them. The caller says so instead, by
+ * passing the decision the sheet was opened for.
+ *
+ * A sheet that comes back wrong is a Reddedin → matbaa, or a "Gönderilen
+ * Demoyu/Ozaliti Düzenleyin" that notifies them — never an in-place fix under
+ * the approve button.
+ *
+ * Pure helper — testable without mounting the dialog.
+ *
+ * @param {null | undefined | { action: 'approve' | 'reject' | 'review' }} decisionContext
+ * @returns {boolean}
+ */
+export function isDecisionReview(decisionContext) {
+  return !!decisionContext?.action
+}

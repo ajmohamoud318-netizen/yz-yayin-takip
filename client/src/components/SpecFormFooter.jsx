@@ -30,6 +30,13 @@ export default function SpecFormFooter({
   // exemption. A plain "Taslağı Kaydedin" stays open: parking a draft is how
   // a leader comes back to the pick.
   noParcaSelected,
+  // The sheet was opened to be signed / rejected / sent back, not authored
+  // (SpecFormDialog → decisionReview). The form is locked for it, so the
+  // draft-save has to go with it: VARIANTS.demo sets saveRequiresEditable
+  // false, which otherwise leaves a "Taslağı Kaydedin" under a document
+  // nobody may type into — a button promising to save edits that cannot be
+  // made. The decision buttons themselves are unaffected.
+  decisionReview = false,
   onClose,
   onPrint,
   onSave,
@@ -63,7 +70,7 @@ export default function SpecFormFooter({
           Yazdırın
         </Button>
       )}
-      {mode === 'view' && user?.role !== 'printer' && (!variant.saveRequiresEditable || !readOnly) && (
+      {mode === 'view' && user?.role !== 'printer' && !decisionReview && (!variant.saveRequiresEditable || !readOnly) && (
         <Button
           disabled={
             busy

@@ -546,6 +546,11 @@ export default function ProjectDetail() {
         // released parça is waiting for. See SpecFormDialog's `showAllParca`;
         // the other view is one tap away in the banner either way.
         parcaScopeOnly={opensNarrowed(parcaSheet ? parcaSheet.parcalar : editParcaScope)}
+        // A sheet opened to DECIDE on is read-only: it is the record being
+        // signed, not a draft. See isDecisionReview in
+        // lib/spec-form-variants.js. `editParcaScope` is deliberately absent
+        // — that path IS the sanctioned correction, and it notifies the matbaa.
+        decisionContext={parcaSheet}
         // Which parça blocks the sheet must render read-only on the leader's
         // edit-and-notify path (migration 077).
         parcaRows={parcaRows}
@@ -591,6 +596,11 @@ export default function ProjectDetail() {
         // released parça is waiting for. See SpecFormDialog's `showAllParca`;
         // the other view is one tap away in the banner either way.
         parcaScopeOnly={opensNarrowed(parcaSheet ? parcaSheet.parcalar : editParcaScope)}
+        // A sheet opened to DECIDE on is read-only: it is the record being
+        // signed, not a draft. See isDecisionReview in
+        // lib/spec-form-variants.js. `editParcaScope` is deliberately absent
+        // — that path IS the sanctioned correction, and it notifies the matbaa.
+        decisionContext={parcaSheet}
         // Which parça blocks the sheet must render read-only on the leader's
         // edit-and-notify path (migration 077).
         parcaRows={parcaRows}

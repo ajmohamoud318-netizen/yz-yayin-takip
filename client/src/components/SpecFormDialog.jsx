@@ -23,8 +23,8 @@ import { saveEditedComponents } from '@/data/productCatalog'
 import { ozalitLeaderApproved, needsOzalitRouteChoice, lockedParcaNames } from '@/domain'
 import { buildChangeSummary } from '@/lib/spec-form-diff'
 import { openMultiPrint } from '@/lib/spec-form-print'
-import { hiddenParcaNames, scopeComponents } from '@/lib/spec-form-scope'
-import { VARIANTS, computeBaskiOnayLocked, canEditPreparedBaskiOnay, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
+import { decisionScopeCopy, hiddenParcaNames, scopeComponents } from '@/lib/spec-form-scope'
+import { VARIANTS, computeBaskiOnayLocked, canEditPreparedBaskiOnay, isDecisionReview, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
 import {
   fetchServerSnapshot,
   loadSaved,
@@ -59,7 +59,7 @@ import {
  * specVariantForStage, stampSpecSignature — are re-exported below, so every
  * existing `from '@/components/SpecFormDialog'` keeps working unchanged.
  */
-export { VARIANTS, specVariantForStage, computeBaskiOnayLocked, canEditPreparedBaskiOnay, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
+export { VARIANTS, specVariantForStage, computeBaskiOnayLocked, canEditPreparedBaskiOnay, isDecisionReview, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
 export { stampSpecSignature } from '@/lib/spec-form-storage'
 
 /* ------------------------------------------------------------------ */
@@ -109,6 +109,15 @@ export { stampSpecSignature } from '@/lib/spec-form-storage'
  *   it covers. Display only — see lib/spec-form-scope.js — and it hides the
  *   parça picker while it applies, since that control governs the whole
  *   selection. Null means the whole sheet.
+ * decisionContext — { action: 'approve' | 'reject' | 'review', … } — the
+ *   decision this sheet was opened to make, passed by every per-parça button
+ *   (ProjectDetail / Approvals → openParcaSheet). It forces the form
+ *   read-only, because a sheet sent for approval is a record being signed and
+ *   not a draft: an edit under Onaylayın rewrites what was actually printed,
+ *   and an edit under Reddedin sends the matbaa a different file than the one
+ *   the rejection reason was written about. See isDecisionReview in
+ *   lib/spec-form-variants.js for the full rule; corrections go through
+ *   "Gönderilen Demoyu/Ozaliti Düzenleyin", which tells the matbaa.
  * rejectContext — { reason, target } — used with mode='advance' when a
  *   team-leader reject-to-matbaa (ApprovalDialog) hands off here instead of
  *   submitting blind: THIS dialog's submit is what actually calls
@@ -120,7 +129,7 @@ export { stampSpecSignature } from '@/lib/spec-form-storage'
  *   ship a different file). The saved sheet still loads as-is (like a
  *   read-only viewer would) instead of the normal "fresh compose" reset.
  */
-export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, order = null, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, startWorkLabel = null, parcaScope = null, parcaScopeOnly = false, parcaRows = [], rejectContext = null }) {
+export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, order = null, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, startWorkLabel = null, parcaScope = null, parcaScopeOnly = false, parcaRows = [], decisionContext = null, rejectContext = null }) {
   const variant = VARIANTS[variantName]
   const { user } = useAuth()
   const { updateOne } = useProjectsStore()
@@ -295,6 +304,11 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // approval project isn't a normal flow but is locked too for safety.
   const demoAlreadyApproved =
     variant.kind === 'demo' && isDemoAlreadyApproved(project)
+  // The sheet was opened to be signed, rejected or sent back — never to be
+  // typed into. lib/spec-form-variants.js carries the rule; the flag is
+  // computed here so the footer can drop its "Taslağı Kaydedin" alongside the
+  // lock (a save button on a form nobody may edit is a button that lies).
+  const decisionReview = isDecisionReview(decisionContext)
   const readOnly =
     (variant.isReadOnly({ mode, user }) && !authoringOrderOzalit)
     || baskiOnayLocked
@@ -307,6 +321,12 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     // started working from (handleAdvance writes the loaded payload back
     // to the snapshot on submit). Lock it.
     || isRejectToMatbaaReview(rejectContext)
+    // Same rule, one step wider: any sheet opened to DECIDE on it — the
+    // per-parça Onaylayın / Reddedin / Gönderin — is the record being
+    // signed, not a draft. These open at mode='view', so no variant rule
+    // can see them; the caller passes the decision instead. See
+    // isDecisionReview.
+    || decisionReview
   const printable = variant.canPrint({ user, project, readOnly })
   // The plain "Demo Formu" button (mode='view', no notify) always opens a
   // round that has ALREADY been sent: at demo_onay it's the sheet sitting with
@@ -441,6 +461,15 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const sheetComponents = parcaNarrowed && !showAllParca ? scopedComponents : selectedComponents
   const hiddenParca = parcaNarrowed ? hiddenParcaNames(selectedComponents, scopedComponents) : []
   const scopedParcaNames = scopedComponents.map((c) => c.component).join(', ')
+  /* What a widened DECISION sheet has to keep saying. Reading the whole round
+     before signing one parça is legitimate — that is what the banner's toggle
+     is for — but the moment it is taken, the document shows blocks the footer
+     button does not cover. The action never widens with the view
+     (commitParcaSheet posts the parçalar the row's button was clicked for), so
+     the fix is not to take the toggle away; it is to leave nothing for the
+     reader to remember. See decisionScopeCopy. */
+  const decisionCopy = decisionScopeCopy(decisionContext)
+  const decisionParcaNames = decisionCopy ? scopedComponents.map((c) => c.component) : null
 
   // Empty for every variant but baski_onay — see missingRequiredFields. Each
   // write path below refuses while it is non-empty, and the footer disables
@@ -1021,6 +1050,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           authoringOrderOzalit={authoringOrderOzalit}
           order={order}
           rejectContext={rejectContext}
+          decisionContext={decisionContext}
+          decisionParcalar={scopedParcaNames}
           projectResubmitOzalit={offersProjectOzalitRoute}
         />
 
@@ -1034,7 +1065,13 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs print:hidden">
             <p className="min-w-0 text-muted-foreground">
               {showAllParca
-                ? <>Bu turun <strong className="font-semibold text-foreground">tüm parçaları</strong> gösteriliyor.</>
+                ? (decisionCopy
+                  // A decision is pending, and the sheet is wider than it.
+                  // Say which parça the button below covers, here, rather than
+                  // leaving the footer label — several screens down on a phone
+                  // — as the only place it is written.
+                  ? <>Tüm parçalar gösteriliyor — ancak yalnızca <strong className="font-semibold text-foreground">{scopedParcaNames}</strong> {decisionCopy.verb}.</>
+                  : <>Bu turun <strong className="font-semibold text-foreground">tüm parçaları</strong> gösteriliyor.</>)
                 : <>Yalnızca <strong className="font-semibold text-foreground">{scopedParcaNames}</strong> gösteriliyor. Diğer parçalar: {hiddenParca.join(', ')}.</>}
             </p>
             <button
@@ -1064,6 +1101,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           catalogComponents={catalogComponents}
           hideParcaPicker={parcaNarrowed && !showAllParca}
           lockedParcalar={lockedParcalar}
+          decisionParcalar={decisionParcaNames}
+          decisionNotes={decisionCopy}
           selectedComponents={sheetComponents}
           onToggleComponent={toggleComponent}
           onSelectAllComponents={selectAllComponents}
@@ -1118,6 +1157,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           onStartWork={onStartWork}
           startingWork={startingWork}
           startWorkLabel={startWorkLabel}
+          decisionReview={decisionReview}
           authoringOrderOzalit={authoringOrderOzalit}
           offersOzalitRoute={offersProjectOzalitRoute}
           rejectContext={rejectContext}
