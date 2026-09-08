@@ -5,6 +5,7 @@ import {
   FileText,
   PackageX,
   Pencil,
+  Printer,
   Send,
   ThumbsDown,
   ThumbsUp,
@@ -19,6 +20,7 @@ import {
   canRequestDemoChange, canRequestOzalitChange,
   canRespondDemoChange, canRespondOzalitChange,
   canRequestEkranDemo, canRespondEkranDemo,
+  lockedParcaNames,
 } from '@/domain'
 
 /**
@@ -42,10 +44,15 @@ export default function HeaderActionRow({ d }) {
     setOzalitFormMode, setOzalitFormAttempt, setOzalitFormNotify, setOzalitFormOpen,
     setBaskiOnayFormMode, setBaskiOnayFormOpen,
     setChangeRequestOpen, setEkranDemoRejectOpen,
-    handleAdvanceAction,
+    handleAdvanceAction, printerSplitRound, parcaRows,
   } = d
 
   if (isDeleted) return null
+
+  // Parçalar of this round the matbaa is producing right now (migration 077).
+  // They are why the whole-sheet edit button above may be missing — see
+  // canEditSentDemoRequest. Empty everywhere but a split *_teslim round.
+  const sheetLockedParcalar = lockedParcaNames(parcaRows)
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -100,8 +107,14 @@ export default function HeaderActionRow({ d }) {
           bare confirm dialog. Whenever the matbaa is about to do work they
           see the form first: once here, before they commit to producing
           it, and again on Teslim Edin, which is what they hand over. Same
-          gate on MatbaaIsleri.jsx and Approvals.jsx. */}
-      {canMarkDemoStarted(user, project) && (
+          gate on MatbaaIsleri.jsx and Approvals.jsx.
+
+          Hidden outright once the round is split into parçalar: this button
+          stamps the WHOLE sheet as started, which then unlocks a whole-sheet
+          Teslim Edin that advances past parçalar nobody produced. The
+          ParcaJobBoard below the header is the surface for those — one button
+          per parça, each scoped to what it actually stamps. */}
+      {canMarkDemoStarted(user, project) && !printerSplitRound && (
         <Button
           size="sm"
           disabled={startingWork}
@@ -114,7 +127,7 @@ export default function HeaderActionRow({ d }) {
           {startingWork ? 'İşleniyor…' : 'İşlemi Başlatın'}
         </Button>
       )}
-      {canMarkOzalitStarted(user, project) && (
+      {canMarkOzalitStarted(user, project) && !printerSplitRound && (
         <Button
           size="sm"
           disabled={startingWork}
@@ -143,7 +156,7 @@ export default function HeaderActionRow({ d }) {
         </span>
       )}
       {/* Undo a mistaken request outright */}
-      {canEditSentDemoRequest(user, project) && (
+      {canEditSentDemoRequest(user, project, parcaRows) && (
         <Button
           size="sm" variant="outline"
           onClick={() => { setDemoFormMode('view'); setDemoFormAttempt(null); setDemoFormNotify(true); setDemoFormOpen(true) }}
@@ -152,7 +165,17 @@ export default function HeaderActionRow({ d }) {
           Gönderilen Demoyu Düzenleyin
         </Button>
       )}
-      {canCancelDemoRequest(user, project) && (
+      {/* The sheet edit is off because the matbaa is producing part of this
+          round. Without this line the button just disappears, which reads as a
+          bug — and the way forward (ask for that parça) is a panel further down
+          the page, not another button here. */}
+      {isLeader && sheetLockedParcalar.length > 0 && (
+        <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700">
+          <Printer className="h-4 w-4" />
+          Matbaa {sheetLockedParcalar.join(', ')} baskısına başladı — aşağıdan değişiklik isteyin
+        </span>
+      )}
+      {canCancelDemoRequest(user, project, parcaRows) && (
         <Button
           size="sm" variant="destructive"
           onClick={() => setTeslimConfirm('demo-cancel')}
@@ -162,7 +185,7 @@ export default function HeaderActionRow({ d }) {
           {cancellingRequest ? 'İşleniyor…' : 'Demo İsteğini İptal Edin'}
         </Button>
       )}
-      {canEditSentOzalitRequest(user, project) && (
+      {canEditSentOzalitRequest(user, project, parcaRows) && (
         <Button
           size="sm" variant="outline"
           onClick={() => { setOzalitFormMode('view'); setOzalitFormAttempt(null); setOzalitFormNotify(true); setOzalitFormOpen(true) }}
@@ -171,7 +194,7 @@ export default function HeaderActionRow({ d }) {
           Gönderilen Ozaliti Düzenleyin
         </Button>
       )}
-      {canCancelOzalitRequest(user, project) && (
+      {canCancelOzalitRequest(user, project, parcaRows) && (
         <Button
           size="sm" variant="destructive"
           onClick={() => setTeslimConfirm('ozalit-cancel')}

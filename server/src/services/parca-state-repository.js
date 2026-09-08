@@ -27,6 +27,8 @@ const COLUMNS = `
   project_id, parca, gate, state, owner_role, route, attempt,
   started_at, delivered_at, received_at, received_by, received_by_name, reason,
   rejected_by, rejected_by_name, rejected_at,
+  change_requested_at, change_requested_by, change_requested_by_name,
+  change_requested_note, fix_pending,
   created_at, updated_at
 `
 
@@ -48,6 +50,11 @@ function rowToParcaState(r) {
     rejected_by: r.rejected_by ?? null,
     rejected_by_name: r.rejected_by_name ?? null,
     rejected_at: r.rejected_at ?? null,
+    change_requested_at: r.change_requested_at ?? null,
+    change_requested_by: r.change_requested_by ?? null,
+    change_requested_by_name: r.change_requested_by_name ?? null,
+    change_requested_note: r.change_requested_note ?? null,
+    fix_pending: r.fix_pending ?? false,
     created_at: r.created_at,
     updated_at: r.updated_at,
   }
@@ -85,6 +92,8 @@ export async function listParcaStateByOwner(client, ownerRole, states = null) {
             ps.attempt, ps.started_at, ps.delivered_at,
             ps.received_at, ps.received_by, ps.received_by_name, ps.reason,
             ps.rejected_by, ps.rejected_by_name, ps.rejected_at,
+            ps.change_requested_at, ps.change_requested_by,
+            ps.change_requested_by_name, ps.change_requested_note, ps.fix_pending,
             ps.created_at, ps.updated_at,
             p.title AS project_title, p.stage AS project_stage, p.type AS project_type
        FROM parca_state ps
@@ -128,7 +137,9 @@ export async function upsertParcaState(client, projectId, parca, patch = {}) {
     `INSERT INTO parca_state
        (project_id, parca, gate, state, owner_role, route, attempt,
         started_at, delivered_at, received_at, received_by, received_by_name,
-        reason, rejected_by, rejected_by_name, rejected_at)
+        reason, rejected_by, rejected_by_name, rejected_at,
+        change_requested_at, change_requested_by, change_requested_by_name,
+        change_requested_note, fix_pending)
      VALUES ($1,$2,
        -- Most patches are state-only (approve, deliver, start) and carry no
        -- gate — they update a row that already has one. Fall back to the
@@ -145,7 +156,13 @@ export async function upsertParcaState(client, projectId, parca, patch = {}) {
        $5,$6,
        COALESCE($7, (SELECT ps4.attempt FROM parca_state ps4
                       WHERE ps4.project_id = $1 AND ps4.parca = $2), 1),
-       $8,$9,$10,$11,$12,$13,$14,$15,$16)
+       $8,$9,$10,$11,$12,$13,$14,$15,$16,
+       $17,$18,$19,$20,
+       -- NOT NULL, so it needs the same stored-row fallback state and
+       -- attempt use: a patch that omits the flag must leave the row's own
+       -- value alone, and only a first insert may reach the literal.
+       COALESCE($21, (SELECT ps5.fix_pending FROM parca_state ps5
+                       WHERE ps5.project_id = $1 AND ps5.parca = $2), FALSE))
      ON CONFLICT (project_id, parca) DO UPDATE SET
        gate             = COALESCE(EXCLUDED.gate,             parca_state.gate),
        state            = COALESCE(EXCLUDED.state,            parca_state.state),
@@ -170,6 +187,21 @@ export async function upsertParcaState(client, projectId, parca, patch = {}) {
        rejected_by      = COALESCE(EXCLUDED.rejected_by,      parca_state.rejected_by),
        rejected_by_name = COALESCE(EXCLUDED.rejected_by_name, parca_state.rejected_by_name),
        rejected_at      = COALESCE(EXCLUDED.rejected_at,      parca_state.rejected_at),
+       -- The change-request handshake (migration 077) belongs to ONE round, so
+       -- it takes EXCLUDED verbatim alongside the delivery stamps: accept and
+       -- decline both clear it by passing nulls, and any other leg that moves
+       -- the parça — a delivery, a reject, a new round — answers the question
+       -- by omission, which is what should happen to a request nobody replied
+       -- to before the parça left.
+       change_requested_at      = EXCLUDED.change_requested_at,
+       change_requested_by      = EXCLUDED.change_requested_by,
+       change_requested_by_name = EXCLUDED.change_requested_by_name,
+       change_requested_note    = EXCLUDED.change_requested_note,
+       -- The correction debt is NOT of that kind: it outlives the accept that
+       -- created it and is settled only by the leader's edit landing (or by a
+       -- leg that explicitly ends the round). So it COALESCEs, and the patches
+       -- that mean to clear it say fix_pending false out loud.
+       fix_pending      = COALESCE(EXCLUDED.fix_pending,      parca_state.fix_pending),
        updated_at       = NOW()
      RETURNING ${COLUMNS}`,
     [
@@ -188,6 +220,11 @@ export async function upsertParcaState(client, projectId, parca, patch = {}) {
       patch.rejected_by ?? null,
       patch.rejected_by_name ?? null,
       patch.rejected_at ?? null,
+      patch.change_requested_at ?? null,
+      patch.change_requested_by ?? null,
+      patch.change_requested_by_name ?? null,
+      patch.change_requested_note ?? null,
+      patch.fix_pending ?? null,
     ],
   )
   return rowToParcaState(rows[0])
@@ -243,6 +280,8 @@ export async function listGateParcalarAwaitingLeader(client) {
             ps.attempt, ps.started_at, ps.delivered_at,
             ps.received_at, ps.received_by, ps.received_by_name, ps.reason,
             ps.rejected_by, ps.rejected_by_name, ps.rejected_at,
+            ps.change_requested_at, ps.change_requested_by,
+            ps.change_requested_by_name, ps.change_requested_note, ps.fix_pending,
             ps.created_at, ps.updated_at,
             p.title AS project_title, p.stage AS project_stage, p.type AS project_type,
             p.demo_parca_approvals, p.ozalit_parca_approvals

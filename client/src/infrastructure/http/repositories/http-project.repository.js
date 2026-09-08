@@ -434,6 +434,40 @@ export function createHttpProjectRepository(userRepo) {
       return data
     },
 
+    /**
+     * The per-parça change-request handshake (migration 077).
+     *
+     * The project-level `/demo-change-request` reads `projects.demo_started`,
+     * which a split round never sets — so on exactly the rounds where one parça
+     * is on the press and the rest are not, that endpoint is unreachable. These
+     * three carry the same ask/accept/decline against one parça's own
+     * `started_at`.
+     *
+     * All three return the parça row, not the project: nothing here touches a
+     * project column, so the project cache is left alone on purpose.
+     */
+    async requestParcaChange(id, parca, note) {
+      const { data } = await httpClient.post(
+        `/projects/${id}/parca/${encodeURIComponent(parca)}/change-request`,
+        note ? { note } : {},
+      )
+      return data
+    },
+
+    async acceptParcaChange(id, parca) {
+      const { data } = await httpClient.post(
+        `/projects/${id}/parca/${encodeURIComponent(parca)}/change-accept`, {},
+      )
+      return data
+    },
+
+    async declineParcaChange(id, parca) {
+      const { data } = await httpClient.post(
+        `/projects/${id}/parca/${encodeURIComponent(parca)}/change-decline`, {},
+      )
+      return data
+    },
+
     // Ekran Demo Onayı — lightweight digital alternative to a physical
     // re-demo for a held demo at 100% progress (migration 050).
     async requestEkranDemoOnay(id) {

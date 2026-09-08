@@ -25,7 +25,10 @@ import { randomUUID } from 'node:crypto'
 import { STAGE_PIPELINE, STAGES_REQUIRING_FULL_PROGRESS } from './stages.js'
 import { subtaskProgress } from './progress.js'
 import { HttpError } from './errors.js'
-import { parcaRejectPatch, parcaGateForStage, parcaDecidable } from './parca-routing.js'
+import {
+  parcaRejectPatch, parcaGateForStage, parcaDecidable,
+  parcaEditLocked, parcaFixSettledPatch,
+} from './parca-routing.js'
 
 /** Match the client's badRequest semantics — throw a 400. */
 function badRequest(message) {
@@ -631,6 +634,63 @@ export function computeAdvance(project, actor, { route = null } = {}) {
   }
 }
 
+/**
+ * The parçalar of this round the matbaa has not handed back yet.
+ *
+ * The whole-sheet "Teslim Edin" below moves the project to its onay stage in
+ * one step. On a split round that is a lie: `deliverParca` exists precisely
+ * because the matbaa hands a multi-parça round back one parça at a time, and it
+ * gates the project's own move on `allParcalarDelivered`
+ * (services/parca-service.js) so the stage follows the LAST delivery. This path
+ * had no such gate, so it carried the round past parçalar nobody produced —
+ * their `parca_state` rows stranded at `with_matbaa`, the leader never asked to
+ * receive them, and the printer's remaining queue entries pointing at a project
+ * that had already moved on.
+ *
+ * `round_parcalar` is the round's own sheet, stamped on by the service's
+ * advance prepare hook. It has to come from there: a first round is split by
+ * its snapshot and materialises no `parca_state` rows until somebody acts, so
+ * the rows alone cannot tell a two-parça round from a one-parça one.
+ *
+ * Kept as the exact inverse of `allParcalarDelivered` — the two answer the same
+ * question from opposite sides of the same delivery, and a round that satisfies
+ * one must satisfy the other or the last parça's delivery would refuse its own
+ * advance.
+ *
+ * @param {{ round_parcalar?: string[], parca_state?: Array<{parca: string, state: string}> }} project
+ * @returns {string[]} parça names still owed, empty when the sheet may go whole
+ */
+function parcalarStillOwed(project) {
+  const parcalar = Array.isArray(project?.round_parcalar) ? project.round_parcalar : []
+  // A single-parça (or snapshot-less) round never enters the per-parça queue —
+  // `deriveTeslimParcalar` skips it — so the whole sheet IS the parça, and the
+  // whole-sheet delivery is the only path it has. Every project from before
+  // migration 074 lands here too.
+  if (parcalar.length < 2) return []
+  const byParca = new Map(
+    (Array.isArray(project?.parca_state) ? project.parca_state : [])
+      .map((r) => [r.parca, r.state]),
+  )
+  return parcalar.filter((p) => {
+    const state = byParca.get(p)
+    // No row at all means the matbaa has never touched it: rows are
+    // materialised on first action, so absence is "still owed", not "done".
+    return state == null || state === 'with_matbaa' || state === 'in_round'
+  })
+}
+
+/** The refusal both teslim legs share, naming what is actually missing. */
+function assertRoundFullyDelivered(project) {
+  const owed = parcalarStillOwed(project)
+  if (owed.length > 0) {
+    badRequest(
+      `Bu turun teslim edilmemiş parçaları var: ${owed.join(', ')}. `
+      + 'Her parçayı kendi "Teslim Edin" adımından gönderin; son parça teslim '
+      + 'edildiğinde proje kendiliğinden ilerler.',
+    )
+  }
+}
+
 function computeDemoTeslimAdvance(project, actor, now, approvalStage) {
   if (actor?.role !== 'printer') {
     badRequest('Demo teslimini yalnızca matbaa yapabilir.')
@@ -641,6 +701,7 @@ function computeDemoTeslimAdvance(project, actor, now, approvalStage) {
   if (project.demo_change_requested_at != null) {
     badRequest('Bekleyen bir değişiklik talebi var, önce kabul veya reddedin.')
   }
+  assertRoundFullyDelivered(project)
   assertCanEnterProductionLocal(approvalStage, project.progress)
   return {
     project: {
@@ -714,6 +775,9 @@ function computeOzalitTeslimAdvance(project, actor, now) {
   if (project.ozalit_change_requested_at != null) {
     badRequest('Bekleyen bir değişiklik talebi var, önce kabul veya reddedin.')
   }
+  // Same split-round guard as the demo leg, and for the same reason: an ozalit
+  // round splits into parçalar exactly like a demo one does.
+  assertRoundFullyDelivered(project)
   assertCanEnterProductionLocal('ozalit_onay', project.progress)
   return {
     project: {
@@ -785,6 +849,46 @@ const EARLY_PARCA_GATES = {
 /** The routing rows the service hydrated onto the project (migration 074). */
 function parcaStateRows(project) {
   return Array.isArray(project?.parca_state) ? project.parca_state : []
+}
+
+/**
+ * The parçalar of this round the matbaa is producing right now (migration 077).
+ *
+ * The whole-sheet edit below is a silent rewrite: the printer gets a "form
+ * changed" ping and nothing else. That is fine for a sheet nobody has started,
+ * and wrong for one they have — which is why the project-level guard refuses
+ * once `demo_started` is set.
+ *
+ * On a split round that flag never gets set. `startParca` leaves it alone on
+ * purpose (setting it because ONE parça started would hide "İşlemi Başlatın"
+ * on every parça the matbaa still owes), so the project-level guard reads
+ * false forever and the leader could rewrite the spec of a parça already on
+ * the press. These rows are where the truth moved: a parça with `started_at`
+ * and no accepted change request is locked, and the leader's route to it is
+ * the per-parça handshake (`requestParcaChange`), not this edit.
+ *
+ * A parça with no row is not locked — rows are materialised on first action,
+ * so "no row" means the matbaa has not touched it.
+ */
+function lockedParcalar(project) {
+  return parcaStateRows(project).filter(parcaEditLocked).map((r) => r.parca).filter(Boolean)
+}
+
+/**
+ * The `parca_state` writes an accepted correction settles.
+ *
+ * Accepting a change request un-starts the parça and leaves `fix_pending` on
+ * it, which blocks the matbaa from re-starting until the leader's correction
+ * lands. This IS that landing, so the debt clears here — the per-parça twin of
+ * the `demo_fix_pending: false` every edit already writes on the project.
+ *
+ * Only rows that owe something are returned: an empty array means the third
+ * write path has nothing to do, and the orchestrator skips it.
+ */
+function settleParcaFixes(project) {
+  return parcaStateRows(project)
+    .filter((r) => r?.fix_pending)
+    .map((r) => ({ parca: r.parca, patch: parcaFixSettledPatch(r) }))
 }
 
 /**
@@ -1817,6 +1921,15 @@ export function computeDemoCancel(project, actor, ctx = {}) {
   if (project.demo_started) {
     badRequest('Matbaa demo çalışmasına başladı, doğrudan iptal edilemez, değişiklik isteyin.')
   }
+  // The per-parça twin (migration 077), and the more important half of it:
+  // cancel sends the whole project back to tasarim, so on a split round — where
+  // `demo_started` is structurally false — it withdrew a sheet the matbaa was
+  // physically producing. See lockedParcalar; the leader's route to a started
+  // parça is the change request, for cancel exactly as for edit.
+  const demoCancelLocked = lockedParcalar(project)
+  if (demoCancelLocked.length > 0) {
+    badRequest(`Matbaa şu parçalara başladı: ${demoCancelLocked.join(', ')}. İptal için önce değişiklik isteyin.`)
+  }
   return {
     project: {
       ...project,
@@ -1875,6 +1988,11 @@ export function computeOzalitCancel(project, actor, ctx = {}) {
   }
   if (project.ozalit_started) {
     badRequest('Matbaa ozalit çalışmasına başladı, doğrudan iptal edilemez, değişiklik isteyin.')
+  }
+  // Per-parça twin — see computeDemoCancel's comment.
+  const ozalitCancelLocked = lockedParcalar(project)
+  if (ozalitCancelLocked.length > 0) {
+    badRequest(`Matbaa şu parçalara başladı: ${ozalitCancelLocked.join(', ')}. İptal için önce değişiklik isteyin.`)
   }
   return {
     project: {
@@ -1942,6 +2060,14 @@ export function computeDemoEdit(project, actor, ctx = {}) {
   if (project.demo_started) {
     badRequest('Matbaa demo çalışmasına başladı, değişiklik isteyin.')
   }
+  // The same refusal, read off the parçalar instead of the project (migration
+  // 077). See lockedParcalar: on a split round `demo_started` is structurally
+  // false, so this is the only guard standing between the leader and a silent
+  // rewrite of a parça that is already on the press.
+  const demoLocked = lockedParcalar(project)
+  if (demoLocked.length > 0) {
+    badRequest(`Matbaa şu parçalara başladı: ${demoLocked.join(', ')}. Bu parçalar için değişiklik isteyin.`)
+  }
   // Reject-to-matbaa created this round automatically — the design is
   // unchanged, the matbaa gets the file exactly as they had it when they
   // pressed "İşlemi Başlatın", and the leader has no business silently
@@ -1957,6 +2083,8 @@ export function computeDemoEdit(project, actor, ctx = {}) {
     // when there was nothing pending (already false), so it's safe to always
     // include.
     project: { ...project, demo_fix_pending: false, updated_at: now },
+    // The per-parça twin of the flag above — see settleParcaFixes.
+    parcaState: settleParcaFixes(project),
     history: makeEntry(project, {
       action: 'system',
       event: 'demo_form_edited',
@@ -1993,6 +2121,11 @@ export function computeOzalitEdit(project, actor, ctx = {}) {
   if (project.ozalit_started) {
     badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
   }
+  // Per-parça twin of the guard above — see computeDemoEdit's comment.
+  const ozalitLocked = lockedParcalar(project)
+  if (ozalitLocked.length > 0) {
+    badRequest(`Matbaa şu parçalara başladı: ${ozalitLocked.join(', ')}. Bu parçalar için değişiklik isteyin.`)
+  }
   // Same auto-reject lock as the demo twin — see computeDemoEdit's comment.
   // canEditSentOzalitRequest gates the client button; this guard closes the
   // stale-client / hand-crafted-API hole.
@@ -2002,6 +2135,8 @@ export function computeOzalitEdit(project, actor, ctx = {}) {
   return {
     // See computeDemoEdit's comment — this submission is the fix.
     project: { ...project, ozalit_fix_pending: false, updated_at: now },
+    // See computeDemoEdit — the per-parça twin of the flag above.
+    parcaState: settleParcaFixes(project),
     history: makeEntry(project, {
       action: 'system',
       event: 'ozalit_form_edited',

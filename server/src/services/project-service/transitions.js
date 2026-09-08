@@ -69,6 +69,28 @@ async function withAssignees({ client, row }) {
 }
 
 /**
+ * Verbs whose FSM guard asks whether the matbaa is mid-production on any parça
+ * of the round (migration 077): the two cancels, alongside the two edits that
+ * get theirs from `withDemoSnapshot`.
+ *
+ * `demo_started` / `ozalit_started` cannot answer that on a split round — the
+ * per-parça `started_at` is where the fact moved — so without these rows the
+ * guard reads an empty list and never fires, which is the bug rather than the
+ * fix. Stamped onto `row` the same way `withSubtasks` does it, so the FSM
+ * reads `project.parca_state`.
+ */
+async function withParcaState({ client, row }) {
+  row.parca_state = await listParcaState(client, row.id)
+  return { parcaState: row.parca_state }
+}
+
+/** `demoCancel`: the parça guard above, plus the assignees the FSM notifies. */
+async function withAssigneesAndParcaState({ client, row }) {
+  const ctx = await withAssignees({ client, row })
+  return { ...ctx, ...(await withParcaState({ client, row })) }
+}
+
+/**
  * `advance` + `reject`: need assignees + subtasks (resubmit gate for
  * advance, revizeIds processing for reject).
  */
@@ -84,6 +106,22 @@ async function withSubtasks({ client, row }) {
   // read `project.parca_state` the same way it reads `project.subtasks`.
   const parcaState = await listParcaState(client, row.id)
   row.parca_state = parcaState
+  // The round's own parça list, at the three stages where the matbaa delivers.
+  //
+  // `advance` needs it for a question `parca_state` cannot answer: is this
+  // round split into parçalar at all? Rows are materialised on first action, so
+  // a fresh multi-parça round has none — and that is exactly the round whose
+  // whole-sheet "Teslim Edin" must be refused (see parcalarStillOwed in
+  // domain/transitions.js). The sheet is the only place the split is recorded.
+  //
+  // The kind is inlined rather than mapped: `ozalit_teslim` reads the ozalit
+  // sheet, the two demo stages read the demo one, and that is the whole rule.
+  if (row.stage === 'demo_teslim' || row.stage === 'cin_demo_teslim' || row.stage === 'ozalit_teslim') {
+    const snapshot = await loadLatestDemoSnapshot(
+      client, row.id, row.stage === 'ozalit_teslim' ? 'ozalit' : 'demo',
+    )
+    row.round_parcalar = snapshot?.selectedComponents ?? []
+  }
   return { ...ctx, subtasks, parcaState }
 }
 
@@ -117,6 +155,17 @@ async function withLeaders({ client }) {
  */
 function withDemoSnapshot(kind, body) {
   return async function demoSnapshotPrepare({ client, row, actor }) {
+    // Per-parça routing rows (migration 077), stamped onto `row` the same way
+    // withSubtasks / withSnapshot do it. The edit FSM needs them for one
+    // question the project row cannot answer: is the matbaa producing any
+    // parça of this sheet right now? On a split round `demo_started` is
+    // structurally false (startParca never sets it), so without these the
+    // guard has nothing to refuse on — see lockedParcalar in domain/transitions.js.
+    //
+    // Loaded before the early return: a notify with no payload is still an
+    // edit the FSM has to authorize, and it is exactly the shape a stale
+    // client sends.
+    row.parca_state = await listParcaState(client, row.id)
     if (!body?.payload) return { demoId: null }
     const snapshot = await insertDemoSnapshot(client, {
       project_id: row.id,
@@ -239,7 +288,7 @@ export function ozalitStart(projectId, actor, client = null) {
 /** POST /api/projects/:id/demo-cancel. */
 export function demoCancel(projectId, actor, client = null) {
   return runProjectCommand(projectId, actor, {
-    prepare: withAssignees,
+    prepare: withAssigneesAndParcaState,
     run: (project) => project.demoCancel(actor),
   }, client)
 }
@@ -247,7 +296,7 @@ export function demoCancel(projectId, actor, client = null) {
 /** POST /api/projects/:id/ozalit-cancel. */
 export function ozalitCancel(projectId, actor, client = null) {
   return runProjectCommand(projectId, actor, {
-    prepare: noContext,
+    prepare: withParcaState,
     run: (project) => project.ozalitCancel(actor),
   }, client)
 }

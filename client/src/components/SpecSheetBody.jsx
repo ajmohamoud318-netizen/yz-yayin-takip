@@ -78,6 +78,9 @@ export default function SpecSheetBody({
   // document waits for the pick and says so, and the dialog's gates say the
   // same thing above the footer (SpecFormDialog → noParcaSelected).
   const awaitingParcaPick = showsPicker && !showsComponentCards
+  // Two parça cards fit beside each other in this dialog; three or more do
+  // not, so they stack instead. See the block that renders them for why.
+  const stacksParca = selectedComponents.length > 2
   // The SAYFA SAYISI row is owned by project düzenleme (the "Toplam iç sayfa"
   // input under the İç Sayfalar subtask). When the project carries a live
   // count, the spec form displays it read-only — the resolver in
@@ -290,25 +293,28 @@ export default function SpecSheetBody({
         </p>
       )}
 
-      {/* Selected parçalar — one page each on paper, side by side on screen.
-          Edits here flow back to Ürün Bilgileri on save. With no catalog, or
-          nothing selected, there are no parça blocks and the added rows above
-          are the sheet's whole spec.
+      {/* Selected parçalar — one page each on paper; on screen a pair sits
+          side by side and anything longer stacks. Edits here flow back to
+          Ürün Bilgileri on save. With no catalog, or nothing selected, there
+          are no parça blocks and the added rows above are the sheet's whole
+          spec.
 
-          They used to stack, and a matbaa opening a three-parça sheet read one
-          long column of rows under identical hairlines with no way to tell
-          whether they were holding one job or three. Beside each other, the
-          count is simply visible. Two columns and no more: this dialog is
-          max-w-2xl, so a third would leave each card near 200px and fold
-          "SETTEKİ KİTAP SAYISI" into four lines. One column below `sm`, since
-          this app is used on phones first.
+          Two columns is the whole allowance: this dialog is max-w-2xl, so a
+          third column leaves each card near 200px and folds "SETTEKİ KİTAP
+          SAYISI" into four lines. That is also why a three-parça round is not
+          simply two-then-one — a card that wraps to a second row reads as an
+          afterthought of the pair above it, when the three are equals. Past
+          two, every card gets the full width and they run down the sheet in
+          order, each one legible, which is how they come off the printer
+          anyway. One column below `sm` regardless, since this app is used on
+          phones first.
 
-          `print:block` puts the stack back for paper, where the cards are not
-          a layout at all — each parça is a separate PAGE, headed and signed on
-          its own (the two blocks inside handle that), and the card chrome
-          would only print a box around it. */}
+          `print:block` puts the stack back for paper in every case, where the
+          cards are not a layout at all — each parça is a separate PAGE,
+          headed and signed on its own (the two blocks inside handle that),
+          and the card chrome would only print a box around it. */}
       {showsComponentCards && (
-        <div className="grid grid-cols-1 gap-3 border-b bg-muted/20 p-3 sm:grid-cols-2 print:block print:gap-0 print:border-0 print:bg-transparent print:p-0">
+        <div className={`grid grid-cols-1 gap-3 border-b bg-muted/20 p-3 print:block print:gap-0 print:border-0 print:bg-transparent print:p-0 ${stacksParca ? '' : 'sm:grid-cols-2'}`}>
           {selectedComponents.map((c, ci) => (
           <div
             key={c.id}
@@ -363,10 +369,13 @@ export default function SpecSheetBody({
                 readOnly
                 className="font-semibold print:font-normal"
                 badge={selectedComponents.length > 1 ? (
-                  // Only while the cards are stacked. Side by side you can
-                  // simply see that there are three, and at ~270px a card has
-                  // no width to spare for a pill saying so.
-                  <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground ring-1 ring-border sm:hidden">
+                  // Only while the cards are stacked — which is every width
+                  // for a round of three or more, and the phone width for a
+                  // pair. Side by side you can simply see that there are two,
+                  // and at ~270px a card has no room for a pill saying so;
+                  // stacked, the counter is the only thing telling a reader
+                  // scrolling past the fourth block how much sheet is left.
+                  <span className={`shrink-0 rounded-full bg-background px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground ring-1 ring-border ${stacksParca ? '' : 'sm:hidden'}`}>
                     Parça {ci + 1}/{selectedComponents.length}
                   </span>
                 ) : null}

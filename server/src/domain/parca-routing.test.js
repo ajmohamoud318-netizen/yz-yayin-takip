@@ -15,6 +15,13 @@ import {
   parcaRequestRoundPatch,
   parcaStartPatch,
   parcaDeliverPatch,
+  parcaEditLocked,
+  parcaChangeRequestable,
+  lockedParcaNames,
+  parcaChangeRequestPatch,
+  parcaChangeAcceptPatch,
+  parcaChangeDeclinePatch,
+  parcaFixSettledPatch,
   parcaApprovePatch,
   allParcalarApproved,
   parcalarOwnedBy,
@@ -126,6 +133,125 @@ describe('the matbaa works one parça', () => {
     assert.equal(patch.state, 'pending')
     assert.equal(patch.owner_role, null)
     assert.equal(patch.delivered_at, NOW)
+  })
+})
+
+describe('the change-request handshake (migration 077)', () => {
+  const started = (over = {}) => ({
+    parca: 'KUTU', state: 'in_round', owner_role: 'printer',
+    started_at: NOW, fix_pending: false, change_requested_at: null, ...over,
+  })
+
+  it('a parça the matbaa has started is locked against a silent edit', () => {
+    assert.equal(parcaEditLocked(started()), true)
+  })
+
+  it('an unstarted parça is not locked', () => {
+    assert.equal(parcaEditLocked(started({ state: 'with_matbaa', started_at: null })), false)
+  })
+
+  it('a missing row is not locked — rows exist only once someone acts', () => {
+    assert.equal(parcaEditLocked(null), false)
+    assert.equal(parcaEditLocked(undefined), false)
+  })
+
+  it('an accepted request unlocks it — that is what accepting is for', () => {
+    assert.equal(parcaEditLocked(started({ started_at: null, fix_pending: true })), false)
+  })
+
+  it('only a locked parça with no pending ask may be asked about', () => {
+    assert.equal(parcaChangeRequestable(started()), true)
+    assert.equal(parcaChangeRequestable(started({ change_requested_at: NOW })), false, 'no stacking')
+    assert.equal(parcaChangeRequestable(started({ started_at: null })), false, 'nothing to ask')
+  })
+
+  it('lockedParcaNames names exactly the parçalar an edit would rewrite', () => {
+    assert.deepEqual(lockedParcaNames([
+      started({ parca: 'KUTU' }),
+      started({ parca: 'KİTAP', started_at: null }),
+      started({ parca: 'KILAVUZ', started_at: null, fix_pending: true }),
+    ]), ['KUTU'])
+    assert.deepEqual(lockedParcaNames([]), [])
+    assert.deepEqual(lockedParcaNames(null), [])
+  })
+
+  it('the ask leaves the parça exactly where it is', () => {
+    const patch = parcaChangeRequestPatch({
+      note: '  kapak rengi yanlış  ', actor: leader, actorName: leader.name,
+      now: NOW, startedAt: NOW,
+    })
+    assert.equal(patch.change_requested_at, NOW)
+    assert.equal(patch.change_requested_by_name, leader.name)
+    assert.equal(patch.change_requested_note, 'kapak rengi yanlış', 'trimmed')
+    // Restated, not dropped: upsertParcaState writes this stamp verbatim, and
+    // clearing it would tell the matbaa's queue they never started.
+    assert.equal(patch.started_at, NOW)
+    assert.equal(patch.state, undefined, 'the parça does not move')
+  })
+
+  it('an empty note is stored as null, not as an empty string', () => {
+    const patch = parcaChangeRequestPatch({ note: '   ', actor: leader, now: NOW })
+    assert.equal(patch.change_requested_note, null)
+  })
+
+  it('accepting un-starts the parça and leaves the correction debt', () => {
+    const patch = parcaChangeAcceptPatch()
+    assert.equal(patch.state, 'with_matbaa', 'back to where it was before Başlatın')
+    assert.equal(patch.started_at, null)
+    assert.equal(patch.fix_pending, true, 'blocks a re-start until the fix lands')
+    assert.equal(patch.change_requested_at, null, 'the question is answered')
+    assert.equal(patch.owner_role, 'printer', 'still the matbaa’s job, just paused')
+  })
+
+  it('declining clears only the question', () => {
+    const patch = parcaChangeDeclinePatch({ startedAt: NOW })
+    assert.equal(patch.change_requested_at, null)
+    assert.equal(patch.started_at, NOW, 'they keep working')
+    assert.equal(patch.state, undefined, 'the parça does not move')
+    assert.equal(patch.fix_pending, undefined, 'no debt was created')
+  })
+
+  it('the correction landing clears the debt without erasing the round', () => {
+    const row = { parca: 'KUTU', started_at: null, delivered_at: null, received_at: null, fix_pending: true }
+    const patch = parcaFixSettledPatch(row)
+    assert.equal(patch.fix_pending, false)
+    // The stamps are restated because the repository writes them verbatim —
+    // a bare flag-clear would wipe the round it is settling.
+    assert.ok('started_at' in patch && 'delivered_at' in patch && 'received_at' in patch)
+  })
+
+  it('every leg that ends a round drops a stale correction debt', () => {
+    assert.equal(parcaRejectPatch({
+      target: 'designer', reason: 'x', actor: leader, actorName: leader.name,
+      now: NOW, gate: 'demo', currentAttempt: 1,
+    }).fix_pending, false)
+    assert.equal(parcaRequestRoundPatch({ route: 'physical', now: NOW }).fix_pending, false)
+    assert.equal(parcaRequestRoundPatch({ route: 'ekran', now: NOW }).fix_pending, false)
+    assert.equal(parcaApprovePatch().fix_pending, false)
+  })
+
+  it('ask → accept → fix → start: the matbaa can pick it up again', () => {
+    let row = started()
+    row = { ...row, ...parcaChangeRequestPatch({ note: 'düzeltin', actor: leader, now: NOW, startedAt: row.started_at }) }
+    assert.equal(parcaChangeRequestable(row), false, 'no second ask while one is open')
+
+    row = { ...row, ...parcaChangeAcceptPatch() }
+    assert.equal(parcaEditLocked(row), false, 'the leader may edit now')
+
+    row = { ...row, ...parcaFixSettledPatch(row) }
+    assert.equal(row.fix_pending, false)
+
+    row = { ...row, ...parcaStartPatch({ now: NOW }) }
+    assert.equal(row.state, 'in_round', 'and the matbaa is back on it')
+  })
+
+  it('ask → decline: the parça never leaves the press', () => {
+    let row = started()
+    row = { ...row, ...parcaChangeRequestPatch({ note: 'düzeltin', actor: leader, now: NOW, startedAt: row.started_at }) }
+    row = { ...row, ...parcaChangeDeclinePatch({ startedAt: row.started_at }) }
+    assert.equal(row.state, 'in_round')
+    assert.equal(parcaEditLocked(row), true, 'still locked — the leader waits for delivery')
+    assert.equal(parcaChangeRequestable(row), true, 'but they may ask again')
   })
 })
 

@@ -83,7 +83,7 @@ export function orderActionLabel(order) {
  * approval. The leader approves or rejects (reason required) at every *_onay
  * stage, and moves production / customs forward.
  */
-export function availableActions({ project, user, parcaRows = [] }) {
+export function availableActions({ project, user, parcaRows = [], printerParcaJobs = [] }) {
   if (!project || !user) return []
   // Imported backlist products (origin='legacy', migration 031) have no design
   // phase: no subtasks, no designer, no demo/ozalit history. Every pipeline
@@ -128,6 +128,25 @@ export function availableActions({ project, user, parcaRows = [] }) {
   const splitAcrossDesks = (parcaRows ?? []).some((r) => (
     r?.state === 'with_designer' || r?.state === 'with_matbaa' || r?.state === 'in_round'
   ))
+
+  // The matbaa's half of the same rule.
+  //
+  // Their whole-sheet "Teslim Edin" is the advance below, and it operates on
+  // the round as a unit: `computeDemoTeslimAdvance` moves the project to the
+  // onay stage with no parça check at all, while `deliverParca` gates the same
+  // move on `allParcalarDelivered`. So on a split round the project-level
+  // button carried the round past parçalar that were never produced, leaving
+  // their `parca_state` rows stranded at `with_matbaa` and skipping the
+  // leader's per-parça receipt entirely.
+  //
+  // `parcaRows` can't answer this: a first round is split by its snapshot, not
+  // by routing rows, and those only exist once something has been sent back
+  // (`deriveTeslimParcalar`, server/src/services/parca-service.js). The parça
+  // QUEUE is what knows, and one row for this project is enough — the server
+  // hands the matbaa a row only when the parça is genuinely theirs to work.
+  // ParcaJobBoard is the surface for those, and the whole-sheet pair comes back
+  // the moment the queue is empty.
+  const printerSplitRound = role === 'printer' && (printerParcaJobs ?? []).length > 0
 
   if ((stage === 'demo_onay' || stage === 'cin_demo_onay') && role === 'team_leader' && !splitAcrossDesks) {
     // Hide Onayla + Reddet until the demo has been received (Teslim Alındı)
@@ -219,7 +238,10 @@ export function availableActions({ project, user, parcaRows = [] }) {
       // hidden while a change request is pending — the server refuses to
       // deliver until the matbaa accepts/declines it (computeOzalitTeslimAdvance),
       // so offering the button here just produces a 400.
-      if ((ozalitRequested || matbaaLock) && project.ozalit_started && !project.ozalit_change_requested_at) {
+      if (
+        (ozalitRequested || matbaaLock) && project.ozalit_started &&
+        !project.ozalit_change_requested_at && !printerSplitRound
+      ) {
         set.add('advance')
       }
     } else if (!ozalitRequested && !matbaaLock && (role === 'team_leader' || isAssignedDesigner)) {
@@ -237,7 +259,7 @@ export function availableActions({ project, user, parcaRows = [] }) {
   // until the matbaa accepts/declines it (computeDemoTeslimAdvance).
   if (
     role === 'printer' && project.type === 'TR' && stage === 'demo_teslim' &&
-    project.demo_started && !project.demo_change_requested_at
+    project.demo_started && !project.demo_change_requested_at && !printerSplitRound
   ) {
     set.add('advance')
   }

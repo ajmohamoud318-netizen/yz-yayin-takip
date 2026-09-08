@@ -85,6 +85,9 @@ export function parcaRejectPatch({
     attempt: (currentAttempt ?? 1) + 1,
     started_at: null,
     delivered_at: null,
+    // A new round owes no correction: whatever an accepted change request
+    // left behind died with the round it belonged to.
+    fix_pending: false,
   }
 }
 
@@ -109,6 +112,7 @@ export function parcaRequestRoundPatch({ route, now }) {
       route: 'ekran',
       started_at: null,
       delivered_at: null,
+      fix_pending: false,
     }
   }
   return {
@@ -119,6 +123,8 @@ export function parcaRequestRoundPatch({ route, now }) {
     // would tell the matbaa's queue the parça was already handed back.
     started_at: null,
     delivered_at: null,
+    // See parcaRejectPatch — a fresh round carries no correction debt.
+    fix_pending: false,
   }
 }
 
@@ -138,6 +144,138 @@ export function parcaDeliverPatch({ now }) {
     route: null,
     started_at: null,
     delivered_at: now,
+  }
+}
+
+/* ============================================================================
+ *  The change-request handshake, per parça (migration 077)
+ *
+ *  Correcting a sheet the matbaa holds has two modes, and `started_at` picks
+ *  which: an unstarted parça is edited outright, a started one has to be ASKED
+ *  for. These are that ask, scoped to one parça — the exact shape of
+ *  computeDemoChangeRequest / Accept / Decline in domain/transitions.js, which
+ *  own the same handshake for a round that was never split.
+ *
+ *      started_at set ──ask──► change_requested_at set
+ *                                    │
+ *                    ┌──accept───────┴──────decline──┐
+ *                    ▼                               ▼
+ *        fix_pending, started_at cleared      still in_round,
+ *        (leader owes the correction;         leader waits for delivery
+ *         matbaa may not re-start)
+ * ========================================================================== */
+
+/**
+ * Is this parça locked against a silent edit?
+ *
+ * The matbaa is producing it right now, and nobody accepted a change. A row
+ * that does not exist is NOT locked: rows are materialised on first action
+ * (`loadParcaForUpdate`), so "no row" means the matbaa has not touched this
+ * parça at all — the free-edit window the leader has always had.
+ *
+ * `fix_pending` unlocks deliberately. An accepted request un-starts the parça
+ * precisely so the correction can land; that is the whole point of accepting.
+ */
+export function parcaEditLocked(row) {
+  if (!row) return false
+  return !!row.started_at && !row.fix_pending
+}
+
+/**
+ * May the leader ask the matbaa to release this parça?
+ *
+ * Only one pending ask at a time (no stacking — same rule as the project-level
+ * request), and there is nothing to ask for on a parça that is already unlocked:
+ * unstarted means edit it, `fix_pending` means the release already happened.
+ */
+export function parcaChangeRequestable(row) {
+  return parcaEditLocked(row) && !row.change_requested_at
+}
+
+/** The parça names in `rows` that a sheet-wide edit would be rewriting behind the matbaa's back. */
+export function lockedParcaNames(rows) {
+  return (rows ?? []).filter(parcaEditLocked).map((r) => r.parca).filter(Boolean)
+}
+
+/**
+ * The leader asked. The parça does not move — the matbaa keeps it and keeps
+ * working; this only records the question, exactly as the project-level
+ * request leaves `demo_started` alone.
+ *
+ * `started_at` is restated because `upsertParcaState` writes it verbatim: a
+ * patch that omitted it would clear the very "they have started" fact the
+ * request exists because of.
+ */
+export function parcaChangeRequestPatch({ note, actor, actorName, now, startedAt = null }) {
+  return {
+    started_at: startedAt,
+    change_requested_at: now,
+    change_requested_by: actor?.id ?? null,
+    change_requested_by_name: actorName ?? null,
+    change_requested_note: note?.trim() || null,
+  }
+}
+
+/**
+ * The matbaa accepted. This un-starts the parça — back to `with_matbaa`, the
+ * state it held before "İşlemi Başlatın" — which is what reopens the free-edit
+ * path for the leader.
+ *
+ * `fix_pending` is the debt that comes with it: the matbaa may not re-start
+ * until the correction lands (`startParca`'s guard), so an accept cannot be
+ * quietly undone by pressing the button again.
+ */
+export function parcaChangeAcceptPatch() {
+  return {
+    state: 'with_matbaa',
+    owner_role: 'printer',
+    route: 'physical',
+    started_at: null,
+    delivered_at: null,
+    fix_pending: true,
+    change_requested_at: null,
+    change_requested_by: null,
+    change_requested_by_name: null,
+    change_requested_note: null,
+  }
+}
+
+/**
+ * The matbaa declined. Only the question is cleared: the parça stays started,
+ * stays theirs, and the leader waits for the delivery and decides at the gate —
+ * the same dead end `computeDemoChangeDecline` leaves.
+ *
+ * `startedAt` is passed back for the verbatim-write reason above.
+ */
+export function parcaChangeDeclinePatch({ startedAt }) {
+  return {
+    started_at: startedAt,
+    change_requested_at: null,
+    change_requested_by: null,
+    change_requested_by_name: null,
+    change_requested_note: null,
+  }
+}
+
+/**
+ * The leader's correction landed — the debt an accept created is settled.
+ *
+ * Applied to every parça on the edited sheet, not just the ones that owed a
+ * fix: a no-op on a row that was already false, exactly as computeDemoEdit
+ * always includes `demo_fix_pending: false`.
+ *
+ * It takes the row because it is a pure flag-clear, and `upsertParcaState`
+ * writes the round stamps verbatim — a patch carrying only the flag would
+ * erase the very round it is settling. Restating them keeps the clear surgical.
+ */
+export function parcaFixSettledPatch(row) {
+  return {
+    fix_pending: false,
+    started_at: row?.started_at ?? null,
+    delivered_at: row?.delivered_at ?? null,
+    received_at: row?.received_at ?? null,
+    received_by: row?.received_by ?? null,
+    received_by_name: row?.received_by_name ?? null,
   }
 }
 
@@ -199,6 +337,9 @@ export function parcaApprovePatch() {
     route: null,
     started_at: null,
     delivered_at: null,
+    // See parcaRejectPatch — the round is over either way, and a signed-off
+    // parça that still owed a correction would block its next start.
+    fix_pending: false,
   }
 }
 

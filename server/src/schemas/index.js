@@ -670,6 +670,24 @@ const projectsParcaRequestRound = {
   },
 }
 
+/**
+ * The leader's per-parça change request (migration 077). Same optional note as
+ * the project-level `projectsChangeRequest` below — the printer is being asked
+ * to drop work in progress, and a sentence saying why is the difference between
+ * a request they can weigh and one they can only guess at.
+ *
+ * Accept and decline carry no body: the parça in the URL is the whole message,
+ * which keeps them idempotent per parça exactly as start/deliver/receive are.
+ */
+const projectsParcaChangeRequest = {
+  ...projectsParcaParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: { note: { type: 'string', maxLength: 500 } },
+  },
+}
+
 const projectsBaskiOnayPrepare = {
   ...projectsIdParams,
   body: projectsParcalarBody,
@@ -1311,6 +1329,7 @@ export const schemas = {
   projectsBaskiOnayPrepare,
   projectsParcaParams,
   projectsParcaRequestRound,
+  projectsParcaChangeRequest,
   projectsChangeRequest,
   subtasksPatch,
   subtasksUpdates,

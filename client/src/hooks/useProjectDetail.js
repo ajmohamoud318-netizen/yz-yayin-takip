@@ -15,7 +15,7 @@ import { awaitsOzalitReceipt } from '@/domain'
 
 import { useProjectDetailData, useProjectDetailSSE } from './useProjectDetailData'
 import { useProjectDelivery } from './useProjectDelivery'
-import { useProjectParcaState } from './useParcaQueue'
+import { useParcaQueue, useProjectParcaState } from './useParcaQueue'
 import { useProjectSubtasks } from './useProjectSubtasks'
 
 /**
@@ -52,6 +52,19 @@ export function useProjectDetail(id) {
   // page because `availableActions` below needs them: while the round is split
   // across desks the whole-round Onayla/Reddet must not be offered.
   const { rows: parcaRows, refetch: refetchParcaRows } = useProjectParcaState(id)
+  /* The matbaa's own parça jobs on THIS project (migration 074).
+   *
+   * A separate question from `parcaRows` above, and the parça queue is the only
+   * thing that can answer it: a first round is split by its snapshot rather
+   * than by routing rows, which `deriveTeslimParcalar` derives on the queue's
+   * read path and never writes. Without this the project page offered the
+   * printer a whole-sheet "İşlemi Başlatın" on a round that Matbaa İşleri was
+   * already showing as separate parçalar. */
+  const { rows: parcaQueueRows, refetch: refetchParcaJobs } = useParcaQueue(user?.role === 'printer')
+  const printerParcaJobs = useMemo(
+    () => parcaQueueRows.filter((r) => r.project_id === id),
+    [parcaQueueRows, id],
+  )
   const isAssigned = (project?.assignees ?? []).some((a) => a.id === user?.id)
   const isLeader = user?.role === 'team_leader'
   const subtasks = useProjectSubtasks(
@@ -163,8 +176,9 @@ export function useProjectDetail(id) {
 
   // Available actions + labels
   // parcaRows (migration 074) suppress the whole-round Onayla/Reddet while the
-  // round is split across desks — see availableActions.
-  const actions = availableActions({ project, user, parcaRows })
+  // round is split across desks; printerParcaJobs does the same for the
+  // matbaa's whole-sheet Teslim Edin — see availableActions.
+  const actions = availableActions({ project, user, parcaRows, printerParcaJobs })
   const advLabel = project ? advanceActionLabel(project, user?.role) : 'İlerletin'
   const appLabel = project ? approveActionLabel(project) : 'Onaylayın'
   const sentStatus =
@@ -265,6 +279,11 @@ export function useProjectDetail(id) {
   function onActionDone(updated) {
     setProject((prev) => ({ ...prev, ...updated }))
     refetch()
+    // The spec form's "Düzeltmeyi Matbaaya Gönderin" now clears `fix_pending`
+    // on the parça rows too (migration 077), so the project refetch alone
+    // leaves ParcaChangeRequestPanel still saying a correction is owed for a
+    // correction that just landed.
+    refetchParcaRows()
   }
 
   // ---------------------------------------------------------------------------
@@ -304,6 +323,10 @@ export function useProjectDetail(id) {
 
   return {
     parcaRows, refetchParcaRows,
+    printerParcaJobs, refetchParcaJobs,
+    // The matbaa's round is split: HeaderActionRow drops the whole-sheet
+    // "İşlemi Başlatın" and the page renders ParcaJobBoard instead.
+    printerSplitRound: printerParcaJobs.length > 0,
     // Data
     project, loading, refetch, setProject,
     projectOrders: data.projectOrders,

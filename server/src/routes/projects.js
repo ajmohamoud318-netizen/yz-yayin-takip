@@ -178,6 +178,29 @@ export async function projectRoutes(fastify) {
     })
   })
 
+  /* The per-parça change-request handshake (migration 077).
+     The project-level trio below reads `projects.demo_started`, which a split
+     round never sets — `startParca` leaves that flag alone so the matbaa keeps
+     "İşlemi Başlatın" on the parçalar they still owe. These three read the
+     parça's own `started_at`, so a leader can ask about the one parça that is
+     actually locked instead of the whole sheet. */
+  fastify.post('/projects/:id/parca/:parca/change-request', { schema: schemas.projectsParcaChangeRequest }, async (request) => {
+    await attachUser(request)
+    return parcaService.requestParcaChange(request.params.id, request.params.parca, request.user, {
+      note: request.body?.note,
+    })
+  })
+
+  fastify.post('/projects/:id/parca/:parca/change-accept', { schema: schemas.projectsParcaParams }, async (request) => {
+    await attachUser(request)
+    return parcaService.acceptParcaChange(request.params.id, request.params.parca, request.user)
+  })
+
+  fastify.post('/projects/:id/parca/:parca/change-decline', { schema: schemas.projectsParcaParams }, async (request) => {
+    await attachUser(request)
+    return parcaService.declineParcaChange(request.params.id, request.params.parca, request.user)
+  })
+
   fastify.post('/projects/:id/demo-start', { schema: schemas.projectsIdParams }, async (request) => {
     await attachUser(request)
     return projectService.demoStart(request.params.id, request.user)

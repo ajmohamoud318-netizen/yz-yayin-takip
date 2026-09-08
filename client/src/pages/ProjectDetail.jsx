@@ -26,9 +26,14 @@ import SiparisBaskiOnayFormDialog from '@/components/SiparisBaskiOnayFormDialog'
 import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import ProjectHistory from '@/components/ProjectHistory'
 import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
+import ParcaJobBoard from '@/components/ParcaJobBoard'
+import ParcaChangeRequestPanel from '@/components/ParcaChangeRequestPanel'
 import ParcaRejectDialog from '@/components/ParcaRejectDialog'
 import ParcaReturnedPanel from '@/components/ParcaReturnedPanel'
-import { isDemoApprover, orderOzalitFormMode, earlyParcaGateOpen } from '@/domain'
+import {
+  isDemoApprover, orderOzalitFormMode, earlyParcaGateOpen,
+  EARLY_PARCA_STAGES, isOzalitRoundLive,
+} from '@/domain'
 
 import { useProjectDetail } from '@/hooks/useProjectDetail'
 import { useParcaSnapshot, parcaRoundDecidable } from '@/hooks/useParcaSnapshot'
@@ -165,6 +170,28 @@ export default function ProjectDetail() {
     }
   }
 
+  /**
+   * Ask the matbaa to release ONE parça they have already started
+   * (migration 077).
+   *
+   * The whole-sheet "Değişiklik İste" in the header cannot reach this: it is
+   * gated on `project.demo_started`, which `startParca` deliberately never sets
+   * — so on the split rounds where a single parça is on the press, the only ask
+   * that exists is this one.
+   */
+  async function handleRequestParcaChange(parca, note) {
+    setParcaRoundBusy(parca)
+    try {
+      await api.requestParcaChange(project.id, parca, note)
+      toast.success(`${parca} için değişiklik istendi, matbaanın yanıtı bekleniyor.`)
+      refetchParcaRows()
+    } catch (err) {
+      toast.error(err.message || 'Talep gönderilemedi.')
+    } finally {
+      setParcaRoundBusy(null)
+    }
+  }
+
   async function handleRequestParcaRound(parca, route) {
     setParcaRoundBusy(parca)
     try {
@@ -194,6 +221,23 @@ export default function ProjectDetail() {
      that are still in the press. Leader-only — the server refuses an early
      sign-off from anyone else, since the matbaa is still producing this round. */
   const earlyParcaGate = earlyParcaGateOpen(project, parcaRows)
+
+  /**
+   * Is there a sheet at the matbaa the leader might still want to change?
+   *
+   * Stage-gated, because the panel's premise — "the matbaa is holding this
+   * round" — is only true at a *_teslim stage. At an *_onay gate the round is
+   * back and the approval grid is the surface; a snapshot-derived list there
+   * would invent "Matbaada, henüz başlanmadı" rows for parçalar already
+   * delivered. An ozalit nobody has requested is the same non-round, which is
+   * what `isOzalitRoundLive` answers.
+   *
+   * Not for the printer: ParcaJobBoard above is their view of these same
+   * parçalar, with the buttons that are actually theirs.
+   */
+  const showChangeRequestPanel = user?.role !== 'printer'
+    && EARLY_PARCA_STAGES.has(project?.stage)
+    && (project?.stage !== 'ozalit_teslim' || isOzalitRoundLive(project))
   const showParcaGrid = parcaSnapshot.length >= 2 && (
     earlyParcaGate
       ? isLeader
@@ -244,6 +288,28 @@ export default function ProjectDetail() {
         {/* Header section: back button, deleted banner, header card */}
         <ProjectDetailHeader d={d} />
 
+        {/* The matbaa's parçalar on this project (migration 074).
+            Directly under the header because it replaces what used to be in
+            it: on a split round the header's whole-sheet "İşlemi Başlatın" is
+            hidden, and these are the buttons that stamp the right scope. Same
+            board Matbaa İşleri and the Onaylar queue render, so a printer who
+            arrived here from a "Detay" link acts without bouncing back. */}
+        {d.printerSplitRound && (
+          <section className="space-y-2.5">
+            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Parça bazlı işleriniz
+            </h2>
+            <ParcaJobBoard
+              rows={d.printerParcaJobs}
+              // Delivering the LAST parça advances the project too
+              // (allParcalarDelivered → advanceProject), so the project row is
+              // stale as well, not just the parça lists.
+              onChanged={() => { d.refetchParcaJobs(); refetchParcaRows(); d.refetch() }}
+              compact
+            />
+          </section>
+        )}
+
         {/* Per-parça onay/red — sits directly under the header's action row,
             the same place the queue puts it relative to its own row. */}
         {showParcaGrid && (
@@ -275,6 +341,25 @@ export default function ProjectDetail() {
               onReceiveParca={earlyParcaGate ? handleReceiveParca : undefined}
             />
           </div>
+        )}
+
+        {/* What the leader can still change on the sheet the matbaa is holding,
+            and what they have to ask for. Above the returned-parça panel
+            because it is about the round that is still out, while that one is
+            about work that has come back. Renders nothing outside a split
+            round the matbaa actually holds. */}
+        {showChangeRequestPanel && (
+          <ParcaChangeRequestPanel
+            rows={parcaRows}
+            // The round's real parça list. Routing rows only exist for
+            // parçalar somebody has acted on, so without this the panel shows
+            // the one parça the matbaa started and none of the ones the leader
+            // can still edit — see the component's own note.
+            snapshotParcalar={parcaSnapshot}
+            canAct={isLeader}
+            busyParca={parcaRoundBusy}
+            onRequestChange={handleRequestParcaChange}
+          />
         )}
 
         {/* Whose desk each parça is on, and the designer's way back out. Sits

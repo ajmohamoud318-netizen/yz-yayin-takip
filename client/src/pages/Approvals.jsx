@@ -21,6 +21,7 @@ import BaskiOnayFormDialog from '@/components/BaskiOnayFormDialog'
 import TalepSignDialog from '@/components/TalepSignDialog'
 import EkranDemoRejectDialog from '@/components/EkranDemoRejectDialog'
 import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
+import ParcaJobBoard from '@/components/ParcaJobBoard'
 import ParcaRejectDialog from '@/components/ParcaRejectDialog'
 import { ledgerKindForStage, parcaRoundDecidable } from '@/hooks/useParcaSnapshot'
 import { useParcaQueue } from '@/hooks/useParcaQueue'
@@ -33,6 +34,11 @@ import {
   bulkApproveAvailable, parcaNames,
 } from '@/domain'
 import { cn, formatTargetDate, formatNumber } from '@/lib/utils'
+
+// Shared empty list. `useParcaQueue` answers one role at a time, and the other
+// role's slice feeds a useMemo dependency — a fresh [] each render would
+// invalidate it every time.
+const EMPTY_ROWS = []
 
 /**
  * Approval queue — demo/ozalit/baskı-onay tabs for the design pipeline, plus
@@ -91,8 +97,19 @@ export default function Approvals({ tab = 'demo' }) {
    * is built around never opens. Those parçalar used to land in nobody's queue:
    * the leader got a "KUTU teslim edildi" notification and had nowhere to act on
    * it. `/parca-queue` answers for the leader too now — these are the parçalar
-   * waiting to be received or decided. */
-  const { rows: earlyParcaRows, refetch: refetchEarlyParca } = useParcaQueue(isLeader)
+   * waiting to be received or decided.
+   *
+   * The same endpoint answers for the MATBAA, and that answer is what this page
+   * used to get wrong. A round split into parçalar leaves the project sitting
+   * at `demo_teslim`, so the printer's stage filter below matched it and drew a
+   * whole-sheet "İşlemi Başlatın" — which stamps `demo_started` and unlocks a
+   * whole-sheet "Teslim Edin" that advances the round past parçalar nobody
+   * produced (`computeDemoTeslimAdvance` has no parça check; only
+   * `deliverParca` gates on `allParcalarDelivered`). Matbaa İşleri already
+   * excluded those projects; now this page runs the same rule off the same
+   * rows, and renders ParcaJobBoard for them instead. */
+  const { rows: myParcaRows, refetch: refetchParcaQueue } = useParcaQueue(isLeader || isPrinter)
+  const earlyParcaRows = isLeader ? myParcaRows : EMPTY_ROWS
   const earlyParcaGroups = useMemo(() => {
     const byProject = new Map()
     for (const row of earlyParcaRows) {
@@ -110,13 +127,29 @@ export default function Approvals({ tab = 'demo' }) {
     (g) => (g.rows[0]?.gate === 'ozalit') === (sub === 'ozalit'),
   )
 
+  /* The matbaa's own parça jobs — rendered as ParcaJobBoard, the same component
+   * Matbaa İşleri and the project page use, so all three offer one set of
+   * buttons acting at one scope. */
+  const printerParcaRows = isPrinter ? myParcaRows : EMPTY_ROWS
+  const printerParcaFor = (sub) => printerParcaRows.filter(
+    (r) => (r.gate === 'ozalit') === (sub === 'ozalit'),
+  )
+  // A split round would otherwise be listed twice — once as a whole sheet by
+  // the stage filter, once as its parçalar — with two sets of buttons acting on
+  // the same work. The parça cards win: they are strictly more precise. Same
+  // exclusion MatbaaIsleri.jsx makes.
+  const printerParcaProjectIds = useMemo(
+    () => new Set(printerParcaRows.map((r) => r.project_id)),
+    [printerParcaRows],
+  )
+
   /** Per-parça "Teslim Alındı" — the receipt that opens this parça's decision. */
   async function handleReceiveParca(project, parca) {
     setParcaBusyId(project.id)
     try {
       await api.receiveParca(project.id, parca)
       toast.success(`${parca} teslim alındı.`)
-      refetchEarlyParca()
+      refetchParcaQueue()
     } catch (err) {
       toast.error(err.message || 'Teslim alma tamamlanamadı.')
     } finally {
@@ -188,6 +221,7 @@ export default function Approvals({ tab = 'demo' }) {
     projects.filter((p) => {
       if (isPrinter) {
         if (p.type !== 'TR') return false
+        if (printerParcaProjectIds.has(p.id)) return false
         if (sub === 'demo') return p.stage === 'demo_teslim'
         // Ozalit reaches the matbaa's queue only once it's been requested by the
         // leader/designer (or on a re-delivery after a reject-to-matbaa).
@@ -223,13 +257,13 @@ export default function Approvals({ tab = 'demo' }) {
       return false
     })
 
-  const demoQueue = useMemo(() => filterQueue('demo'), [projects, isPrinter])
-  const ozalitQueue = useMemo(() => filterQueue('ozalit'), [projects, isPrinter])
+  const demoQueue = useMemo(() => filterQueue('demo'), [projects, isPrinter, printerParcaProjectIds])
+  const ozalitQueue = useMemo(() => filterQueue('ozalit'), [projects, isPrinter, printerParcaProjectIds])
   // The tab badges count what the tab actually holds, and since migration 076
   // that includes the parçalar sitting above the queue on an unfinished round.
   // A leader whose only pending work was one early parça saw a bare tab.
-  const demoTabCount = demoQueue.length + earlyGroupsFor('demo').length
-  const ozalitTabCount = ozalitQueue.length + earlyGroupsFor('ozalit').length
+  const demoTabCount = demoQueue.length + earlyGroupsFor('demo').length + printerParcaFor('demo').length
+  const ozalitTabCount = ozalitQueue.length + earlyGroupsFor('ozalit').length + printerParcaFor('ozalit').length
   const baskiOnayQueue = useMemo(() => filterQueue('baski-onay'), [projects, isPrinter, isLeader])
 
   function onDone() {}
@@ -516,8 +550,32 @@ export default function Approvals({ tab = 'demo' }) {
     )
   }
 
+  /**
+   * The matbaa's per-parça jobs (migration 074).
+   *
+   * Above the stage queue, like the leader's early-parça section and for the
+   * same reason: these projects have not reached a gate — the round is split
+   * across desks — so the whole-sheet row the queue would draw is the wrong
+   * unit of work. ParcaJobBoard carries its own spec-sheet dialogs, so the
+   * printer starts and delivers a parça without leaving this page.
+   */
+  function renderPrinterParcaSection(sub) {
+    const rows = printerParcaFor(sub)
+    if (rows.length === 0) return null
+    return (
+      <div className="mb-4 space-y-2.5">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Parça bazlı işleriniz
+        </p>
+        <ParcaJobBoard rows={rows} onChanged={refetchParcaQueue} />
+      </div>
+    )
+  }
+
   function renderQueue(queue, sub) {
-    const early = renderEarlyParcaSection(sub)
+    // Role-exclusive: the early section is the leader's, the parça board is the
+    // matbaa's, and `useParcaQueue` only ever fills one of them.
+    const preamble = renderEarlyParcaSection(sub) ?? renderPrinterParcaSection(sub)
     if (loading) {
       return (
         <div className="space-y-2.5">
@@ -528,7 +586,7 @@ export default function Approvals({ tab = 'demo' }) {
       )
     }
     if (queue.length === 0) {
-      return early ?? (
+      return preamble ?? (
         <EmptyState
           icon={Inbox}
           title="Şu an bekleyen iş yok."
@@ -538,7 +596,7 @@ export default function Approvals({ tab = 'demo' }) {
     }
     return (
       <>
-      {early}
+      {preamble}
       <div className="stagger-children space-y-2.5">
         {queue.map((p) => {
           // Per-parça gate (migrations 068/069/070): pick the matching

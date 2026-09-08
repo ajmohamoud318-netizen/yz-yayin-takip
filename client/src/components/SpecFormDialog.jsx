@@ -195,10 +195,18 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    * they spot something that needs fixing before signing. Reset on every
    * (re)open so a stale unlock from a previous project never carries over. */
   const [baskiOnayEditOverride, setBaskiOnayEditOverride] = useState(false)
-  /* `parcaScope` narrows the sheet to the parça the reader was handed; this is
-   * their way back to the whole document. Off on every (re)open, so the sheet
-   * always opens as the job in front of them. */
-  const [showAllParca, setShowAllParca] = useState(false)
+  /* `parcaScope` narrows the sheet to the parça the reader was handed; this
+   * flag is the whole document — and it is what the sheet OPENS as.
+   *
+   * A form that hides pages by default is the wrong default for every reader
+   * of it: the matbaa behind "KUTU · İşlemi Başlatın" is committing to
+   * produce a job, and has to see the rest of what that job is before
+   * starting; the leader signing one parça reads the round it belongs to.
+   * Nothing about the ACTION changes with it — the footer button still names
+   * the parça of the click, and the narrowed view is one tap away in the
+   * banner above the sheet ("Yalnızca KUTU"). Reset on every (re)open, so a
+   * narrowing chosen on the last sheet never carries into the next. */
+  const [showAllParca, setShowAllParca] = useState(true)
 
   // Matbaa "Başladım" gate (migration 048): once the printer has started
   // physical work, the leader/assigned designer can no longer silently save
@@ -568,7 +576,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     setReceivedLocal(false)
     setConfirmReceive(false)
     setBaskiOnayEditOverride(false)
-    setShowAllParca(false)
+    setShowAllParca(true)
   }, [open, scopeId])
 
   async function handleReceiveOzalit() {

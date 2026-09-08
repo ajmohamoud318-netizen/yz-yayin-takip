@@ -28,23 +28,42 @@ import ParcaJobCard from '@/components/ParcaJobCard'
  *   projectTitle: string,
  *   rows: object[],
  *   busy?: boolean,
+ *   compact?: boolean,
  *   onAct: (row: object) => void,
  *   onActAll: (rows: object[]) => void,
+ *   onRespondChange?: (row: object, answer: 'accept' | 'decline') => void,
  *   onNavigate: (projectId: string) => void,
  * }} props
+ *
+ * `compact` drops the project title — the group is being shown on that
+ * project's own page, where the header already names it. The parça count and
+ * the bulk buttons stay: those say something the header doesn't.
  */
 export default function ParcaJobGroup({
-  projectTitle, rows = [], busy = false, onAct, onActAll, onNavigate,
+  projectTitle, rows = [], busy = false, compact = false,
+  onAct, onActAll, onRespondChange, onNavigate,
 }) {
   if (rows.length === 0) return null
 
   // A lone parça needs no group chrome — it IS the job.
   if (rows.length === 1) {
-    return <ParcaJobCard row={rows[0]} busy={busy} onAct={onAct} onNavigate={onNavigate} />
+    return (
+      <ParcaJobCard
+        row={rows[0]} busy={busy} compact={compact}
+        onAct={onAct} onRespondChange={onRespondChange} onNavigate={onNavigate}
+      />
+    )
   }
 
-  const unstarted = rows.filter((r) => r.state !== 'in_round')
-  const started = rows.filter((r) => r.state === 'in_round')
+  // Both bulk buttons skip parçalar the printer cannot act on right now
+  // (migration 077): one with an unanswered change request is a question, not
+  // a job, and one owing a correction is refused by `startParca` outright.
+  // Sweeping either into "Hepsini Başlatın" turns one tap into a 400 that
+  // strands the parçalar queued behind it — see ParcaJobBoard's sequential
+  // commit loop.
+  const actionable = rows.filter((r) => !r.change_requested_at && !r.fix_pending)
+  const unstarted = actionable.filter((r) => r.state !== 'in_round')
+  const started = actionable.filter((r) => r.state === 'in_round')
   const gateLabel = rows[0].gate === 'ozalit' ? 'Prova baskı' : 'Numune baskı'
 
   return (
@@ -54,9 +73,11 @@ export default function ParcaJobGroup({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               {/* Wraps, never truncates — this is the book they are printing. */}
-              <p className="text-sm font-semibold leading-snug text-foreground">
-                {projectTitle}
-              </p>
+              {!compact && (
+                <p className="text-sm font-semibold leading-snug text-foreground">
+                  {projectTitle}
+                </p>
+              )}
               <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1">
                   <Layers className="h-3.5 w-3.5" />
@@ -103,7 +124,9 @@ export default function ParcaJobGroup({
               key={row.parca}
               row={row}
               busy={busy}
+              compact={compact}
               onAct={onAct}
+              onRespondChange={onRespondChange}
               onNavigate={onNavigate}
             />
           ))}

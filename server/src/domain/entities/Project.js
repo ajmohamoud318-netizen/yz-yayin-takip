@@ -65,6 +65,12 @@ function runFsm(project, computeFn, args, eventType, notification) {
     type: eventType,
     projectHistory: result.history,
     notification,
+    // The third write path (`parca_state`), same channel the bespoke reject
+    // below uses. Any compute that needs to touch a parça row alongside its
+    // project patch returns `parcaState: [{ parca, patch }]` and the
+    // orchestrator upserts them inside the same transaction. Null for the
+    // verbs that don't — which is all of them but demoEdit / ozalitEdit.
+    parcaState: result.parcaState ?? null,
   }
 }
 

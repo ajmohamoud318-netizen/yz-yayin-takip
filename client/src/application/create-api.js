@@ -217,6 +217,12 @@ export function createApi() {
     receiveParca: (projectId, parca) => projectRepo.receiveParca(projectId, parca),
     requestParcaRound: (projectId, parca, route) =>
       projectRepo.requestParcaRound(projectId, parca, route),
+    // The per-parça change-request handshake (migration 077) — the leader asks
+    // for a parça the matbaa has already started, the matbaa answers.
+    requestParcaChange: (projectId, parca, note) =>
+      projectRepo.requestParcaChange(projectId, parca, note),
+    acceptParcaChange: (projectId, parca) => projectRepo.acceptParcaChange(projectId, parca),
+    declineParcaChange: (projectId, parca) => projectRepo.declineParcaChange(projectId, parca),
 
     // Demos
     listDemos: () => demoRepo.listDemos(),

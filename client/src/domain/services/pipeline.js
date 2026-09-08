@@ -374,18 +374,25 @@ export function canMarkOzalitStarted(user, project) {
 // restriction was added for — someone else's request disappearing without
 // the leader having decided that.
 /** @param {{ id: string, role: string }} user @param {object} project */
-export function canCancelDemoRequest(user, project) {
+export function canCancelDemoRequest(user, project, parcaRows = []) {
   if (!project) return false
   if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') return false
   if (project.demo_started) return false
+  // Per-parça twin (migration 077), and the one that matters most: cancel sends
+  // the whole project back to tasarim, so withdrawing a round the matbaa is
+  // half way through printing is worse than silently editing it. `demo_started`
+  // is structurally false on a split round — see canEditSentDemoRequest.
+  if (lockedParcaNames(parcaRows).length > 0) return false
   return user?.role === 'team_leader'
 }
 
-/** @param {{ id: string, role: string }} user @param {object} project */
-export function canCancelOzalitRequest(user, project) {
+/** @param {{ id: string, role: string }} user @param {object} project @param {Array<object>} [parcaRows] */
+export function canCancelOzalitRequest(user, project, parcaRows = []) {
   if (!project) return false
   if (project.stage !== 'ozalit_teslim') return false
   if (!project.ozalit_requested || project.ozalit_started) return false
+  // Per-parça twin — see canCancelDemoRequest.
+  if (lockedParcaNames(parcaRows).length > 0) return false
   return user?.role === 'team_leader'
 }
 
@@ -414,19 +421,29 @@ export function canCancelOzalitRequest(user, project) {
  * this button on an auto-round lands the leader on a server 400 instead of
  * a silent rewrite.
  */
-export function canEditSentDemoRequest(user, project) {
+export function canEditSentDemoRequest(user, project, parcaRows = []) {
   if (!project) return false
   if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') return false
   if (project.demo_started) return false
+  // The same rule, read off the parçalar (migration 077). `demo_started` is a
+  // whole-sheet flag and `startParca` deliberately never sets it — otherwise
+  // one started parça would hide "İşlemi Başlatın" on all the others — so on a
+  // split round the check above is structurally false and this is the one that
+  // does the work. A locked parça's route is the per-parça change request; the
+  // server refuses the sheet-wide edit either way (computeDemoEdit), so the
+  // button would only be a dead end.
+  if (lockedParcaNames(parcaRows).length > 0) return false
   return user?.role === 'team_leader'
 }
 
-export function canEditSentOzalitRequest(user, project) {
+export function canEditSentOzalitRequest(user, project, parcaRows = []) {
   if (!project) return false
   if (project.stage !== 'ozalit_teslim') return false
   // Liveness, not `ozalit_requested` — see isOzalitRoundLive. Cancel keeps the
   // stricter flag on purpose; correcting a sheet the matbaa holds does not.
   if (!isOzalitRoundLive(project) || project.ozalit_started) return false
+  // Per-parça twin of the flag above — see canEditSentDemoRequest.
+  if (lockedParcaNames(parcaRows).length > 0) return false
   return user?.role === 'team_leader'
 }
 
@@ -612,6 +629,48 @@ export function parcaAwaitsReceipt(row) {
  */
 export function parcaDecidable(row) {
   return !!row && row.state === 'pending' && !!row.delivered_at && !!row.received_at
+}
+
+/**
+ * Is this parça locked against the leader's free edit?
+ *
+ * Mirrors `parcaEditLocked` in server/src/domain/parca-routing.js — keep the
+ * two in step, because this one decides whether the button renders and that
+ * one decides whether the save survives.
+ *
+ * A row that does not exist is NOT locked: rows are materialised the first
+ * time somebody acts on a parça, so "no row" means the matbaa has not touched
+ * it and the free-edit window the leader has always had is still open.
+ *
+ * @param {{ started_at?: string|null, fix_pending?: boolean }} row
+ */
+export function parcaEditLocked(row) {
+  if (!row) return false
+  return !!row.started_at && !row.fix_pending
+}
+
+/**
+ * May the leader ask the matbaa to release this parça?
+ * One pending ask at a time, and nothing to ask on a parça that is already free.
+ *
+ * @param {{ started_at?: string|null, fix_pending?: boolean, change_requested_at?: string|null }} row
+ */
+export function parcaChangeRequestable(row) {
+  return parcaEditLocked(row) && !row.change_requested_at
+}
+
+/** The parçalar a sheet-wide edit would be rewriting behind the matbaa's back. */
+export function lockedParcaNames(parcaRows = []) {
+  return (parcaRows ?? []).filter(parcaEditLocked).map((r) => r.parca).filter(Boolean)
+}
+
+/**
+ * Parçalar the leader owes a correction on — the matbaa accepted a change
+ * request, un-started the parça, and is waiting for the updated sheet before
+ * they may pick it up again (`startParca`'s guard).
+ */
+export function parcalarAwaitingFix(parcaRows = []) {
+  return (parcaRows ?? []).filter((r) => r?.fix_pending).map((r) => r.parca).filter(Boolean)
 }
 
 /**

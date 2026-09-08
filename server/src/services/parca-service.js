@@ -22,6 +22,10 @@ import {
   parcaDeliverPatch,
   parcaReceivePatch,
   parcaAwaitsReceipt,
+  parcaChangeRequestable,
+  parcaChangeRequestPatch,
+  parcaChangeAcceptPatch,
+  parcaChangeDeclinePatch,
   canActOnParca,
   parcaGateForStage,
 } from '../domain/parca-routing.js'
@@ -283,6 +287,14 @@ export async function startParca(projectId, parca, actor) {
     if (!canActOnParca(actor, row)) {
       badRequest('Bu parça sizde değil.')
     }
+    // The per-parça twin of computeDemoStart's `demo_fix_pending` guard
+    // (migration 077). Accepting a change request un-started this parça so the
+    // leader could correct the sheet; re-starting before the correction lands
+    // would put the matbaa back to work on the version they just agreed was
+    // wrong, and silently take the free-edit window away again.
+    if (row.fix_pending) {
+      badRequest('Kabul edilen değişiklik talebi için düzeltme bekleniyor, önce form güncellenmelidir.')
+    }
     if (row.started_at) return row // idempotent — already started
     return upsertParcaState(client, projectId, parca, parcaStartPatch({ now: new Date().toISOString() }))
   })
@@ -458,6 +470,143 @@ export async function requestParcaRound(projectId, parca, actor, { route } = {})
         event: { type: 'project.parca_ekran_pending', aggregateId: project.id },
       })
     }
+    return updated
+  })
+}
+
+/* ----------------------------------------------------------------------------
+ * The change-request handshake, per parça (migration 077)
+ *
+ * The project-level trio (computeDemoChangeRequest / Accept / Decline) reads
+ * `projects.demo_started`, which a split round never sets — `startParca` leaves
+ * it alone on purpose. These are the same three verbs reading the parça's own
+ * `started_at` instead, so the handshake works on exactly the rounds it could
+ * not reach before.
+ *
+ * They stay out of `runProjectCommand` for the reason at the top of this file:
+ * not one of them touches a project column.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * POST /api/projects/:id/parca/:parca/change-request — the leader asks the
+ * matbaa to release a parça they have already started.
+ *
+ * Team-leader-only, matching `canEditSentDemoRequest` and the project-level
+ * request: this reopens an edit window, and two people holding it at once is
+ * the race migration 049's follow-up removed rather than narrowed.
+ */
+export async function requestParcaChange(projectId, parca, actor, { note } = {}) {
+  return withTx(async (client) => {
+    const { project, row } = await loadParcaForUpdate(client, projectId, parca)
+    if (actor?.role !== 'team_leader') {
+      badRequest('Değişiklik talebini yalnızca ekip lideri yapabilir.')
+    }
+    if (row.change_requested_at) {
+      badRequest('Bu parça için zaten bekleyen bir değişiklik talebi var.')
+    }
+    if (!parcaChangeRequestable(row)) {
+      // Two ways to be here and they mean opposite things to the leader: the
+      // parça is still free to edit, or it was already released and the
+      // correction is the thing that is missing.
+      if (row.fix_pending) {
+        badRequest('Talebiniz kabul edildi, formu güncelleyerek düzeltmeyi gönderin.')
+      }
+      badRequest('Matbaa bu parçaya henüz başlamadı, doğrudan düzenleyebilirsiniz.')
+    }
+    const updated = await upsertParcaState(client, projectId, parca, parcaChangeRequestPatch({
+      note,
+      actor,
+      actorName: actor?.name ?? 'Bilinmeyen',
+      now: new Date().toISOString(),
+      // Restated because upsertParcaState writes the round stamps verbatim —
+      // dropping it here would tell the matbaa's queue they never started.
+      startedAt: row.started_at,
+    }))
+
+    const printers = await activeUserIdsByRole(client, 'printer')
+    await emit(client, {
+      recipientIds: printers,
+      actorId: actor?.id,
+      type: 'parca_change_requested',
+      tone: 'amber',
+      title: project.title,
+      projectId: project.id,
+      body: `${parca} için değişiklik istendi`,
+      link: `/projects/${project.id}`,
+      event: { type: 'project.parca_change_requested', aggregateId: project.id },
+    })
+    return updated
+  })
+}
+
+/**
+ * POST /api/projects/:id/parca/:parca/change-accept — the matbaa releases it.
+ *
+ * The parça goes back to `with_matbaa` (un-started) carrying `fix_pending`, so
+ * the leader's edit is free again and `startParca` refuses until it lands. Same
+ * two-step the project-level accept performs, and for the same reason: without
+ * the debt, the matbaa could accept and immediately re-start, closing the
+ * window they just opened.
+ */
+export async function acceptParcaChange(projectId, parca, actor) {
+  return withTx(async (client) => {
+    const { project, row } = await loadParcaForUpdate(client, projectId, parca)
+    if (actor?.role !== 'printer') {
+      badRequest('Bu işlemi yalnızca matbaa yapabilir.')
+    }
+    if (!row.change_requested_at) {
+      badRequest('Bu parça için bekleyen bir değişiklik talebi yok.')
+    }
+    const updated = await upsertParcaState(client, projectId, parca, parcaChangeAcceptPatch())
+
+    const leaders = await activeUserIdsByRole(client, 'team_leader')
+    await emit(client, {
+      recipientIds: leaders,
+      actorId: actor?.id,
+      type: 'parca_change_accepted',
+      tone: 'blue',
+      title: project.title,
+      projectId: project.id,
+      body: `${parca} için değişiklik kabul edildi, düzeltmeyi gönderin`,
+      link: `/projects/${project.id}`,
+      event: { type: 'project.parca_change_accepted', aggregateId: project.id },
+    })
+    return updated
+  })
+}
+
+/**
+ * POST /api/projects/:id/parca/:parca/change-decline — the matbaa says no.
+ *
+ * Only the question is cleared. The parça stays started and stays theirs, and
+ * the leader's remaining move is the one they always had at the gate: take
+ * delivery and reject it there.
+ */
+export async function declineParcaChange(projectId, parca, actor) {
+  return withTx(async (client) => {
+    const { project, row } = await loadParcaForUpdate(client, projectId, parca)
+    if (actor?.role !== 'printer') {
+      badRequest('Bu işlemi yalnızca matbaa yapabilir.')
+    }
+    if (!row.change_requested_at) {
+      badRequest('Bu parça için bekleyen bir değişiklik talebi yok.')
+    }
+    const updated = await upsertParcaState(
+      client, projectId, parca, parcaChangeDeclinePatch({ startedAt: row.started_at }),
+    )
+
+    const leaders = await activeUserIdsByRole(client, 'team_leader')
+    await emit(client, {
+      recipientIds: leaders,
+      actorId: actor?.id,
+      type: 'parca_change_declined',
+      tone: 'amber',
+      title: project.title,
+      projectId: project.id,
+      body: `${parca} için değişiklik talebi reddedildi, teslim bekleniyor`,
+      link: `/projects/${project.id}`,
+      event: { type: 'project.parca_change_declined', aggregateId: project.id },
+    })
     return updated
   })
 }
