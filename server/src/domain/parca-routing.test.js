@@ -22,6 +22,8 @@ import {
   parcaChangeAcceptPatch,
   parcaChangeDeclinePatch,
   parcaFixSettledPatch,
+  parcaAlreadyDelivered,
+  parcaReceivePatch,
   parcaApprovePatch,
   allParcalarApproved,
   parcalarOwnedBy,
@@ -213,6 +215,39 @@ describe('the change-request handshake (migration 077)', () => {
     assert.equal(parcaApprovePatch().owner_role, null)
   })
 
+  // The structural guard for the whole bug class, rather than one more case.
+  //
+  // `upsertParcaState` writes owner_role and route VERBATIM so a parça
+  // returning to the gate can clear them, which makes OMITTING the pair mean
+  // "give this parça to nobody" — a state no actor can act on and no
+  // transition can leave (migration 078 had to repair the rows by hand). The
+  // omission is silent at every layer: the patch is valid, the upsert
+  // succeeds, and the damage only surfaces as "Bu parça sizde değil" on a
+  // screen far away. So every patch must SAY what it means, even when it
+  // means null.
+  it('no patch may leave the owner unstated', () => {
+    const patches = {
+      reject: parcaRejectPatch({
+        target: 'matbaa', reason: 'x', actor: leader, actorName: leader.name,
+        now: NOW, gate: 'demo', currentAttempt: 1,
+      }),
+      requestRound: parcaRequestRoundPatch({ route: 'physical', now: NOW }),
+      requestRoundEkran: parcaRequestRoundPatch({ route: 'ekran', now: NOW }),
+      start: parcaStartPatch({ now: NOW }),
+      deliver: parcaDeliverPatch({ now: NOW }),
+      receive: parcaReceivePatch({ actor: leader, actorName: leader.name, now: NOW }),
+      approve: parcaApprovePatch(),
+      changeRequest: parcaChangeRequestPatch({ note: 'x', actor: leader, now: NOW, startedAt: NOW }),
+      changeAccept: parcaChangeAcceptPatch(),
+      changeDecline: parcaChangeDeclinePatch({ startedAt: NOW }),
+      fixSettled: parcaFixSettledPatch({ owner_role: 'printer', route: 'physical' }),
+    }
+    for (const [name, patch] of Object.entries(patches)) {
+      assert.ok('owner_role' in patch, `${name} must state owner_role explicitly`)
+      assert.ok('route' in patch, `${name} must state route explicitly`)
+    }
+  })
+
   it('an empty note is stored as null, not as an empty string', () => {
     const patch = parcaChangeRequestPatch({ note: '   ', actor: leader, now: NOW })
     assert.equal(patch.change_requested_note, null)
@@ -381,5 +416,35 @@ describe('a full round trip returns the parça to the gate', () => {
     assert.equal(row.state, 'approved')
     // The attempt bump from the reject survives the whole trip.
     assert.equal(row.attempt, 2)
+  })
+})
+
+describe('delivering the same parça twice', () => {
+  // Reported from the field as a 400 on "Teslim Edin": delivering clears
+  // owner_role (the parça is at the gate now), so the second arrival of one
+  // click read as "Bu parça sizde değil." about a parça the printer had just
+  // handed over. Two taps on a phone, or one tap against a stale queue.
+  it('recognises a parça that already came back this round', () => {
+    assert.equal(parcaAlreadyDelivered({ state: 'pending', delivered_at: NOW }), true)
+  })
+
+  it('does not short-circuit a parça that is out on a NEW round', () => {
+    // A reject clears delivered_at precisely so the next round can be
+    // delivered again — short-circuiting here would strand it forever.
+    assert.equal(parcaAlreadyDelivered({ state: 'with_matbaa', delivered_at: null }), false)
+    assert.equal(parcaAlreadyDelivered({ state: 'in_round', delivered_at: null }), false)
+  })
+
+  it('still counts as delivered once the leader has taken receipt', () => {
+    assert.equal(
+      parcaAlreadyDelivered({ state: 'pending', delivered_at: NOW, received_at: NOW }),
+      true,
+    )
+  })
+
+  it('is false for a parça standing at the gate that never arrived', () => {
+    // An ekran round has no physical proof — nothing was delivered.
+    assert.equal(parcaAlreadyDelivered({ state: 'pending', delivered_at: null }), false)
+    assert.equal(parcaAlreadyDelivered(null), false)
   })
 })

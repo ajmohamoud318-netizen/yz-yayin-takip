@@ -505,6 +505,11 @@ export default function ProjectDetail() {
         // designer sending it back round) opens KUTU's block, not the whole
         // round it was sent on. Same source as the button's own label above.
         parcaScope={parcaSheet?.parcalar ?? null}
+        // Reject opens narrowed to the parça being sent back: the reason the
+        // leader is about to write names one block, so the sheet should show
+        // that block. Approve and the matbaa's start/deliver keep the whole
+        // round — see SpecFormDialog's `showAllParca`.
+        parcaScopeOnly={parcaSheet?.action === 'reject'}
         // Which parça blocks the sheet must render read-only on the leader's
         // edit-and-notify path (migration 077).
         parcaRows={parcaRows}
@@ -540,6 +545,11 @@ export default function ProjectDetail() {
             }
             : undefined}
         parcaScope={parcaSheet?.parcalar ?? null}
+        // Reject opens narrowed to the parça being sent back: the reason the
+        // leader is about to write names one block, so the sheet should show
+        // that block. Approve and the matbaa's start/deliver keep the whole
+        // round — see SpecFormDialog's `showAllParca`.
+        parcaScopeOnly={parcaSheet?.action === 'reject'}
         // Which parça blocks the sheet must render read-only on the leader's
         // edit-and-notify path (migration 077).
         parcaRows={parcaRows}

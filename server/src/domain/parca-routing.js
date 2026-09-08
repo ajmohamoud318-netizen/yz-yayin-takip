@@ -327,6 +327,25 @@ export function parcaReceivePatch({ actor, actorName, now, deliveredAt = null })
 }
 
 /**
+ * Has this parça already been handed back this round?
+ *
+ * The idempotency test for "Teslim Edin", and it cannot be asked of
+ * `canActOnParca`: delivering CLEARS `owner_role` (the parça is at the gate,
+ * on nobody's desk), so a repeat of the same click reads as "not yours" —
+ * which is how a printer who tapped twice, or tapped once against a queue that
+ * had not refetched, was told "Bu parça sizde değil." about a parça they had
+ * just delivered successfully.
+ *
+ * `delivered_at` alone is not enough: a reject clears it (`parcaRejectPatch`)
+ * precisely so the next round can be delivered again, and a parça back with
+ * the matbaa on a new round must NOT short-circuit. Both halves together mean
+ * "at the gate, already arrived".
+ */
+export function parcaAlreadyDelivered(row) {
+  return !!row && row.state === 'pending' && !!row.delivered_at
+}
+
+/**
  * Is this parça waiting for the leader's "Teslim Alın"?
  *
  * Delivered by the matbaa, sitting at the gate, nobody has acknowledged it yet.

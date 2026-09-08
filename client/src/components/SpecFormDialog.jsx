@@ -94,6 +94,9 @@ export { stampSpecSignature } from '@/lib/spec-form-storage'
  *   (the printer may still mark demo-start/ozalit-start), the footer offers
  *   an "İşlemi Başlatın" button so they review the spec sheet before
  *   confirming they've begun physical work, instead of starting blind.
+ * parcaScopeOnly — open showing ONLY the scoped parçalar instead of the whole
+ * round. See `showAllParca`; the reject path is the caller that sets it.
+ *
  * parcaRows — this project's `parca_state` rows (migration 077). Only read on
  * the edit-and-notify path, to grey out the blocks of parçalar the matbaa has
  * already started; see `lockedParcalar` below.
@@ -117,7 +120,7 @@ export { stampSpecSignature } from '@/lib/spec-form-storage'
  *   ship a different file). The saved sheet still loads as-is (like a
  *   read-only viewer would) instead of the normal "fresh compose" reset.
  */
-export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, order = null, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, startWorkLabel = null, parcaScope = null, parcaRows = [], rejectContext = null }) {
+export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, order = null, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, startWorkLabel = null, parcaScope = null, parcaScopeOnly = false, parcaRows = [], rejectContext = null }) {
   const variant = VARIANTS[variantName]
   const { user } = useAuth()
   const { updateOne } = useProjectsStore()
@@ -209,8 +212,16 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    * Nothing about the ACTION changes with it — the footer button still names
    * the parça of the click, and the narrowed view is one tap away in the
    * banner above the sheet ("Yalnızca KUTU"). Reset on every (re)open, so a
-   * narrowing chosen on the last sheet never carries into the next. */
-  const [showAllParca, setShowAllParca] = useState(true)
+   * narrowing chosen on the last sheet never carries into the next.
+   *
+   * `parcaScopeOnly` is the one caller that opens the other way round, and
+   * reject is why: the leader is about to send ONE parça back with a reason
+   * naming what is wrong with it, and a sheet showing all three while the
+   * dialog behind it says "KUTU" invites writing the reason against the wrong
+   * block. Reading the round is still one tap away in the same banner — the
+   * default simply flips for the action where being specific matters more than
+   * having context. Start and approve keep the reasoning above. */
+  const [showAllParca, setShowAllParca] = useState(!parcaScopeOnly)
 
   // Matbaa "Başladım" gate (migration 048): once the printer has started
   // physical work, the leader/assigned designer can no longer silently save
@@ -588,8 +599,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     setReceivedLocal(false)
     setConfirmReceive(false)
     setBaskiOnayEditOverride(false)
-    setShowAllParca(true)
-  }, [open, scopeId])
+    setShowAllParca(!parcaScopeOnly)
+  }, [open, scopeId, parcaScopeOnly])
 
   async function handleReceiveOzalit() {
     if (!project) return

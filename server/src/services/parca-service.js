@@ -22,6 +22,7 @@ import {
   parcaDeliverPatch,
   parcaReceivePatch,
   parcaAwaitsReceipt,
+  parcaAlreadyDelivered,
   parcaChangeRequestable,
   parcaChangeRequestPatch,
   parcaChangeAcceptPatch,
@@ -323,7 +324,21 @@ export async function deliverParca(projectId, parca, actor) {
     if (actor?.role !== 'printer') {
       badRequest('Parça teslimini yalnızca matbaa yapabilir.')
     }
+    // Idempotent, like `startParca` above and `receiveParca` below — and for a
+    // sharper reason than symmetry. Delivering hands the parça back to the
+    // gate, which CLEARS `owner_role` (see parcaDeliverPatch), so the second
+    // arrival of the same click failed `canActOnParca` and came back as "Bu
+    // parça sizde değil." on a parça the printer had just delivered
+    // successfully. Two taps on a phone, or one tap against a queue that had
+    // not refetched yet, was all it took. Delivering twice is not an error; it
+    // is the same fact stated twice.
+    if (parcaAlreadyDelivered(row)) return row
     if (!canActOnParca(actor, row)) {
+      // Distinguish the ways to get here, as `receiveParca` does: the message
+      // above was the same sentence for "somebody else has it" and "you just
+      // delivered it", which is how the dead end went unrecognised for so long.
+      if (row.state === 'approved') badRequest('Bu parça onaylandı, teslim edilecek bir şey yok.')
+      if (row.state === 'with_designer') badRequest('Bu parça tasarımcıda, sizde değil.')
       badRequest('Bu parça sizde değil.')
     }
     if (!row.started_at) {
