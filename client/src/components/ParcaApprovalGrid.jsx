@@ -48,6 +48,10 @@ import {
  *                   dialog and takes the same whole-round action. Pass it only
  *                   when that action is actually permitted — the grid does not
  *                   re-derive the receipt / role / split-across-desks gates.
+ *                   It does re-derive one of its own: the button disappears the
+ *                   moment any parça on the round has been decided, because the
+ *                   whole-round reject WIPES the per-parça ledger rather than
+ *                   adding to it (see showBulkReject).
  *
  * `neverSentParcalar` are parçalar the PROJECT has (Ürün Bilgileri) that no round
  * has ever carried. They are not on the snapshot — that is what makes them
@@ -229,6 +233,23 @@ export default function ParcaApprovalGrid({
     // that state is the receipt itself, below.
     && !roundAwaitsReceipt
 
+  /* Has this round been decided on at all yet?
+   *
+   * The single most important fact about the panel's whole-round buttons, and it
+   * governs three of them. A round with sign-offs on it is mid-decision, and
+   * every "tümünü" action becomes a lie in that state: it does not describe the
+   * round the leader is looking at, it describes the round as it was before they
+   * started working through it.
+   *
+   * It also tells a whole-round delivery apart from a single parça coming back.
+   * Both look identical from the project row — `settleParcaAtGate` clears the
+   * project-level `demo_received` when the matbaa hands back ONE parça after a
+   * per-parça reject, exactly as a fresh delivery does. The ledger is what
+   * separates them: a round nobody has signed anything on is a fresh delivery;
+   * one with sign-offs is mid-decision, and what just arrived is the one parça
+   * that went back. */
+  const partialArrival = approved.length > 0 || rejected.length > 0
+
   // The whole-round bounce, moved here from the header so that every decision on
   // a multi-parça round is taken in one place. It is offered only when the
   // caller passes a handler, and ProjectDetail passes one only when
@@ -239,26 +260,31 @@ export default function ParcaApprovalGrid({
   // …and not while the round is still owed its receipt: the leader cannot bounce
   // a proof they have not taken delivery of (the server's own reject gate), and
   // the pair on offer in that state is the receipt.
+  //
+  // …and NOT once the leader has decided anything on this round. The server's
+  // whole-round reject is a wipe, not a bounce: `computeRejection`'s non-partial
+  // branch sets `demo_parca_approvals: []` / `demo_parca_rejections: []` (and the
+  // ozalit pair), bumps `*_attempt` and sends the stage back. So on a round with
+  // two parçalar signed off and one still pending, the button a leader reads as
+  // "send back the one that's left" silently discards the two sign-offs they
+  // already gave — the per-parça ledger this whole panel exists to keep.
+  //
+  // The honest action for the rest of the round is the row's own thumbs-down: a
+  // per-parça reject bounces exactly that parça (`isPartial`, which drops only
+  // its rows and leaves the others locked). "Tümünü Reddedin" is what it says on
+  // a round nobody has started deciding — everything goes back, nothing is lost —
+  // and that is the only round it is offered on now.
   const showBulkReject = !!onBulkReject && !routingAware && !roundAwaitsReceipt
+    && !partialArrival
 
   // The whole-round receipt, in the panel for the same reason the other two are:
   // it is the round's decision, and the round is what this panel describes.
   const showBulkReceipt = roundAwaitsReceipt && !routingAware && !!onBulkReceive
 
-  /* Is this the whole round arriving, or one parça coming back?
-   *
-   * Both look identical from the project row — `settleParcaAtGate` clears the
-   * project-level `demo_received` when the matbaa hands back a SINGLE parça
-   * after a per-parça reject, exactly as a fresh whole-round delivery does. The
-   * ledger is what tells them apart: a round nobody has signed anything on is a
-   * fresh delivery; one with sign-offs on it is mid-decision, and what just
-   * arrived is the one parça that went back.
-   *
-   * It changes both the label and what is offered. "Tümünü Teslim Alın" is a lie
-   * about a single reprint, and "Teslim Alınamadı" is worse than a lie: it
-   * bounces the WHOLE round and wipes those sign-offs (the server refuses it now
-   * — see computeDemoNotReceived — so offering it would only produce an error). */
-  const partialArrival = approved.length > 0 || rejected.length > 0
+  // Same fact, applied to the receipt pair. "Tümünü Teslim Alın" is a lie about a
+  // single reprint, and "Teslim Alınamadı" is worse than a lie: it bounces the
+  // WHOLE round and wipes those sign-offs (the server refuses it now — see
+  // computeDemoNotReceived — so offering it would only produce an error).
   const receiptLabel = partialArrival ? 'Teslim Alın' : 'Tümünü Teslim Alın'
 
   // Baskı Onayı's first step, and the reason it is one button rather than one

@@ -385,18 +385,45 @@ describe('ParcaApprovalGrid — bulk reject', () => {
     expect(fired).toBe(true)
   })
 
-  it('still shows when there is nothing left to bulk-approve', () => {
-    // A round the leader has already signed off parça by parça can still be
-    // bounced as a whole — the header's Reddet never depended on anything being
-    // pending, and moving it must not quietly add that condition.
+  it('withdraws once any parça has been signed off', () => {
+    // Reported from a live round: three parçalar, two approved, one still
+    // pending — and "Tümünü Reddedin" sitting above them. It reads as "send back
+    // the one that's left"; what it does is `computeRejection`'s non-partial
+    // branch, which sets demo_parca_approvals to [] and bumps the attempt. The
+    // two sign-offs the leader gave are gone, silently.
+    //
+    // The row's own thumbs-down is the honest action for the rest of the round:
+    // a per-parça reject bounces that parça and leaves the others locked.
     render(
       <ParcaApprovalGrid
         project={{
           demo_parca_approvals: [
             { parca: 'KAPAK', by: 'u-l', by_name: 'Ayşenur' },
-            { parca: 'KUTU', by: 'u-l', by_name: 'Ayşenur' },
+            { parca: 'KİTAP', by: 'u-l', by_name: 'Ayşenur' },
           ],
           demo_parca_rejections: [],
+        }}
+        kind="demo"
+        snapshotParcalar={['KAPAK', 'KİTAP', 'KUTU']}
+        onApproveParcalar={() => {}}
+        onRejectParcalar={() => {}}
+        onBulkReject={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label*="Tümünü Reddedin"]')).toBe(null)
+    // …and the per-parça way out of the pending one is still right there.
+    expect(container.querySelector('button[aria-label="KUTU parçasını reddet"]')).toBeTruthy()
+  })
+
+  it('withdraws once any parça has been sent back, too', () => {
+    // Same wipe, other ledger: the non-partial branch clears
+    // demo_parca_rejections as well, so a bounce here would erase the record of
+    // the parça already on its way to the matbaa.
+    render(
+      <ParcaApprovalGrid
+        project={{
+          demo_parca_approvals: [],
+          demo_parca_rejections: [{ parca: 'KAPAK', by: 'u-l', target: 'matbaa' }],
         }}
         kind="demo"
         snapshotParcalar={['KAPAK', 'KUTU']}
@@ -404,7 +431,21 @@ describe('ParcaApprovalGrid — bulk reject', () => {
         onBulkReject={() => {}}
       />,
     )
-    expect(container.querySelector('button[aria-label*="Tüm parçaları onaylayın"]')).toBe(null)
+    expect(container.querySelector('button[aria-label*="Tümünü Reddedin"]')).toBe(null)
+  })
+
+  it('is offered on a round nobody has decided anything on', () => {
+    // The one round the button is honest about: everything goes back, and there
+    // is nothing on the ledger for the wipe to destroy.
+    render(
+      <ParcaApprovalGrid
+        project={clean}
+        kind="demo"
+        snapshotParcalar={['KAPAK', 'KİTAP', 'KUTU']}
+        onApproveParcalar={() => {}}
+        onBulkReject={() => {}}
+      />,
+    )
     expect(container.querySelector('button[aria-label*="Tümünü Reddedin"]')).toBeTruthy()
   })
 
