@@ -1099,8 +1099,13 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         {/* Nothing leaves this document silently: when the sheet has been
             narrowed to the parça the reader was handed, it says which parçalar
             it is not showing and offers them back. Screen only — what goes on
-            paper is the sheet as displayed. */}
-        {parcaNarrowed && (
+            paper is the sheet as displayed.
+
+            The matbaa is exempt: their sheet is read-only and opened for the
+            parça they clicked, never a decision over the round's scope, so the
+            "other parçalar" call-out has nothing for them to act on — it only
+            named work that isn't theirs to start or delivered. */}
+        {parcaNarrowed && user?.role !== 'printer' && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs print:hidden">
             <p className="min-w-0 text-muted-foreground">
               {showAllParca
