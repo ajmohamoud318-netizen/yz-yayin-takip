@@ -140,6 +140,15 @@ export default function ProjectDetail() {
     ? `${parcaSheet.parcalar.join(', ')} · ${PARCA_SHEET_VERB[parcaSheet.action]}`
     : null
 
+  // Per-parça routing rows (migration 074) — who is holding what on this
+  // project right now. Distinct from the ledgers the grid above reads: those
+  // record who SIGNED what, this records whose turn it is.
+  const { parcaRows, refetchParcaRows } = d
+  const [parcaRoundBusy, setParcaRoundBusy] = useState(null)
+  // Which parça the edit-and-notify sheet was opened for, if any — see
+  // openParcaFixSheet. Cleared when either sheet closes.
+  const [editParcaScope, setEditParcaScope] = useState(null)
+
   // Which parçalar the sheet opens on, and whether it opens narrowed to them.
   // The three scopes are mutually exclusive — each caller clears the others,
   // and the dialog's onOpenChange clears all three. See resolveSheetScope for
@@ -149,15 +158,6 @@ export default function ProjectDetail() {
     add: d.parcaAddScope,
     edit: editParcaScope,
   })
-
-  // Per-parça routing rows (migration 074) — who is holding what on this
-  // project right now. Distinct from the ledgers the grid above reads: those
-  // record who SIGNED what, this records whose turn it is.
-  const { parcaRows, refetchParcaRows } = d
-  const [parcaRoundBusy, setParcaRoundBusy] = useState(null)
-  // Which parça the edit-and-notify sheet was opened for, if any — see
-  // openParcaFixSheet. Cleared when either sheet closes.
-  const [editParcaScope, setEditParcaScope] = useState(null)
   // A designer may send back only a parça on a project they are assigned to;
   // a leader may do it on the designer's behalf, matching the latitude
   // canRequestOzalit gives them on the project-level round.
