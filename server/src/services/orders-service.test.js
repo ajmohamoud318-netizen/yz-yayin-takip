@@ -741,6 +741,106 @@ describe('orders-service — ozalit round', () => {
     assert.equal(client.matching(/UPDATE order_requests/).length, 0)
   })
 
+  /* The sipariş leg went without a parça-set guard entirely while the project
+     leg had one — same picker on the same dialog, so a leader could untick a
+     parça on a sheet the matbaa was already holding and the round quietly
+     became a different round.
+
+     `ozalit_started` does not cover this: it stops corrections once the matbaa
+     is PRODUCING, and says nothing about which parçalar the round contains
+     before that. These pin the guard and the wiring that feeds it — the
+     baseline has to be read before the new snapshot is written, or there is
+     nothing left to compare against. */
+  const sheet = (...parcalar) => ({
+    _selectedComponents: parcalar.map((component) => ({ component, rows: [] })),
+  })
+
+  /** A fake that answers the baseline read with `held` and swallows the insert. */
+  function withHeldSheet(client, held) {
+    const baseQuery = client.query
+    client.query = async (sql, params) => {
+      if (/SELECT payload, attempt/.test(sql) && /order_id/.test(sql)) {
+        client.calls.push({ sql, params })
+        return { rows: held ? [{ payload: held, attempt: 1 }] : [] }
+      }
+      if (/INSERT INTO demos/.test(sql)) {
+        client.calls.push({ sql, params })
+        return { rows: [{ id: 'd-99' }] }
+      }
+      return baseQuery(sql, params)
+    }
+    return client
+  }
+
+  it('refuses to take a parça off the sipariş round', async () => {
+    const order = orderRow({ status: 'matbaa_ozalit_yapiyor' })
+    const client = withHeldSheet(makeClient({ order }), sheet('KAPAK', 'İÇ'))
+
+    await assert.rejects(
+      () => service.editOzalit('o-1', L1, { payload: sheet('KAPAK') }, client),
+      /turdan parça çıkarılamaz: İÇ/,
+    )
+    assert.equal(client.matching(/UPDATE order_requests/).length, 0)
+  })
+
+  it('refuses to put a new parça on it', async () => {
+    // A sipariş has no "Kalan Parçaları Gönderin", so nothing may move this
+    // list in either direction.
+    const order = orderRow({ status: 'matbaa_ozalit_yapiyor' })
+    const client = withHeldSheet(makeClient({ order }), sheet('KAPAK'))
+
+    await assert.rejects(
+      () => service.editOzalit('o-1', L1, { payload: sheet('KAPAK', 'SIRT') }, client),
+      /tura yeni parça eklenemez: SIRT/,
+    )
+  })
+
+  it('lets an ordinary correction through untouched', async () => {
+    const order = orderRow({ status: 'matbaa_ozalit_yapiyor' })
+    const client = withHeldSheet(makeClient({ order }), sheet('KAPAK', 'İÇ'))
+
+    await service.editOzalit('o-1', L1, { payload: sheet('KAPAK', 'İÇ') }, client)
+
+    assert.equal(client.matching(/INSERT INTO demos/).length, 1)
+  })
+
+  it('reads the sheet the matbaa holds BEFORE writing over it', async () => {
+    // The ordering the guard depends on: once the correction is the latest
+    // snapshot, "what did this change?" has no answer left.
+    const order = orderRow({ status: 'matbaa_ozalit_yapiyor' })
+    const client = withHeldSheet(makeClient({ order }), sheet('KAPAK'))
+
+    await service.editOzalit('o-1', L1, { payload: sheet('KAPAK') }, client)
+
+    const sqls = client.calls.map((c) => c.sql)
+    const read = sqls.findIndex((s) => /SELECT payload, attempt/.test(s) && /order_id/.test(s))
+    const write = sqls.findIndex((s) => /INSERT INTO demos/.test(s))
+    assert.ok(read >= 0 && write >= 0, 'both the baseline read and the insert ran')
+    assert.ok(read < write, 'baseline is read before the new snapshot is inserted')
+  })
+
+  it('does not judge a round with no sheet behind it yet', async () => {
+    // No baseline to diff — refusing here would block a legitimate first
+    // correction on a legacy sipariş round.
+    const order = orderRow({ status: 'matbaa_ozalit_yapiyor' })
+    const client = withHeldSheet(makeClient({ order }), null)
+
+    await service.editOzalit('o-1', L1, { payload: sheet('KAPAK', 'SIRT') }, client)
+
+    assert.equal(client.matching(/INSERT INTO demos/).length, 1)
+  })
+
+  it('still authorizes a payload-less notify', async () => {
+    // A stale client sends this shape. There is no sheet to compare, so the
+    // set guard has nothing to say and the role/status guards still apply.
+    const order = orderRow({ status: 'matbaa_ozalit_yapiyor' })
+    const client = withHeldSheet(makeClient({ order }), sheet('KAPAK'))
+
+    await service.editOzalit('o-1', L1, {}, client)
+
+    assert.equal(client.matching(/INSERT INTO demos/).length, 0)
+  })
+
   it('clears the change request on accept and marks a fix owed', async () => {
     const order = orderRow({
       status: 'matbaa_ozalit_yapiyor',

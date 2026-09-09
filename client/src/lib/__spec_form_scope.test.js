@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  hiddenParcaNames, scopeComponents, opensNarrowed, resolveSheetScope,
+  hiddenParcaNames, scopeComponents, opensNarrowed, resolveSheetScope, parcaAddFlag,
 } from '@/lib/spec-form-scope'
 
 const comp = (component) => ({ id: component, component, rows: [] })
@@ -24,6 +24,40 @@ const sheet = [comp('KİTAP'), comp('KUTU'), comp('KILAVUZ')]
  * `opensNarrowed` — silently opens the whole round the moment a leader has two
  * parçalar to send, which is exactly the complaint this exists to answer.
  */
+/**
+ * One save path feeds two routes with different body schemas, and the sipariş
+ * one is `additionalProperties: false`. That makes "absent" and "false"
+ * genuinely different values here, which is the trap these pin.
+ */
+describe('parcaAddFlag', () => {
+  it('claims the add when there are parçalar to add', () => {
+    expect(parcaAddFlag(['KİTAP'])).toEqual({ allowParcaAdd: true })
+    expect(parcaAddFlag(['KİTAP', 'KILAVUZ'])).toEqual({ allowParcaAdd: true })
+  })
+
+  it('OMITS the key entirely on an ordinary save — never sends false', () => {
+    // The regression: `allowParcaAdd: false` is a defined value, so it survives
+    // JSON and reaches the server. On the sipariş ozalit route — same call,
+    // stricter schema — that made Fastify 400 every ordinary correction.
+    expect(parcaAddFlag(null)).toEqual({})
+    expect(parcaAddFlag(undefined)).toEqual({})
+    expect(parcaAddFlag([])).toEqual({})
+    expect('allowParcaAdd' in parcaAddFlag(null)).toBe(false)
+  })
+
+  it('does not claim an add on a list of nothing', () => {
+    expect(parcaAddFlag([null, undefined, ''])).toEqual({})
+  })
+
+  it('spreads into a body without leaving a stray key', () => {
+    const ordinary = { attempt: 3, payload: {}, ...parcaAddFlag(null) }
+    expect(Object.keys(ordinary).sort()).toEqual(['attempt', 'payload'])
+
+    const adding = { attempt: 3, payload: {}, ...parcaAddFlag(['KİTAP']) }
+    expect(Object.keys(adding).sort()).toEqual(['allowParcaAdd', 'attempt', 'payload'])
+  })
+})
+
 describe('resolveSheetScope', () => {
   it('opens the whole sheet when nothing scoped it', () => {
     expect(resolveSheetScope()).toEqual({ scope: null, scopeOnly: false })

@@ -23,7 +23,9 @@ import { saveEditedComponents } from '@/data/productCatalog'
 import { ozalitLeaderApproved, needsOzalitRouteChoice, lockedParcaNames } from '@/domain'
 import { buildChangeSummary } from '@/lib/spec-form-diff'
 import { openMultiPrint } from '@/lib/spec-form-print'
-import { decisionScopeCopy, hiddenParcaNames, scopeComponents } from '@/lib/spec-form-scope'
+import {
+  decisionScopeCopy, hiddenParcaNames, parcaAddFlag, scopeComponents,
+} from '@/lib/spec-form-scope'
 import { VARIANTS, computeBaskiOnayLocked, canEditPreparedBaskiOnay, isDecisionReview, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
 import {
   fetchServerSnapshot,
@@ -971,11 +973,14 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             attempt: writeAttempt,
             payload: snapshotPayload(form),
             // Only a sheet opened BY "Kalan Parçaları Gönderin" may change the
-            // round's parça list, and only by adding. Every other save leaves
-            // this false and is refused server-side if the list moved — which
-            // is what stops a stray click in the picker from rewriting what the
-            // matbaa is producing. See assertParcaSetUnchanged.
-            allowParcaAdd: (preselectParcalar ?? []).length > 0,
+            // round's parça list, and only by adding. Every other save omits
+            // this and is refused server-side if the list moved — which is what
+            // stops a stray click in the picker from rewriting what the matbaa
+            // is producing. See assertParcaSetUnchanged.
+            //
+            // Spread, never a literal boolean — see parcaAddFlag for why a
+            // `false` here 400s the sipariş route.
+            ...parcaAddFlag(preselectParcalar),
           })
         } catch (err) {
           // Re-read the project so the stale "Gönderilen ... Düzenleyin"

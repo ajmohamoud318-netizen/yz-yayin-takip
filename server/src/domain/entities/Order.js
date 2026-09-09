@@ -18,6 +18,7 @@
 import { ORDER_STEP_NEXT, ORDER_STEP_OWNER, ORDER_REJECT_TARGETS } from '../orders.js'
 import { badRequest, conflict, forbidden } from '../errors.js'
 import { everyBlockHasAdet } from '../adet.js'
+import { assertParcaSetUnchanged } from '../spec-parca-diff.js'
 
 /**
  * Multi-party imza_bekleniyor approval. Every active team leader AND every
@@ -473,6 +474,9 @@ export class Order {
    * @param {object} ctx
    * @param {string|null} ctx.demoId — service fills this from the
    *   demos snapshot row it inserts in the same tx; null when no payload
+   * @param {{ added: string[], removed: string[] }|null} ctx.parcaSetDelta —
+   *   which parçalar this save would put on or take off the round, diffed
+   *   against the sheet the matbaa is holding
    */
   editOzalit(actor, ctx = {}) {
     if (this.status !== 'matbaa_ozalit_yapiyor') {
@@ -484,6 +488,17 @@ export class Order {
     if (this.ozalit_started) {
       badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
     }
+    // Membership, not content. `ozalit_started` above already stops a
+    // correction once the matbaa is producing, but it says nothing about WHICH
+    // parçalar the round carries — so before that flag is set a leader could
+    // untick one in the sheet's picker and the round quietly became a different
+    // round, on a sheet the matbaa is already holding.
+    //
+    // No `allowAdd` here: "Kalan Parçaları Gönderin" is a project-pipeline
+    // action and a sipariş has no equivalent, so nothing may move this list.
+    // The day one exists, the flag threads through the same call rather than
+    // around it.
+    assertParcaSetUnchanged(ctx.parcaSetDelta)
 
     this.ozalit_fix_pending = false
     this.version = (this.version ?? 0) + 1

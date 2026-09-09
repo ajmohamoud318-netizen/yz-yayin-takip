@@ -21,7 +21,9 @@ import { Order } from '../domain/entities/Order.js'
 import { assertOrderable, isAtOrPastStage } from '../domain/pipeline.js'
 import {
   getProject, getProjectForUpdate, patchProject, logHistory, insertDemoSnapshot,
+  loadLatestOrderOzalitSnapshot,
 } from './project-repository.js'
+import { parcaSetDelta } from '../domain/spec-parca-diff.js'
 import {
   notifyOrderTransition, notifyOrderRejected, notifyMatbaaReceived, notifyMatbaaApprovalPending,
   notifyOrderOzalitStarted, notifyOrderOzalitCancelled, notifyOrderOzalitEdited,
@@ -366,7 +368,20 @@ export async function cancelOzalit(orderId, actor, client = null) {
 export async function editOzalit(orderId, actor, { payload, attempt } = {}, client = null) {
   return runOrderCommand(orderId, actor, {
     async prepare({ client, row }) {
-      if (!payload) return { demoId: null }
+      // The sheet the matbaa is currently holding, read BEFORE the correction
+      // is written over it — the same ordering the project leg documents in
+      // `withDemoSnapshot`. Once the new snapshot is the latest one, "did this
+      // save change which parçalar the round carries?" can no longer be asked.
+      //
+      // Read even when there is no payload: a notify with no sheet is still an
+      // edit the entity has to authorize, and it is exactly the shape a stale
+      // client sends. It simply has no set change to find.
+      const baseline = await loadLatestOrderOzalitSnapshot(client, orderId)
+      const setDelta = payload
+        ? parcaSetDelta(baseline?.payload, payload)
+        : null
+
+      if (!payload) return { demoId: null, parcaSetDelta: null }
       const snapshot = await insertDemoSnapshot(client, {
         project_id: row.project_id,
         order_id: orderId,
@@ -375,7 +390,7 @@ export async function editOzalit(orderId, actor, { payload, attempt } = {}, clie
         attempt: attempt ?? (row.ozalit_attempt ?? 0) + 1,
         created_by: actor?.id,
       })
-      return { demoId: snapshot?.id ?? null }
+      return { demoId: snapshot?.id ?? null, parcaSetDelta: setDelta }
     },
     run: (order, ctx) => order.editOzalit(actor, ctx),
   }, client)

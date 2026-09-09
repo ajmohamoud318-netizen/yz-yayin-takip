@@ -765,6 +765,41 @@ export async function loadLatestDemoSnapshot(client, projectId, kind) {
   return { selectedComponents: selected, attempt: rows[0].attempt, payload }
 }
 
+/**
+ * The sipariş's own latest ozalit sheet — the sipariş twin of
+ * `loadLatestDemoSnapshot` above (migration 053).
+ *
+ * It cannot share that function: this table holds both, and the project's
+ * loader is scoped `order_id IS NULL` precisely so a sipariş round never
+ * surfaces as the project's latest sheet. Both carry the same `project_id` and
+ * `kind`, so the order id is the only thing telling them apart.
+ *
+ * Returned for one reason: the edit guard has to compare the sheet being saved
+ * against the one the matbaa is holding, and that question is unanswerable once
+ * the new snapshot is the latest one — so it is read BEFORE the insert, inside
+ * the same transaction.
+ */
+export async function loadLatestOrderOzalitSnapshot(client, orderId) {
+  const { rows } = await client.query(
+    `SELECT payload, attempt
+       FROM demos
+      WHERE order_id = $1 AND kind = 'ozalit'
+        AND jsonb_typeof(payload) = 'object'
+        AND jsonb_typeof(COALESCE(payload->'_selectedComponents', '[]'::jsonb)) = 'array'
+      ORDER BY attempt DESC, created_at DESC
+      LIMIT 1`,
+    [orderId],
+  )
+  if (!rows[0]) return null
+  const payload = rows[0].payload ?? {}
+  const selected = Array.isArray(payload._selectedComponents)
+    ? payload._selectedComponents
+        .map((c) => (typeof c === 'string' ? c : c?.component))
+        .filter(Boolean)
+    : []
+  return { selectedComponents: selected, attempt: rows[0].attempt, payload }
+}
+
 export async function reconcileOzalitApprovals(actor) {
   const { rows: leaderRows } = await getPool().query(
     "SELECT id FROM users WHERE role = 'team_leader' AND is_active = TRUE",

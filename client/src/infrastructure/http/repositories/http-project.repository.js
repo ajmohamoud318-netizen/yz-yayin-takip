@@ -314,13 +314,25 @@ export function createHttpProjectRepository(userRepo) {
     // behind. The route stamps the row it created onto the timeline entry
     // (migration 052) so a later correction of the same round, which reuses
     // the attempt slot, can't shadow this one's sheet.
-    async notifyDemoEdit(id, { attempt, payload } = {}) {
-      const { data } = await httpClient.post(`/projects/${id}/demo-edit-notify`, { attempt, payload })
+    // `allowParcaAdd` rides along because the server refuses ANY change to the
+    // round's parça list without it — that guard is what stops a stray tick in
+    // the picker from rewriting what the matbaa is producing, and
+    // "Kalan Parçaları Gönderin" is the one caller allowed past it. Rebuilding
+    // the body field-by-field (rather than forwarding the object) is what
+    // dropped it the first time: every layer below had the flag and the
+    // browser never sent it, so the sanctioned add was refused by its own
+    // guard, pointing the leader at the button they had just pressed.
+    async notifyDemoEdit(id, { attempt, payload, allowParcaAdd } = {}) {
+      const { data } = await httpClient.post(`/projects/${id}/demo-edit-notify`, {
+        attempt, payload, allowParcaAdd,
+      })
       cache.set(id, data)
       return data
     },
-    async notifyOzalitEdit(id, { attempt, payload } = {}) {
-      const { data } = await httpClient.post(`/projects/${id}/ozalit-edit-notify`, { attempt, payload })
+    async notifyOzalitEdit(id, { attempt, payload, allowParcaAdd } = {}) {
+      const { data } = await httpClient.post(`/projects/${id}/ozalit-edit-notify`, {
+        attempt, payload, allowParcaAdd,
+      })
       cache.set(id, data)
       return data
     },

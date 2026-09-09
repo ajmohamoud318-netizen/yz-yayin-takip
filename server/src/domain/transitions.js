@@ -29,7 +29,7 @@ import {
   parcaRejectPatch, parcaGateForStage, parcaDecidable,
   parcaEditLocked, parcaFixSettledPatch,
 } from './parca-routing.js'
-import { lockedParcalarTouched } from './spec-parca-diff.js'
+import { assertParcaSetUnchanged, lockedParcalarTouched } from './spec-parca-diff.js'
 
 /** Match the client's badRequest semantics — throw a 400. */
 function badRequest(message) {
@@ -873,57 +873,6 @@ function parcaStateRows(project) {
  */
 function lockedParcalar(project) {
   return parcaStateRows(project).filter(parcaEditLocked).map((r) => r.parca).filter(Boolean)
-}
-
-/**
- * Refuse a correction that changes WHICH parçalar the round carries.
- *
- * There is already a guard for this — the "parça-list pin" in routes/demos.js —
- * and it misses this path twice over: it only fires at the *_onay stages, and it
- * lives on POST /demos while edit-and-notify writes its snapshot directly from
- * `withDemoSnapshot`. So a leader on a live *_teslim round could untick a parça
- * in the sheet's picker and save, and the round would quietly become a different
- * round.
- *
- * That is not a smaller version of an edit, it is a different act. The round's
- * parça list is what the matbaa's queue is built from (`deriveTeslimParcalar`),
- * what the delivery gate counts (`allParcalarDelivered`, `parcalarStillOwed`),
- * and what `pruneApprovalsToSnapshot` uses to decide which per-parça approvals
- * to DELETE — which is exactly the destruction the pin was written to prevent
- * (see its comment in routes/demos.js).
- *
- * Removing and adding get separate messages because they are separate mistakes
- * with separate ways out.
- *
- * `null` means the delta was not computable and nothing is judged — see
- * `parcaSetDelta`. Note this is the OPPOSITE of `lockedParcalarTouched`'s
- * treatment of null, and deliberately so: there, an uncomparable save must not
- * be waved through over a parça on the press, so "unknown" means "assume the
- * worst". Here "unknown" means the round never had a parça list to change, and
- * refusing would block a legitimate edit on a legacy round.
- *
- * `allowAdd` is the sanctioned "send the parçalar that were left out" path
- * (the leader's "Kalan Parçaları Gönderin"), and it relaxes exactly one half of
- * this guard. Removal stays refused however the save arrives: adding work to a
- * round and withdrawing work from one are different acts, and nothing in that
- * feature needs the second. A leader who ticks a new parça and unticks an old
- * one in the same save is still told no — which is the case a single
- * "parça listesi değişebilir" flag would have waved straight through.
- */
-function assertParcaSetUnchanged(delta, { allowAdd = false } = {}) {
-  if (!delta) return
-  if (delta.removed?.length > 0) {
-    badRequest(
-      `Matbaadaki turdan parça çıkarılamaz: ${delta.removed.join(', ')}. `
-      + 'Turu iptal edin veya yeni bir tur gönderin.',
-    )
-  }
-  if (!allowAdd && delta.added?.length > 0) {
-    badRequest(
-      `Matbaadaki tura yeni parça eklenemez: ${delta.added.join(', ')}. `
-      + 'Bunun için "Kalan Parçaları Gönderin" adımını kullanın.',
-    )
-  }
 }
 
 /**

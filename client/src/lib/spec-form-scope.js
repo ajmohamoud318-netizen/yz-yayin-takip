@@ -120,6 +120,30 @@ export function opensNarrowed(parcaScope) {
  * @param {{ decision?: string[]|null, add?: string[]|null, edit?: string[]|null }} scopes
  * @returns {{ scope: string[]|null, scopeOnly: boolean }}
  */
+/**
+ * The `allowParcaAdd` half of an edit-and-notify body — present only when this
+ * save really is putting parçalar on the round.
+ *
+ * Returned as a fragment to SPREAD rather than as a boolean, and that is the
+ * whole point of it having a name. `allowParcaAdd: false` looks equivalent and
+ * is not: it is a defined value, so it survives JSON and reaches the server. The
+ * same save path also serves the sipariş route, whose body schema is
+ * `additionalProperties: false` and knows nothing about this flag — so sending
+ * a literal `false` there makes Fastify reject an ordinary ozalit correction
+ * with a 400 before the service ever sees it.
+ *
+ * Omitting the key is therefore not a tidiness preference but the thing that
+ * keeps one request shape valid on two routes with different schemas.
+ *
+ * @param {string[] | null | undefined} preselectParcalar
+ * @returns {{ allowParcaAdd?: true }}
+ */
+export function parcaAddFlag(preselectParcalar) {
+  return (preselectParcalar ?? []).filter(Boolean).length > 0
+    ? { allowParcaAdd: true }
+    : {}
+}
+
 export function resolveSheetScope({ decision = null, add = null, edit = null } = {}) {
   const added = (add ?? []).filter(Boolean)
   if (added.length > 0) return { scope: add, scopeOnly: true }
