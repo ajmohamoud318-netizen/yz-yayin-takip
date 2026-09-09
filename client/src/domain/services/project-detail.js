@@ -135,6 +135,7 @@ export function orderActionLabel(order) {
  */
 export function availableActions({
   project, user, parcaRows = [], printerParcaJobs = [], parcaSnapshot = [],
+  parcaSnapshotReady = true,
 }) {
   if (!project || !user) return []
   // Imported backlist products (origin='legacy', migration 031) have no design
@@ -226,13 +227,23 @@ export function availableActions({
    * way out of a round that turned out to be wrong wholesale.
    */
   const parcaPanelDecides = (parcaSnapshot ?? []).length >= 2
+  /* …and until the snapshot has actually been read, we do not know which it is.
+   *
+   * The list arrives from an async fetch and starts empty, so "not asked yet"
+   * and "single-parça round" are the same value for the first paint — and they
+   * now imply opposite owners for the whole-round buttons. Offering them on the
+   * guess and withdrawing them a moment later is worse than a beat of nothing:
+   * it is a button that appears exactly long enough to be clicked. `ready`
+   * covers a FAILED read too, so the fallback for a snapshot that cannot be
+   * loaded is unchanged. */
+  const parcaOwnerUnknown = !parcaSnapshotReady
 
   if ((stage === 'demo_onay' || stage === 'cin_demo_onay') && role === 'team_leader' && !splitAcrossDesks) {
     // Hide Onayla + Reddet until the demo has been received (Teslim Alındı)
     // and while the demo is held. The leader can't approve/reject a demo
     // they haven't taken delivery of yet, and once held, the project is
     // waiting for the designer to re-send a second demo.
-    if (project.demo_received === true && project.demo_held !== true) {
+    if (project.demo_received === true && project.demo_held !== true && !parcaOwnerUnknown) {
       if (!parcaPanelDecides) set.add('approve')
       // 'reject' is the header's button, 'reject-parca' the panel's
       // "Tümünü Reddedin" — the same whole-round act, two possible homes, and
@@ -271,7 +282,7 @@ export function availableActions({
   // round's own flag as the gate instead, and canApproveOzalitNow / the
   // server's reject gate both already carry the "one leader decides a screen
   // round" rule.
-  if (ozalitDecidable(project) && !splitAcrossDesks) {
+  if (ozalitDecidable(project) && !splitAcrossDesks && !parcaOwnerUnknown) {
     const alreadyApproved = (project.ozalit_approvals ?? []).some((a) => a.id === user.id)
     // Each leader/designer approves once. A leader who hasn't decided yet sees
     // both Onayla and Reddet; once they approve, BOTH disappear (they've
@@ -303,7 +314,7 @@ export function availableActions({
     // unprepared, "Baskı Onayı Verin" once it is (approveActionLabel). The panel
     // splits them apart, which is the honest shape: preparing is one act on one
     // document, approving is per parça by a different leader.
-    if (!parcaPanelDecides) set.add('approve')
+    if (!parcaPanelDecides && !parcaOwnerUnknown) set.add('approve')
   }
   if (isAssignedDesigner && stage === 'tasarim') {
     set.add('advance')

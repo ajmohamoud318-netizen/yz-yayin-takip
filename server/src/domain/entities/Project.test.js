@@ -186,12 +186,12 @@ describe('Project.ozalitCancel', () => {
   // NOT 'tasarim' — ozalit is requested FROM demo_onay, so undoing the
   // request lands back there with the already-approved demo intact, rather
   // than throwing away the whole demo round over a one-click undo.
-  it('cancels a not-yet-started request back to demo_onay, no attempt bump', () => {
+  it('withdraws a not-yet-started request, staying at ozalit_teslim, no attempt bump', () => {
     const project = new Project(baseProject({
       stage: 'ozalit_teslim', ozalit_requested: true, ozalit_attempt: 1,
     }))
     const event = project.ozalitCancel(L1)
-    assert.equal(project.stage, 'demo_onay')
+    assert.equal(project.stage, 'ozalit_teslim')
     assert.equal(project.ozalit_requested, false)
     assert.equal(project.ozalit_attempt, 1, 'attempt untouched')
     assert.equal(event.notification.kind, 'ozalitCancelled')

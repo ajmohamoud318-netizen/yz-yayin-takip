@@ -639,3 +639,87 @@ describe('ParcaApprovalGrid — baskı onayı prepare step', () => {
     expect(container.textContent).not.toContain('Hazırlanmadı')
   })
 })
+
+/**
+ * One parça coming back is not the round arriving.
+ *
+ * `settleParcaAtGate` clears the project-level `demo_received` when the matbaa
+ * hands back a SINGLE parça after a per-parça reject — the same flag a fresh
+ * whole-round delivery clears — so the two states are indistinguishable from the
+ * project row. The ledger tells them apart, and it has to: "Tümünü Teslim Alın"
+ * is a lie about one reprint, and "Teslim Alınamadı" there bounces the whole
+ * round and wipes the sign-offs already given (the server refuses it now).
+ */
+describe('ParcaApprovalGrid — partial arrival at the gate', () => {
+  const SNAP = ['KAPAK', 'KUTU', 'KILAVUZ']
+  const partly = {
+    demo_parca_approvals: [
+      { parca: 'KAPAK', by: 'u-l', by_name: 'Ayşenur' },
+      { parca: 'KUTU', by: 'u-l', by_name: 'Ayşenur' },
+    ],
+    demo_parca_rejections: [],
+  }
+
+  it('does not claim to receive the whole round', () => {
+    render(
+      <ParcaApprovalGrid
+        project={partly}
+        kind="demo"
+        snapshotParcalar={SNAP}
+        roundAwaitsReceipt
+        onApproveParcalar={() => {}}
+        onBulkReceive={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label="Teslim Alın"]')).toBeTruthy()
+    expect(container.querySelector('button[aria-label*="Tümünü Teslim Alın"]')).toBe(null)
+  })
+
+  it('withholds Teslim Alınamadı, which would wipe those approvals', () => {
+    render(
+      <ParcaApprovalGrid
+        project={partly}
+        kind="demo"
+        snapshotParcalar={SNAP}
+        roundAwaitsReceipt
+        onApproveParcalar={() => {}}
+        onBulkReceive={() => {}}
+        onBulkNotReceived={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label*="Teslim Alınamadı"]')).toBe(null)
+  })
+
+  it('keeps both on a genuinely fresh round, where nothing is signed', () => {
+    render(
+      <ParcaApprovalGrid
+        project={{ demo_parca_approvals: [], demo_parca_rejections: [] }}
+        kind="demo"
+        snapshotParcalar={SNAP}
+        roundAwaitsReceipt
+        onApproveParcalar={() => {}}
+        onBulkReceive={() => {}}
+        onBulkNotReceived={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label*="Tümünü Teslim Alın"]')).toBeTruthy()
+    expect(container.querySelector('button[aria-label*="Teslim Alınamadı"]')).toBeTruthy()
+  })
+
+  it('leaves the signed parçalar reading as signed', () => {
+    render(
+      <ParcaApprovalGrid
+        project={partly}
+        kind="demo"
+        snapshotParcalar={SNAP}
+        roundAwaitsReceipt
+        onApproveParcalar={() => {}}
+        onBulkReceive={() => {}}
+      />,
+    )
+    expect(container.textContent).toContain('Onaylandı')
+    // …and only the returned parça is waiting on the leader.
+    expect(container.textContent).toContain('1 bekliyor')
+  })
+})
+

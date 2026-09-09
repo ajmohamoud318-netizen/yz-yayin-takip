@@ -163,7 +163,7 @@ describe('round-consuming transitions clear last_reject_target', () => {
     assert.equal(next.stage, 'tasarim')
   })
 
-  it('computeOzalitCancel clears all three (back to demo_onay)', () => {
+  it('computeOzalitCancel clears all three (staying at ozalit_teslim)', () => {
     // Cancel needs ozalit_requested=true; combine the auto-round with that
     // flag so the function reaches the cleanup block.
     const { project: next } = computeOzalitCancel(
@@ -172,7 +172,8 @@ describe('round-consuming transitions clear last_reject_target', () => {
     assert.equal(next.last_reject_target, null)
     assert.equal(next.last_reject_type, null)
     assert.equal(next.last_reject_reason, null)
-    // NOT 'tasarim' — see transitions.cancel.test.js for the full reasoning.
-    assert.equal(next.stage, 'demo_onay')
+    // The stage does not move at all — requesting an ozalit was only a flag
+    // flip, so undoing it is too. See transitions.ozalit-cancel-roundtrip.test.js.
+    assert.equal(next.stage, 'ozalit_teslim')
   })
 })

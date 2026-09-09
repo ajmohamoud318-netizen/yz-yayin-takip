@@ -27,7 +27,7 @@ import { subtaskProgress } from './progress.js'
 import { HttpError } from './errors.js'
 import {
   parcaRejectPatch, parcaGateForStage, parcaDecidable,
-  parcaEditLocked, parcaFixSettledPatch, parcaReceivePatch,
+  parcaEditLocked, parcaFixSettledPatch, parcaReceivePatch, parcaAwaitsReceipt,
 } from './parca-routing.js'
 import {
   assertParcaSetUnchanged, lockedParcalarTouched,
@@ -1679,6 +1679,44 @@ function roundReceiptParcaState(project, gate, { actor, actorName, now }) {
   }))
 }
 
+
+/**
+ * Refuse a WHOLE-ROUND "Teslim Alınamadı" when what actually arrived was one
+ * parça coming back, not the round.
+ *
+ * The reset inside both not-received verbs reasons that anything in the
+ * per-parça ledger was signed on an EARLIER round, "because the approve gate
+ * requires demo_received, which is false by definition here". That held while
+ * the only way to reach an onay stage with the receipt cleared was a fresh
+ * whole-round delivery. `settleParcaAtGate` (services/parca-service.js) broke it:
+ * it clears the very same flag when the matbaa hands back a SINGLE parça at this
+ * gate, which is how the leader is asked to acknowledge that one reprint.
+ *
+ * Reported from live testing on a 3-parça project — approve KUTU and KİTAP,
+ * reject KILAVUZ to the matbaa, take the reprint back, press "Teslim Alınamadı"
+ * — and both approvals were wiped, the attempt bumped, and the whole round sent
+ * back to a matbaa who then reprints two parçalar nobody complained about.
+ *
+ * BOTH conditions are required, and the second is what keeps this narrow. A
+ * non-empty ledger on its own is the legitimate case the reset exists for: a
+ * held demo carries sign-offs given at <100%, and a proof that never turned up
+ * must not arrive pre-approved (see transitions.demo.test.js / ozalit.test.js).
+ * What distinguishes the broken case is a parça sitting at the gate delivered
+ * and unacknowledged — the trace of the per-parça redelivery that cleared the
+ * receipt in the first place.
+ */
+function assertNotPartialArrival(project, hasSignatures, gate) {
+  if (!hasSignatures) return
+  const awaiting = (project?.parca_state ?? []).some(
+    (row) => row?.gate === gate && parcaAwaitsReceipt(row),
+  )
+  if (!awaiting) return
+  badRequest(
+    'Bu turun bazı parçaları onaylandı ve geri gelen tek bir parça var — turun tamamı '
+    + 'teslim alınamadı olarak işaretlenemez. Sorunlu parçayı tek tek reddedin.',
+  )
+}
+
 /* ============================================================================
  *  receiveDemo(project, actor, ctx) → next project state
  *
@@ -1750,6 +1788,7 @@ export function computeDemoNotReceived(project, actor, ctx = {}) {
   if (project.demo_received) {
     badRequest('Demo zaten teslim alındı olarak işaretlenmiş.')
   }
+  assertNotPartialArrival(project, (project.demo_parca_approvals ?? []).length > 0, 'demo')
   const resendStage = project.type === 'CIN' ? 'cin_demo_teslim' : 'demo_teslim'
   return {
     project: {
@@ -1898,6 +1937,11 @@ export function computeOzalitNotReceived(project, actor, ctx = {}) {
   if (project.ozalit_received) {
     badRequest('Ozalit zaten teslim alındı olarak işaretlenmiş.')
   }
+  // See computeDemoNotReceived — same premise, same way it breaks. The ozalit
+  // ledger is object-shaped rather than a list, so the emptiness test differs.
+  assertNotPartialArrival(
+    project, Object.keys(project.ozalit_parca_approvals ?? {}).length > 0, 'ozalit',
+  )
   return {
     project: {
       ...project,
@@ -2151,14 +2195,24 @@ export function computeOzalitCancel(project, actor, ctx = {}) {
   return {
     project: {
       ...project,
-      // NOT 'tasarim' — that was copied verbatim from computeDemoCancel and
-      // never corrected. Demo is requested FROM tasarim, so cancelling it
-      // correctly returns there; ozalit is requested from demo_onay
-      // (STAGE_PIPELINE.TR: …, demo_onay, ozalit_teslim, ozalit_onay, …), so
-      // undoing the request has to land back on demo_onay — the fully-approved
-      // demo that led here is still good and must not be thrown away along
-      // with a mistaken ozalit click.
-      stage: 'demo_onay',
+      // The stage does not move, and that is the whole correction.
+      //
+      // This read `stage: 'tasarim'` originally — copied verbatim from
+      // computeDemoCancel and never adjusted — which threw away a fully approved
+      // demo over a mistaken ozalit click. The first fix sent it to `demo_onay`
+      // instead, on the reasoning that ozalit is "requested from" there. That is
+      // where the project COMES from, not where the request is made.
+      //
+      // Requesting an ozalit is not a stage change at all: the project is
+      // already at `ozalit_teslim` (the demo approval put it there) and
+      // computeOzalitTeslimAdvance's leader branch only flips `ozalit_requested`
+      // — from_stage and to_stage are both `ozalit_teslim`. So the exact undo is
+      // to flip the flag back and stay put, which is the same shape as the demo:
+      // cancel returns you to the state you were in before you asked, with the
+      // "İsteyin" button right there.
+      //
+      // Landing on demo_onay instead left the project at a gate it had already
+      // fully signed, needing one more approve press just to get back here.
       // Deliberately NOT touching ozalit_attempt — nothing was delivered.
       ozalit_requested: false,
       ozalit_received: false,
@@ -2183,9 +2237,9 @@ export function computeOzalitCancel(project, actor, ctx = {}) {
       action: 'system',
       event: 'ozalit_cancelled',
       from_stage: project.stage,
-      to_stage: 'demo_onay',
+      to_stage: project.stage,
       done_by_name: actorName,
-      note: 'Ozalit talebi iptal edildi, demo onayına geri döndü',
+      note: 'Ozalit talebi iptal edildi, yeniden istenebilir',
     }),
   }
 }

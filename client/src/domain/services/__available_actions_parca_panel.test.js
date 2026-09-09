@@ -279,3 +279,96 @@ describe('baski_onay — the panel owns it too', () => {
     expect(actions).not.toContain('reject-parca')
   })
 })
+
+/**
+ * Until the snapshot has been read, nobody owns the whole-round buttons.
+ *
+ * The parça list arrives from an async fetch and starts empty, so on the first
+ * paint "not asked yet" and "single-parça round" are the same value — and they
+ * now imply opposite owners. Guessing draws the header pair for a moment and
+ * then withdraws it, which is what a leader sees as the page settling after a
+ * refresh: a button that appears exactly long enough to be clicked.
+ */
+describe('an unread snapshot decides nothing', () => {
+  it('offers no whole-round action while the snapshot is still loading', () => {
+    const actions = availableActions({
+      project: demoOnay(), user: leader, parcaSnapshot: [], parcaSnapshotReady: false,
+    })
+    expect(actions).not.toContain('approve')
+    expect(actions).not.toContain('reject')
+    expect(actions).not.toContain('reject-parca')
+  })
+
+  it('does the same at the ozalit and baskı gates', () => {
+    for (const project of [ozalitOnay(), { ...ozalitOnay(), stage: 'baski_onay' }]) {
+      const actions = availableActions({
+        project, user: leader, parcaSnapshot: [], parcaSnapshotReady: false,
+      })
+      expect(actions).not.toContain('approve')
+    }
+  })
+
+  it('gives the header its pair back once a FAILED read settles', () => {
+    // `ready` means settled, not successful. A snapshot that cannot be loaded is
+    // a real answer — "no parça list" — and the header pair is the deliberate
+    // fallback for it, unchanged.
+    const actions = availableActions({
+      project: demoOnay(), user: leader, parcaSnapshot: [], parcaSnapshotReady: true,
+    })
+    expect(actions).toContain('approve')
+    expect(actions).toContain('reject')
+  })
+
+  it('defaults to ready, so every other caller is unaffected', () => {
+    const actions = availableActions({ project: demoOnay(), user: leader })
+    expect(actions).toContain('approve')
+  })
+})
+
+/**
+ * The client half of the cancel round-trip (server half:
+ * transitions.ozalit-cancel-roundtrip.test.js).
+ *
+ * Once the completing press has moved the project back to ozalit_teslim, the
+ * header has to offer "Ozalit İsteyin" again — otherwise cancelling an ozalit is
+ * a one-way door.
+ */
+describe('after an ozalit cancel, the request is offered again', () => {
+  const atOzalitTeslim = {
+    id: 'p-1', type: 'TR', stage: 'ozalit_teslim', origin: null,
+    ozalit_requested: false, ozalit_started: false, reject_target: null,
+    assignees: [{ id: 'u-d' }],
+  }
+
+  it('gives the leader the advance that means "Ozalit İsteyin"', () => {
+    const actions = availableActions({
+      project: atOzalitTeslim, user: leader, parcaSnapshot: SPLIT,
+    })
+    expect(actions).toContain('advance')
+  })
+
+  it('offers it to the assigned designer too', () => {
+    const actions = availableActions({
+      project: atOzalitTeslim, user: designer, parcaSnapshot: SPLIT,
+    })
+    expect(actions).toContain('advance')
+  })
+
+  it('is not withheld by the parça panel — this is a request, not a decision', () => {
+    // The panel took over onay, red and teslim. Asking for the round in the
+    // first place was never one of those, and a multi-parça snapshot must not
+    // quietly swallow it.
+    for (const snap of [SPLIT, SINGLE, []]) {
+      expect(availableActions({
+        project: atOzalitTeslim, user: leader, parcaSnapshot: snap,
+      })).toContain('advance')
+    }
+  })
+
+  it('withdraws it once the ozalit has actually been requested', () => {
+    const actions = availableActions({
+      project: { ...atOzalitTeslim, ozalit_requested: true }, user: leader, parcaSnapshot: SPLIT,
+    })
+    expect(actions).not.toContain('advance')
+  })
+})

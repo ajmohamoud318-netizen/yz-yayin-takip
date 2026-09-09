@@ -265,7 +265,9 @@ export function receiveDemo(projectId, actor, client = null) {
 /** POST /api/projects/:id/demo-not-received. */
 export function demoNotReceived(projectId, actor, client = null) {
   return runProjectCommand(projectId, actor, {
-    prepare: withAssignees,
+    // Routing rows too: the FSM refuses a whole-round refusal when what arrived
+    // was a single parça coming back — see assertNotPartialArrival.
+    prepare: withAssigneesAndParcaState,
     run: (project, pCtx) => project.demoNotReceived(actor, {
       designerIds: pCtx.designerIds ?? [],
     }),
@@ -285,7 +287,9 @@ export function ozalitReceive(projectId, actor, client = null) {
 /** POST /api/projects/:id/ozalit-not-received. */
 export function ozalitNotReceived(projectId, actor, client = null) {
   return runProjectCommand(projectId, actor, {
-    prepare: withAssignees,
+    // Routing rows too: the FSM refuses a whole-round refusal when what arrived
+    // was a single parça coming back — see assertNotPartialArrival.
+    prepare: withAssigneesAndParcaState,
     run: (project, pCtx) => project.ozalitNotReceived(actor, {
       designerIds: pCtx.designerIds ?? [],
     }),

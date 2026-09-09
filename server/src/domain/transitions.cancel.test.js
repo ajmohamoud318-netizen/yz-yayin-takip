@@ -102,9 +102,9 @@ describe('ozalit cancel', () => {
   // lands back there, with the already-approved demo intact. Bouncing all the
   // way to tasarim (the old behaviour, copy-pasted from computeDemoCancel and
   // never corrected) threw away a fully signed-off demo over a one-click undo.
-  it('sends the project back to demo_onay without bumping ozalit_attempt', () => {
+  it('stays at ozalit_teslim, request withdrawn, without bumping ozalit_attempt', () => {
     const { project: next } = computeOzalitCancel(ozalitProject(), leader, { designerIds: [] })
-    assert.equal(next.stage, 'demo_onay')
+    assert.equal(next.stage, 'ozalit_teslim')
     assert.equal(next.ozalit_attempt, 1)
     assert.equal(next.ozalit_requested, false)
   })

@@ -207,7 +207,7 @@ export function useProjectDetail(id) {
    * than in the page because the "never sent" answer below needs it, and two
    * callers would mean two fetches of the same snapshot. The page reads it back
    * out of this hook. */
-  const { parcalar: parcaSnapshot, ledgerKind } = useParcaSnapshot(project)
+  const { parcalar: parcaSnapshot, ready: parcaSnapshotReady, ledgerKind } = useParcaSnapshot(project)
 
   /* The parçalar this project has that the current round never carried.
    *
@@ -239,7 +239,7 @@ export function useProjectDetail(id) {
   // parcaSnapshot decides whether the per-parça panel is the approval surface;
   // where it is, the whole-round Onayla is suppressed in favour of it.
   const actions = availableActions({
-    project, user, parcaRows, printerParcaJobs, parcaSnapshot,
+    project, user, parcaRows, printerParcaJobs, parcaSnapshot, parcaSnapshotReady,
   })
 
   /* Has the per-parça panel taken the whole-round "Teslim Alındı" pair over?
@@ -253,7 +253,7 @@ export function useProjectDetail(id) {
    * leave them with no way to acknowledge a proof they are holding.
    * `parcaPanelViewer` is shared with ProjectDetail's own showParcaGrid so the
    * two answers cannot drift apart. */
-  const receiptInPanel = parcaSnapshot.length >= 2
+  const receiptInPanel = parcaSnapshotReady && parcaSnapshot.length >= 2
     && parcaPanelViewer(user, ledgerKind, { isAssigned })
   const advLabel = project ? advanceActionLabel(project, user?.role) : 'İlerletin'
   const appLabel = project ? approveActionLabel(project) : 'Onaylayın'

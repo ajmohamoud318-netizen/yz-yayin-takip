@@ -23,21 +23,37 @@ import { parcaNames, ozalitDecidable } from '@/domain'
  * second approval the server then refuses. The snapshot lookup goes through
  * `specVariantForStage`; the ledger key is picked here.
  *
+ * `ready` says whether that answer is KNOWN yet, and callers have to respect it.
+ * The list starts empty and fills from an async fetch, so for the first paint
+ * "no parçalar" and "not asked yet" look identical — and they now mean opposite
+ * things. A multi-parça round hands its whole-round buttons to the parça panel
+ * (see availableActions), so an unresolved snapshot read as "single parça" drew
+ * the header pair for a moment and then took it away again, which is exactly
+ * what a leader sees as the page settling after a refresh.
+ *
  * @param {{ id?: string, stage?: string } | null | undefined} project
- * @returns {{ parcalar: string[], ledgerKind: 'demo'|'ozalit'|'baski_onay'|'cin_baski_onay' }}
+ * @returns {{ parcalar: string[], ready: boolean,
+ *            ledgerKind: 'demo'|'ozalit'|'baski_onay'|'cin_baski_onay' }}
  */
 export function useParcaSnapshot(project) {
   const projectId = project?.id
   const stage = project?.stage
   const [parcalar, setParcalar] = useState([])
+  // Settled, not successful: a FAILED read is a real answer ("no list"), and the
+  // header pair is the deliberate fallback for it. Only the in-flight window is
+  // unknown.
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     const variantName = GATE_STAGES.has(stage) ? specVariantForStage(stage) : null
     const variant = variantName ? VARIANTS[variantName] : null
     if (!projectId || !variant) {
       setParcalar([])
+      // Not a gate stage: there is nothing to wait for, so the answer is known.
+      setReady(true)
       return undefined
     }
+    setReady(false)
     let cancelled = false
     // orderId null: a sipariş's own ozalit sheet (migration 053) carries the
     // same project_id and kind as the project's, and this grid gates the
@@ -45,18 +61,22 @@ export function useParcaSnapshot(project) {
     // parçalar against the project's ledger.
     fetchServerSnapshot(variant, projectId, null, null)
       .then((snap) => {
-        if (!cancelled) setParcalar(parcaNames(snap?.selectedComponents))
+        if (cancelled) return
+        setParcalar(parcaNames(snap?.selectedComponents))
+        setReady(true)
       })
       .catch(() => {
         // The grid is additive: the single whole-round Onayla/Reddet buttons
         // stay on screen either way, so a failed snapshot read hides the grid
         // rather than breaking the page.
-        if (!cancelled) setParcalar([])
+        if (cancelled) return
+        setParcalar([])
+        setReady(true)
       })
     return () => { cancelled = true }
   }, [projectId, stage])
 
-  return { parcalar, ledgerKind: ledgerKindForStage(stage) }
+  return { parcalar, ready, ledgerKind: ledgerKindForStage(stage) }
 }
 
 /**

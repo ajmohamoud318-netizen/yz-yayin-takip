@@ -245,11 +245,28 @@ export default function ParcaApprovalGrid({
   // it is the round's decision, and the round is what this panel describes.
   const showBulkReceipt = roundAwaitsReceipt && !routingAware && !!onBulkReceive
 
+  /* Is this the whole round arriving, or one parça coming back?
+   *
+   * Both look identical from the project row — `settleParcaAtGate` clears the
+   * project-level `demo_received` when the matbaa hands back a SINGLE parça
+   * after a per-parça reject, exactly as a fresh whole-round delivery does. The
+   * ledger is what tells them apart: a round nobody has signed anything on is a
+   * fresh delivery; one with sign-offs on it is mid-decision, and what just
+   * arrived is the one parça that went back.
+   *
+   * It changes both the label and what is offered. "Tümünü Teslim Alın" is a lie
+   * about a single reprint, and "Teslim Alınamadı" is worse than a lie: it
+   * bounces the WHOLE round and wipes those sign-offs (the server refuses it now
+   * — see computeDemoNotReceived — so offering it would only produce an error). */
+  const partialArrival = approved.length > 0 || rejected.length > 0
+  const receiptLabel = partialArrival ? 'Teslim Alın' : 'Tümünü Teslim Alın'
+
   // Baskı Onayı's first step, and the reason it is one button rather than one
   // per row: the baskı formu is a single document, so a leader fills it once and
   // every parça on it becomes hazırlandı together. Only the onay that follows is
   // per parça.
   const showPrepare = !!onPrepareSheet && unprepared.size > 0 && !roundAwaitsReceipt
+
   const orderedParcalar = useMemo(() => {
     // Pending first (so the to-do list reads top-down), then approved, then
     // rejected. Stable order matters: the same parça keeps the same row
@@ -313,12 +330,12 @@ export default function ParcaApprovalGrid({
             className="w-full gap-1.5 sm:w-auto"
             disabled={busy}
             onClick={onBulkReceive}
-            aria-label="Tümünü Teslim Alın"
+            aria-label={receiptLabel}
           >
             <PackageCheck className="h-4 w-4" />
-            Tümünü Teslim Alın
+            {receiptLabel}
           </Button>
-          {onBulkNotReceived && (
+          {onBulkNotReceived && !partialArrival && (
             <Button
               size="sm"
               variant="outline"
