@@ -596,6 +596,51 @@ export function parcaNames(snapshotParcalar) {
     .filter(Boolean)
 }
 
+/**
+ * Parça names are matched the Turkish way everywhere they are compared —
+ * 'i'/'İ' and 'ı'/'I' pair the other way round than in en-US, so a KILAVUZ
+ * written "Kılavuz" has to be recognised as the same parça. Mirrors the `key`
+ * helpers in lib/spec-form-scope.js and server/src/domain/spec-parca-diff.js.
+ */
+const parcaKey = (name) => String(name ?? '').trim().toLocaleUpperCase('tr')
+
+/**
+ * The parçalar of this project that were never sent to the matbaa.
+ *
+ * A round carries whichever parçalar were ticked when it was composed, and
+ * nothing tracks the ones left behind — they simply are not on the snapshot.
+ * This is what the leader's "Kalan Parçaları Gönderin" offers.
+ *
+ * Three terms, and the third is the one that matters:
+ *
+ *   catalog        — every parça the project HAS (Ürün Bilgileri)
+ *   − round        — the ones already on this round's sheet
+ *   − routed       — the ones this project has ever acted on
+ *
+ * Without that last term this reads "not on the current round" and quietly
+ * offers the wrong parçalar. A parça out with the designer for rework is not on
+ * the round; neither is one already approved, nor one sitting back at the gate.
+ * Sending any of those to the matbaa as fresh work would jump the designer's
+ * queue or reopen a decision the leader has already taken. Routing rows are
+ * materialised on first action, so their ABSENCE is precisely the record that
+ * nothing has ever happened to this parça — which is what "never sent" means.
+ *
+ * The server enforces the same rule (`assertParcalarNeverSent`); this is what
+ * keeps the button from offering what that would refuse.
+ *
+ * @param {Array<string | { component?: string }>} catalogParcalar
+ * @param {Array<string | { component?: string }>} roundParcalar
+ * @param {Array<{ parca?: string }>} parcaRows
+ * @returns {string[]} catalog names, in catalog order
+ */
+export function unsentParcalar(catalogParcalar, roundParcalar, parcaRows = []) {
+  const spokenFor = new Set([
+    ...parcaNames(roundParcalar).map(parcaKey),
+    ...(parcaRows ?? []).map((r) => r?.parca).filter(Boolean).map(parcaKey),
+  ])
+  return parcaNames(catalogParcalar).filter((name) => !spokenFor.has(parcaKey(name)))
+}
+
 /* ---------------------------------------------------------------------------
  *  Deciding a parça before its round is finished (migration 076)
  *

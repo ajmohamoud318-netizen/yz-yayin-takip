@@ -45,6 +45,7 @@ export default function HeaderActionRow({ d }) {
     setBaskiOnayFormMode, setBaskiOnayFormOpen,
     setChangeRequestOpen, setEkranDemoRejectOpen,
     handleAdvanceAction, printerSplitRound, parcaRows,
+    parcaSnapshot, unsentParcalar: unsent, setParcaAddScope,
   } = d
 
   if (isDeleted) return null
@@ -53,6 +54,33 @@ export default function HeaderActionRow({ d }) {
   // They are why the whole-sheet edit button above may be missing — see
   // canEditSentDemoRequest. Empty everywhere but a split *_teslim round.
   const sheetLockedParcalar = lockedParcaNames(parcaRows)
+
+  /* Which of the two things this slot offers, on a round the matbaa holds.
+   *
+   * It used to be one button — "Gönderilen Demoyu Düzenleyin" — covering the
+   * whole sheet. Editing has since moved into the per-parça panel below, where
+   * each row names its own parça, so what is left for the header is the one
+   * thing that panel cannot express: parçalar that are not on the round at all.
+   *
+   * The whole-sheet edit stays for rounds the panel does not render — a single
+   * parça, or a legacy round with no snapshot — because there it is the only
+   * way in. `parcaSnapshot.length < 2` is the same test the panel uses to
+   * decide it has nothing useful to say.
+   *
+   * With every parça sent and the panel up, this slot goes quiet entirely. */
+  const hasUnsent = (unsent ?? []).length > 0
+  const panelCoversEditing = (parcaSnapshot ?? []).length >= 2
+
+  function openAddParcalarSheet(gate) {
+    setParcaAddScope(unsent)
+    if (gate === 'ozalit') {
+      setOzalitFormMode('view'); setOzalitFormAttempt(null)
+      setOzalitFormNotify(true); setOzalitFormOpen(true)
+    } else {
+      setDemoFormMode('view'); setDemoFormAttempt(null)
+      setDemoFormNotify(true); setDemoFormOpen(true)
+    }
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -155,8 +183,22 @@ export default function HeaderActionRow({ d }) {
           Değişiklik talebini kabul ettiniz, ekip liderinin düzeltmeyi göndermesi bekleniyor
         </span>
       )}
-      {/* Undo a mistaken request outright */}
-      {canEditSentDemoRequest(user, project) && (
+      {/* Parçalar this project has that the round never carried. See
+          openAddParcalarSheet — this is the header's remaining job on a round
+          the matbaa is holding, and it disappears once nothing is left. */}
+      {canEditSentDemoRequest(user, project) && hasUnsent && (
+        <Button
+          size="sm"
+          onClick={() => openAddParcalarSheet('demo')}
+        >
+          <Send className="h-4 w-4" />
+          Kalan Parçaları Gönderin ({unsent.length})
+        </Button>
+      )}
+      {/* The whole-sheet edit, kept only where the per-parça panel is not
+          rendering — otherwise its rows are the better surface, each naming
+          the parça it edits. */}
+      {canEditSentDemoRequest(user, project) && !hasUnsent && !panelCoversEditing && (
         <Button
           size="sm" variant="outline"
           onClick={() => { setDemoFormMode('view'); setDemoFormAttempt(null); setDemoFormNotify(true); setDemoFormOpen(true) }}
@@ -185,7 +227,17 @@ export default function HeaderActionRow({ d }) {
           {cancellingRequest ? 'İşleniyor…' : 'Demo İsteğini İptal Edin'}
         </Button>
       )}
-      {canEditSentOzalitRequest(user, project) && (
+      {/* Ozalit twin of the pair above — same split, same reasoning. */}
+      {canEditSentOzalitRequest(user, project) && hasUnsent && (
+        <Button
+          size="sm"
+          onClick={() => openAddParcalarSheet('ozalit')}
+        >
+          <Send className="h-4 w-4" />
+          Kalan Parçaları Gönderin ({unsent.length})
+        </Button>
+      )}
+      {canEditSentOzalitRequest(user, project) && !hasUnsent && !panelCoversEditing && (
         <Button
           size="sm" variant="outline"
           onClick={() => { setOzalitFormMode('view'); setOzalitFormAttempt(null); setOzalitFormNotify(true); setOzalitFormOpen(true) }}

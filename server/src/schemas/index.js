@@ -711,6 +711,12 @@ const projectsFormEditNotify = {
       demo_id: { type: ['string', 'null'], maxLength: 64 },
       attempt: { type: 'integer', minimum: 0, maximum: 100 },
       payload: { type: 'object' },
+      // "This save is meant to put parçalar on the round" — the leader's
+      // "Kalan Parçaları Gönderin". Without it the edit guard refuses any
+      // change to the round's parça list, which is what stops a picker
+      // mis-click from silently rewriting what the matbaa is producing.
+      // It relaxes ADDING only; removal stays refused either way.
+      allowParcaAdd: { type: 'boolean' },
     },
   },
 }

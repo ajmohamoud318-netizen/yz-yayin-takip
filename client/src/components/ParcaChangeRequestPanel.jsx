@@ -22,14 +22,21 @@ import { cn } from '@/lib/utils'
  * This panel is where that decision moved. It shows the round parça by parça
  * because that is the granularity the answer actually has:
  *
- *   not started      → nothing to ask; the sheet edit above still covers it
+ *   not started      → edit it outright, scoped to this parça
  *   started          → "Değişiklik İste", with a note the printer will read
  *   asked            → waiting on the matbaa
  *   accepted         → the parça is free again and owes a correction
  *
- * Unstarted parçalar are listed too, greyed and without a button. A leader
- * looking at a locked KUTU needs to know whether the rest of the sheet is
- * locked as well, and a panel that only showed problems could not answer that.
+ * The not-started row used to carry no button, on the grounds that the header's
+ * whole-sheet edit already covered it. It does cover it — but it opens every
+ * parça of the round and names none of them, so the leader who came here to fix
+ * KİTAP had to find KİTAP again in a three-parça sheet. Every other row in this
+ * panel names its parça in the button; this one now does too, and both go
+ * through the same scoped sheet.
+ *
+ * Locked parçalar are still listed with no edit. A leader looking at a locked
+ * KUTU needs to know whether the rest of the sheet is locked as well, and a
+ * panel that only showed problems could not answer that.
  *
  * Which is why `snapshotParcalar` is here. Routing rows are materialised the
  * first time somebody acts on a parça (`loadParcaForUpdate`), so on the exact
@@ -38,20 +45,8 @@ import { cn } from '@/lib/utils'
  * panel that looks like the sheet is one parça. The snapshot is the round's
  * real parça list; anything in it without a row is a parça the matbaa is
  * holding and has not begun.
- *
- * @param {{
- *   rows: Array<{ parca: string, state?: string, started_at?: string|null,
- *                 fix_pending?: boolean, change_requested_at?: string|null,
- *                 change_requested_note?: string|null, attempt?: number }>,
- *   snapshotParcalar?: Array<string | { component?: string }>,
- *   gate?: 'demo' | 'ozalit',
- *   canAct?: boolean,
- *   busyParca?: string | null,
- *   onRequestChange: (parca: string, note: string) => void,
- *   onSendFix?: (parca: string, gate: string) => void,
- *   className?: string,
- * }} props
  */
+
 /**
  * The parçalar the matbaa is holding this round, routed rows first.
  *
@@ -94,9 +89,23 @@ export function heldParcalar(rows, snapshotParcalar, gate = null) {
   return { held: [...routed, ...untouched], untouched }
 }
 
+/**
+ * @param {{
+ *   rows: Array<{ parca: string, state?: string, started_at?: string|null,
+ *                 fix_pending?: boolean, change_requested_at?: string|null,
+ *                 change_requested_note?: string|null, attempt?: number }>,
+ *   snapshotParcalar?: Array<string | { component?: string }>,
+ *   gate?: 'demo' | 'ozalit',
+ *   canAct?: boolean,
+ *   busyParca?: string | null,
+ *   onRequestChange: (parca: string, note: string) => void,
+ *   onEditParca?: (parca: string, gate: string) => void,
+ *   className?: string,
+ * }} props
+ */
 export default function ParcaChangeRequestPanel({
   rows = [], snapshotParcalar = [], gate = null, canAct = false, busyParca = null,
-  onRequestChange, onSendFix, className,
+  onRequestChange, onEditParca, className,
 }) {
   const { held, untouched } = heldParcalar(rows, snapshotParcalar, gate)
   // Nothing to say on a round the matbaa isn't holding, or a single-parça one
@@ -127,7 +136,7 @@ export default function ParcaChangeRequestPanel({
             canAct={canAct}
             busy={busyParca === row.parca}
             onRequestChange={onRequestChange}
-            onSendFix={onSendFix}
+            onEditParca={onEditParca}
           />
         ))}
       </div>
@@ -136,7 +145,7 @@ export default function ParcaChangeRequestPanel({
 }
 
 /** One parça the matbaa holds, and whatever the leader may still do about it. */
-function HeldRow({ row, canAct, busy, onRequestChange, onSendFix }) {
+function HeldRow({ row, canAct, busy, onRequestChange, onEditParca }) {
   // The ask form is opened per row rather than shown inline for every locked
   // parça: on a 390px screen three open textareas push the parça names off the
   // first screen, and the leader is normally asking about one of them.
@@ -146,6 +155,16 @@ function HeldRow({ row, canAct, busy, onRequestChange, onSendFix }) {
   const asked = !!row.change_requested_at
   const awaitingFix = !!row.fix_pending
   const canAsk = canAct && parcaChangeRequestable(row)
+  // The free edit, and `parcaEditLocked` is the whole rule — the same predicate
+  // the server's guard reads. It already selects exactly the two states where
+  // the leader may still rewrite this parça: never started, and released by an
+  // accepted change request. A started parça is locked, and an ASKED one is
+  // locked too, because asking requires having started. So no separate
+  // `!asked` term is needed here; adding one would only imply the states
+  // overlap when they cannot.
+  //
+  // `awaitingFix` gets its own primary button above, so this is the other half.
+  const canEdit = canAct && !!onEditParca && !awaitingFix && !parcaEditLocked(row)
 
   const status = awaitingFix
     ? {
@@ -220,13 +239,39 @@ function HeldRow({ row, canAct, busy, onRequestChange, onSendFix }) {
           and offered no means of paying it: the only route was the header's
           whole-sheet button, which opens all three parçalar and says nothing
           about which one the matbaa is waiting on. This opens the sheet on
-          THIS parça, with the footer already set to notify. */}
-      {canAct && awaitingFix && onSendFix && (
+          THIS parça, with the footer already set to notify.
+
+          Primary, unlike the not-started edit below, because this one is OWED:
+          the matbaa has stopped and cannot restart until it lands. */}
+      {canAct && awaitingFix && onEditParca && (
         <Button
           size="sm"
           className="mt-2.5 w-full gap-1.5 sm:w-auto"
           disabled={busy}
-          onClick={() => onSendFix(row.parca, row.gate)}
+          onClick={() => onEditParca(row.parca, row.gate)}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          {row.parca} Formunu Düzenleyin
+        </Button>
+      )}
+
+      {/* The free edit, per parça. The matbaa has this parça but has not
+          started it, so the leader may still correct it outright — the same
+          window the header's whole-sheet button has always covered.
+          Per-parça because that is the granularity the rest of this panel
+          already speaks in: a row that says "henüz başlanmadı" and offers
+          nothing sends the leader back to a button that opens all three
+          parçalar and names none of them.
+
+          Outline, not primary: nothing is owed here. Compare the fix above,
+          which the matbaa is actively waiting on. */}
+      {canEdit && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="mt-2.5 w-full gap-1.5 sm:w-auto"
+          disabled={busy}
+          onClick={() => onEditParca(row.parca, row.gate)}
         >
           <Pencil className="h-3.5 w-3.5" />
           {row.parca} Formunu Düzenleyin

@@ -11,11 +11,13 @@ import {
   isActiveOrder, availableActions, advanceActionLabel, approveActionLabel,
   demoOzalitStatusLabel,
 } from '@/domain/services/project-detail'
-import { awaitsOzalitReceipt } from '@/domain'
+import { awaitsOzalitReceipt, unsentParcalar } from '@/domain'
 
 import { useProjectDetailData, useProjectDetailSSE } from './useProjectDetailData'
 import { useProjectDelivery } from './useProjectDelivery'
 import { useParcaQueue, useProjectParcaState } from './useParcaQueue'
+import { useParcaSnapshot } from './useParcaSnapshot'
+import { useProjectCatalog } from './useProjectCatalog'
 import { useProjectSubtasks } from './useProjectSubtasks'
 
 /**
@@ -110,6 +112,20 @@ export function useProjectDetail(id) {
   // one above.
   const [demoFormStartWork, setDemoFormStartWork] = useState(false)
 
+  /* The parçalar a "Kalan Parçaları Gönderin" click is about to put on the
+   * round, or null on every other opening of the sheet.
+   *
+   * It does two jobs, which is why it is a list and not a boolean. The sheet
+   * opens with these ticked, so the document matches what the button promised;
+   * and its presence is what sets `allowParcaAdd` on the save, which is the
+   * only thing that gets an addition past the server's parça-set guard. Every
+   * other route into this dialog leaves it null and is refused if it somehow
+   * changes the round's parça list — which is the point of the guard.
+   *
+   * Shared by both legs: a project runs one round at a time, and the dialog
+   * that opens is chosen by the stage. */
+  const [parcaAddScope, setParcaAddScope] = useState(null)
+
   const [baskiOnayFormOpen, setBaskiOnayFormOpen] = useState(false)
   const [baskiOnayFormMode, setBaskiOnayFormMode] = useState('approve') // 'approve' | 'view'
 
@@ -173,6 +189,30 @@ export function useProjectDetail(id) {
   // hidden there instead of erroring on click.
   const canReceiveOzalit =
     awaitsOzalitReceipt(project) && (isLeader || (user?.role === 'designer' && isAssigned))
+
+  /* The round's own parça list, off its demo/ozalit snapshot. Lives here rather
+   * than in the page because the "never sent" answer below needs it, and two
+   * callers would mean two fetches of the same snapshot. The page reads it back
+   * out of this hook. */
+  const { parcalar: parcaSnapshot, ledgerKind } = useParcaSnapshot(project)
+
+  /* The parçalar this project has that the current round never carried.
+   *
+   * The round's list is on its snapshot; the project's is in Ürün Bilgileri,
+   * and nothing joins the two — so a parça left unticked when the round was
+   * composed simply stops existing for it. This is what the header's
+   * "Kalan Parçaları Gönderin" offers, and `unsentParcalar` is careful about
+   * what "never sent" means: a parça out with the designer or already approved
+   * is off the round too, and must not be handed to the matbaa as new work.
+   *
+   * Leader-only, and only while the matbaa is actually holding a round — the
+   * catalog fetch is wasted work for anybody else, and the answer is
+   * meaningless at a stage where there is no round to add to. */
+  const catalogParcalar = useProjectCatalog(isLeader ? project?.id : undefined)
+  const unsent = useMemo(
+    () => (isLeader ? unsentParcalar(catalogParcalar, parcaSnapshot, parcaRows) : []),
+    [isLeader, catalogParcalar, parcaSnapshot, parcaRows],
+  )
 
   // Available actions + labels
   // parcaRows (migration 074) suppress the whole-round Onayla/Reddet while the
@@ -327,6 +367,9 @@ export function useProjectDetail(id) {
     // The matbaa's round is split: HeaderActionRow drops the whole-sheet
     // "İşlemi Başlatın" and the page renders ParcaJobBoard instead.
     printerSplitRound: printerParcaJobs.length > 0,
+    // The round's parça list, and the parçalar of this project it left behind.
+    parcaSnapshot, ledgerKind,
+    unsentParcalar: unsent,
     // Data
     project, loading, refetch, setProject,
     projectOrders: data.projectOrders,
@@ -357,6 +400,7 @@ export function useProjectDetail(id) {
     demoFormSnapshot, setDemoFormSnapshot,
     demoFormNotify, setDemoFormNotify,
     demoFormStartWork, setDemoFormStartWork,
+    parcaAddScope, setParcaAddScope,
 
     baskiOnayFormOpen, setBaskiOnayFormOpen,
     baskiOnayFormMode, setBaskiOnayFormMode,

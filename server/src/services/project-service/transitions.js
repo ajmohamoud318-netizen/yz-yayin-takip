@@ -333,6 +333,9 @@ export function demoEditNotify(projectId, actor, body = {}, client = null) {
       demoId: pCtx.demoId ?? null,
       changedParcalar: pCtx.changedParcalar,
       parcaSetDelta: pCtx.parcaSetDelta ?? null,
+      // The leader's "Kalan Parçaları Gönderin" — relaxes the ADD half of the
+      // parça-set guard and nothing else. See assertParcaSetUnchanged.
+      allowParcaAdd: body?.allowParcaAdd === true,
     }),
   }, client)
 }
@@ -345,6 +348,8 @@ export function ozalitEditNotify(projectId, actor, body = {}, client = null) {
       demoId: pCtx.demoId ?? null,
       changedParcalar: pCtx.changedParcalar,
       parcaSetDelta: pCtx.parcaSetDelta ?? null,
+      // See demoEditNotify — same one-sided relaxation.
+      allowParcaAdd: body?.allowParcaAdd === true,
     }),
   }, client)
 }

@@ -47,6 +47,7 @@ export {
   // per-parça grid and the bulk-approve shortcut; the server still
   // authoritatively gates every advance.
   parcaNames,
+  unsentParcalar,
   EARLY_PARCA_STAGES,
   parcaAwaitsReceipt,
   parcaDecidable,

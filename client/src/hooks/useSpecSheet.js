@@ -38,6 +38,13 @@ import {
  * answer, and passing them in keeps that reasoning in one place instead of
  * being re-derived here from a second copy of the same props.
  */
+/**
+ * Parça names are matched the Turkish way wherever they are compared — 'i'/'İ'
+ * and 'ı'/'I' pair the other way round than in en-US. Same rule as
+ * lib/spec-form-scope.js and the server's spec-parca-diff.js.
+ */
+const parcaNameKey = (name) => String(name ?? '').trim().toLocaleUpperCase('tr')
+
 export function useSpecSheet({
   open,
   variant,
@@ -57,6 +64,7 @@ export function useSpecSheet({
   showsLiveTeslimat,
   attemptNo,
   liveAttempts,
+  preselectParcalar,
 }) {
   const [form, setForm] = useState(() => emptyForm(variant, project, user))
   const [customRows, setCustomRows] = useState([])
@@ -320,8 +328,23 @@ export function useSpecSheet({
       // KILAVUZ counts its own pages, not the book's. `parcaKind` falls back
       // to the name for a snapshot saved before the field existed, so an old
       // sheet classifies the same way a fresh one does.
+      // "Kalan Parçaları Gönderin" opens on the round's own sheet plus the
+      // parçalar it is about to add, taken from the catalog because the round
+      // has never carried them and the snapshot therefore says nothing about
+      // them. Ticking them here is what makes the document match the button:
+      // the leader asked to send KİTAP and KILAVUZ, so KİTAP and KILAVUZ are on
+      // the sheet, with the catalog's own rows to fill in.
+      //
+      // Appended rather than merged into `baseComponents` so a parça already on
+      // the round keeps the round's version of its rows — the catalog may have
+      // moved on since the sheet was sent, and this save is not the place to
+      // quietly adopt that.
+      const onSheet = new Set(baseComponents.map((c) => parcaNameKey(c?.component)))
+      const added = (preselectParcalar ?? [])
+        .map((name) => catalogComponents.find((c) => parcaNameKey(c.component) === parcaNameKey(name)))
+        .filter((c) => c && !onSheet.has(parcaNameKey(c.component)))
       setSelectedComponents(
-        baseComponents.map((c) => withAdet({ ...c, rows: resolveSayfaSayisiRows(c.rows, project, parcaKind(c)) }, legacyAdet)),
+        [...baseComponents, ...added].map((c) => withAdet({ ...c, rows: resolveSayfaSayisiRows(c.rows, project, parcaKind(c)) }, legacyAdet)),
       )
     }
 
@@ -330,7 +353,9 @@ export function useSpecSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // scopeId, not project.id: switching between two sipariş sheets on the
     // same product has to reload, and for a project's own round the two are
-    // the same value.
+    // the same value. `preselectParcalar` is deliberately absent: it is fixed
+    // for the life of one opening, and re-running the load on it would throw
+    // away every edit made since the dialog opened.
   }, [open, scopeId, viewAttempt, viewDemoId])
 
   // The catalog can arrive AFTER the load above has resolved. A project

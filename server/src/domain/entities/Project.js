@@ -74,6 +74,24 @@ function runFsm(project, computeFn, args, eventType, notification) {
   }
 }
 
+/**
+ * The notification a demo/ozalit edit owes the matbaa when it added parçalar.
+ *
+ * Both edits otherwise send the same "form güncellendi, yeni haliyle inceleyin"
+ * ping, and that is the wrong sentence for this save: the printer is not being
+ * asked to re-read a sheet they already have, they are being handed a job that
+ * was not in their queue a minute ago. Naming the parçalar is the difference
+ * between a notification they can act on and one they can ignore.
+ *
+ * Null when nothing was added, which is every ordinary correction — the caller
+ * falls back to its usual kind.
+ */
+function parcaAddNotification(ctx) {
+  const added = ctx?.parcaSetDelta?.added
+  if (!ctx?.allowParcaAdd || !added?.length) return null
+  return { kind: 'parcalarAdded', parcalar: [...added] }
+}
+
 export class Project {
   constructor(record) {
     Object.assign(this, record)
@@ -262,21 +280,23 @@ export class Project {
    * window). Logs history + notifies the matbaa; clears any pending
    * "fix owed" flag.
    *
-   * ctx: { designerIds, demoId }
+   * ctx: { designerIds, demoId, changedParcalar, parcaSetDelta, allowParcaAdd }
    */
   demoEdit(actor, ctx = {}) {
-    const event = runFsm(this, computeDemoEdit, [actor, ctx], 'project.demo_form_edited', {
-      kind: 'demoEdited',
-    })
+    const event = runFsm(
+      this, computeDemoEdit, [actor, ctx], 'project.demo_form_edited',
+      parcaAddNotification(ctx) ?? { kind: 'demoEdited' },
+    )
     if (!event) return null
     return this._record(event)
   }
 
   /** Ozalit twin of demoEdit. Same free-edit window. */
   ozalitEdit(actor, ctx = {}) {
-    const event = runFsm(this, computeOzalitEdit, [actor, ctx], 'project.ozalit_form_edited', {
-      kind: 'ozalitEdited',
-    })
+    const event = runFsm(
+      this, computeOzalitEdit, [actor, ctx], 'project.ozalit_form_edited',
+      parcaAddNotification(ctx) ?? { kind: 'ozalitEdited' },
+    )
     if (!event) return null
     return this._record(event)
   }

@@ -320,6 +320,30 @@ export async function notifyDemoEdited(client, { project, actor }) {
   })
 }
 
+/**
+ * The leader put parçalar on a round the matbaa is already holding
+ * ("Kalan Parçaları Gönderin").
+ *
+ * Separate from notifyDemoEdited/notifyOzalitEdited above because it is a
+ * different message. Those say "the sheet you have has changed, read it again".
+ * This says "there is work in your queue that was not there before" — and it
+ * names which, because that is the only part the printer needs in order to act.
+ * Sent under its own type so it can be filtered and counted as new work rather
+ * than as another correction.
+ */
+export async function notifyParcalarAdded(client, { project, actor, parcalar = [] }) {
+  const printers = await activeUserIdsByRole(client, 'printer')
+  const named = parcalar.filter(Boolean).join(', ')
+  return emit(client, {
+    actorId: actor?.id, title: project.title, projectId: project.id, link: `/projects/${project.id}`,
+    recipientIds: printers, type: 'parcalar_added', tone: 'amber',
+    body: named
+      ? `Bu tura yeni parça eklendi: ${named}`
+      : 'Bu tura yeni parça eklendi',
+    event: { type: 'project.parcalar_added', aggregateId: project.id },
+  })
+}
+
 export async function notifyOzalitEdited(client, { project, actor }) {
   const printers = await activeUserIdsByRole(client, 'printer')
   return emit(client, {

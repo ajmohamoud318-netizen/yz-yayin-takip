@@ -25,6 +25,7 @@ import {
   parcaChangeRequestable,
   lockedParcaNames,
   parcalarAwaitingFix,
+  unsentParcalar,
 } from './pipeline.js'
 
 const AYSE = { id: 'u-l', role: 'team_leader', name: 'Ayşenur' }
@@ -42,6 +43,66 @@ function row(parca, over = {}) {
 }
 
 const onPress = (parca) => row(parca, { state: 'in_round', started_at: '2026-09-01T10:00:00Z' })
+
+/**
+ * What "Kalan Parçaları Gönderin" is allowed to offer.
+ *
+ * The tempting definition — catalog minus the round — is wrong, and wrong in a
+ * way that hands the matbaa work belonging to somebody else. These pin the
+ * third term.
+ */
+describe('unsentParcalar', () => {
+  const catalog = ['KUTU', 'KİTAP', 'KILAVUZ']
+
+  it('names the parçalar the round left behind', () => {
+    expect(unsentParcalar(catalog, ['KUTU'], [])).toEqual(['KİTAP', 'KILAVUZ'])
+  })
+
+  it('is empty once the round carries them all', () => {
+    expect(unsentParcalar(catalog, catalog, [])).toEqual([])
+  })
+
+  it('keeps the catalog’s own order', () => {
+    // The picker and the printed sheet both read in catalog order; a button
+    // listing them in some other order names a different-looking set.
+    expect(unsentParcalar(catalog, ['KİTAP'], [])).toEqual(['KUTU', 'KILAVUZ'])
+  })
+
+  it('does not offer a parça that is out with the designer', () => {
+    // Off the round, but emphatically not "never sent" — it is mid-rework.
+    // Sending it to the matbaa would jump the designer's queue.
+    const rows = [row('KILAVUZ', { state: 'with_designer', owner_role: 'designer' })]
+    expect(unsentParcalar(catalog, ['KUTU'], rows)).toEqual(['KİTAP'])
+  })
+
+  it('does not offer one that has already been approved', () => {
+    const rows = [row('KILAVUZ', { state: 'approved', owner_role: null })]
+    expect(unsentParcalar(catalog, ['KUTU'], rows)).toEqual(['KİTAP'])
+  })
+
+  it('does not offer one already back at the gate', () => {
+    const rows = [row('KILAVUZ', { state: 'pending', owner_role: null, delivered_at: 'x' })]
+    expect(unsentParcalar(catalog, ['KUTU'], rows)).toEqual(['KİTAP'])
+  })
+
+  it('matches names the Turkish way', () => {
+    // A round that stored "kılavuz" must not read as a fourth parça the leader
+    // is invited to send again.
+    expect(unsentParcalar(catalog, ['kutu', 'kitap', 'kılavuz'], [])).toEqual([])
+  })
+
+  it('reads component objects as well as bare names', () => {
+    const objs = [{ component: 'KUTU' }, { component: 'KİTAP' }]
+    expect(unsentParcalar(objs, [{ component: 'KUTU' }], [])).toEqual(['KİTAP'])
+  })
+
+  it('offers nothing when the catalog has not loaded', () => {
+    // The safe failure: no catalog means no button, not a button offering
+    // everything on the round back to the matbaa.
+    expect(unsentParcalar([], ['KUTU'], [])).toEqual([])
+    expect(unsentParcalar(null, ['KUTU'], [])).toEqual([])
+  })
+})
 
 describe('parça lock predicates', () => {
   it('locked = started and not released', () => {

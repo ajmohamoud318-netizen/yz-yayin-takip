@@ -60,6 +60,7 @@ import {
   notifyOzalitCancelled,
   notifyDemoEdited,
   notifyOzalitEdited,
+  notifyParcalarAdded,
   notifyEkranDemoRequested,
   notifyEkranDemoRejected,
   notifyProjectDeleted,
@@ -156,6 +157,10 @@ async function dispatchProjectNotification(client, { notification, project, acto
       return notifyDemoEdited(client, { project, actor })
     case 'ozalitEdited':
       return notifyOzalitEdited(client, { project, actor })
+    case 'parcalarAdded':
+      return notifyParcalarAdded(client, {
+        project, actor, parcalar: notification.parcalar,
+      })
     case 'demoChangeRequested':
       return notifyDemoChangeRequested(client, {
         project, actor, note: notification.note,

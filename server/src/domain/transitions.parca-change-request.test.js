@@ -279,6 +279,101 @@ describe('edit refuses a save that changes which parçalar the round carries', (
   })
 })
 
+/**
+ * "Kalan Parçaları Gönderin" — the sanctioned way to put parçalar the round was
+ * never sent in front of the matbaa.
+ *
+ * It goes THROUGH the membership guard above rather than around it, which is
+ * the whole design: the flag relaxes exactly one half, so every other way of
+ * changing the round's parça list stays shut.
+ */
+describe('edit accepts a sanctioned parça add', () => {
+  const adding = (...added) => ({
+    changedParcalar: added,
+    parcaSetDelta: { added, removed: [] },
+    allowParcaAdd: true,
+  })
+
+  it('lets the flag put a new parça on the round', () => {
+    const { history } = computeDemoEdit(demoRound([row('KUTU')]), leader, adding('KİTAP'))
+    assert.equal(history.event, 'demo_form_edited')
+  })
+
+  it('still refuses a removal riding along with it', () => {
+    // The case a single "the list may change" flag would have waved through.
+    // Adding and withdrawing are different acts and only one of them is asked
+    // for here, so unticking KILAVUZ while ticking KİTAP is still a no.
+    assert.throws(
+      () => computeDemoEdit(demoRound([row('KUTU')]), leader, {
+        changedParcalar: ['KİTAP', 'KILAVUZ'],
+        parcaSetDelta: { added: ['KİTAP'], removed: ['KILAVUZ'] },
+        allowParcaAdd: true,
+      }),
+      /çıkarılamaz: KILAVUZ/,
+    )
+  })
+
+  it('refuses a parça this project has already routed', () => {
+    // Absent from the round is not the same as never sent. A parça out with the
+    // designer, or already approved, has a routing row — handing it to the
+    // matbaa as fresh work would jump the designer's queue or reopen a decision.
+    const project = demoRound([
+      row('KUTU'),
+      row('KİTAP', { state: 'with_designer', owner_role: 'designer' }),
+    ])
+    assert.throws(
+      () => computeDemoEdit(project, leader, adding('KİTAP')),
+      /zaten işlem gördü: KİTAP/,
+    )
+  })
+
+  it('allows the add while another parça is on the press', () => {
+    // The point of the feature: the matbaa prints KUTU while the leader sends
+    // KİTAP. Only the added parça changed, so the press is untouched.
+    const project = demoRound([
+      row('KUTU', { state: 'in_round', started_at: '2026-09-01T10:00:00Z' }),
+    ])
+    const { history } = computeDemoEdit(project, leader, adding('KİTAP'))
+    assert.equal(history.event, 'demo_form_edited')
+  })
+
+  it('says on the timeline that a parça was added, not that a form changed', () => {
+    const { history } = computeDemoEdit(demoRound([]), leader, adding('KİTAP', 'KILAVUZ'))
+    assert.match(history.note, /Tura parça eklendi: KİTAP, KILAVUZ/)
+  })
+
+  it('leaves an ordinary correction’s note alone', () => {
+    const { history } = computeDemoEdit(demoRound([row('KUTU')]), leader, {
+      changedParcalar: ['KUTU'], parcaSetDelta: { added: [], removed: [] },
+    })
+    assert.equal(history.note, 'Demo formu güncellendi')
+  })
+
+  it('refuses the add without the flag, however the save is shaped', () => {
+    assert.throws(
+      () => computeDemoEdit(demoRound([]), leader, {
+        changedParcalar: ['KİTAP'],
+        parcaSetDelta: { added: ['KİTAP'], removed: [] },
+      }),
+      /yeni parça eklenemez/,
+    )
+  })
+
+  it('carries the whole thing on the ozalit leg', () => {
+    const project = ozalitRound([row('KAPAK', { gate: 'ozalit' })])
+    const { history } = computeOzalitEdit(project, leader, adding('SIRT'))
+    assert.match(history.note, /Tura parça eklendi: SIRT/)
+    assert.throws(
+      () => computeOzalitEdit(project, leader, {
+        changedParcalar: ['SIRT'],
+        parcaSetDelta: { added: ['SIRT'], removed: ['KAPAK'] },
+        allowParcaAdd: true,
+      }),
+      /çıkarılamaz: KAPAK/,
+    )
+  })
+})
+
 describe('cancel carries the same per-parça guard as edit', () => {
   // The more destructive twin: cancel sends the project back to tasarim, so
   // withdrawing a round the matbaa is half way through printing is worse than

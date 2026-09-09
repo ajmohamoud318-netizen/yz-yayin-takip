@@ -902,12 +902,15 @@ function lockedParcalar(project) {
  * worst". Here "unknown" means the round never had a parça list to change, and
  * refusing would block a legitimate edit on a legacy round.
  *
- * Written as a guard that can be CONDITIONED rather than deleted: a sanctioned
- * "send the parçalar that were left out" path belongs behind an explicit flag
- * through this same check, not routed around it the way edit-notify currently
- * routes around the pin.
+ * `allowAdd` is the sanctioned "send the parçalar that were left out" path
+ * (the leader's "Kalan Parçaları Gönderin"), and it relaxes exactly one half of
+ * this guard. Removal stays refused however the save arrives: adding work to a
+ * round and withdrawing work from one are different acts, and nothing in that
+ * feature needs the second. A leader who ticks a new parça and unticks an old
+ * one in the same save is still told no — which is the case a single
+ * "parça listesi değişebilir" flag would have waved straight through.
  */
-function assertParcaSetUnchanged(delta) {
+function assertParcaSetUnchanged(delta, { allowAdd = false } = {}) {
   if (!delta) return
   if (delta.removed?.length > 0) {
     badRequest(
@@ -915,10 +918,53 @@ function assertParcaSetUnchanged(delta) {
       + 'Turu iptal edin veya yeni bir tur gönderin.',
     )
   }
-  if (delta.added?.length > 0) {
+  if (!allowAdd && delta.added?.length > 0) {
     badRequest(
       `Matbaadaki tura yeni parça eklenemez: ${delta.added.join(', ')}. `
-      + 'Bunun için yeni bir tur gönderin.',
+      + 'Bunun için "Kalan Parçaları Gönderin" adımını kullanın.',
+    )
+  }
+}
+
+/**
+ * Refuse to "send" a parça this project has already routed.
+ *
+ * The other half of what "never sent" means. A parça absent from the round is
+ * not automatically fresh work: it may be out with the designer for rework,
+ * already approved, or sitting back at the gate. Handing any of those to the
+ * matbaa as a new job would jump the designer's queue or reopen a decision the
+ * leader has already taken.
+ *
+ * A parça with NO routing row is the only one that was genuinely never sent —
+ * rows are materialised on first action (`loadParcaForUpdate`), so their absence
+ * is exactly the record of nothing having happened to it.
+ *
+ * The client filters the same way when it builds the button's list; this is the
+ * half a stale tab or a hand-rolled POST has to get past.
+ */
+/**
+ * The timeline note for a save that put parçalar on the round, or null when it
+ * only corrected what was already there.
+ *
+ * Both edits log the same `*_form_edited` event, and until now the same words
+ * with it — so a comma fixed on the künye and a whole new parça landing in the
+ * matbaa's job read identically in Geçmiş. The event stays as it is (the row's
+ * "Demo Formu" button still resolves the same snapshot); only what it SAYS
+ * changes, which is the part anybody reads.
+ */
+function parcaAddNote(added) {
+  if (!added?.length) return null
+  return `Tura parça eklendi: ${added.join(', ')}`
+}
+
+function assertParcalarNeverSent(project, added) {
+  if (!added?.length) return
+  const routed = new Set(parcaStateRows(project).map((r) => r?.parca).filter(Boolean))
+  const already = added.filter((parca) => routed.has(parca))
+  if (already.length > 0) {
+    badRequest(
+      `Bu parçalar bu projede zaten işlem gördü: ${already.join(', ')}. `
+      + 'Yeni parça olarak gönderilemezler.',
     )
   }
 }
@@ -2122,7 +2168,8 @@ export function computeDemoEdit(project, actor, ctx = {}) {
   // carries is refused outright, whatever it did to their rows. Asked first so
   // that mistake gets its own message rather than surfacing as "you touched a
   // locked parça" below.
-  assertParcaSetUnchanged(ctx.parcaSetDelta)
+  assertParcaSetUnchanged(ctx.parcaSetDelta, { allowAdd: ctx.allowParcaAdd })
+  if (ctx.allowParcaAdd) assertParcalarNeverSent(project, ctx.parcaSetDelta?.added)
   // The same refusal, read off the parçalar instead of the project (migration
   // 077). See lockedParcalar: on a split round `demo_started` is structurally
   // false, so this is the only guard standing between the leader and a silent
@@ -2161,7 +2208,7 @@ export function computeDemoEdit(project, actor, ctx = {}) {
       from_stage: project.stage,
       to_stage: project.stage,
       done_by_name: actorName,
-      note: 'Demo formu güncellendi',
+      note: parcaAddNote(ctx.parcaSetDelta?.added) ?? 'Demo formu güncellendi',
       // Which snapshot this correction wrote (migration 052). Two
       // corrections of one round share an attempt slot, so without this the
       // older row's "Demo Formu" button resolves to the newer sheet.
@@ -2192,7 +2239,8 @@ export function computeOzalitEdit(project, actor, ctx = {}) {
     badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
   }
   // See computeDemoEdit — membership is asked before content on this leg too.
-  assertParcaSetUnchanged(ctx.parcaSetDelta)
+  assertParcaSetUnchanged(ctx.parcaSetDelta, { allowAdd: ctx.allowParcaAdd })
+  if (ctx.allowParcaAdd) assertParcalarNeverSent(project, ctx.parcaSetDelta?.added)
   // Per-parça twin of the guard above — see computeDemoEdit's comment.
   const ozalitTouched = lockedParcalarTouched(lockedParcalar(project), ctx.changedParcalar)
   if (ozalitTouched.length > 0) {
@@ -2215,7 +2263,7 @@ export function computeOzalitEdit(project, actor, ctx = {}) {
       from_stage: project.stage,
       to_stage: project.stage,
       done_by_name: actorName,
-      note: 'Ozalit formu güncellendi',
+      note: parcaAddNote(ctx.parcaSetDelta?.added) ?? 'Ozalit formu güncellendi',
       demo_id: ctx.demoId ?? null,
     }),
   }

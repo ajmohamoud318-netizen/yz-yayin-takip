@@ -37,7 +37,7 @@ import {
 } from '@/domain'
 
 import { useProjectDetail } from '@/hooks/useProjectDetail'
-import { useParcaSnapshot, parcaRoundDecidable } from '@/hooks/useParcaSnapshot'
+import { parcaRoundDecidable } from '@/hooks/useParcaSnapshot'
 import ProjectDetailHeader from '@/components/ProjectDetailHeader'
 import DesignerPanel from '@/components/DesignerPanel'
 import SubtaskCard from '@/components/SubtaskCard'
@@ -82,9 +82,10 @@ export default function ProjectDetail() {
   // Onayla button can't express "KUTU is fine, KİTAP isn't". A single-parça
   // sheet keeps the header's Onayla/Reddet pair and nothing changes.
   //
-  // Hook order: this must run before the loading/empty early-returns below,
-  // so it is called here and no-ops while `project` is still null.
-  const { parcalar: parcaSnapshot, ledgerKind } = useParcaSnapshot(project)
+  // Loaded by useProjectDetail rather than here: the header's "Kalan Parçaları
+  // Gönderin" needs the same snapshot to work out which parçalar the round left
+  // behind, and two callers would fetch it twice.
+  const { parcaSnapshot, ledgerKind } = d
   // Which parçalar the reject dialog is open for; null = closed.
   const [parcaReject, setParcaReject] = useState(null)
 
@@ -175,8 +176,14 @@ export default function ProjectDetail() {
   }
 
   /**
-   * Open the sheet to send the correction the matbaa is waiting for
+   * Open the sheet on ONE parça the matbaa holds, ready to send back to them
    * (migration 077).
+   *
+   * The panel's single edit entry point, for both states where the leader may
+   * still rewrite a parça: one the matbaa has not started (a free edit), and
+   * one an accepted change request released (a correction they are waiting on).
+   * The sheet is identical either way — only the panel's framing differs — so
+   * this takes the parça and nothing about why.
    *
    * Kept separate from `parcaSheet` on purpose: that state drives the leader's
    * approve / reject / review decisions, and its footer hands off to whichever
@@ -184,9 +191,9 @@ export default function ProjectDetail() {
    * edit-and-notify — the footer's own "Düzeltmeyi Matbaaya Gönderin" does the
    * work — so it only needs to say which parça the sheet should open on.
    *
-   * Without it the panel told the leader a correction was owed and offered no
-   * way to send it: the only route was the header's whole-sheet button, which
-   * opens all three parçalar and says nothing about which one is waiting.
+   * Without it the panel named a parça and then sent the leader to the header's
+   * whole-sheet button, which opens all three and says nothing about which one
+   * they came for.
    */
   function openParcaFixSheet(parca, gate) {
     setParcaSheet(null)
@@ -395,7 +402,7 @@ export default function ProjectDetail() {
             canAct={isLeader}
             busyParca={parcaRoundBusy}
             onRequestChange={handleRequestParcaChange}
-            onSendFix={openParcaFixSheet}
+            onEditParca={openParcaFixSheet}
           />
         )}
 
@@ -517,7 +524,7 @@ export default function ProjectDetail() {
 
       <OzalitFormDialog
         open={ozalitFormOpen}
-        onOpenChange={(v) => { d.setOzalitFormOpen(v); if (!v) { d.setOzalitFormAttempt(null); d.setOzalitFormRound(null); d.setOzalitFormSnapshot(null); d.setOzalitFormNotify(false); d.setOzalitFormStartWork(false); setParcaSheet(null); setEditParcaScope(null) } }}
+        onOpenChange={(v) => { d.setOzalitFormOpen(v); if (!v) { d.setOzalitFormAttempt(null); d.setOzalitFormRound(null); d.setOzalitFormSnapshot(null); d.setOzalitFormNotify(false); d.setOzalitFormStartWork(false); setParcaSheet(null); setEditParcaScope(null); d.setParcaAddScope(null) } }}
         project={project}
         mode={ozalitFormMode}
         viewAttempt={ozalitFormAttempt}
@@ -560,6 +567,10 @@ export default function ProjectDetail() {
         // Which parça blocks the sheet must render read-only on the leader's
         // edit-and-notify path (migration 077).
         parcaRows={parcaRows}
+        // Set only by "Kalan Parçaları Gönderin": the parçalar this opening
+        // will put on the round. Ticks them on the sheet and authorises the
+        // addition on save — every other opening leaves it null.
+        preselectParcalar={d.parcaAddScope}
         startWorkLabel={parcaSheetLabel}
         startingWork={d.startingWork || d.processingEkranDemo}
         onDone={onActionDone}
@@ -575,7 +586,7 @@ export default function ProjectDetail() {
 
       <DemoFormDialog
         open={demoFormOpen}
-        onOpenChange={(v) => { setDemoFormOpen(v); if (!v) { d.setDemoFormAttempt(null); d.setDemoFormRound(null); d.setDemoFormSnapshot(null); d.setDemoFormNotify(false); d.setDemoFormStartWork(false); setParcaSheet(null); setEditParcaScope(null) } }}
+        onOpenChange={(v) => { setDemoFormOpen(v); if (!v) { d.setDemoFormAttempt(null); d.setDemoFormRound(null); d.setDemoFormSnapshot(null); d.setDemoFormNotify(false); d.setDemoFormStartWork(false); setParcaSheet(null); setEditParcaScope(null); d.setParcaAddScope(null) } }}
         project={project}
         mode={demoFormMode}
         viewAttempt={demoFormAttempt}
@@ -610,6 +621,10 @@ export default function ProjectDetail() {
         // Which parça blocks the sheet must render read-only on the leader's
         // edit-and-notify path (migration 077).
         parcaRows={parcaRows}
+        // Set only by "Kalan Parçaları Gönderin": the parçalar this opening
+        // will put on the round. Ticks them on the sheet and authorises the
+        // addition on save — every other opening leaves it null.
+        preselectParcalar={d.parcaAddScope}
         startWorkLabel={parcaSheetLabel}
         startingWork={d.startingWork || d.processingEkranDemo}
         onDone={onActionDone}

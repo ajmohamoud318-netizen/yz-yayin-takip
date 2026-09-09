@@ -94,6 +94,12 @@ export { stampSpecSignature } from '@/lib/spec-form-storage'
  *   (the printer may still mark demo-start/ozalit-start), the footer offers
  *   an "İşlemi Başlatın" button so they review the spec sheet before
  *   confirming they've begun physical work, instead of starting blind.
+ * preselectParcalar — parça names this opening is about to ADD to the round
+ *   ("Kalan Parçaları Gönderin"). They are ticked on the sheet as it opens, so
+ *   the document matches what the button promised, and their presence is what
+ *   authorises the addition on save (`allowParcaAdd`). Null everywhere else,
+ *   which is what keeps every other save unable to move the round's parça list.
+ *
  * parcaScopeOnly — open showing ONLY the scoped parçalar instead of the whole
  * round. See `showAllParca`; the reject path is the caller that sets it.
  *
@@ -129,7 +135,7 @@ export { stampSpecSignature } from '@/lib/spec-form-storage'
  *   ship a different file). The saved sheet still loads as-is (like a
  *   read-only viewer would) instead of the normal "fresh compose" reset.
  */
-export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, order = null, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, startWorkLabel = null, parcaScope = null, parcaScopeOnly = false, parcaRows = [], decisionContext = null, rejectContext = null }) {
+export default function SpecFormDialog({ variant: variantName = 'demo', open, onOpenChange, project, order = null, mode, onDone, viewAttempt, viewAttemptLabel = null, viewDemoId = null, notifyOnSave = false, onStartWork, startingWork = false, startWorkLabel = null, parcaScope = null, parcaScopeOnly = false, parcaRows = [], preselectParcalar = null, decisionContext = null, rejectContext = null }) {
   const variant = VARIANTS[variantName]
   const { user } = useAuth()
   const { updateOne } = useProjectsStore()
@@ -422,7 +428,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     scopeId, orderId, orderScoped,
     viewAttempt, viewDemoId, notifyOnSave, rejectContext,
     readOnly, viewingSentSheet, showsLiveTeslimat,
-    attemptNo, liveAttempts,
+    attemptNo, liveAttempts, preselectParcalar,
   })
 
   /* ── The parça this sheet was opened FOR (migration 074) ────────────────
@@ -961,7 +967,16 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         // and no notification, because this very call is what writes both.
         let updated
         try {
-          updated = await notify(scopeId, { attempt: writeAttempt, payload: snapshotPayload(form) })
+          updated = await notify(scopeId, {
+            attempt: writeAttempt,
+            payload: snapshotPayload(form),
+            // Only a sheet opened BY "Kalan Parçaları Gönderin" may change the
+            // round's parça list, and only by adding. Every other save leaves
+            // this false and is refused server-side if the list moved — which
+            // is what stops a stray click in the picker from rewriting what the
+            // matbaa is producing. See assertParcaSetUnchanged.
+            allowParcaAdd: (preselectParcalar ?? []).length > 0,
+          })
         } catch (err) {
           // Re-read the project so the stale "Gönderilen ... Düzenleyin"
           // button this save came from gives way to "Değişiklik İsteyin".
@@ -1056,6 +1071,22 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         />
 
         <SpecChangeSummary changeSummary={changeSummary} />
+
+        {/* What this save is about to ADD to the round, said plainly.
+            The change summary above frames everything as a correction to a
+            sheet the matbaa already has, which is the wrong sentence here:
+            these parçalar are not on their round at all yet, and sending puts
+            work in their queue rather than amending work already in it. */}
+        {(preselectParcalar ?? []).length > 0 && (
+          <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs print:hidden">
+            <p className="text-foreground">
+              Bu turda olmayan{' '}
+              <strong className="font-semibold">{preselectParcalar.join(', ')}</strong>{' '}
+              matbaaya gönderilmek üzere forma eklendi. Göndermeden önce
+              bilgilerini doldurun; istemediğinizi listeden çıkarabilirsiniz.
+            </p>
+          </div>
+        )}
 
         {/* Nothing leaves this document silently: when the sheet has been
             narrowed to the parça the reader was handed, it says which parçalar

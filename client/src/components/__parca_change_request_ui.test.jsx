@@ -178,7 +178,7 @@ describe('ParcaChangeRequestPanel', () => {
       <ParcaChangeRequestPanel
         rows={[held('KUTU', { fix_pending: true })]}
         canAct onRequestChange={() => {}}
-        onSendFix={(parca, gate) => calls.push([parca, gate])}
+        onEditParca={(parca, gate) => calls.push([parca, gate])}
       />,
     )
     const btn = buttonByText(/KUTU Formunu Düzenleyin/)
@@ -195,28 +195,91 @@ describe('ParcaChangeRequestPanel', () => {
       <ParcaChangeRequestPanel
         rows={[held('KAPAK', { fix_pending: true, gate: 'ozalit' })]}
         canAct onRequestChange={() => {}}
-        onSendFix={(parca, gate) => calls.push([parca, gate])}
+        onEditParca={(parca, gate) => calls.push([parca, gate])}
       />,
     )
     click(buttonByText(/KAPAK Formunu Düzenleyin/))
     expect(calls).toEqual([['KAPAK', 'ozalit']])
   })
 
-  it('does not offer it on a parça that owes nothing', () => {
+  // The free edit, per parça. A parça the matbaa is holding but has not started
+  // is still the leader's to correct outright — the window the header's
+  // whole-sheet button has always covered. The panel now names it, so the
+  // leader who came here for KİTAP is not sent back to a sheet showing three.
+  it('offers a plain edit on a parça nobody has started', () => {
+    const calls = []
     render(
       <ParcaChangeRequestPanel
         rows={[onPress('KUTU'), held('KİTAP')]}
-        canAct onRequestChange={() => {}} onSendFix={() => {}}
+        canAct onRequestChange={() => {}}
+        onEditParca={(parca, gate) => calls.push([parca, gate])}
       />,
     )
-    expect(buttonByText(/Formunu Düzenleyin/)).toBeUndefined()
+    click(buttonByText(/KİTAP Formunu Düzenleyin/))
+    expect(calls).toEqual([['KİTAP', 'demo']])
+  })
+
+  // The split that matters: one sheet, two parçalar, two different answers.
+  it('offers the edit and the ask on the right parçalar of one round', () => {
+    render(
+      <ParcaChangeRequestPanel
+        rows={[onPress('KUTU'), held('KİTAP')]}
+        canAct onRequestChange={() => {}} onEditParca={() => {}}
+      />,
+    )
+    // KUTU is on the press: asking is the only way to reach it.
+    expect(buttonByText(/KUTU Formunu Düzenleyin/)).toBeUndefined()
+    expect(buttonByText(/Değişiklik İste/)).toBeTruthy()
+    // KİTAP is untouched: still the leader's to edit.
+    expect(buttonByText(/KİTAP Formunu Düzenleyin/)).toBeTruthy()
+  })
+
+  it('reaches a parça with no routing row through the panel’s own gate', () => {
+    // Synthesised from the snapshot — there is no row to read a gate off, so
+    // the panel's prop is the only thing standing between the leader and the
+    // demo sheet on an ozalit round.
+    const calls = []
+    render(
+      <ParcaChangeRequestPanel
+        rows={[onPress('KAPAK', { gate: 'ozalit' })]}
+        snapshotParcalar={['KAPAK', 'İÇ']}
+        gate="ozalit"
+        canAct onRequestChange={() => {}}
+        onEditParca={(parca, gate) => calls.push([parca, gate])}
+      />,
+    )
+    click(buttonByText(/İÇ Formunu Düzenleyin/))
+    expect(calls).toEqual([['İÇ', 'ozalit']])
+  })
+
+  it('offers nothing on a parça waiting for the matbaa’s answer', () => {
+    // Asked, not yet answered: the parça is still on the press and the leader
+    // has already had their say. An edit button here would bypass the handshake.
+    render(
+      <ParcaChangeRequestPanel
+        rows={[onPress('KUTU', { change_requested_at: '2026-09-02T09:00:00Z' }), held('KİTAP')]}
+        canAct onRequestChange={() => {}} onEditParca={() => {}}
+      />,
+    )
+    expect(buttonByText(/KUTU Formunu Düzenleyin/)).toBeUndefined()
+    expect(buttonByText(/Değişiklik İste/)).toBeUndefined()
   })
 
   it('does not offer it to someone who may not act', () => {
     render(
       <ParcaChangeRequestPanel
-        rows={[held('KUTU', { fix_pending: true })]}
-        canAct={false} onRequestChange={() => {}} onSendFix={() => {}}
+        rows={[held('KUTU', { fix_pending: true }), held('KİTAP')]}
+        canAct={false} onRequestChange={() => {}} onEditParca={() => {}}
+      />,
+    )
+    expect(buttonByText(/Formunu Düzenleyin/)).toBeUndefined()
+  })
+
+  it('does not offer it when the caller wired no handler', () => {
+    render(
+      <ParcaChangeRequestPanel
+        rows={[onPress('KUTU'), held('KİTAP')]}
+        canAct onRequestChange={() => {}}
       />,
     )
     expect(buttonByText(/Formunu Düzenleyin/)).toBeUndefined()
