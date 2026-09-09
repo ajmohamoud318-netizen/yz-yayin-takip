@@ -21,7 +21,7 @@ import {
 } from '../project-repository.js'
 import { activeUserIdsByRole } from '../notifications.js'
 import { listParcaState } from '../parca-state-repository.js'
-import { changedParcaBlocks } from '../../domain/spec-parca-diff.js'
+import { changedParcaBlocks, parcaSetDelta } from '../../domain/spec-parca-diff.js'
 import { runProjectCommand } from '../project-service.js'
 
 /**
@@ -175,7 +175,15 @@ function withDemoSnapshot(kind, body) {
     const baseline = await loadLatestDemoSnapshot(client, row.id, kind)
     const changedParcalar = changedParcaBlocks(baseline?.payload, body?.payload)
 
-    if (!body?.payload) return { demoId: null, changedParcalar }
+    // Whether this save changes what the round IS, as opposed to what one of
+    // its parçalar says. Only asked when there is a payload to write: a
+    // payload-less notify inserts no snapshot below, so the round's parça list
+    // is untouched and there is nothing to refuse.
+    const setDelta = body?.payload
+      ? parcaSetDelta(baseline?.payload, body.payload)
+      : null
+
+    if (!body?.payload) return { demoId: null, changedParcalar, parcaSetDelta: null }
     const snapshot = await insertDemoSnapshot(client, {
       project_id: row.id,
       kind,
@@ -185,7 +193,7 @@ function withDemoSnapshot(kind, body) {
         : (row.ozalit_attempt ?? 0) + 1),
       created_by: actor?.id,
     })
-    return { demoId: snapshot?.id ?? null, changedParcalar }
+    return { demoId: snapshot?.id ?? null, changedParcalar, parcaSetDelta: setDelta }
   }
 }
 
@@ -324,6 +332,7 @@ export function demoEditNotify(projectId, actor, body = {}, client = null) {
     run: (project, pCtx) => project.demoEdit(actor, {
       demoId: pCtx.demoId ?? null,
       changedParcalar: pCtx.changedParcalar,
+      parcaSetDelta: pCtx.parcaSetDelta ?? null,
     }),
   }, client)
 }
@@ -335,6 +344,7 @@ export function ozalitEditNotify(projectId, actor, body = {}, client = null) {
     run: (project, pCtx) => project.ozalitEdit(actor, {
       demoId: pCtx.demoId ?? null,
       changedParcalar: pCtx.changedParcalar,
+      parcaSetDelta: pCtx.parcaSetDelta ?? null,
     }),
   }, client)
 }

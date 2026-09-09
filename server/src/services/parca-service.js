@@ -60,8 +60,12 @@ export async function listProjectParcaState(projectId) {
 export async function listMyParcaQueue(actor) {
   if (actor?.role === 'printer') {
     const routed = await listParcaStateByOwner(null, 'printer', ['with_matbaa', 'in_round'])
-    const fresh = await deriveTeslimParcalar(routed)
-    return [...routed, ...fresh]
+    // One pass over the live rounds serves both halves: which routed rows still
+    // belong to their round, and which of the round's parçalar have no row yet.
+    const rounds = await loadLiveTeslimRounds()
+    const live = dropOrphanedRouted(routed, rounds)
+    const fresh = await deriveTeslimParcalar(live, rounds)
+    return [...live, ...fresh]
   }
   if (actor?.role === 'designer') {
     return listParcaStateByOwner(null, 'designer', ['with_designer'])
@@ -96,6 +100,86 @@ const TESLIM_GATES = {
 }
 
 /**
+ * Every live *_teslim round the matbaa is holding, keyed by project id.
+ *
+ * Loaded once and used twice — to derive the parçalar of rounds nobody has
+ * touched yet (`deriveTeslimParcalar`) and to drop routed rows whose parça has
+ * since left the round (`dropOrphanedRouted`). Both need the same
+ * project + snapshot pair, and asking for it twice meant two queries per
+ * project on a read path.
+ *
+ * "Live" excludes an ozalit round nobody has asked for: it only belongs to the
+ * matbaa once requested, or bounced back to them. Same rule as
+ * `isOzalitRoundLive`.
+ */
+async function loadLiveTeslimRounds() {
+  const pool = getPool()
+  const stages = Object.keys(TESLIM_GATES)
+  const { rows: projects } = await pool.query(
+    `SELECT id, title, stage, type, ozalit_requested, reject_target
+       FROM projects
+      WHERE stage = ANY($1) AND deleted_at IS NULL`,
+    [stages],
+  )
+  const rounds = new Map()
+  for (const p of projects) {
+    if (p.stage === 'ozalit_teslim' && !p.ozalit_requested && p.reject_target !== 'matbaa') continue
+    const gate = TESLIM_GATES[p.stage]
+    const snapshot = await loadLatestDemoSnapshot(pool, p.id, gate)
+    rounds.set(p.id, { project: p, gate, parcalar: snapshot?.selectedComponents ?? [] })
+  }
+  return rounds
+}
+
+/**
+ * Drop routed rows for parçalar that are no longer part of their round.
+ *
+ * `listParcaStateByOwner` joins only `parca_state × projects` — it never
+ * consults the round's snapshot, because the queue spans every project and
+ * loading a snapshot per row would be a query per row. So a parça dropped from
+ * a round (a re-send composing a different parça list) kept sitting in the
+ * matbaa's queue as live work, while `allParcalarDelivered` — which IS
+ * snapshot-driven — had already stopped waiting for it. The printer could start
+ * and deliver a parça that was not part of the round at all.
+ *
+ * Deliberately narrow. A row is dropped ONLY when all of these hold:
+ *
+ *   • its project is on the map above, i.e. at a live *_teslim stage;
+ *   • the row's gate is the gate that round is running;
+ *   • the round has a parça list at all;
+ *   • and the row's parça is absent from it.
+ *
+ * Every one of those is load-bearing. A row can legitimately be `with_matbaa`
+ * while its project sits at a NON-teslim stage — that is the reject-to-matbaa
+ * flow (`parcaRejectPatch`), where there is no round snapshot to check against —
+ * and a project can carry a demo row while running an ozalit round. Dropping
+ * either would delete real work from the queue. An empty parça list means the
+ * snapshot has not been written yet (the SPA writes it AFTER the advance, see
+ * `deriveTeslimParcalar`), which is "unknown", not "nothing belongs".
+ *
+ * A read-side filter rather than a delete: the row keeps its rework `attempt`
+ * and rejection history, and comes back on its own if a later round carries the
+ * parça again.
+ *
+ * Exported for its own tests: the two functions either side of it reach for
+ * `getPool()`, which ESM leaves no way to stub (see the note at the foot of
+ * project-service.test.js), so keeping the decision in one pure function is what
+ * makes any of this testable at all.
+ *
+ * @param {Array<{ project_id: string, parca: string, gate: string }>} routed
+ * @param {Map<string, { gate: string, parcalar: string[] }>} rounds
+ */
+export function dropOrphanedRouted(routed, rounds) {
+  return (routed ?? []).filter((row) => {
+    const round = rounds.get(row.project_id)
+    if (!round) return true
+    if (round.gate !== row.gate) return true
+    if (round.parcalar.length === 0) return true
+    return round.parcalar.includes(row.parca)
+  })
+}
+
+/**
  * The parçalar a matbaa owes on rounds that were never split up.
  *
  * Explicitly routed rows only cover REWORK — a parça a leader bounced back, or
@@ -114,30 +198,20 @@ const TESLIM_GATES = {
  *
  * Rows already routed explicitly are skipped, so a parça never appears twice.
  */
-async function deriveTeslimParcalar(routed) {
+async function deriveTeslimParcalar(routed, rounds) {
   const pool = getPool()
-  const stages = Object.keys(TESLIM_GATES)
-  const { rows: projects } = await pool.query(
-    `SELECT id, title, stage, type, ozalit_requested, reject_target
-       FROM projects
-      WHERE stage = ANY($1) AND deleted_at IS NULL`,
-    [stages],
-  )
   const seen = new Set(routed.map((r) => `${r.project_id}|${r.parca}`))
   const out = []
-  for (const p of projects) {
-    // An ozalit round only belongs to the matbaa once it has been requested,
-    // or bounced back to them. Same rule as `isOzalitRoundLive`.
-    if (p.stage === 'ozalit_teslim' && !p.ozalit_requested && p.reject_target !== 'matbaa') continue
-    const gate = TESLIM_GATES[p.stage]
-    const snapshot = await loadLatestDemoSnapshot(pool, p.id, gate)
-    const parcalar = snapshot?.selectedComponents ?? []
+  for (const { project: p, gate, parcalar } of rounds.values()) {
     // Single-parça (or snapshot-less) rounds keep the whole-project card they
     // have always had — splitting a one-parça sheet into a "parça queue" of
-    // one is noise, and the project row already says everything.
+    // one is noise, and the project row already says everything. Note this is
+    // a rule about DERIVING only: `dropOrphanedRouted` above deliberately does
+    // not inherit it, because a one-parça round can still strand a routed row
+    // for some other parça.
     if (parcalar.length < 2) continue
     const { rows: existing } = await pool.query(
-      'SELECT parca, state, started_at FROM parca_state WHERE project_id = $1',
+      'SELECT parca, state, started_at, attempt FROM parca_state WHERE project_id = $1',
       [p.id],
     )
     const byParca = new Map(existing.map((r) => [r.parca, r]))
@@ -153,7 +227,16 @@ async function deriveTeslimParcalar(routed) {
         state: row?.started_at ? 'in_round' : 'with_matbaa',
         owner_role: 'printer',
         route: 'physical',
-        attempt: snapshot?.attempt ?? 1,
+        // NOT `snapshot.attempt`. Two different counters live under that name:
+        // `demos.attempt` is a storage SLOT, deliberately offset — +1 for a new
+        // round and +2 for an edit-notify save, so history keeps the pristine
+        // as-first-sent copy (SpecFormDialog's `willEditBump`). `parca_state.
+        // attempt` is this parça's ROUND NUMBER, counted from 1 and raised only
+        // by parcaRejectPatch. Seeding one from the other made a never-reworked
+        // parça render "2. tur" on a first round, and "3. tur" after any
+        // correction — see the badge in ParcaJobCard / ParcaChangeRequestPanel /
+        // ParcaReturnedPanel, which shows whenever attempt > 1.
+        attempt: row?.attempt ?? 1,
         started_at: row?.started_at ?? null,
         delivered_at: null,
         reason: null,
@@ -209,7 +292,10 @@ async function loadParcaForUpdate(client, projectId, parca) {
     state: 'with_matbaa',
     owner_role: 'printer',
     route: 'physical',
-    attempt: snapshot?.attempt ?? 1,
+    // 1, not `snapshot.attempt` — see deriveTeslimParcalar's note. This is the
+    // parça's FIRST time round by definition: we are here precisely because it
+    // has no row yet, and only a reject raises the count from here.
+    attempt: 1,
   })
   return { project, row: created }
 }

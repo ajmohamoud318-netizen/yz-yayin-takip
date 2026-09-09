@@ -11,7 +11,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { changedParcaBlocks, lockedParcalarTouched } from './spec-parca-diff.js'
+import { changedParcaBlocks, lockedParcalarTouched, parcaSetDelta } from './spec-parca-diff.js'
 
 const sheet = (blocks) => ({
   isinAdi: 'Zeka Küpü',
@@ -106,6 +106,92 @@ describe('changedParcaBlocks', () => {
     const legacy = { _selectedComponents: ['KUTU', 'KİTAP'] }
     // Rows appearing where there were none is a real change, not a no-op.
     assert.deepEqual(changedParcaBlocks(legacy, base), ['KUTU', 'KİTAP'])
+  })
+})
+
+/**
+ * Membership, as opposed to content. `changedParcaBlocks` above folds adding,
+ * removing and editing together because the lock guard treats them alike; the
+ * round's parça LIST is a different question, because it is what the matbaa's
+ * queue, the delivery gate and `pruneApprovalsToSnapshot` all read.
+ */
+describe('parcaSetDelta', () => {
+  const base = sheet({
+    KUTU: [row('r1', 'EBAT', '20x28')],
+    KİTAP: [row('r3', 'EBAT', '19x27')],
+  })
+
+  it('is empty when the same parçalar are on the sheet', () => {
+    assert.deepEqual(
+      parcaSetDelta(base, sheet({
+        KUTU: [row('r1', 'EBAT', '99x99')], // content churn is not membership
+        KİTAP: [row('r3', 'EBAT', '19x27')],
+      })),
+      { added: [], removed: [] },
+    )
+  })
+
+  it('names a parça the save puts on the round', () => {
+    assert.deepEqual(
+      parcaSetDelta(base, sheet({
+        KUTU: [row('r1', 'EBAT', '20x28')],
+        KİTAP: [row('r3', 'EBAT', '19x27')],
+        KILAVUZ: [row('r4', 'EBAT', '10x10')],
+      })),
+      { added: ['KILAVUZ'], removed: [] },
+    )
+  })
+
+  it('names a parça the save takes off it', () => {
+    assert.deepEqual(
+      parcaSetDelta(base, sheet({ KUTU: [row('r1', 'EBAT', '20x28')] })),
+      { added: [], removed: ['KİTAP'] },
+    )
+  })
+
+  it('reports both at once', () => {
+    assert.deepEqual(
+      parcaSetDelta(base, sheet({
+        KUTU: [row('r1', 'EBAT', '20x28')],
+        KILAVUZ: [row('r4', 'EBAT', '10x10')],
+      })),
+      { added: ['KILAVUZ'], removed: ['KİTAP'] },
+    )
+  })
+
+  it('matches names the Turkish way, like every other parça comparison', () => {
+    assert.deepEqual(
+      parcaSetDelta(base, sheet({
+        kutu: [row('r1', 'EBAT', '20x28')],
+        kitap: [row('r3', 'EBAT', '19x27')],
+      })),
+      { added: [], removed: [] },
+    )
+  })
+
+  it('returns null with no baseline to compare against', () => {
+    assert.equal(parcaSetDelta(null, base), null)
+    assert.equal(parcaSetDelta(undefined, base), null)
+  })
+
+  it('returns null when the round never had a parça list', () => {
+    // Not "everything was added" — a legacy round with no _selectedComponents
+    // is not a round somebody is now adding parçalar to, and refusing it would
+    // block a legitimate edit. Contrast lockedParcalarTouched, where "unknown"
+    // has to mean "assume the worst".
+    assert.equal(parcaSetDelta({ isinAdi: 'x' }, base), null)
+    assert.equal(parcaSetDelta({ _selectedComponents: null }, base), null)
+  })
+
+  it('treats a payload that omits the list as emptying the round', () => {
+    // Deliberately NOT null-guarded on the `next` side: loadLatestDemoSnapshot
+    // resolves a payload without _selectedComponents to an empty list, so
+    // omitting the field empties the round exactly as unticking every box does.
+    // Null here would be a removal hole you could drive a round through.
+    assert.deepEqual(
+      parcaSetDelta(base, { isinAdi: 'Zeka Küpü' }),
+      { added: [], removed: ['KUTU', 'KİTAP'] },
+    )
   })
 })
 

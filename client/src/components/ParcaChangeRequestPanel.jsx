@@ -44,6 +44,7 @@ import { cn } from '@/lib/utils'
  *                 fix_pending?: boolean, change_requested_at?: string|null,
  *                 change_requested_note?: string|null, attempt?: number }>,
  *   snapshotParcalar?: Array<string | { component?: string }>,
+ *   gate?: 'demo' | 'ozalit',
  *   canAct?: boolean,
  *   busyParca?: string | null,
  *   onRequestChange: (parca: string, note: string) => void,
@@ -51,10 +52,22 @@ import { cn } from '@/lib/utils'
  *   className?: string,
  * }} props
  */
-export default function ParcaChangeRequestPanel({
-  rows = [], snapshotParcalar = [], canAct = false, busyParca = null,
-  onRequestChange, onSendFix, className,
-}) {
+/**
+ * The parçalar the matbaa is holding this round, routed rows first.
+ *
+ * Exported for its own tests. The synthesised half carries fields no DOM node
+ * renders — `gate` above all — so the only way to assert them through the
+ * component would be a button that happens to read one, which is exactly the
+ * coupling that let the missing `gate` sit here unnoticed.
+ *
+ * `untouched` is returned alongside because the caller needs to tell a
+ * single-parça round the header already covers from a real one.
+ *
+ * @param {Array<object>} rows
+ * @param {Array<string | { component?: string }>} snapshotParcalar
+ * @param {'demo' | 'ozalit' | null} gate
+ */
+export function heldParcalar(rows, snapshotParcalar, gate = null) {
   // Only rows the matbaa is actually holding this round. An approved parça, or
   // one back with the designer, has nothing to do with "can I still change the
   // sheet the printer is working from".
@@ -64,12 +77,28 @@ export default function ParcaChangeRequestPanel({
   // A parça that has left the matbaa this round — delivered, approved, sent to
   // the designer — is not "unstarted", it is done with them, so it must not be
   // resurrected from the snapshot as though they were still holding it.
+  //
+  // `gate` has to be handed in rather than read off a row, because these are
+  // precisely the parçalar with no row to read it from. It is the one field a
+  // synthesised row cannot derive, and the one every caller acting on a parça
+  // needs: a project can carry both a demo and an ozalit round, and the gate is
+  // what says which sheet a button opens. Left undefined, `gate === 'ozalit'`
+  // checks downstream silently take the demo branch — opening the wrong sheet
+  // on an ozalit round.
   const known = new Set((rows ?? []).map((r) => r?.parca).filter(Boolean))
   const untouched = parcaNames(snapshotParcalar)
     .filter((parca) => !known.has(parca))
-    .map((parca) => ({ parca, state: 'with_matbaa', started_at: null, fix_pending: false }))
+    .map((parca) => ({
+      parca, gate, state: 'with_matbaa', started_at: null, fix_pending: false,
+    }))
+  return { held: [...routed, ...untouched], untouched }
+}
 
-  const held = [...routed, ...untouched]
+export default function ParcaChangeRequestPanel({
+  rows = [], snapshotParcalar = [], gate = null, canAct = false, busyParca = null,
+  onRequestChange, onSendFix, className,
+}) {
+  const { held, untouched } = heldParcalar(rows, snapshotParcalar, gate)
   // Nothing to say on a round the matbaa isn't holding, or a single-parça one
   // where the header's own buttons already cover the whole sheet.
   if (held.length === 0 || (held.length === 1 && untouched.length === 1)) return null

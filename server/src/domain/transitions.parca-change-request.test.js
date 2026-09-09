@@ -188,6 +188,97 @@ describe('computeOzalitEdit carries the same per-parça guard', () => {
   })
 })
 
+/**
+ * The round's parça LIST, as opposed to what its parçalar say.
+ *
+ * There has always been a guard for this — the "parça-list pin" in
+ * routes/demos.js — and it missed the edit-and-notify path twice over: it only
+ * fires at the *_onay stages, and it lives on POST /demos while edit-notify
+ * writes its snapshot straight from `withDemoSnapshot`. So a leader could untick
+ * a parça in the sheet's picker on a live *_teslim round and the round quietly
+ * became a different round — with `pruneApprovalsToSnapshot` then deleting the
+ * dropped parça's approvals, which is the exact destruction the pin exists for.
+ */
+describe('edit refuses a save that changes which parçalar the round carries', () => {
+  const setDelta = (added, removed) => ({
+    changedParcalar: [...added, ...removed],
+    parcaSetDelta: { added, removed },
+  })
+
+  it('refuses to take a parça off a live round', () => {
+    assert.throws(
+      () => computeDemoEdit(demoRound([row('KUTU')]), leader, setDelta([], ['KİTAP'])),
+      /turdan parça çıkarılamaz: KİTAP/,
+    )
+  })
+
+  it('refuses to put a new parça on one', () => {
+    assert.throws(
+      () => computeDemoEdit(demoRound([row('KUTU')]), leader, setDelta(['KILAVUZ'], [])),
+      /tura yeni parça eklenemez: KILAVUZ/,
+    )
+  })
+
+  it('names every parça involved, not just the first', () => {
+    assert.throws(
+      () => computeDemoEdit(demoRound([]), leader, setDelta([], ['KİTAP', 'KILAVUZ'])),
+      /KİTAP, KILAVUZ/,
+    )
+  })
+
+  it('reports the removal ahead of the addition — they are separate mistakes', () => {
+    // Both at once is a re-composed round. Removing is the destructive half, so
+    // that is the message the leader gets.
+    assert.throws(
+      () => computeDemoEdit(demoRound([]), leader, setDelta(['KILAVUZ'], ['KİTAP'])),
+      /çıkarılamaz/,
+    )
+  })
+
+  it('asks membership before content, so the message names the real problem', () => {
+    // The parça being dropped is also on the press. Both guards would fire;
+    // "you cannot remove a parça" is the one that explains what happened.
+    const project = demoRound([
+      row('KUTU', { state: 'in_round', started_at: '2026-09-01T10:00:00Z' }),
+    ])
+    assert.throws(
+      () => computeDemoEdit(project, leader, setDelta([], ['KUTU'])),
+      /çıkarılamaz/,
+    )
+  })
+
+  it('lets an ordinary same-set edit through', () => {
+    const { history } = computeDemoEdit(
+      demoRound([row('KUTU'), row('KİTAP')]), leader,
+      { changedParcalar: ['KİTAP'], parcaSetDelta: { added: [], removed: [] } },
+    )
+    assert.equal(history.event, 'demo_form_edited')
+  })
+
+  it('does not judge a round that never had a parça list', () => {
+    // `parcaSetDelta` returns null there — see its own tests. Refusing would
+    // block a legitimate edit on a legacy round, and the lock guard above still
+    // protects anything actually on the press.
+    const { history } = computeDemoEdit(
+      demoRound([row('KUTU')]), leader,
+      { changedParcalar: ['KUTU'], parcaSetDelta: null },
+    )
+    assert.equal(history.event, 'demo_form_edited')
+  })
+
+  it('guards the ozalit leg identically', () => {
+    const project = ozalitRound([row('KAPAK', { gate: 'ozalit' })])
+    assert.throws(
+      () => computeOzalitEdit(project, leader, setDelta([], ['İÇ'])),
+      /turdan parça çıkarılamaz: İÇ/,
+    )
+    assert.throws(
+      () => computeOzalitEdit(project, leader, setDelta(['SIRT'], [])),
+      /tura yeni parça eklenemez: SIRT/,
+    )
+  })
+})
+
 describe('cancel carries the same per-parça guard as edit', () => {
   // The more destructive twin: cancel sends the project back to tasarim, so
   // withdrawing a round the matbaa is half way through printing is worse than

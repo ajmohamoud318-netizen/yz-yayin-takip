@@ -15,7 +15,7 @@ import { createRoot } from 'react-dom/client'
 import { act } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 
-import ParcaChangeRequestPanel from './ParcaChangeRequestPanel.jsx'
+import ParcaChangeRequestPanel, { heldParcalar } from './ParcaChangeRequestPanel.jsx'
 import ParcaJobCard from './ParcaJobCard.jsx'
 
 vi.mock('sonner', () => ({ toast: { success: () => {}, error: () => {} } }))
@@ -228,6 +228,43 @@ describe('ParcaChangeRequestPanel', () => {
     )
     expect(text()).toContain('KUTU')
     expect(buttonByText(/Değişiklik İste/)).toBeUndefined()
+  })
+})
+
+// The synthesised half of the panel's list carries fields nothing renders, and
+// `gate` is the one that matters: a project can carry both a demo and an ozalit
+// round, and every caller that acts on a parça branches on it to decide which
+// sheet to open. Left undefined, `gate === 'ozalit'` quietly takes the demo
+// branch — the wrong sheet, on the leg where it is hardest to notice.
+describe('heldParcalar — what the matbaa is holding', () => {
+  it('stamps the round gate on parçalar that have no routing row', () => {
+    const { held } = heldParcalar([], ['KUTU', 'KİTAP'], 'ozalit')
+    expect(held.map((r) => r.gate)).toEqual(['ozalit', 'ozalit'])
+  })
+
+  it('does the same on the demo leg', () => {
+    const { held } = heldParcalar([], ['KUTU', 'KİTAP'], 'demo')
+    expect(held.every((r) => r.gate === 'demo')).toBe(true)
+  })
+
+  it('never leaves a synthesised row without one', () => {
+    // The regression: an undefined gate is indistinguishable from 'demo' at
+    // every `gate === 'ozalit'` branch downstream.
+    const { held } = heldParcalar([onPress('KUTU')], ['KUTU', 'KİTAP'], 'ozalit')
+    expect(held.every((r) => r.gate !== undefined)).toBe(true)
+  })
+
+  it('leaves a real row’s own gate alone', () => {
+    // Routed rows come from the API with a gate already on them; the panel's
+    // prop is a fallback for the rows that have none, not an override.
+    const { held } = heldParcalar([onPress('KUTU', { gate: 'demo' })], ['KUTU'], 'ozalit')
+    expect(held.find((r) => r.parca === 'KUTU').gate).toBe('demo')
+  })
+
+  it('reports the untouched half so a one-parça round can be told apart', () => {
+    const { held, untouched } = heldParcalar([], ['KUTU'], 'demo')
+    expect(held).toHaveLength(1)
+    expect(untouched).toHaveLength(1)
   })
 })
 

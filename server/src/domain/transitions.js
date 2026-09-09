@@ -876,6 +876,54 @@ function lockedParcalar(project) {
 }
 
 /**
+ * Refuse a correction that changes WHICH parçalar the round carries.
+ *
+ * There is already a guard for this — the "parça-list pin" in routes/demos.js —
+ * and it misses this path twice over: it only fires at the *_onay stages, and it
+ * lives on POST /demos while edit-and-notify writes its snapshot directly from
+ * `withDemoSnapshot`. So a leader on a live *_teslim round could untick a parça
+ * in the sheet's picker and save, and the round would quietly become a different
+ * round.
+ *
+ * That is not a smaller version of an edit, it is a different act. The round's
+ * parça list is what the matbaa's queue is built from (`deriveTeslimParcalar`),
+ * what the delivery gate counts (`allParcalarDelivered`, `parcalarStillOwed`),
+ * and what `pruneApprovalsToSnapshot` uses to decide which per-parça approvals
+ * to DELETE — which is exactly the destruction the pin was written to prevent
+ * (see its comment in routes/demos.js).
+ *
+ * Removing and adding get separate messages because they are separate mistakes
+ * with separate ways out.
+ *
+ * `null` means the delta was not computable and nothing is judged — see
+ * `parcaSetDelta`. Note this is the OPPOSITE of `lockedParcalarTouched`'s
+ * treatment of null, and deliberately so: there, an uncomparable save must not
+ * be waved through over a parça on the press, so "unknown" means "assume the
+ * worst". Here "unknown" means the round never had a parça list to change, and
+ * refusing would block a legitimate edit on a legacy round.
+ *
+ * Written as a guard that can be CONDITIONED rather than deleted: a sanctioned
+ * "send the parçalar that were left out" path belongs behind an explicit flag
+ * through this same check, not routed around it the way edit-notify currently
+ * routes around the pin.
+ */
+function assertParcaSetUnchanged(delta) {
+  if (!delta) return
+  if (delta.removed?.length > 0) {
+    badRequest(
+      `Matbaadaki turdan parça çıkarılamaz: ${delta.removed.join(', ')}. `
+      + 'Turu iptal edin veya yeni bir tur gönderin.',
+    )
+  }
+  if (delta.added?.length > 0) {
+    badRequest(
+      `Matbaadaki tura yeni parça eklenemez: ${delta.added.join(', ')}. `
+      + 'Bunun için yeni bir tur gönderin.',
+    )
+  }
+}
+
+/**
  * The `parca_state` writes an accepted correction settles.
  *
  * Accepting a change request un-starts the parça and leaves `fix_pending` on
@@ -2070,6 +2118,11 @@ export function computeDemoEdit(project, actor, ctx = {}) {
   if (project.demo_started) {
     badRequest('Matbaa demo çalışmasına başladı, değişiklik isteyin.')
   }
+  // Membership before content: a save that changes which parçalar the round
+  // carries is refused outright, whatever it did to their rows. Asked first so
+  // that mistake gets its own message rather than surfacing as "you touched a
+  // locked parça" below.
+  assertParcaSetUnchanged(ctx.parcaSetDelta)
   // The same refusal, read off the parçalar instead of the project (migration
   // 077). See lockedParcalar: on a split round `demo_started` is structurally
   // false, so this is the only guard standing between the leader and a silent
@@ -2138,6 +2191,8 @@ export function computeOzalitEdit(project, actor, ctx = {}) {
   if (project.ozalit_started) {
     badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
   }
+  // See computeDemoEdit — membership is asked before content on this leg too.
+  assertParcaSetUnchanged(ctx.parcaSetDelta)
   // Per-parça twin of the guard above — see computeDemoEdit's comment.
   const ozalitTouched = lockedParcalarTouched(lockedParcalar(project), ctx.changedParcalar)
   if (ozalitTouched.length > 0) {

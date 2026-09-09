@@ -386,6 +386,12 @@ export default function ProjectDetail() {
             // the one parça the matbaa started and none of the ones the leader
             // can still edit — see the component's own note.
             snapshotParcalar={parcaSnapshot}
+            // Which sheet this round's parçalar belong to. The panel synthesises
+            // rows for parçalar that have no routing row yet, and those cannot
+            // carry a gate of their own — see its `untouched` note.
+            // `ledgerKind` is already 'demo' | 'ozalit' at the *_teslim stages,
+            // which is exactly the parca_state.gate domain.
+            gate={ledgerKind}
             canAct={isLeader}
             busyParca={parcaRoundBusy}
             onRequestChange={handleRequestParcaChange}
