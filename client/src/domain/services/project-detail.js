@@ -15,6 +15,56 @@ import {
   ozalitDecidable,
 } from './pipeline.js'
 
+/**
+ * Who the per-parça panel DRAWS for at a given gate.
+ *
+ * Exported because two places need the same answer and must not drift: the page
+ * decides whether to render the panel, and the hook decides whether the header
+ * may stop offering the whole-round buttons the panel has taken over. Out of
+ * step, somebody is left with no button at all.
+ *
+ * Wider than `parcaPanelDecider` below, and the demo gate is why. An assigned
+ * designer may take delivery of a demo (`canReceiveDemo`) but may not approve
+ * one — the server allows only the leader or the matbaa. They still need to SEE
+ * the round to take delivery of it, so the panel draws for them; it just offers
+ * them nothing to sign.
+ *
+ * @param {{ role?: string } | null} user
+ * @param {'demo' | 'ozalit' | 'baski_onay' | 'cin_baski_onay'} ledgerKind
+ * @param {{ isAssigned?: boolean }} [opts]
+ */
+export function parcaPanelViewer(user, ledgerKind, { isAssigned = false } = {}) {
+  if (ledgerKind === 'demo') {
+    return user?.role === 'team_leader' || (user?.role === 'designer' && isAssigned)
+  }
+  if (ledgerKind === 'ozalit') return user?.role === 'team_leader' || user?.role === 'designer'
+  return user?.role === 'team_leader'
+}
+
+/**
+ * Who may take a DECISION on the panel's rows — the per-parça Onayla / Reddedin
+ * and the bulk pair.
+ *
+ * Deliberately NARROWER than `isDemoApprover` / the server's `canApproveAt` on
+ * the demo leg, both of which also admit the matbaa. The matbaa never approves
+ * anything — their part of the round is teslimat, and their surface is the parça
+ * job board. That the server would accept a demo approval from them is a
+ * leftover from when the printer's "Teslim Edin" was modelled as the same
+ * advance; offering them an Onayla here would put a decision in front of the one
+ * role that never takes it. The Approvals queue already gates its demo panel on
+ * `isLeader` alone — this brings the project page in line rather than inventing
+ * a new rule.
+ *
+ * Split from `parcaPanelViewer` rather than folded into it because seeing a
+ * round and deciding it are different rights, and only at the demo gate do they
+ * come apart: an assigned designer takes delivery there and signs nothing.
+ */
+export function parcaPanelDecider(user, ledgerKind) {
+  if (ledgerKind === 'demo') return user?.role === 'team_leader'
+  if (ledgerKind === 'ozalit') return user?.role === 'team_leader' || user?.role === 'designer'
+  return user?.role === 'team_leader'
+}
+
 // ---------------------------------------------------------------------------
 // Order helpers
 // ---------------------------------------------------------------------------
@@ -184,7 +234,12 @@ export function availableActions({
     // waiting for the designer to re-send a second demo.
     if (project.demo_received === true && project.demo_held !== true) {
       if (!parcaPanelDecides) set.add('approve')
-      set.add('reject')
+      // 'reject' is the header's button, 'reject-parca' the panel's
+      // "Tümünü Reddedin" — the same whole-round act, two possible homes, and
+      // every gate above decides both. Emitting one name and a separate
+      // "where does it live" flag would let the two drift; this way a caller
+      // that renders neither name simply doesn't offer the action.
+      set.add(parcaPanelDecides ? 'reject-parca' : 'reject')
     }
   }
 
@@ -232,7 +287,7 @@ export function availableActions({
       set.add('approve')
     }
     if (role === 'team_leader' && !alreadyApproved) {
-      set.add('reject')
+      set.add(parcaPanelDecides ? 'reject-parca' : 'reject')
     }
   }
   // Baskı Onayı: the final sign-off, team_leader only — same people (Serpil
@@ -242,7 +297,13 @@ export function availableActions({
   // BaskiOnayFormDialog / SpecFormDialog's isBaskiOnayApproval branch for
   // which action it actually performs.
   if ((stage === 'baski_onay' || stage === 'cin_baski_onay') && role === 'team_leader') {
-    set.add('approve')
+    // Same rule as the demo and ozalit gates: on a multi-parça round the panel
+    // owns it. Baskı is the odd one of the three, because this single button
+    // carries BOTH of its steps — "Baskı Onayı Hazırlayın" while the form is
+    // unprepared, "Baskı Onayı Verin" once it is (approveActionLabel). The panel
+    // splits them apart, which is the honest shape: preparing is one act on one
+    // document, approving is per parça by a different leader.
+    if (!parcaPanelDecides) set.add('approve')
   }
   if (isAssignedDesigner && stage === 'tasarim') {
     set.add('advance')

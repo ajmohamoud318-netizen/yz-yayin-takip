@@ -93,7 +93,12 @@ async function withParcaState({ client, row }) {
   return { parcaState: row.parca_state }
 }
 
-/** `demoCancel`: the parça guard above, plus the assignees the FSM notifies. */
+/**
+ * `demoCancel`: the parça guard above, plus the assignees the FSM notifies.
+ * Also the two whole-round receipts, for a different reason — they do not GUARD
+ * on the rows, they WRITE to them: one "Teslim Alındı" at the gate covers every
+ * parça of the round and stamps each row's `received_at` to record it.
+ */
 async function withAssigneesAndParcaState({ client, row }) {
   const ctx = await withAssignees({ client, row })
   return { ...ctx, ...(await withParcaState({ client, row })) }
@@ -241,10 +246,16 @@ export function approveProject(projectId, actor, ctx = {}, client = null) {
   }, client)
 }
 
-/** POST /api/projects/:id/receive — demo "Teslim Alındı". */
+/**
+ * POST /api/projects/:id/receive — demo "Teslim Alındı".
+ *
+ * Takes the routing rows too (`withAssigneesAndParcaState`): one receipt at the
+ * gate covers every parça of the round, and it now stamps their `received_at`
+ * to say so. See roundReceiptParcaState in domain/transitions.js.
+ */
 export function receiveDemo(projectId, actor, client = null) {
   return runProjectCommand(projectId, actor, {
-    prepare: withAssignees,
+    prepare: withAssigneesAndParcaState,
     run: (project, pCtx) => project.demoReceive(actor, {
       designerIds: pCtx.designerIds ?? [],
     }),
@@ -264,7 +275,7 @@ export function demoNotReceived(projectId, actor, client = null) {
 /** POST /api/projects/:id/ozalit-receive — ozalit "Teslim Alındı". */
 export function ozalitReceive(projectId, actor, client = null) {
   return runProjectCommand(projectId, actor, {
-    prepare: withAssignees,
+    prepare: withAssigneesAndParcaState,
     run: (project, pCtx) => project.ozalitReceive(actor, {
       designerIds: pCtx.designerIds ?? [],
     }),

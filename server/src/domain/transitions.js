@@ -27,7 +27,7 @@ import { subtaskProgress } from './progress.js'
 import { HttpError } from './errors.js'
 import {
   parcaRejectPatch, parcaGateForStage, parcaDecidable,
-  parcaEditLocked, parcaFixSettledPatch,
+  parcaEditLocked, parcaFixSettledPatch, parcaReceivePatch,
 } from './parca-routing.js'
 import {
   assertParcaSetUnchanged, lockedParcalarTouched,
@@ -1327,6 +1327,22 @@ export function computeApproval(project, actor, ctx = {}) {
     // append below; the stage advances only when the remaining set is
     // empty (recomputed AFTER the append — a partial `target` leaves
     // the rest pending).
+    // Parçalar the PROJECT has that this round never carried. They hold the gate
+    // shut without ever being approvable here — the leader signs off what
+    // arrived, and the round waits for the rest to be sent. Only asked of a
+    // round that HAS a parça list: one without is a whole-sheet round that
+    // implicitly covers the project, and an absent product_info yields nothing,
+    // so projects predating Ürün Bilgileri behave exactly as before.
+    const neverSent = snapshotParcalar.length > 0
+      ? neverSentParcalar(ctx?.catalogParcalar, snapshotParcalar, project.parca_state, 'demo')
+      : []
+    // Nothing on this round is still owed AND nothing can be signed: every click
+    // from here is a no-op that would only write an empty history row. Say what
+    // is actually missing instead — this is the stale-tab path, since the client
+    // stops offering the button once the round is fully signed.
+    if (pending.length === 0 && neverSent.length > 0) {
+      assertNoNeverSentParcalar(neverSent, 'demo')
+    }
     const target = approvableTarget(project, pending, ctx?.parcalar, snapshotParcalar)
     if (pending.length > 0 && target.length === 0) {
       badRequest('Onaylanacak parça bulunamadı.')
@@ -1341,9 +1357,18 @@ export function computeApproval(project, actor, ctx = {}) {
     const stillPending = [...snapshotParcalar].filter((p) =>
       !nextApprovals.some((row) => row?.parca === p),
     )
-    if (stillPending.length > 0) {
+    // A never-sent parça holds the round here exactly as an unsigned one does.
+    // Deliberately NOT a refusal: the sign-offs the leader just gave are real
+    // work on parçalar that really arrived, and throwing would roll them back
+    // and make the last press of "Tüm parçaları onaylayın" fail for a reason
+    // that has nothing to do with the parçalar it was signing.
+    if (stillPending.length > 0 || neverSent.length > 0) {
       // Partial approve — stay at demo_onay, the next click (or a
       // refresh + bulk shortcut) clears the rest of the set.
+      const owed = [
+        ...stillPending,
+        ...neverSent.map((p) => `${p} (gönderilmedi)`),
+      ]
       return {
         project: {
           ...project,
@@ -1356,7 +1381,7 @@ export function computeApproval(project, actor, ctx = {}) {
           to_stage: project.stage,
           done_by_name: actorName,
           note: target.length > 0
-            ? `Demo parçaları onaylandı: ${target.join(', ')} — bekleyen: ${stillPending.join(', ') || '—'}`
+            ? `Demo parçaları onaylandı: ${target.join(', ')} — bekleyen: ${owed.join(', ') || '—'}`
             : `Demo parçaları onaylandı (${target.length})`,
         }),
       }
@@ -1385,24 +1410,9 @@ export function computeApproval(project, actor, ctx = {}) {
         }),
       }
     }
-    // Per-parça advance.
-    //
-    // Every parça the ROUND carries is signed off — but the round is not the
-    // project. A parça left unticked when this round was composed was never on
-    // `snapshotParcalar`, so it could never appear in `stillPending`, and without
-    // this the demo gate closes on a parça that never had a demo at all, carrying
-    // it into ozalit past the point where "Kalan Parçaları Gönderin" could still
-    // send it.
-    //
-    // Deliberately below the legacy branch above: a round with NO parça list is a
-    // whole-sheet round that implicitly covers the project, so it has nothing to
-    // be measured against. And `neverSentParcalar` returns nothing for an absent
-    // or empty product_info, so projects predating Ürün Bilgileri advance exactly
-    // as before — the guard only ever fires where both lists genuinely exist.
-    assertNoNeverSentParcalar(
-      neverSentParcalar(ctx?.catalogParcalar, snapshotParcalar, project.parca_state, 'demo'),
-      'demo',
-    )
+    // Per-parça advance. Reaching here means every parça of the round is signed
+    // AND nothing is owed that was never sent — the branch above holds the round
+    // at demo_onay for either.
     const pipeline = pipelineFor(project)
     const stageIdx = pipeline.indexOf(project.stage)
     const next = pipeline[stageIdx + 1]
@@ -1633,6 +1643,42 @@ export function computeEkranDemoReject(project, actor, { reason } = {}) {
   }
 }
 
+/**
+ * The routing rows a WHOLE-ROUND "Teslim Alındı" takes delivery of.
+ *
+ * One receipt at the gate covers every parça of the round, and it should say so
+ * in the rows as well as on the project. It could not before: the receipt verbs
+ * loaded no `parca_state`, so a parça acknowledged individually at *_teslim
+ * carried a `received_at` while one covered by the project-level receipt did
+ * not — the same event recorded two different ways depending on which button
+ * happened to reach it.
+ *
+ * Nothing at the onay gate reads those stamps today (`parcaDecidable` and
+ * `parcaAwaitsReceipt` are consulted only at the EARLY_PARCA_GATES, where the
+ * per-parça receipt lives), so this fixes a record rather than a behaviour. That
+ * is exactly why it is worth fixing: a half-written row is a trap for the next
+ * gate that decides to trust it.
+ *
+ * Scoped to rows of THIS gate that were delivered and not yet acknowledged.
+ * Already-received rows are skipped so a leader who took delivery of one parça
+ * early keeps their own timestamp rather than having it overwritten by the
+ * round's; rows on the other leg are none of this receipt's business.
+ *
+ * `delivered_at` is echoed back because `upsertParcaState` writes the delivery
+ * stamps verbatim — omitting it would erase the very delivery being
+ * acknowledged. See parcaReceivePatch.
+ */
+function roundReceiptParcaState(project, gate, { actor, actorName, now }) {
+  const rows = (project?.parca_state ?? []).filter((r) => (
+    r?.gate === gate && r?.delivered_at && !r?.received_at
+  ))
+  if (rows.length === 0) return null
+  return rows.map((row) => ({
+    parca: row.parca,
+    patch: parcaReceivePatch({ actor, actorName, now, deliveredAt: row.delivered_at }),
+  }))
+}
+
 /* ============================================================================
  *  receiveDemo(project, actor, ctx) → next project state
  *
@@ -1664,6 +1710,9 @@ export function computeDemoReceive(project, actor, ctx = {}) {
       demo_received_at: now,
       updated_at: now,
     },
+    // The routing rows this one receipt covers (migration 076's per-parça
+    // `received_at`). See roundReceiptParcaState.
+    parcaState: roundReceiptParcaState(project, 'demo', { actor, actorName, now }),
     history: makeEntry(project, {
       action: 'advance',
       event: 'demo_received',
@@ -1794,6 +1843,8 @@ export function computeOzalitReceive(project, actor, ctx = {}) {
       ozalit_received_at: now,
       updated_at: now,
     },
+    // See roundReceiptParcaState — the demo twin's reasoning, same rows.
+    parcaState: roundReceiptParcaState(project, 'ozalit', { actor, actorName, now }),
     history: makeEntry(project, {
       action: 'advance',
       event: 'ozalit_received',
@@ -2832,6 +2883,16 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
     snapshot: { selectedComponents: snapshotParcalar },
     required: { leaderIds: teamLeaderIds, designerIds },
   })
+  // The demo gate's rule on the ozalit leg — see the twin in computeApproval for
+  // the full reasoning. `remaining` below is measured against this round's
+  // snapshot, so a parça never ticked onto it could never hold the gate open,
+  // and the project would reach baskı onayı with a parça nobody ever proofed.
+  const neverSent = snapshotParcalar.length > 0
+    ? neverSentParcalar(ctx?.catalogParcalar, snapshotParcalar, project.parca_state, 'ozalit')
+    : []
+  if (pending.length === 0 && neverSent.length > 0) {
+    assertNoNeverSentParcalar(neverSent, 'ozalit')
+  }
   const target = approvableTarget(project, pending, ctx?.parcalar, snapshotParcalar)
   if (pending.length > 0 && target.length === 0) {
     badRequest('Onaylanacak parça bulunamadı.')
@@ -2911,15 +2972,7 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
     const got = new Set(row.map((a) => a?.id))
     return [...requiredIds].some((id) => !got.has(id))
   })
-  if (remaining.length === 0) {
-    // The demo gate's rule, on the ozalit leg — see the twin in computeApproval.
-    // Same shape, same reason: `remaining` is measured against this round's
-    // snapshot, so a parça never ticked onto it cannot hold the gate open, and
-    // the project would reach baskı onayı with a parça nobody ever proofed.
-    assertNoNeverSentParcalar(
-      neverSentParcalar(ctx?.catalogParcalar, snapshotParcalar, project.parca_state, 'ozalit'),
-      'ozalit',
-    )
+  if (remaining.length === 0 && neverSent.length === 0) {
     assertCanEnterProductionLocal('baski_onay', project.progress)
     return {
       project: {
@@ -2956,7 +3009,10 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
       to_stage: 'ozalit_onay',
       done_by_name: actorName,
       note: target.length > 0
-        ? `Ozalit parçaları onaylandı: ${target.join(', ')} — bekleyen: ${remaining.join(', ') || '—'}`
+        ? `Ozalit parçaları onaylandı: ${target.join(', ')} — bekleyen: ${[
+          ...remaining,
+          ...neverSent.map((p) => `${p} (gönderilmedi)`),
+        ].join(', ') || '—'}`
         : `Ozalit onayı verildi, ${remaining.length} parça daha bekleniyor`,
     }),
   }

@@ -49,6 +49,7 @@ export {
   // authoritatively gates every advance.
   parcaNames,
   unsentParcalar,
+  unpreparedParcalar,
   EARLY_PARCA_STAGES,
   parcaAwaitsReceipt,
   parcaDecidable,

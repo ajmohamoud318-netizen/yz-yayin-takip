@@ -1,11 +1,11 @@
 import { useMemo } from 'react'
-import { ThumbsUp, AlertTriangle } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, AlertTriangle, PackageCheck, PackageX, FileEdit } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import ParcaApprovalRow from '@/components/ParcaApprovalRow'
 import {
   pendingParcalar, approvedParcalar, rejectedParcalar, bulkApproveAvailable,
-  parcaAwaitsReceipt, parcaDecidable,
+  parcaAwaitsReceipt, parcaDecidable, unpreparedParcalar,
 } from '@/domain'
 
 /**
@@ -24,9 +24,30 @@ import {
  *   onRejectParcalar(parcalar, …) — optional; if omitted, the per-row reject
  *                                   button is hidden.
  *
- *   onBulkReject — optional; if present, the grid adds a "Hepsini Reddedin"
- *                   button at the top so the leader can bounce the whole
- *                   round in one click. Calls onRejectParcalar(null, …).
+ *   roundAwaitsReceipt — the round is at its gate and nobody has confirmed the
+ *                   proof arrived. Every row renders as awaiting receipt with no
+ *                   decision on it, and the bulk pair becomes
+ *                   "Tümünü Teslim Alın" / "Teslim Alınamadı". This is one
+ *                   receipt for the whole round, not a per-parça one: the stage
+ *                   only reaches its gate once the matbaa has delivered every
+ *                   parça, so the proof arrives as a single package. (The
+ *                   genuinely per-parça receipt is `onReceiveParca`, for the
+ *                   *_teslim surface where parçalar trickle back one at a time.)
+ *
+ *   onPrepareSheet — Baskı Onayı only. Opens the baskı formu so a leader can
+ *                   fill it in and mark it hazırlandı. One button, not one per
+ *                   parça: the baskı formu is a single document, so preparing it
+ *                   prepares every parça on it. The SECOND step, onay, is the
+ *                   per-parça one — that is where the maker-checker lives, with
+ *                   different leaders signing different parçalar.
+ *
+ *   onBulkReject — optional; if present, the grid adds a "Tümünü Reddedin"
+ *                   button beside the bulk approve so the leader can bounce the
+ *                   whole round in one click. This is the header's old Reddet,
+ *                   relocated: it opens the same reason + designer/matbaa
+ *                   dialog and takes the same whole-round action. Pass it only
+ *                   when that action is actually permitted — the grid does not
+ *                   re-derive the receipt / role / split-across-desks gates.
  *
  * `neverSentParcalar` are parçalar the PROJECT has (Ürün Bilgileri) that no round
  * has ever carried. They are not on the snapshot — that is what makes them
@@ -70,6 +91,10 @@ export default function ParcaApprovalGrid({
   kind,
   snapshotParcalar = [],
   neverSentParcalar = [],
+  roundAwaitsReceipt = false,
+  onBulkReceive,
+  onBulkNotReceived,
+  onPrepareSheet,
   busy = false,
   onApproveParcalar,
   onRejectParcalar,
@@ -106,6 +131,14 @@ export default function ParcaApprovalGrid({
     [neverSentParcalar],
   )
 
+  /* Baskı Onayı's first step. `pendingParcalar` folds "nobody prepared it" and
+     "nobody approved it" together — right for the gate, wrong for the panel,
+     which has to say which of the two steps is owed. */
+  const unprepared = useMemo(
+    () => new Set(unpreparedParcalar(project, kind, snapshotParcalar)),
+    [project, kind, snapshotParcalar],
+  )
+
   /**
    * A parça's state as the leader experiences it, most decided first.
    *
@@ -119,6 +152,16 @@ export default function ParcaApprovalGrid({
     // round ever carried has nothing in any of them.
     if (neverSent.has(parca)) return 'never_sent'
     if (rejected.includes(parca)) return 'rejected'
+    // Before the ledger checks below: an unprepared baskı parça has no approval
+    // row either, and "not approved" is the wrong thing to tell the leader when
+    // the step actually owed is the one before it.
+    if (unprepared.has(parca)) return 'needs_prepare'
+    // Nothing on this round is decidable until somebody confirms the proof
+    // physically arrived — the same rule the receipt gate has always carried,
+    // now visible per parça instead of implied by an empty screen. Below the
+    // ledger checks: a parça already signed off on a previous round keeps
+    // reading as signed off.
+    if (roundAwaitsReceipt && pending.includes(parca)) return 'awaiting_receipt'
     if (!pending.includes(parca)) return 'approved'
     if (!routingAware) return 'pending'
     const row = rowByParca.get(parca)
@@ -154,7 +197,10 @@ export default function ParcaApprovalGrid({
   // server refuses the rest, so offering them would build a button that fails.
   const bulkTarget = routingAware
     ? pending.filter((p) => statusOf(p) === 'pending')
-    : pending
+    // An unprepared baskı parça cannot be approved — the server filters it out
+    // of the target set — so a bulk that counted it would promise more than it
+    // signs. Same rule as never-sent: the button covers what it can, honestly.
+    : pending.filter((p) => !unprepared.has(p))
 
   // …and the button only appears when that set is ALL of them.
   //
@@ -169,15 +215,41 @@ export default function ParcaApprovalGrid({
   // still owed — it is one already taken, and waiting for it would make the
   // shortcut unreachable for the rest of the round.
   const everyPendingDecidable = !routingAware || bulkTarget.length === pending.length
-  // …and never while a parça of this project has not been sent at all. The
-  // button's promise is the whole round, and the server will refuse to advance
-  // on that press anyway (assertNoNeverSentParcalar) — so offering it here would
-  // be a button whose only outcome is an error, on the one screen that is
-  // supposed to explain what is missing.
+  // Never-sent parçalar do NOT suppress this. Both bulk buttons act on the
+  // round — the parçalar that were actually sent — and a parça nobody sent is
+  // not part of it: it cannot be approved, cannot be rejected, and the count on
+  // the button says exactly how many it covers. Signing off what arrived is real
+  // work the server records; the round simply holds at the gate afterwards until
+  // the missing parça is sent too, which the `Gönderilmedi` row explains.
   const showBulk = bulkApproveAvailable(project, kind, snapshotParcalar)
     && bulkTarget.length > 0
     && everyPendingDecidable
-    && neverSent.size === 0
+    // Not before the proof has been taken delivery of. The server refuses every
+    // sign-off until then (computeApproval's receipt gate), and the bulk pair in
+    // that state is the receipt itself, below.
+    && !roundAwaitsReceipt
+
+  // The whole-round bounce, moved here from the header so that every decision on
+  // a multi-parça round is taken in one place. It is offered only when the
+  // caller passes a handler, and ProjectDetail passes one only when
+  // `availableActions` says the whole-round reject is permitted — receipt gate,
+  // role, and the split-across-desks rule all included. `!routingAware` keeps it
+  // off the unfinished-round surface, where bouncing the whole round would
+  // discard parçalar that are still in the press.
+  // …and not while the round is still owed its receipt: the leader cannot bounce
+  // a proof they have not taken delivery of (the server's own reject gate), and
+  // the pair on offer in that state is the receipt.
+  const showBulkReject = !!onBulkReject && !routingAware && !roundAwaitsReceipt
+
+  // The whole-round receipt, in the panel for the same reason the other two are:
+  // it is the round's decision, and the round is what this panel describes.
+  const showBulkReceipt = roundAwaitsReceipt && !routingAware && !!onBulkReceive
+
+  // Baskı Onayı's first step, and the reason it is one button rather than one
+  // per row: the baskı formu is a single document, so a leader fills it once and
+  // every parça on it becomes hazırlandı together. Only the onay that follows is
+  // per parça.
+  const showPrepare = !!onPrepareSheet && unprepared.size > 0 && !roundAwaitsReceipt
   const orderedParcalar = useMemo(() => {
     // Pending first (so the to-do list reads top-down), then approved, then
     // rejected. Stable order matters: the same parça keeps the same row
@@ -234,31 +306,75 @@ export default function ParcaApprovalGrid({
         </div>
       )}
 
-      {showBulk && (
+      {showBulkReceipt && (
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <Button
             size="sm"
-            variant="success"
             className="w-full gap-1.5 sm:w-auto"
-            disabled={busy || bulkTarget.length === 0}
-            // On an unfinished round the click has to NAME the parçalar: a null
-            // means "everything still pending" to the server, which includes the
-            // parçalar still in the press.
-            onClick={onBulkApprove ?? (() => onApproveParcalar?.(routingAware ? bulkTarget : null))}
-            aria-label={bulkApproveLabel}
+            disabled={busy}
+            onClick={onBulkReceive}
+            aria-label="Tümünü Teslim Alın"
           >
-            <ThumbsUp className="h-4 w-4" />
-            {bulkApproveLabel} ({bulkTarget.length})
+            <PackageCheck className="h-4 w-4" />
+            Tümünü Teslim Alın
           </Button>
-          {onBulkReject && !routingAware && pending.length > 0 && (
+          {onBulkNotReceived && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full gap-1.5 sm:w-auto"
+              disabled={busy}
+              onClick={onBulkNotReceived}
+              aria-label="Teslim Alınamadı"
+            >
+              <PackageX className="h-4 w-4" />
+              Teslim Alınamadı
+            </Button>
+          )}
+        </div>
+      )}
+
+      {(showBulk || showBulkReject || showPrepare) && (
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          {showPrepare && (
+            <Button
+              size="sm"
+              className="w-full gap-1.5 sm:w-auto"
+              disabled={busy}
+              onClick={onPrepareSheet}
+              aria-label="Baskı Onayı Hazırlayın"
+            >
+              <FileEdit className="h-4 w-4" />
+              Baskı Onayı Hazırlayın ({unprepared.size})
+            </Button>
+          )}
+          {showBulk && (
+            <Button
+              size="sm"
+              variant="success"
+              className="w-full gap-1.5 sm:w-auto"
+              disabled={busy || bulkTarget.length === 0}
+              // On an unfinished round the click has to NAME the parçalar: a null
+              // means "everything still pending" to the server, which includes the
+              // parçalar still in the press.
+              onClick={onBulkApprove ?? (() => onApproveParcalar?.(routingAware ? bulkTarget : null))}
+              aria-label={bulkApproveLabel}
+            >
+              <ThumbsUp className="h-4 w-4" />
+              {bulkApproveLabel} ({bulkTarget.length})
+            </Button>
+          )}
+          {showBulkReject && (
             <Button
               size="sm"
               variant="destructive"
               className="w-full gap-1.5 sm:w-auto"
               disabled={busy}
               onClick={onBulkReject}
+              aria-label="Tümünü Reddedin"
             >
-              Hepsini Reddedin
+              <ThumbsDown className="h-4 w-4" />
+              Tümünü Reddedin
             </Button>
           )}
         </div>

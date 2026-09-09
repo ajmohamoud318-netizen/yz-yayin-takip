@@ -29,6 +29,7 @@ import {
   canEditSentDemoRequest,
   canEditSentOzalitRequest,
   canAddParcalarToRound,
+  unpreparedParcalar,
   isOzalitRoundLive,
   canCancelDemoRequest,
   canCancelOzalitRequest,
@@ -873,6 +874,25 @@ describe('canAddParcalarToRound', () => {
     expect(canAddParcalarToRound(OKTAY, { stage: 'demo_onay' }, 'demo')).toBe(false)
   })
 
+  it('is shut on a round auto-created by a reject-to-matbaa', () => {
+    // computeDemoEdit refuses every save on such a round — the matbaa gets back
+    // exactly the file they were rejected on — so this button could only 400,
+    // with a message about editing that answers a question nobody asked.
+    const autoRound = { stage: 'demo_teslim', last_reject_target: 'matbaa' }
+    expect(canAddParcalarToRound(AYSE, autoRound, 'demo')).toBe(false)
+    expect(canAddParcalarToRound(AYSE, { stage: 'ozalit_teslim', ozalit_requested: true, last_reject_target: 'matbaa' }, 'ozalit')).toBe(false)
+  })
+
+  it('comes back once the matbaa has re-delivered that round', () => {
+    // computeDemoTeslimAdvance clears last_reject_target on delivery, so the
+    // forgotten parça can be sent from the gate — it is a pause, not a dead end.
+    expect(canAddParcalarToRound(AYSE, { stage: 'demo_onay', last_reject_target: null }, 'demo')).toBe(true)
+  })
+
+  it('is unaffected by a reject-to-designer, which lands somewhere else anyway', () => {
+    expect(canAddParcalarToRound(AYSE, { stage: 'demo_onay', last_reject_target: 'designer' }, 'demo')).toBe(true)
+  })
+
   it('is shut where there is no round to add to', () => {
     expect(canAddParcalarToRound(AYSE, { stage: 'tasarim' }, 'demo')).toBe(false)
     expect(canAddParcalarToRound(AYSE, { stage: 'baski_onay' }, 'demo')).toBe(false)
@@ -886,5 +906,58 @@ describe('canAddParcalarToRound', () => {
     expect(canAddParcalarToRound(AYLIN, { stage: 'ozalit_onay' }, 'ozalit')).toBe(false)
     // The demo gate is not an ozalit round.
     expect(canAddParcalarToRound(AYSE, { stage: 'demo_onay' }, 'ozalit')).toBe(false)
+  })
+})
+
+/**
+ * Baskı Onayı's first step, told apart from its second.
+ *
+ * `pendingParcalar` folds them together because either one holds the gate. The
+ * panel cannot: an unprepared parça has no approval row, and telling the leader
+ * "not approved" when the step actually owed is the one before it puts a
+ * thumbs-up on a parça the server drops from every approve it is handed.
+ */
+describe('unpreparedParcalar', () => {
+  const SNAP = ['KAPAK', 'KUTU']
+  const prep = (by) => ({ by, by_name: 'Ayşenur', at: '2026-09-08T09:00:00.000Z' })
+
+  it('names the parçalar with no preparer', () => {
+    const project = { baski_parca_preparers: { KAPAK: prep('u-a') } }
+    expect(unpreparedParcalar(project, 'baski_onay', SNAP)).toEqual(['KUTU'])
+  })
+
+  it('is empty once every parça is prepared', () => {
+    const project = { baski_parca_preparers: { KAPAK: prep('u-a'), KUTU: prep('u-a') } }
+    expect(unpreparedParcalar(project, 'baski_onay', SNAP)).toEqual([])
+  })
+
+  it('does not care whether they have been APPROVED yet', () => {
+    // Prepared-but-unapproved is the second step, and it is per parça. This
+    // function is only about the first.
+    const project = {
+      baski_parca_preparers: { KAPAK: prep('u-a'), KUTU: prep('u-a') },
+      baski_parca_approvals: {},
+    }
+    expect(unpreparedParcalar(project, 'baski_onay', SNAP)).toEqual([])
+  })
+
+  it('reads the ÇİN mirror on the ÇİN gate', () => {
+    const project = {
+      cin_baski_parca_preparers: { KAPAK: prep('u-a') },
+      // The TR ledger is fully populated and must be ignored here.
+      baski_parca_preparers: { KAPAK: prep('u-a'), KUTU: prep('u-a') },
+    }
+    expect(unpreparedParcalar(project, 'cin_baski_onay', SNAP)).toEqual(['KUTU'])
+  })
+
+  it('is empty on the demo and ozalit gates — they have no prepare step', () => {
+    expect(unpreparedParcalar({}, 'demo', SNAP)).toEqual([])
+    expect(unpreparedParcalar({}, 'ozalit', SNAP)).toEqual([])
+  })
+
+  it('survives a missing project, ledger or snapshot', () => {
+    expect(unpreparedParcalar(null, 'baski_onay', SNAP)).toEqual([])
+    expect(unpreparedParcalar({}, 'baski_onay', SNAP)).toEqual(SNAP)
+    expect(unpreparedParcalar({}, 'baski_onay', [])).toEqual([])
   })
 })

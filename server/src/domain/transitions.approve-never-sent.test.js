@@ -51,26 +51,38 @@ const demoCtx = (over = {}) => ({
 })
 
 describe('demo gate — a parça the project has but never sent', () => {
-  it('refuses the approve that would advance the project', () => {
-    // Both round parçalar signed off; the click that would leave demo_onay.
-    assert.throws(
-      () => computeApproval(
-        demoOnay({ demo_parca_approvals: [signed('KUTU'), signed('KİTAP')] }),
-        leader,
-        demoCtx(),
-      ),
-      /KILAVUZ/,
-    )
+  it('holds the project at demo_onay instead of advancing', () => {
+    // The click that signs off the last parça of the round. It must not carry
+    // the project into ozalit while KILAVUZ has never been printed.
+    const { project: next } = computeApproval(demoOnay(), leader, demoCtx())
+    assert.equal(next.stage, 'demo_onay')
   })
 
-  it('names the way out rather than just refusing', () => {
+  it('still RECORDS the sign-offs it was given', () => {
+    // The heart of it: those two parçalar really arrived and really were
+    // approved. Refusing the whole call would roll that back and make the last
+    // press of "Tüm parçaları onaylayın" fail for a reason that has nothing to
+    // do with the parçalar it was signing.
+    const { project: next } = computeApproval(demoOnay(), leader, demoCtx())
+    assert.deepEqual(next.demo_parca_approvals.map((r) => r.parca), ['KUTU', 'KİTAP'])
+  })
+
+  it('says in the timeline what the round is still waiting for', () => {
+    const { history } = computeApproval(demoOnay(), leader, demoCtx())
+    assert.match(history.note, /KILAVUZ \(gönderilmedi\)/)
+  })
+
+  it('refuses a further click once there is nothing left to sign', () => {
+    // Everything on the round is signed and KILAVUZ still is not here: this
+    // click can do no work, so it explains what is missing rather than writing
+    // an empty history row. Only a stale tab gets here.
     assert.throws(
       () => computeApproval(
         demoOnay({ demo_parca_approvals: [signed('KUTU'), signed('KİTAP')] }),
         leader,
         demoCtx(),
       ),
-      /Kalan Parçaları Gönderin/,
+      /KILAVUZ.*Kalan Parçaları Gönderin/s,
     )
   })
 
@@ -141,16 +153,19 @@ const ozalitCtx = (over = {}) => ({
 })
 
 describe('ozalit gate — the same rule', () => {
-  it('refuses the approve that would advance to baskı onayı', () => {
-    assert.throws(
-      () => computeApproval(ozalitOnay(), leader, ozalitCtx()),
-      /KILAVUZ/,
-    )
+  it('holds at ozalit_onay instead of advancing to baskı onayı', () => {
+    const { project: next } = computeApproval(ozalitOnay(), leader, ozalitCtx())
+    assert.equal(next.stage, 'ozalit_onay')
+    assert.deepEqual(Object.keys(next.ozalit_parca_approvals), ['KUTU', 'KİTAP'])
   })
 
-  it('says "ozalite", not "demoya"', () => {
+  it('says "ozalite", not "demoya", when there is nothing left to sign', () => {
     assert.throws(
-      () => computeApproval(ozalitOnay(), leader, ozalitCtx()),
+      () => computeApproval(
+        ozalitOnay({ ozalit_parca_approvals: { KUTU: [{ id: leader.id }], KİTAP: [{ id: leader.id }] } }),
+        leader,
+        ozalitCtx(),
+      ),
       /ozalite gönderilmemiş/,
     )
   })
@@ -158,14 +173,12 @@ describe('ozalit gate — the same rule', () => {
   // The cross-gate rule: both legs reuse the same parça NAMES, so a demo-gate
   // row is no evidence at all that the parça ever reached ozalit.
   it('does not accept a demo-gate row as proof the parça reached ozalit', () => {
-    assert.throws(
-      () => computeApproval(
-        ozalitOnay({ parca_state: [routed('KILAVUZ', 'demo')] }),
-        leader,
-        ozalitCtx(),
-      ),
-      /KILAVUZ/,
+    const { project: next } = computeApproval(
+      ozalitOnay({ parca_state: [routed('KILAVUZ', 'demo')] }),
+      leader,
+      ozalitCtx(),
     )
+    assert.equal(next.stage, 'ozalit_onay', 'that row belongs to the demo round')
   })
 
   it('accepts an ozalit-gate row for the same parça', () => {

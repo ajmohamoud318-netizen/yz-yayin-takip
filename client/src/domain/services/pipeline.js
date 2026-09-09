@@ -471,6 +471,19 @@ export function canEditSentOzalitRequest(user, project) {
  */
 export function canAddParcalarToRound(user, project, kind) {
   if (!project || user?.role !== 'team_leader') return false
+  // A round auto-created by a reject-to-matbaa is the one place this is shut
+  // that the edit gates leave open. `computeDemoEdit` / `computeOzalitEdit`
+  // refuse ANY save on such a round — the matbaa must get back exactly the file
+  // they were rejected on — so the button could only ever produce a 400, and a
+  // 400 saying "no editing after a reject" is a baffling answer to "send the
+  // parça you forgot". The whole-sheet edit button deliberately keeps showing
+  // there (see the note above: the server's refusal is the point), but this one
+  // is what the never-sent guard actively tells the leader to use, so walking
+  // them into a refusal would be a trap.
+  //
+  // Not a dead end: the flag is cleared the moment the matbaa re-delivers
+  // (computeDemoTeslimAdvance), so the add is available again at the gate.
+  if (project.last_reject_target === 'matbaa') return false
   if (kind === 'ozalit') {
     return project.stage === 'ozalit_onay' || canEditSentOzalitRequest(user, project)
   }
@@ -843,6 +856,34 @@ export function pendingParcalar(project, kind, snapshotParcalar = []) {
     })
   }
   return []
+}
+
+/**
+ * Baskı Onayı parçalar nobody has prepared yet.
+ *
+ * The baskı gate is a maker-checker in two steps: a leader PREPARES the form
+ * (`baski_parca_preparers`), then a DIFFERENT leader approves each parça
+ * (`baski_parca_approvals`). `pendingParcalar` folds both halves together —
+ * correctly, because either one missing holds the project — but the panel has to
+ * tell them apart. An unprepared parça is not a decision anybody can take: the
+ * server's approve silently filters it out of the target set
+ * (`preparers[p] && !approvals[p]`), so a thumbs-up on it does nothing at all.
+ *
+ * Empty for every other gate — only baskı has a prepare step.
+ *
+ * @param {object} project
+ * @param {'demo' | 'ozalit' | 'baski_onay' | 'cin_baski_onay'} kind
+ * @param {Array<string | { component?: string }>} snapshotParcalar
+ * @returns {string[]}
+ */
+export function unpreparedParcalar(project, kind, snapshotParcalar = []) {
+  if (kind !== 'baski_onay' && kind !== 'cin_baski_onay') return []
+  const set = parcaNames(snapshotParcalar)
+  if (!project || set.length === 0) return []
+  const preparers = kind === 'cin_baski_onay'
+    ? (project.cin_baski_parca_preparers ?? {})
+    : (project.baski_parca_preparers ?? {})
+  return set.filter((parca) => !preparers[parca])
 }
 
 /**

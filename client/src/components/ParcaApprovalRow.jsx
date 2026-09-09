@@ -1,4 +1,4 @@
-import { Check, ThumbsUp, ThumbsDown, Hourglass, AlertCircle, PackageCheck, Clock, PackageX } from 'lucide-react'
+import { Check, ThumbsUp, ThumbsDown, Hourglass, AlertCircle, PackageCheck, Clock, PackageX, FileEdit } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -26,6 +26,15 @@ import { cn } from '@/lib/utils'
  *              front of them cannot tell whether the round is waiting on the
  *              matbaa or on them.
  *
+ * And one that belongs only to Baskı Onayı, whose gate has two steps:
+ *
+ *   needs_prepare → nobody has prepared the baskı formu for this parça yet.
+ *              No buttons: the sign-off is the SECOND step, and the server
+ *              filters an unprepared parça out of any approve it is handed
+ *              (`preparers[p] && !approvals[p]`), so a thumbs-up here would do
+ *              nothing at all. The panel's "Baskı Onayı Hazırlayın" is what acts
+ *              on it — the form is one document, prepared once.
+ *
  * And one that belongs to no round at all:
  *
  *   never_sent → the project has this parça (Ürün Bilgileri) and no round has
@@ -42,7 +51,8 @@ import { cn } from '@/lib/utils'
  *
  * @param {{
  *   parca: string,
- *   status: 'pending' | 'approved' | 'rejected' | 'awaiting_receipt' | 'out' | 'never_sent',
+ *   status: 'pending' | 'approved' | 'rejected' | 'awaiting_receipt' | 'out'
+ *         | 'never_sent' | 'needs_prepare',
  *   signers?: Array<{ name: string, at: string }>,
  *   busy?: boolean,
  *   onApprove?: () => void,
@@ -69,6 +79,7 @@ export default function ParcaApprovalRow({
   const isAwaitingReceipt = status === 'awaiting_receipt'
   const isOut = status === 'out'
   const isNeverSent = status === 'never_sent'
+  const isNeedsPrepare = status === 'needs_prepare'
   return (
     <div
       className={cn(
@@ -82,6 +93,9 @@ export default function ParcaApprovalRow({
         // Not dimmed like `out`: this one is the leader's own outstanding job,
         // and it is what is holding the round open.
         isNeverSent && 'border-dashed border-amber-300 bg-amber-50/20',
+        // Same dashed treatment: a step that has not happened yet, as opposed to
+        // a decision that has not been taken.
+        isNeedsPrepare && 'border-dashed border-sky-300 bg-sky-50/20',
         className,
       )}
     >
@@ -114,6 +128,12 @@ export default function ParcaApprovalRow({
           <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground ring-1 ring-inset ring-border">
             <Clock className="h-3 w-3" />
             {outLabel}
+          </span>
+        )}
+        {isNeedsPrepare && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-sky-100 px-1.5 py-0.5 text-[11px] font-medium text-sky-800 ring-1 ring-inset ring-sky-200">
+            <FileEdit className="h-3 w-3" />
+            Hazırlanmadı
           </span>
         )}
         {isNeverSent && (
@@ -191,6 +211,9 @@ function StatusDot({ status }) {
   }
   if (status === 'never_sent') {
     return <PackageX className="h-3.5 w-3.5 text-amber-700" strokeWidth={2.5} />
+  }
+  if (status === 'needs_prepare') {
+    return <FileEdit className="h-3.5 w-3.5 text-sky-700" strokeWidth={2.5} />
   }
   return <Hourglass className="h-3.5 w-3.5 text-amber-600" strokeWidth={2.5} />
 }

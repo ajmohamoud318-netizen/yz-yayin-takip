@@ -9,7 +9,7 @@ import { useNotifications } from './useNotifications'
 import api, { ORDER_STEP_LABELS } from '@/api'
 import {
   isActiveOrder, availableActions, advanceActionLabel, approveActionLabel,
-  demoOzalitStatusLabel,
+  demoOzalitStatusLabel, parcaPanelViewer,
 } from '@/domain/services/project-detail'
 import { awaitsOzalitReceipt, unsentParcalar } from '@/domain'
 
@@ -241,6 +241,20 @@ export function useProjectDetail(id) {
   const actions = availableActions({
     project, user, parcaRows, printerParcaJobs, parcaSnapshot,
   })
+
+  /* Has the per-parça panel taken the whole-round "Teslim Alındı" pair over?
+   *
+   * The permission itself (canReceiveDemo / canReceiveOzalit above) is unchanged
+   * — this only says where the buttons live, so the header can stop drawing them
+   * where the panel does. Both halves are required: a multi-parça round AND a
+   * viewer the panel actually draws for. The second is not redundant. An
+   * assigned designer may take delivery of a demo but is not a demo approver, so
+   * no panel renders for them — hiding their header pair on that alone would
+   * leave them with no way to acknowledge a proof they are holding.
+   * `parcaPanelViewer` is shared with ProjectDetail's own showParcaGrid so the
+   * two answers cannot drift apart. */
+  const receiptInPanel = parcaSnapshot.length >= 2
+    && parcaPanelViewer(user, ledgerKind, { isAssigned })
   const advLabel = project ? advanceActionLabel(project, user?.role) : 'İlerletin'
   const appLabel = project ? approveActionLabel(project) : 'Onaylayın'
   const sentStatus =
@@ -448,6 +462,7 @@ export function useProjectDetail(id) {
     sold, handoverPending, trackedOrders, fallbackProjectIds,
     allDesigners,
     isDemoOnayStage, isOzalitOnayStage, canReceiveDemo, canReceiveOzalit,
+    receiptInPanel,
     actions, advanceLabel: advLabel, approveLabel: appLabel, sentStatus,
     historyWithAttempts, lastRejectReason,
 

@@ -32,9 +32,10 @@ import { resolveSheetScope } from '@/lib/spec-form-scope'
 import ParcaRejectDialog from '@/components/ParcaRejectDialog'
 import ParcaReturnedPanel from '@/components/ParcaReturnedPanel'
 import {
-  isDemoApprover, orderOzalitFormMode, earlyParcaGateOpen,
-  EARLY_PARCA_STAGES, isOzalitRoundLive,
+  orderOzalitFormMode, earlyParcaGateOpen,
+  EARLY_PARCA_STAGES, isOzalitRoundLive, awaitsOzalitReceipt,
 } from '@/domain'
+import { parcaPanelViewer, parcaPanelDecider } from '@/domain/services/project-detail'
 
 import { useProjectDetail } from '@/hooks/useProjectDetail'
 import { parcaRoundDecidable } from '@/hooks/useParcaSnapshot'
@@ -285,17 +286,29 @@ export default function ProjectDetail() {
   const showChangeRequestPanel = user?.role !== 'printer'
     && EARLY_PARCA_STAGES.has(project?.stage)
     && (project?.stage !== 'ozalit_teslim' || isOzalitRoundLive(project))
+  /* The round is at its gate but nobody has confirmed the proof arrived.
+   *
+   * The panel used to sit out this state entirely (`parcaRoundDecidable` is
+   * false until the receipt), which left the header as the only thing on screen
+   * — and it says nothing about what is IN the round. Now the panel draws its
+   * rows and carries the receipt itself, so the leader sees what they are taking
+   * delivery of before they say they have. Nothing is decidable yet: the rows
+   * render read-only and the bulk pair below is the receipt, not a sign-off. */
+  const roundAwaitsReceipt = ledgerKind === 'ozalit'
+    ? awaitsOzalitReceipt(project)
+    : ((project?.stage === 'demo_onay' || project?.stage === 'cin_demo_onay')
+      && project?.demo_received !== true)
   const showParcaGrid = parcaSnapshot.length >= 2 && (
     earlyParcaGate
       ? isLeader
-      : parcaRoundDecidable(project) && (
-        ledgerKind === 'demo'
-          ? isDemoApprover(user)
-          : ledgerKind === 'ozalit'
-            ? (isLeader || user?.role === 'designer')
-            : isLeader
-      )
+      : (parcaRoundDecidable(project) || roundAwaitsReceipt)
+        && parcaPanelViewer(user, ledgerKind, { isAssigned })
   )
+  /* …and whether this viewer may act on what they see. Only the demo gate pulls
+     these apart: an assigned designer takes delivery of the round here but the
+     server lets only the leader or the matbaa sign it off, so they get the rows
+     and the receipt and no thumbs. */
+  const canDecideParca = parcaPanelDecider(user, ledgerKind)
 
   // ---------------------------------------------------------------------------
   // Loading / empty states
@@ -374,15 +387,46 @@ export default function ProjectDetail() {
               // Both open the sheet first; the decision is taken from its
               // footer. Reject then hands off to the reason/party dialog,
               // which is the part the sheet cannot carry.
-              onApproveParcalar={(parcalar) => openParcaSheet('approve', parcalar)}
+              // Only for a viewer who may actually decide. At the demo gate an
+              // assigned designer sees this panel so they can take delivery of
+              // the round, but the sign-off there is the leader's — offering
+              // them a thumbs-up would be a button the server refuses.
+              onApproveParcalar={canDecideParca
+                ? (parcalar) => openParcaSheet('approve', parcalar)
+                : undefined}
               // Reject is demo/ozalit only. Baskı Onayı is a leader-to-leader
               // maker-checker (migration 070) with no designer or matbaa leg —
               // there is no desk to send a parça back to, and computeRejection
               // refuses a per-parça reject outside the demo/ozalit onay stages
               // ("Parça bazlı red yalnızca demo ve ozalit onay aşamalarında
               // yapılabilir"). Offering the button here is a guaranteed 400.
-              onRejectParcalar={isLeader && ledgerKind !== 'baski_onay' && ledgerKind !== 'cin_baski_onay'
+              onRejectParcalar={canDecideParca && isLeader && ledgerKind !== 'baski_onay' && ledgerKind !== 'cin_baski_onay'
                 ? (parcalar) => openParcaSheet('reject', parcalar)
+                : undefined}
+              // "Tümünü Reddedin" — the header's old whole-round Reddet, moved
+              // in here so both bulk decisions live beside the per-parça ones.
+              // Same dialog, same action; `availableActions` still owns every
+              // gate and hands it over as 'reject-parca' when this panel is the
+              // surface (it emits plain 'reject' for the header otherwise).
+              onBulkReject={d.actions.includes('reject-parca')
+                ? () => setDialog('reject')
+                : undefined}
+              // The whole-round receipt, moved in beside the other two. Same
+              // confirm dialog the header opened; `receiptInPanel` (the hook) and
+              // `showParcaGrid` (above) both key off parcaPanelViewer, so the
+              // buttons and the panel can never disagree about who draws them.
+              roundAwaitsReceipt={roundAwaitsReceipt}
+              // Baskı Onayı's maker half. One button for one document — see the
+              // grid's prop note. It opens the same form the header's button
+              // used to, in the same mode; only its home moved.
+              onPrepareSheet={canDecideParca && (ledgerKind === 'baski_onay' || ledgerKind === 'cin_baski_onay')
+                ? () => { d.setBaskiOnayFormMode('approve'); setBaskiOnayFormOpen(true) }
+                : undefined}
+              onBulkReceive={d.receiptInPanel && (d.canReceiveDemo || d.canReceiveOzalit)
+                ? () => d.setTeslimConfirm(ledgerKind === 'ozalit' ? 'ozalit-received' : 'demo-received')
+                : undefined}
+              onBulkNotReceived={d.receiptInPanel && (d.canReceiveDemo || d.canReceiveOzalit)
+                ? () => d.setTeslimConfirm(ledgerKind === 'ozalit' ? 'ozalit-not-received' : 'demo-not-received')
                 : undefined}
               // Only while the round is unfinished: these rows say where each
               // parça physically is, which is the difference between "not

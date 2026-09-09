@@ -37,6 +37,7 @@ export default function HeaderActionRow({ d }) {
     project, user, isLeader, isAssigned, isDeleted,
     actions, advanceLabel, approveLabel, sentStatus,
     canReceiveDemo, canReceiveOzalit, isDemoOnayStage, isOzalitOnayStage,
+    receiptInPanel,
     startingWork, cancellingRequest, receiving, reportingNotReceived,
     respondingChange, processingEkranDemo, pendingRevize,
     setDialog, setTeslimConfirm,
@@ -325,8 +326,14 @@ export default function HeaderActionRow({ d }) {
           </Button>
         </div>
       )}
-      {/* Demo "Teslim Alındı" gate — before the Onay. */}
-      {canReceiveDemo && (
+      {/* Demo "Teslim Alındı" gate — before the Onay.
+
+          `!receiptInPanel`: on a multi-parça round the parça panel carries this
+          pair instead, beside the round's other whole-round decisions. It stays
+          here for single-parça and legacy rounds, and for anyone the panel does
+          not draw for — an assigned designer may take delivery of a demo but is
+          not a demo approver, so the panel is not their surface. */}
+      {canReceiveDemo && !receiptInPanel && (
         <Button size="sm" onClick={() => setTeslimConfirm('demo-received')} disabled={receiving || reportingNotReceived}>
           <CheckCircle2 className="h-4 w-4" />
           {receiving ? 'İşleniyor…' : 'Teslim Alındı'}
@@ -334,7 +341,7 @@ export default function HeaderActionRow({ d }) {
       )}
       {/* Escape hatch: the demo was delivered but never actually
           reached anyone — send it back to the matbaa. */}
-      {canReceiveDemo && (
+      {canReceiveDemo && !receiptInPanel && (
         <Button
           size="sm"
           variant="outline"
@@ -345,14 +352,14 @@ export default function HeaderActionRow({ d }) {
           {reportingNotReceived ? 'İşleniyor…' : 'Teslim Alınamadı'}
         </Button>
       )}
-      {/* Ozalit "Teslim Alındı" gate */}
-      {canReceiveOzalit && (
+      {/* Ozalit "Teslim Alındı" gate — same split as the demo pair above. */}
+      {canReceiveOzalit && !receiptInPanel && (
         <Button size="sm" onClick={() => setTeslimConfirm('ozalit-received')} disabled={receiving || reportingNotReceived}>
           <CheckCircle2 className="h-4 w-4" />
           {receiving ? 'İşleniyor…' : 'Teslim Alındı'}
         </Button>
       )}
-      {canReceiveOzalit && (
+      {canReceiveOzalit && !receiptInPanel && (
         <Button
           size="sm"
           variant="outline"

@@ -1100,12 +1100,24 @@ function ApprovalRow({
               // and is not the same thing as one nobody ever sent. This queue
               // loads rows only for the early-parça section above, so computing
               // it here would over-report and draw phantom rows. The leader can
-              // still sign off each parça individually; the last press is the
-              // one that advances, and the server refuses it by name
-              // (assertNoNeverSentParcalar) with the project page one click away.
+              // still sign off each parça individually; the round then holds at
+              // the gate rather than advancing, and the project page is one
+              // click away with the `Gönderilmedi` row that explains why.
               busy={parcaBusy}
               onApproveParcalar={onApproveParcalar}
               onRejectParcalar={isLeader ? onRejectParcalar : undefined}
+              // The row's own Reddet is suppressed while this grid draws — same
+              // gates as that button carried, re-stated here because this queue
+              // does not go through `availableActions`.
+              onBulkReject={
+                isLeader && !alreadyApproved && sub !== 'baski-onay'
+                  && !receiptFirst && !inOzalitRevision
+                  ? onReject
+                  : undefined
+              }
+              // Baskı's maker half, opening the same form the row's button did.
+              // `onApprove` already routes baskı to setBaskiOnayForm.
+              onPrepareSheet={isLeader && sub === 'baski-onay' ? onApprove : undefined}
             />
           </div>
         )}
@@ -1255,6 +1267,12 @@ function Actions({
     //
     // `receiptFirst` is exempt: there the primary button is "Teslim Alın", the
     // receipt the whole round shares, not an approval at all.
+    //
+    // Baskı onayı is covered too, but only because the panel below now carries
+    // BOTH of its steps. Its primary button is the one place they were folded
+    // together — "Baskı Onayı Hazırlayın" before the sheet exists, "Baskı Onayı
+    // Verin" after (primaryActionLabel) — so suppressing it before the panel had
+    // a prepare affordance stranded the maker half entirely.
     if (showParcaGrid && !receiptFirst) {
       return (
         <Button size="sm" variant="ghost" className="w-full justify-start gap-1.5 text-muted-foreground sm:w-auto" disabled>
@@ -1288,8 +1306,12 @@ function Actions({
   // A round already rejected back to the designer can't be rejected again —
   // the server's reject gate needs a received proof or a screen round, and
   // this one is neither while the revision is in flight.
+  // …and on a multi-parça round it lives in the grid below as "Tümünü
+  // Reddedin", beside the bulk approve, so every decision on the round is taken
+  // in one place. Same gates, same action — only the home changes.
   const reject =
-    isLeader && !alreadyApproved && sub !== 'baski-onay' && !receiptFirst && !inOzalitRevision ? (
+    isLeader && !alreadyApproved && sub !== 'baski-onay' && !receiptFirst
+      && !inOzalitRevision && !showParcaGrid ? (
       <Button size="sm" variant="destructive" className="w-full sm:w-auto" onClick={onReject}>
         <ThumbsDown className="h-4 w-4" />
         {sub === 'ozalit' ? 'Ozaliti Reddedin' : 'Demoyu Reddedin'}
