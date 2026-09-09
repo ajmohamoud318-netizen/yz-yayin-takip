@@ -295,7 +295,7 @@ describe('per-parça reject gate', () => {
       assignees: [{ id: 'u-d', name: 'Aylin' }],
       subtasks: [],
       parca_state: [
-        { parca: 'KUTU', state: 'pending', delivered_at: '2026-09-08T09:00:00Z', received_at: null },
+        { parca: 'KUTU', gate: 'demo', state: 'pending', delivered_at: '2026-09-08T09:00:00Z', received_at: null },
       ],
     }
     assert.throws(
@@ -315,7 +315,7 @@ describe('per-parça reject gate', () => {
       subtasks: [],
       parca_state: [
         {
-          parca: 'KUTU', state: 'pending', attempt: 1,
+          parca: 'KUTU', gate: 'demo', state: 'pending', attempt: 1,
           delivered_at: '2026-09-08T09:00:00Z', received_at: '2026-09-08T10:00:00Z',
         },
       ],
@@ -347,7 +347,7 @@ describe('per-parça reject gate', () => {
       subtasks: [],
       parca_state: [
         {
-          parca: 'KUTU', state: 'pending', attempt: 2,
+          parca: 'KUTU', gate: 'ozalit', state: 'pending', attempt: 2,
           delivered_at: '2026-09-08T09:00:00Z', received_at: '2026-09-08T10:00:00Z',
         },
       ],

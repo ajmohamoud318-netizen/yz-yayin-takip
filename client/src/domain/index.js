@@ -58,6 +58,7 @@ export {
   lockedParcaNames,
   parcalarAwaitingFix,
   earlyParcaGateOpen,
+  roundParcaRows,
   pendingParcalar,
   approvedParcalar,
   rejectedParcalar,

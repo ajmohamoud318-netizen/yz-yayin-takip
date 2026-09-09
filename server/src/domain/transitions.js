@@ -886,6 +886,37 @@ function parcaStateRows(project) {
 }
 
 /**
+ * The gate whose round this project is running right now — teslim legs
+ * included, which `parcaGateForStage` deliberately does not answer for.
+ */
+function roundGateForStage(stage) {
+  return parcaGateForStage(stage) ?? EARLY_PARCA_GATES[stage] ?? null
+}
+
+/**
+ * The routing rows that belong to THIS round.
+ *
+ * `parca_state` is keyed `(project_id, parca)` — ONE row per parça, carrying the
+ * gate it last cycled on (migration 074). It is not one row per parça per gate.
+ * So when a project finishes its demo leg and moves on, every parça's row is
+ * still sitting there saying `gate: 'demo'`, `delivered_at` and `received_at`
+ * stamped from a delivery that happened on a different round.
+ *
+ * Read unscoped at the ozalit round, those rows answer for a round they were
+ * never part of, and they answer "delivered, received, ready to decide" —
+ * `parcaDecidable` is true for exactly that shape. The leader is then offered
+ * per-parça Onayla on an ozalit the matbaa has not started, let alone printed.
+ *
+ * The gate is what makes a row this round's. Everything that asks "where is
+ * this parça in the round" has to go through here.
+ */
+function roundParcaRows(project) {
+  const gate = roundGateForStage(project?.stage)
+  const rows = parcaStateRows(project)
+  return gate ? rows.filter((r) => r?.gate === gate) : rows
+}
+
+/**
  * The parçalar of this round the matbaa is producing right now (migration 077).
  *
  * The whole-sheet edit below is a silent rewrite: the printer gets a "form
@@ -980,9 +1011,15 @@ function settleParcaFixes(project, changedParcalar) {
 /**
  * The parçalar that may be decided right now on an unfinished round: delivered
  * by the matbaa AND acknowledged by whoever is holding them.
+ *
+ * `roundParcaRows`, not every row: a parça delivered and received on the DEMO
+ * round keeps those stamps, and `parcaDecidable` reads that shape as ready.
+ * Unscoped, the ozalit round therefore opened with every parça of the finished
+ * demo round already "decidable" — the leader was offered per-parça Onayla on an
+ * ozalit the matbaa had not started.
  */
 function earlyDecidableParcalar(project) {
-  return parcaStateRows(project).filter(parcaDecidable).map((r) => r.parca).filter(Boolean)
+  return roundParcaRows(project).filter(parcaDecidable).map((r) => r.parca).filter(Boolean)
 }
 
 /** Has this actor already signed this parça in the round's ledger? */
@@ -1011,7 +1048,9 @@ function narrowEarlyParcalar(project, gate, actor, rawParcalar) {
   if (explicit) {
     for (const parca of requested) {
       if (!decidable.has(parca)) {
-        const row = parcaStateRows(project).find((r) => r?.parca === parca)
+        // This round's row — a stale one from the previous leg would explain the
+        // refusal with a delivery that belongs to a different round.
+        const row = roundParcaRows(project).find((r) => r?.parca === parca)
         if (row && row.delivered_at && !row.received_at) {
           badRequest(`${parca} teslim alınmadı — önce "Teslim Alındı" olarak işaretleyin.`)
         }

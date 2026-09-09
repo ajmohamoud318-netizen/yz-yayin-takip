@@ -16,14 +16,17 @@ import { describe, expect, it } from 'vitest'
 
 import { parcaAwaitsReceipt, parcaDecidable, earlyParcaGateOpen } from '@/domain'
 
+// Every real row carries a gate — the column is NOT NULL (migration 074) — and
+// which one it is now decides whether a row belongs to the round being asked
+// about. See roundParcaRows.
 const atGate = (extra = {}) => ({
-  parca: 'KUTU', state: 'pending', owner_role: null,
+  parca: 'KUTU', gate: 'demo', state: 'pending', owner_role: null,
   delivered_at: '2026-09-08T09:00:00Z', received_at: null, ...extra,
 })
 const receivedRow = (extra = {}) => atGate({ received_at: '2026-09-08T10:00:00Z', ...extra })
-const atMatbaa = () => ({
-  parca: 'KİTAP', state: 'with_matbaa', owner_role: 'printer',
-  delivered_at: null, received_at: null,
+const atMatbaa = (extra = {}) => ({
+  parca: 'KİTAP', gate: 'demo', state: 'with_matbaa', owner_role: 'printer',
+  delivered_at: null, received_at: null, ...extra,
 })
 
 describe('parcaAwaitsReceipt', () => {
@@ -66,8 +69,42 @@ describe('parcaDecidable', () => {
 describe('earlyParcaGateOpen', () => {
   it('opens on a teslim stage as soon as one parça is back', () => {
     expect(earlyParcaGateOpen({ stage: 'demo_teslim' }, [atGate(), atMatbaa()])).toBe(true)
-    expect(earlyParcaGateOpen({ stage: 'ozalit_teslim' }, [receivedRow()])).toBe(true)
+    expect(earlyParcaGateOpen({ stage: 'ozalit_teslim' }, [receivedRow({ gate: 'ozalit' })]))
+      .toBe(true)
     expect(earlyParcaGateOpen({ stage: 'cin_demo_teslim' }, [atGate()])).toBe(true)
+  })
+
+  /**
+   * Reported live: the leader opened an ozalit round the matbaa had not started
+   * and saw a full PARÇA ONAYI panel — three rows, a thumbs-up on each, "Tüm
+   * parçaları onaylayın (3)". The matbaa, meanwhile, got "Bu parça sizde değil"
+   * on the same round.
+   *
+   * One cause. `parca_state` is keyed (project_id, parça): ONE row per parça,
+   * carrying the gate it last cycled on. The finished demo round's rows are
+   * still there when the ozalit round opens — delivered, received, and so
+   * `parcaDecidable` — and nothing here asked which gate they belonged to.
+   */
+  it('ignores the finished demo round when the ozalit round opens', () => {
+    const demoLeftovers = [
+      receivedRow({ parca: 'Bilsem', gate: 'demo', state: 'approved' }),
+      receivedRow({ parca: 'Bilsem KUTU', gate: 'demo', state: 'approved' }),
+      receivedRow({ parca: 'Bilsem KILAVUZ', gate: 'demo', state: 'approved' }),
+    ]
+    expect(earlyParcaGateOpen({ stage: 'ozalit_teslim' }, demoLeftovers)).toBe(false)
+  })
+
+  it('opens once a parça of the OZALIT round is actually back', () => {
+    const rows = [
+      receivedRow({ parca: 'Bilsem', gate: 'demo', state: 'approved' }),
+      receivedRow({ parca: 'Bilsem KUTU', gate: 'ozalit' }),
+    ]
+    expect(earlyParcaGateOpen({ stage: 'ozalit_teslim' }, rows)).toBe(true)
+  })
+
+  it('mirrors it the other way — an ozalit row does not open a demo round', () => {
+    expect(earlyParcaGateOpen({ stage: 'demo_teslim' }, [receivedRow({ gate: 'ozalit' })]))
+      .toBe(false)
   })
 
   it('stays shut while the whole round is still in the press', () => {

@@ -35,6 +35,7 @@ import {
   listParcaStateByOwner,
   listGateParcalarAwaitingLeader,
   upsertParcaState,
+  deleteParcaState,
 } from './parca-state-repository.js'
 import {
   getProjectForUpdate,
@@ -287,19 +288,51 @@ async function loadParcaForUpdate(client, projectId, parca) {
     'SELECT * FROM parca_state WHERE project_id = $1 AND parca = $2 FOR UPDATE',
     [projectId, parca],
   )
-  if (rows[0]) return { project, row: rows[0] }
-
-  // No row yet. On a teslim round that is normal rather than an error: the
-  // parçalar are derived from the round's sheet (see deriveTeslimParcalar) and
-  // a row is only written the moment someone actually acts on one. Materialise
-  // it here, on the first action, so the matbaa can work a fresh round
-  // parça-by-parça without anything having been seeded up front.
+  const existing = rows[0] ?? null
   const gate = TESLIM_GATES[project.stage]
+
+  /* A row counts as this round's only when its gate is this round's gate.
+   *
+   * `parca_state` is keyed (project_id, parca) — ONE row per parça, carrying the
+   * gate it last cycled on, not one row per parça per gate. So a project that
+   * finished its demo leg still has every parça's row sitting there saying
+   * `gate: 'demo'`, `state: 'approved'`, `owner_role: NULL`.
+   *
+   * Read as if it were the ozalit round's row, that is the matbaa being told the
+   * parça is not theirs: `canActOnParca` wants `owner_role: 'printer'`, and the
+   * finished demo row has no owner at all. The result was an ozalit round the
+   * matbaa could see in their queue and could not start — "Bu parça sizde
+   * değil." on every parça of a project that had ever run a demo.
+   *
+   * The derive path had it right all along (`deriveTeslimParcalar` scopes its
+   * `existing` query by gate for exactly this reason); this lookup did not, so
+   * the queue offered a card the action behind it refused. */
+  if (existing && (!gate || existing.gate === gate)) return { project, row: existing }
+
+  // No row for THIS round. On a teslim round that is normal rather than an
+  // error: the parçalar are derived from the round's sheet (see
+  // deriveTeslimParcalar) and a row is only written the moment someone actually
+  // acts on one. Materialise it here, on the first action, so the matbaa can
+  // work a fresh round parça-by-parça without anything seeded up front.
   if (!gate) notFound('Parça bulunamadı.')
   const snapshot = await loadLatestDemoSnapshot(client, projectId, gate)
   if (!(snapshot?.selectedComponents ?? []).includes(parca)) {
     notFound('Parça bu turda yok.')
   }
+  /* Retire the previous leg's row before writing this one.
+   *
+   * `upsertParcaState` COALESCEs the fields that outlive a single hand-off —
+   * `reason`, `rejected_by/_by_name/_at` and `fix_pending` — so an upsert onto
+   * the stale row would carry the DEMO round's reject reason and, worse, its
+   * `fix_pending` debt into the ozalit round. `startParca` refuses on
+   * `fix_pending`, so the matbaa would trade one wrong 400 for another. The
+   * delivery stamps take EXCLUDED verbatim and would clear on their own; these
+   * do not, and there is no "explicit null" through that patch.
+   *
+   * Nothing is lost that this table is the record of: the ledgers and the
+   * project timeline hold what happened on the finished leg, while these rows
+   * only ever answer "where is this parça in THIS round". */
+  if (existing) await deleteParcaState(client, projectId, parca)
   const created = await upsertParcaState(client, projectId, parca, {
     gate,
     state: 'with_matbaa',
@@ -307,7 +340,7 @@ async function loadParcaForUpdate(client, projectId, parca) {
     route: 'physical',
     // 1, not `snapshot.attempt` — see deriveTeslimParcalar's note. This is the
     // parça's FIRST time round by definition: we are here precisely because it
-    // has no row yet, and only a reject raises the count from here.
+    // has no row on this gate, and only a reject raises the count from here.
     attempt: 1,
   })
   return { project, row: created }

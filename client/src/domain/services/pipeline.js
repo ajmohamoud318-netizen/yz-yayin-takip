@@ -817,7 +817,42 @@ export function parcalarAwaitingFix(parcaRows = []) {
  */
 export function earlyParcaGateOpen(project, parcaRows = []) {
   if (!EARLY_PARCA_STAGES.has(project?.stage)) return false
-  return (parcaRows ?? []).some((r) => parcaAwaitsReceipt(r) || parcaDecidable(r))
+  return roundParcaRows(project, parcaRows)
+    .some((r) => parcaAwaitsReceipt(r) || parcaDecidable(r))
+}
+
+/**
+ * The routing rows that belong to the round this project is running.
+ *
+ * `parca_state` is keyed (project_id, parça) — ONE row per parça, carrying the
+ * gate it last cycled on, not one row per parça per gate. A project that has
+ * finished its demo leg therefore still has every parça's row sitting there
+ * saying `gate: 'demo'` with `delivered_at` and `received_at` stamped by a
+ * delivery that happened on a different round.
+ *
+ * `parcaDecidable` reads that shape as "ready to decide", so an unscoped read at
+ * `ozalit_teslim` opened the early gate on the strength of the finished demo:
+ * the leader was shown a full PARÇA ONAYI panel with a thumbs-up on every row,
+ * for an ozalit the matbaa had not started — while the matbaa's own start button
+ * answered "Bu parça sizde değil" for the same reason on the server.
+ *
+ * @param {{ stage?: string }} project
+ * @param {Array<{ gate?: string }>} parcaRows
+ */
+export function roundParcaRows(project, parcaRows = []) {
+  const gate = ROUND_GATE_BY_STAGE[project?.stage] ?? null
+  const rows = parcaRows ?? []
+  return gate ? rows.filter((r) => r?.gate === gate) : rows
+}
+
+/** Which leg's round each parça-bearing stage is running. */
+const ROUND_GATE_BY_STAGE = {
+  demo_teslim: 'demo',
+  cin_demo_teslim: 'demo',
+  demo_onay: 'demo',
+  cin_demo_onay: 'demo',
+  ozalit_teslim: 'ozalit',
+  ozalit_onay: 'ozalit',
 }
 
 /**

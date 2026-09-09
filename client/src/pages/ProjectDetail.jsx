@@ -32,7 +32,7 @@ import { resolveSheetScope } from '@/lib/spec-form-scope'
 import ParcaRejectDialog from '@/components/ParcaRejectDialog'
 import ParcaReturnedPanel from '@/components/ParcaReturnedPanel'
 import {
-  orderOzalitFormMode, earlyParcaGateOpen,
+  orderOzalitFormMode, earlyParcaGateOpen, roundParcaRows,
   EARLY_PARCA_STAGES, isOzalitRoundLive, awaitsOzalitReceipt,
 } from '@/domain'
 import { parcaPanelViewer, parcaPanelDecider } from '@/domain/services/project-detail'
@@ -269,6 +269,12 @@ export default function ProjectDetail() {
      that are still in the press. Leader-only — the server refuses an early
      sign-off from anyone else, since the matbaa is still producing this round. */
   const earlyParcaGate = earlyParcaGateOpen(project, parcaRows)
+  /* …and every surface below reads THIS round's rows, not every row the project
+     has ever had. One row per parça carries the gate it last cycled on, so the
+     finished demo round's rows are still there when the ozalit round starts —
+     delivered, received, and therefore "decidable" to anything that does not
+     ask which gate they belong to. See roundParcaRows. */
+  const roundRows = roundParcaRows(project, parcaRows)
 
   /**
    * Is there a sheet at the matbaa the leader might still want to change?
@@ -433,7 +439,7 @@ export default function ProjectDetail() {
               // approved yet" and "not here yet". At the *_onay gates the whole
               // round has arrived under one project-level receipt, and passing
               // rows would offer "Teslim Alın" on parçalar already received.
-              parcaRows={earlyParcaGate ? parcaRows : null}
+              parcaRows={earlyParcaGate ? roundRows : null}
               onReceiveParca={earlyParcaGate ? handleReceiveParca : undefined}
             />
           </div>
@@ -446,7 +452,7 @@ export default function ProjectDetail() {
             round the matbaa actually holds. */}
         {showChangeRequestPanel && (
           <ParcaChangeRequestPanel
-            rows={parcaRows}
+            rows={roundRows}
             // The round's real parça list. Routing rows only exist for
             // parçalar somebody has acted on, so without this the panel shows
             // the one parça the matbaa started and none of the ones the leader
@@ -470,7 +476,7 @@ export default function ProjectDetail() {
             raises: the grid says KİTAP is not signed off, this says why and
             who has it. */}
         <ParcaReturnedPanel
-          rows={parcaRows}
+          rows={roundRows}
           canAct={canSendParcaBack}
           busyParca={parcaRoundBusy}
           reviewedParca={reviewedParca}
@@ -625,7 +631,7 @@ export default function ProjectDetail() {
         decisionContext={parcaSheet}
         // Which parça blocks the sheet must render read-only on the leader's
         // edit-and-notify path (migration 077).
-        parcaRows={parcaRows}
+        parcaRows={roundRows}
         // Set only by "Kalan Parçaları Gönderin": the parçalar this opening
         // will put on the round. Ticks them on the sheet and authorises the
         // addition on save — every other opening leaves it null.
@@ -679,7 +685,7 @@ export default function ProjectDetail() {
         decisionContext={parcaSheet}
         // Which parça blocks the sheet must render read-only on the leader's
         // edit-and-notify path (migration 077).
-        parcaRows={parcaRows}
+        parcaRows={roundRows}
         // Set only by "Kalan Parçaları Gönderin": the parçalar this opening
         // will put on the round. Ticks them on the sheet and authorises the
         // addition on save — every other opening leaves it null.
