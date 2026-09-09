@@ -84,8 +84,8 @@ export default function SubtaskCard({
                         canEdit={canEdit}
                         currentUserId={user?.id ?? null}
                         allUsers={project?.assignees ?? []}
-                        onAddBatch={(designerId, pagesDone, startPage) =>
-                          onAddDesignerBatch(s, designerId, pagesDone, startPage)
+                        onAddBatch={(designerId, segments) =>
+                          onAddDesignerBatch(s, designerId, segments)
                         }
                         onRedoneBatch={(batchId) =>
                           onRedoneDesignerBatch(s, batchId)

@@ -1076,14 +1076,17 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
             The change summary above frames everything as a correction to a
             sheet the matbaa already has, which is the wrong sentence here:
             these parçalar are not on their round at all yet, and sending puts
-            work in their queue rather than amending work already in it. */}
+            work in their queue rather than amending work already in it.
+
+            The sheet opens showing only them, so this says what they ARE
+            rather than that they were "added to the form" — on screen they are
+            the form. The banner below is what says the round has more. */}
         {(preselectParcalar ?? []).length > 0 && (
           <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs print:hidden">
             <p className="text-foreground">
-              Bu turda olmayan{' '}
               <strong className="font-semibold">{preselectParcalar.join(', ')}</strong>{' '}
-              matbaaya gönderilmek üzere forma eklendi. Göndermeden önce
-              bilgilerini doldurun; istemediğinizi listeden çıkarabilirsiniz.
+              bu turda yok. Bilgilerini doldurup gönderdiğinizde matbaanın
+              işine eklenecek — turun geri kalanı olduğu gibi kalır.
             </p>
           </div>
         )}

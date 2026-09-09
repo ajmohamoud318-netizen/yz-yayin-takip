@@ -36,25 +36,37 @@ export function createHttpSubtaskRepository() {
     },
     /**
      * migration 067/068 — designer pages-done input. Body is
-     * `{ designer_id, pages, start_page }`. Server enforces ownership:
+     * `{ designer_id, segments: [{ start_page, pages }, …] }`. Server
+     * enforces ownership:
      *   • team_leader may add a batch for any active designer;
      *   • designer may add only for themselves.
      *
-     * Migration 068 — `start_page` pins this batch to a specific page
+     * Migration 068 — each segment pins a batch to a specific page
      * range [start_page, start_page + pages - 1]; the server refuses
-     * the save if the range overlaps any existing batch on the same
+     * the save if any range overlaps an existing batch on the same
      * subtask (no double-counting across designers).
+     *
+     * A comma list from the input ("1,5,7") arrives as several
+     * segments and lands as one row each, inserted in a single
+     * transaction — the whole save applies or none of it does.
      *
      * Slim response shape:
      *   { subtask_id, project_id, total_pages, pages_done, is_done,
-     *     batch: { id, designer_id, designer_name, pages, start_page,
-     *              created_at, redone_at, redone_by, redone_by_name },
+     *     batches: [{ id, designer_id, designer_name, pages, start_page,
+     *                 created_at, redone_at, redone_by, redone_by_name }],
+     *     batch: <batches[0]>,   // kept for older callers
      *     project_progress, project: { id, progress, version } }
      */
-    async addSubtaskDesignerBatch(subtaskId, { designerId, pages, startPage }, { signal } = {}) {
+    async addSubtaskDesignerBatch(subtaskId, { designerId, segments }, { signal } = {}) {
       const { data } = await httpClient.post(
         `/subtasks/${subtaskId}/designer-batches`,
-        { designer_id: designerId, pages, start_page: startPage },
+        {
+          designer_id: designerId,
+          segments: (Array.isArray(segments) ? segments : []).map((s) => ({
+            start_page: s.start,
+            pages: s.pages,
+          })),
+        },
         signal ? { signal } : undefined,
       )
       return data

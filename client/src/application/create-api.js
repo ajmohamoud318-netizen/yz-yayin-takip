@@ -194,13 +194,15 @@ export function createApi() {
     setSubtaskStickers: (subtaskId, stickersDone) =>
       subtaskRepo.setSubtaskStickers(subtaskId, stickersDone),
     // migration 067/068 — designer pages-done input. Each save appends one
-    // batch row; the running total on the parent subtask is the SUM of
-    // every batch's `pages`. Body is `{ designer_id, pages, start_page }`.
+    // batch row per segment; the running total on the parent subtask is
+    // the SUM of every batch's `pages`. Body is `{ designer_id,
+    // segments: [{ start_page, pages }, …] }` — a comma list ("1,5,7")
+    // in the input is several segments, written in one transaction.
     // Migration 068 adds `start_page` — the server pins each batch to a
     // page range and refuses any save that overlaps an existing batch.
     // Yeniden Çalıştım on a saved batch uses the second method below.
-    addSubtaskDesignerBatch: (subtaskId, { designerId, pages, startPage }) =>
-      subtaskRepo.addSubtaskDesignerBatch(subtaskId, { designerId, pages, startPage }),
+    addSubtaskDesignerBatch: (subtaskId, { designerId, segments }) =>
+      subtaskRepo.addSubtaskDesignerBatch(subtaskId, { designerId, segments }),
     markSubtaskDesignerBatchRedone: (subtaskId, batchId) =>
       subtaskRepo.markSubtaskDesignerBatchRedone(subtaskId, batchId),
     reviseSubtask: (subtaskId) => subtaskRepo.reviseSubtask(subtaskId),

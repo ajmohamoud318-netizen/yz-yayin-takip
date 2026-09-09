@@ -11,6 +11,7 @@ import {
   findOverlappingBatches,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
+import { formatSegments, readBatchSegments } from '../domain/page-segments.js'
 import { subtaskProgress } from '../domain/progress.js'
 import { progressFor } from '../domain/progress.js'
 
@@ -615,7 +616,7 @@ export async function subtaskRoutes(fastify) {
    *
    * Designer-facing write for the "İç Sayfalar" subtask (migration
    * 067). Replaces the per-chip PATCH /subtasks/:id/pages/:pageIndex
-   * route: each save creates ONE batch row, the running total on the
+   * route: each save creates a batch row, the running total on the
    * subtask is the SUM of every batch's `pages` (kept in sync by the
    * `recompute_subtask_pages_counter` trigger). Designers can sit
    * down, ship 8 pages, save → a tickbox appears in the team's
@@ -628,9 +629,15 @@ export async function subtaskRoutes(fastify) {
    * counts DISTINCT pages covered, not the raw sum (no double-counting
    * across designers logging the same page).
    *
-   * Body: `{ designer_id: string, pages: number, start_page: number }`.
-   * The route ignores multi-row payloads (one POST = one batch). The
-   * leader can correct multiple designers' numbers with separate calls.
+   * Body: `{ designer_id: string, segments: [{ start_page, pages }, …] }`,
+   * or the older `{ designer_id, pages, start_page }` for a single
+   * range — readBatchSegments normalises both. A designer who finished
+   * scattered pages types a comma list ("1,5, 7") in the input and it
+   * arrives here as three segments; each becomes its own row, because
+   * the table stores one contiguous range per row and both the overlap
+   * guard and the counter trigger build on that. They share one
+   * transaction, so the save is atomic — a conflict on the third page
+   * leaves none of them behind.
    *
    * Gating:
    *   • team_leader role may add a batch for any active designer;
@@ -640,26 +647,27 @@ export async function subtaskRoutes(fastify) {
    * Inside the transaction:
    *   1. Lock the subtask (FOR UPDATE) and the parent project.
    *   2. Validate the body — `designer_id` is an active designer;
-   *     `pages` and `start_page` are positive integers; the range
-   *     [start_page, start_page + pages - 1] fits inside total_pages
-   *     and does not overlap any existing batch on this subtask.
-   *     Enforced in JS, not via CHECK, so the leader can raise
+   *     every segment's `pages` and `start_page` are positive integers;
+   *     each range [start_page, start_page + pages - 1] fits inside
+   *     total_pages and does not overlap any existing batch on this
+   *     subtask. Enforced in JS, not via CHECK, so the leader can raise
    *     total_pages mid-stream without orphaning prior batches.
-   *   3. addSubtaskDesignerBatch — single INSERT that triggers the
+   *   3. addSubtaskDesignerBatch per segment — each INSERT triggers the
    *      subtask-pages counter recompute (subtasks.pages_done /
    *      is_done handled by migration 067's trigger).
    *   4. patchProject with the recomputed progress (refreshed inside
    *      the trigger, no extra SELECT needed beyond the row we
    *      already touched for the lock).
-   *   5. logHistory — one row per save, e.g.
-   *      "İç Sayfalar: Ayşe sayfa 1-8 ekledi". This is read on
-   *      everything but no-ops on nothing.
+   *   5. logHistory — one row per save however many segments it
+   *      carried, e.g. "İç Sayfalar: Ayşe sayfa 1, 5, 7-9 ekledi".
+   *      This is read on everything but no-ops on nothing.
    *
    * Returns a slim shape so the SPA can merge into state without
    * hitting /projects/:id for the full payload:
    *   { subtask_id, project_id, total_pages, pages_done, is_done,
-   *     batch: { id, designer_id, designer_name, pages, start_page,
-   *              created_at, ... },
+   *     batches: [{ id, designer_id, designer_name, pages, start_page,
+   *                 created_at, ... }],       // newest first
+   *     batch: <batches[0]>,                  // older callers
    *     project_progress, project: { id, progress, version } }
    */
   fastify.post('/subtasks/:id/designer-batches', {
@@ -668,11 +676,10 @@ export async function subtaskRoutes(fastify) {
     await attachUser(request)
     const subtaskId = request.params.id
     const designerId = String(request.body?.designer_id ?? '').trim()
-    const pagesRaw = Number(request.body?.pages)
-    const startPageRaw = Number(request.body?.start_page)
     if (!designerId) badRequest('designer_id gerekli.')
-    if (!Number.isFinite(pagesRaw)) badRequest('pages bir sayı olmalı.')
-    if (!Number.isFinite(startPageRaw)) badRequest('start_page bir sayı olmalı.')
+    // Normalises both body shapes to a sorted, non-overlapping segment
+    // list and rejects the malformed ones before we open a transaction.
+    const segments = readBatchSegments(request.body)
 
     const result = await withTx(async (client) => {
       const { rows: subRows } = await client.query(
@@ -695,43 +702,47 @@ export async function subtaskRoutes(fastify) {
       if (!isLeader && designerId !== request.user.id) {
         badRequest('Yalnızca kendi adınıza sayfa ekleyebilirsiniz.')
       }
-      // The column CHECK refuses non-positive inputs; the route returns
-      // a friendlier error before the INSERT fails with a bare
-      // constraint violation.
-      const pages = Math.floor(pagesRaw)
-      const startPage = Math.floor(startPageRaw)
-      if (pages <= 0) badRequest('pages sıfırdan büyük olmalı.')
-      if (startPage < 1) badRequest('start_page en az 1 olmalı.')
-      // Migration 068 — the new batch covers [start_page, start_page + pages - 1].
-      // Range must fit inside the book. The "remaining pages" cap
+      // Migration 068 — each batch covers [start_page, start_page + pages - 1].
+      // Every range must fit inside the book. The "remaining pages" cap
       // (`pages_done + pages ≤ total`) still applies, but in this model
       // it's a stricter version of "start_page + pages - 1 ≤ total":
       // pages_done is the sum of all batches' `pages` (no overlap, so
       // it equals the highest covered page index — 1 if everything is
       // contiguous from page 1). The simplest correct check is on the
-      // range itself.
-      if (total > 0 && startPage + pages - 1 > total) {
+      // ranges themselves. Segments are sorted, so the last one holds
+      // the highest page in the save.
+      const lastSeg = segments[segments.length - 1]
+      const highestPage = lastSeg.startPage + lastSeg.pages - 1
+      if (total > 0 && highestPage > total) {
         badRequest(
-          `Sayfa aralığı (${startPage}-${startPage + pages - 1}) toplam sayfa sayısını (${total}) aşamaz.`,
+          `Sayfa ${highestPage} toplam sayfa sayısını (${total}) aşamaz.`,
         )
       }
       // Migration 068 — refuse any save whose range overlaps an existing
       // batch on this subtask. Without this, two designers shipping the
       // same page would silently double-count in pages_done. The query
-      // joins users so the error can name the conflicting party.
-      const overlaps = await findOverlappingBatches(client, {
-        subtaskId, newStart: startPage, newPages: pages,
-      })
-      const conflict = overlaps.find((o) => o.designer_id !== designerId)
-        || overlaps[0]
-      if (conflict) {
-        const cStart = conflict.start_page
-        const cEnd = conflict.start_page + conflict.pages - 1
-        badRequest(
-          `Sayfa aralığı (${startPage}-${startPage + pages - 1}) zaten `
-          + `${conflict.designer_name ?? conflict.designer_id} tarafından `
-          + `(${cStart}-${cEnd}) tamamlandı.`,
-        )
+      // joins users so the error can name the conflicting party. Every
+      // segment is checked before anything is inserted, so a comma list
+      // with one bad page writes nothing at all rather than half of
+      // itself — readBatchSegments already merged the segments against
+      // each other, so they can only collide with pre-existing rows.
+      for (const seg of segments) {
+        const segEnd = seg.startPage + seg.pages - 1
+        const segLabel = seg.pages === 1 ? `${seg.startPage}` : `${seg.startPage}-${segEnd}`
+        const overlaps = await findOverlappingBatches(client, {
+          subtaskId, newStart: seg.startPage, newPages: seg.pages,
+        })
+        const conflict = overlaps.find((o) => o.designer_id !== designerId)
+          || overlaps[0]
+        if (conflict) {
+          const cStart = conflict.start_page
+          const cEnd = conflict.start_page + conflict.pages - 1
+          badRequest(
+            `Sayfa aralığı (${segLabel}) zaten `
+            + `${conflict.designer_name ?? conflict.designer_id} tarafından `
+            + `(${cStart}-${cEnd}) tamamlandı.`,
+          )
+        }
       }
       // Batched existence/role check — one round-trip verifies the
       // designer exists, is role='designer', and is_active=true.
@@ -754,23 +765,29 @@ export async function subtaskRoutes(fastify) {
       )
       const designerName = designerRows[0]?.name ?? null
 
-      // INSERT one batch row. The trigger recomputes the subtask's
-      // pages_done / is_done the same transaction; we read them back
-      // from the row directly (the SELECT FOR UPDATE above captured
-      // the pre-write values, and the trigger's UPDATE bumped the
-      // row in the same tx).
-      const inserted = await addSubtaskDesignerBatch(client, {
-        subtaskId,
-        designerId,
-        pages,
-        startPage,
-      })
-      if (!inserted) badRequest('Sayfa eklenemedi.')
+      // INSERT one batch row per segment. The trigger recomputes the
+      // subtask's pages_done / is_done in the same transaction; we read
+      // them back from the row directly (the SELECT FOR UPDATE above
+      // captured the pre-write values, and the trigger's UPDATE bumped
+      // the row in the same tx). Every INSERT shares this transaction,
+      // so a failure on the third segment rolls back the first two.
+      const insertedRows = []
+      for (const seg of segments) {
+        const row = await addSubtaskDesignerBatch(client, {
+          subtaskId,
+          designerId,
+          pages: seg.pages,
+          startPage: seg.startPage,
+        })
+        if (!row) badRequest('Sayfa eklenemedi.')
+        insertedRows.push(row)
+      }
+      const totalPagesAdded = segments.reduce((acc, seg) => acc + seg.pages, 0)
       const { rows: refreshedSub } = await client.query(
         `SELECT id, pages_done, is_done FROM subtasks WHERE id = $1`,
         [subtaskId],
       )
-      const refreshed = refreshedSub[0] ?? { pages_done: pages, is_done: false }
+      const refreshed = refreshedSub[0] ?? { pages_done: totalPagesAdded, is_done: false }
 
       const { rows: projectSubs } = await client.query(
         'SELECT * FROM subtasks WHERE project_id = $1', [project.id],
@@ -791,12 +808,30 @@ export async function subtaskRoutes(fastify) {
           to_stage: project.stage,
           action: 'system',
           event: 'subtask_progress',
-          note: pages === 1
-            ? `${sub.title}: ${designerName ?? designerId} sayfa ${startPage} ekledi`
-            : `${sub.title}: ${designerName ?? designerId} sayfa ${startPage}-${startPage + pages - 1} ekledi`,
+          // "sayfa 1, 5, 7-9 ekledi" — the list reads the way the designer
+          // typed it, so the timeline stays legible whether the save was
+          // one clean range or a scattered handful.
+          note: `${sub.title}: ${designerName ?? designerId} sayfa ${formatSegments(segments)} ekledi`,
         },
         request.user,
       )
+
+      // Newest first, matching the order the designer's log renders.
+      const batchPayload = insertedRows
+        .map((row) => ({
+          id: row.id,
+          designer_id: row.designer_id,
+          designer_name: designerName,
+          pages: row.pages,
+          start_page: row.start_page,
+          created_at: row.created_at instanceof Date
+            ? row.created_at.toISOString()
+            : row.created_at,
+          redone_at: null,
+          redone_by: null,
+          redone_by_name: null,
+        }))
+        .reverse()
 
       return {
         subtask_id: subtaskId,
@@ -804,19 +839,10 @@ export async function subtaskRoutes(fastify) {
         total_pages: total,
         pages_done: Number(refreshed.pages_done ?? 0),
         is_done: !!refreshed.is_done,
-        batch: {
-          id: inserted.id,
-          designer_id: inserted.designer_id,
-          designer_name: designerName,
-          pages: inserted.pages,
-          start_page: inserted.start_page,
-          created_at: inserted.created_at instanceof Date
-            ? inserted.created_at.toISOString()
-            : inserted.created_at,
-          redone_at: null,
-          redone_by: null,
-          redone_by_name: null,
-        },
+        batches: batchPayload,
+        // Kept alongside `batches` for callers written against the
+        // one-row-per-save shape.
+        batch: batchPayload[0],
         project_progress: progress,
         project: {
           id: updProject.id,

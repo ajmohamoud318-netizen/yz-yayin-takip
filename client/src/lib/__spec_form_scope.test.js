@@ -9,10 +9,75 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { hiddenParcaNames, scopeComponents, opensNarrowed } from '@/lib/spec-form-scope'
+import {
+  hiddenParcaNames, scopeComponents, opensNarrowed, resolveSheetScope,
+} from '@/lib/spec-form-scope'
 
 const comp = (component) => ({ id: component, component, rows: [] })
 const sheet = [comp('KİTAP'), comp('KUTU'), comp('KILAVUZ')]
+
+/**
+ * Which of the three scopes wins, and whether the sheet starts narrowed.
+ *
+ * The add case is the one worth pinning: it narrows on a different rule than a
+ * decision does, and the obvious implementation — routing everything through
+ * `opensNarrowed` — silently opens the whole round the moment a leader has two
+ * parçalar to send, which is exactly the complaint this exists to answer.
+ */
+describe('resolveSheetScope', () => {
+  it('opens the whole sheet when nothing scoped it', () => {
+    expect(resolveSheetScope()).toEqual({ scope: null, scopeOnly: false })
+    expect(resolveSheetScope({})).toEqual({ scope: null, scopeOnly: false })
+  })
+
+  it('narrows a one-parça decision', () => {
+    expect(resolveSheetScope({ decision: ['KUTU'] }))
+      .toEqual({ scope: ['KUTU'], scopeOnly: true })
+  })
+
+  it('opens a bulk decision on the whole round', () => {
+    // "Tüm parçaları onaylayın" is a decision ABOUT the round, so the round is
+    // what has to be read before taking it.
+    expect(resolveSheetScope({ decision: ['KUTU', 'KİTAP'] }))
+      .toEqual({ scope: ['KUTU', 'KİTAP'], scopeOnly: false })
+  })
+
+  it('narrows a per-parça edit', () => {
+    expect(resolveSheetScope({ edit: ['KİTAP'] }))
+      .toEqual({ scope: ['KİTAP'], scopeOnly: true })
+  })
+
+  it('narrows an add of one parça', () => {
+    expect(resolveSheetScope({ add: ['KİTAP'] }))
+      .toEqual({ scope: ['KİTAP'], scopeOnly: true })
+  })
+
+  it('narrows an add of several — unlike a bulk decision', () => {
+    // The regression: routed through opensNarrowed this opened the whole round,
+    // so "Kalan Parçaları Gönderin" showed every parça including the ones
+    // already at the matbaa. Sending two parçalar is not a decision about five.
+    expect(resolveSheetScope({ add: ['KİTAP', 'KILAVUZ'] }))
+      .toEqual({ scope: ['KİTAP', 'KILAVUZ'], scopeOnly: true })
+  })
+
+  it('lets an add win over a stale edit or decision scope', () => {
+    // They are cleared on every open in practice; precedence is stated so a
+    // leftover value cannot quietly widen the sheet an add was opened for.
+    expect(resolveSheetScope({ decision: ['KUTU'], edit: ['KUTU'], add: ['KİTAP'] }))
+      .toEqual({ scope: ['KİTAP'], scopeOnly: true })
+  })
+
+  it('ignores an empty add and falls through to the rest', () => {
+    expect(resolveSheetScope({ add: [], edit: ['KİTAP'] }))
+      .toEqual({ scope: ['KİTAP'], scopeOnly: true })
+    expect(resolveSheetScope({ add: [null], decision: ['KUTU', 'KİTAP'] }))
+      .toEqual({ scope: ['KUTU', 'KİTAP'], scopeOnly: false })
+  })
+
+  it('prefers a decision over an edit', () => {
+    expect(resolveSheetScope({ decision: ['KUTU'], edit: ['KİTAP'] }).scope).toEqual(['KUTU'])
+  })
+})
 
 describe('scopeComponents', () => {
   it('keeps only the parçalar the caller asked for', () => {

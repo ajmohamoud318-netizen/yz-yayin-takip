@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { useAuth } from './useAuth'
-import { useProject } from './useProjects'
+import { useProject, useProjects } from './useProjects'
 import { useDesignerCelebration } from './useCelebration'
 import { useNotifications } from './useNotifications'
 import api, { ORDER_STEP_LABELS } from '@/api'
@@ -42,6 +42,11 @@ export function useProjectDetail(id) {
   const { user } = useAuth()
   const celebrate = useDesignerCelebration()
   const { project, loading, refetch, setProject } = useProject(id)
+  // The shared list, for the two mutations that add/remove a whole row.
+  // `updateOne` (which useProject already calls) only maps over entries that
+  // are already there, so it can neither drop a deleted project nor bring a
+  // restored one back.
+  const { removeOne, refetch: refetchProjects } = useProjects()
   const { subscribe } = useNotifications()
 
   // ---------------------------------------------------------------------------
@@ -75,7 +80,15 @@ export function useProjectDetail(id) {
   )
 
   // SSE: refetch the project whenever a relevant notification arrives.
-  useProjectDetailSSE(id, data.projectOrders, subscribe, () => refetch())
+  // Also refetch the per-parça routing rows — a matbaa/leader action on one
+  // parça of this project (migration 074) doesn't change `project.stage`,
+  // so the plain project refetch above would leave ParcaChangeRequestPanel
+  // and the parça grid showing a stale routing state to anyone else who has
+  // this project open.
+  useProjectDetailSSE(id, data.projectOrders, subscribe, () => {
+    refetch()
+    refetchParcaRows()
+  })
 
   // ---------------------------------------------------------------------------
   // Dialog / form visibility state
@@ -335,6 +348,7 @@ export function useProjectDetail(id) {
     setDeleting(true)
     try {
       await api.deleteProject(project.id)
+      removeOne(project.id)
       toast.success('Proje silindi.')
       navigate('/')
     } catch (err) {
@@ -348,7 +362,10 @@ export function useProjectDetail(id) {
     setRestoring(true)
     try {
       await api.restoreProject(project.id)
-      await refetch()
+      // refetch() alone only refreshes the detail; the project is missing from
+      // the shared list (it was soft-deleted), so the list needs its own pass
+      // to put the row back on the dashboard.
+      await Promise.all([refetch(), refetchProjects()])
       toast.success('Proje geri yüklendi.')
     } catch (err) {
       toast.error(err.message || 'Proje geri yüklenemedi.')

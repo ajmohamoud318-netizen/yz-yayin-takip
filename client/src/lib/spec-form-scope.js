@@ -95,6 +95,39 @@ export function opensNarrowed(parcaScope) {
 }
 
 /**
+ * Which parçalar the spec sheet opens on, and whether it opens narrowed.
+ *
+ * Three things can scope this dialog, and they are mutually exclusive — each
+ * caller clears the others, and closing the dialog clears all three:
+ *
+ *   decision — approve / reject / send back
+ *   add      — "Kalan Parçaları Gönderin"
+ *   edit     — the panel's per-parça correction
+ *
+ * `add` deliberately does NOT go through `opensNarrowed`, and that exception is
+ * the reason this lives here rather than inline at the call site.
+ * `opensNarrowed` answers "is this a one-parça decision?", because a decision
+ * covering several parçalar is a decision about the round, and the round is what
+ * has to be read before taking it.
+ *
+ * Adding is not a decision about the round. The parçalar being added are the
+ * whole subject of the action; the ones already on the round are context nobody
+ * asked for, and unlike a bulk approve there is no count at which showing them
+ * becomes the more useful answer — sending two parçalar is not "a decision about
+ * all five". So an add always opens narrowed, however many it carries. The
+ * banner's "Tüm parçaları gösterin" is still there for reading the rest.
+ *
+ * @param {{ decision?: string[]|null, add?: string[]|null, edit?: string[]|null }} scopes
+ * @returns {{ scope: string[]|null, scopeOnly: boolean }}
+ */
+export function resolveSheetScope({ decision = null, add = null, edit = null } = {}) {
+  const added = (add ?? []).filter(Boolean)
+  if (added.length > 0) return { scope: add, scopeOnly: true }
+  const scope = decision ?? edit ?? null
+  return { scope, scopeOnly: opensNarrowed(scope) }
+}
+
+/**
  * What the sheet must SAY while it is showing more than the decision covers.
  *
  * `opensNarrowed` above starts a one-parça decision on its own block, but the

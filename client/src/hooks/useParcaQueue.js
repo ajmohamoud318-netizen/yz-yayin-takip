@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import api from '@/api'
+import { useNotifications } from './useNotifications.jsx'
 
 /**
  * The parçalar sitting on the signed-in user's own desk, across every project
@@ -27,6 +28,7 @@ export function useParcaQueue(enabled = true) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(false)
   const [tick, setTick] = useState(0)
+  const { subscribe } = useNotifications()
 
   const refetch = useCallback(() => setTick((t) => t + 1), [])
 
@@ -42,6 +44,19 @@ export function useParcaQueue(enabled = true) {
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [enabled, tick])
+
+  // Live refresh: this queue never polled and never listened for anything —
+  // it only ever (re)loaded on mount or when a caller's own action called
+  // `refetch()`. So when a DIFFERENT printer (or a leader routing a parça)
+  // moved something onto or off of this desk, this queue kept showing the
+  // stale snapshot until the page was reloaded by hand. Any project-pipeline
+  // notification might be the one that moved a parça, and there's no cheap
+  // local filter for that, so — same trade-off `useProjectsStore` makes —
+  // just refetch on any signal while this queue is in use.
+  useEffect(() => {
+    if (!enabled) return undefined
+    return subscribe(() => refetch())
+  }, [enabled, subscribe, refetch])
 
   return { rows, loading, refetch }
 }

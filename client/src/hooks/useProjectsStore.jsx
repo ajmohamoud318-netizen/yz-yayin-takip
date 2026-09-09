@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef, createElement } from 'react'
 import api from '@/api'
 import { useAuth } from './useAuth.js'
+import { useNotifications } from './useNotifications.jsx'
 import { useOnResume } from './useOnResume.js'
 import { hydrateProductInfo } from '@/data/productCatalog'
 
@@ -17,6 +18,10 @@ export function ProjectsProvider({ children }) {
   // is safe — and it is what lets the fetch wait on the real session check
   // instead of guessing from localStorage.
   const { bootstrapping, isAuthenticated } = useAuth()
+  // NotificationsProvider wraps ProjectsProvider (see main.jsx), so the same
+  // SSE stream that drives the bell is available here too — see the
+  // `subscribe` wiring below.
+  const { subscribe } = useNotifications()
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -71,6 +76,18 @@ export function ProjectsProvider({ children }) {
   const addOne = useCallback((created) => {
     if (!created?.id) return
     setProjects((prev) => (prev.some((p) => p.id === created.id) ? prev : [...prev, created]))
+    postProjectsChanged()
+  }, [postProjectsChanged])
+
+  // Delete path. `GET /api/projects` stops returning a project the moment it
+  // is soft-deleted, but nothing ever told the in-memory list that: the detail
+  // page deleted, navigated back to the dashboard, and the row was still
+  // sitting in `projects` until the next 30 s tick — which is exactly the
+  // "I have to refresh the page" symptom. Drop it locally and nudge the
+  // sibling tabs, same as the other mutation paths.
+  const removeOne = useCallback((id) => {
+    if (!id) return
+    setProjects((prev) => prev.filter((p) => p.id !== id))
     postProjectsChanged()
   }, [postProjectsChanged])
 
@@ -130,19 +147,31 @@ export function ProjectsProvider({ children }) {
       refetch()
     }, 30_000)
 
-    // Subscribe to cross-aggregate mutations (order reassignment,
-    // handover confirm, etc.) so the bell red-dots and project cards
-    // update without waiting for the next 30 s tick.
-    const unsubscribe = api.subscribeProjects?.(updateOne)
+    // Live push: every project-pipeline notification (advance, approve,
+    // assign, a matbaa action, etc.) carries the projectId it's about. This
+    // used to read `api.subscribeProjects?.(updateOne)` — an API method
+    // that was never implemented, so the optional chain silently no-op'd
+    // and this list only ever refreshed on the 30 s tick, an own-tab
+    // mutation, or a sibling tab's BroadcastChannel post. That was the
+    // "matbaa acts and nobody else's screen updates without a refresh" bug:
+    // whoever the action notified (team leader, assigned designer, ...) had
+    // their bell update instantly over this same SSE stream, but the
+    // project cards on Dashboard/Kanban/Tüm Projeler stayed stale. Piggy-
+    // back on the stream and refetch exactly the way a sibling tab's
+    // BroadcastChannel message already does.
+    const unsubscribeNotifications = subscribe((event) => {
+      if (!event?.projectId) return
+      refetch()
+    })
     return () => {
       clearInterval(t)
-      unsubscribe?.()
+      unsubscribeNotifications()
       if (channel) {
         channel.close()
         channelRef.current = null
       }
     }
-  }, [bootstrapping, isAuthenticated, refetch, updateOne, supportsBroadcast])
+  }, [bootstrapping, isAuthenticated, refetch, updateOne, supportsBroadcast, subscribe])
 
   // Refresh the moment the app is foregrounded.
   //
@@ -191,6 +220,7 @@ export function ProjectsProvider({ children }) {
         setProjects,
         updateOne,
         addOne,
+        removeOne,
       },
     },
     children,

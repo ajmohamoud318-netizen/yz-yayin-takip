@@ -9,6 +9,7 @@ import api, {
 import { getComponentsForProject, saveComponentsForProject, primeProductInfoCache } from '@/data/productCatalog'
 import { saveSubtaskFlags } from '@/data/orderSubtasks'
 import { useAuth } from '@/hooks/useAuth'
+import { useNotifications } from '@/hooks/useNotifications'
 import { useOrderOzalitRound } from '@/hooks/useOrderOzalitRound'
 import { isSubtaskDone } from '@/domain/services/progress'
 import { Button } from '@/components/ui/button'
@@ -89,6 +90,7 @@ function saveProductComps(projectId, comps) {
  */
 export default function TalepSignDialog({ order, open, onOpenChange, onSigned, onUpdated, initialReject = false }) {
   const { user } = useAuth()
+  const { subscribe } = useNotifications()
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   // Designer step 1 of 2 (status 'tasarimciya_atandi', migration 054) — "Kontrolleri
@@ -229,16 +231,23 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     // Live-refresh the assignee selection if the project is reassigned
     // somewhere else (another tab / another leader). Without this the leader
     // could sign with a stale selection that no longer matches the project.
-    const unsubscribe = api.subscribeProjects?.((updated) => {
+    // This used to read `api.subscribeProjects?.()` — an API method that was
+    // never implemented, so the optional chain silently no-op'd and this
+    // never actually fired. Piggy-back on the same notification SSE stream
+    // ProjectDetail uses instead: any event about this project might be a
+    // reassignment, so re-fetch it.
+    const unsubscribe = subscribe((event) => {
       if (cancelled) return
-      if (updated?.id !== order.project_id) return
-      setAssignIds((updated.assignees ?? []).map((a) => a.id))
+      if (event?.projectId !== order.project_id) return
+      api.getProject(order.project_id)
+        .then((p) => { if (!cancelled) setAssignIds((p.assignees ?? []).map((a) => a.id)) })
+        .catch(() => {})
     })
     return () => {
       cancelled = true
-      unsubscribe?.()
+      unsubscribe()
     }
-  }, [open, order?.id, order?.project_id, isAssignStep])
+  }, [open, order?.id, order?.project_id, isAssignStep, subscribe])
 
   if (!order) return null
 

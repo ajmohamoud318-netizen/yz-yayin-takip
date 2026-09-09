@@ -28,7 +28,7 @@ import ProjectHistory from '@/components/ProjectHistory'
 import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
 import ParcaJobBoard from '@/components/ParcaJobBoard'
 import ParcaChangeRequestPanel from '@/components/ParcaChangeRequestPanel'
-import { opensNarrowed } from '@/lib/spec-form-scope'
+import { resolveSheetScope } from '@/lib/spec-form-scope'
 import ParcaRejectDialog from '@/components/ParcaRejectDialog'
 import ParcaReturnedPanel from '@/components/ParcaReturnedPanel'
 import {
@@ -139,6 +139,16 @@ export default function ProjectDetail() {
   const parcaSheetLabel = parcaSheet
     ? `${parcaSheet.parcalar.join(', ')} · ${PARCA_SHEET_VERB[parcaSheet.action]}`
     : null
+
+  // Which parçalar the sheet opens on, and whether it opens narrowed to them.
+  // The three scopes are mutually exclusive — each caller clears the others,
+  // and the dialog's onOpenChange clears all three. See resolveSheetScope for
+  // why an add narrows on a different rule than a decision does.
+  const { scope: sheetParcaScope, scopeOnly: sheetScopeOnly } = resolveSheetScope({
+    decision: parcaSheet?.parcalar,
+    add: d.parcaAddScope,
+    edit: editParcaScope,
+  })
 
   // Per-parça routing rows (migration 074) — who is holding what on this
   // project right now. Distinct from the ledgers the grid above reads: those
@@ -548,7 +558,7 @@ export default function ProjectDetail() {
         // Sheet-first, and the sheet is the parça: a leader deciding KUTU (or a
         // designer sending it back round) opens KUTU's block, not the whole
         // round it was sent on. Same source as the button's own label above.
-        parcaScope={parcaSheet?.parcalar ?? editParcaScope}
+        parcaScope={sheetParcaScope}
         // A sheet opened for ONE parça opens on that parça — approve, reject
         // and the designer's send-back alike. The leader tapping a single
         // row's thumbs-up is deciding that block, and a document showing all
@@ -558,7 +568,7 @@ export default function ProjectDetail() {
         // someone approving the lot needs to read. Same for the correction a
         // released parça is waiting for. See SpecFormDialog's `showAllParca`;
         // the other view is one tap away in the banner either way.
-        parcaScopeOnly={opensNarrowed(parcaSheet ? parcaSheet.parcalar : editParcaScope)}
+        parcaScopeOnly={sheetScopeOnly}
         // A sheet opened to DECIDE on is read-only: it is the record being
         // signed, not a draft. See isDecisionReview in
         // lib/spec-form-variants.js. `editParcaScope` is deliberately absent
@@ -602,7 +612,7 @@ export default function ProjectDetail() {
               setDemoFormOpen(false); d.setDemoFormStartWork(false)
             }
             : undefined}
-        parcaScope={parcaSheet?.parcalar ?? editParcaScope}
+        parcaScope={sheetParcaScope}
         // A sheet opened for ONE parça opens on that parça — approve, reject
         // and the designer's send-back alike. The leader tapping a single
         // row's thumbs-up is deciding that block, and a document showing all
@@ -612,7 +622,7 @@ export default function ProjectDetail() {
         // someone approving the lot needs to read. Same for the correction a
         // released parça is waiting for. See SpecFormDialog's `showAllParca`;
         // the other view is one tap away in the banner either way.
-        parcaScopeOnly={opensNarrowed(parcaSheet ? parcaSheet.parcalar : editParcaScope)}
+        parcaScopeOnly={sheetScopeOnly}
         // A sheet opened to DECIDE on is read-only: it is the record being
         // signed, not a draft. See isDecisionReview in
         // lib/spec-form-variants.js. `editParcaScope` is deliberately absent

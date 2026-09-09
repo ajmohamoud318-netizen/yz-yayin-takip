@@ -922,7 +922,13 @@ const subtasksDesignerBatchCreate = {
   body: {
     type: 'object',
     additionalProperties: false,
-    required: ['designer_id', 'pages', 'start_page'],
+    // `pages` + `start_page` (one contiguous range) and `segments` (a
+    // list of them) are both accepted; the handler normalises to a
+    // segment list and refuses a body carrying neither. Kept out of
+    // `required` so ajv doesn't reject the shape the other form uses —
+    // "at least one of" is enforced in the route with a Turkish
+    // message rather than ajv's English schema error.
+    required: ['designer_id'],
     properties: {
       designer_id: { type: 'string', minLength: 1, maxLength: 64 },
       // Fastify v5's ajv runs in strict mode by default; union types
@@ -946,6 +952,26 @@ const subtasksDesignerBatchCreate = {
         type: 'integer',
         minimum: 1,
         maximum: 100000,
+      },
+      // A designer typing a comma list ("1,5, 7") in the İç Sayfalar
+      // input sends one segment per run of pages. Each lands as its
+      // own batch row — the table stores one contiguous range per row
+      // — inserted inside a single transaction so the save is atomic.
+      // maxItems mirrors PAGE_LIST_MAX_SEGMENTS on the client; the
+      // route re-checks it since the client copy is only a shortcut.
+      segments: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 64,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['start_page', 'pages'],
+          properties: {
+            start_page: { type: 'integer', minimum: 1, maximum: 100000 },
+            pages: { type: 'integer', minimum: 1, maximum: 100000 },
+          },
+        },
       },
     },
   },

@@ -96,33 +96,46 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
 
   /**
    * migration 067 — designer pages-done save. Each call appends one
-   * batch row to `subtask_designer_batches`; the running total on the
-   * parent subtask is the SUM of every batch's `pages`. The optimistic
-   * merge matches the same recompute the server's trigger runs so the
-   * "X / Y tamamlandı" header is in lockstep with the DB before the
-   * response lands.
+   * batch row to `subtask_designer_batches` per segment; the running
+   * total on the parent subtask is the SUM of every batch's `pages`.
+   * The optimistic merge matches the same recompute the server's
+   * trigger runs so the "X / Y tamamlandı" header is in lockstep with
+   * the DB before the response lands.
+   *
+   * `segments` is parsePageList's normalised `[{ start, pages }, …]`
+   * — one entry for a plain "5" / "1-5", several for a comma list
+   * ("1,5,7"). The whole list goes in one request, so the revert path
+   * below covers all of it: either every segment lands or none does.
    */
-  async function handleDesignerBatchAdd(sub, designerId, pages, startPage) {
+  async function handleDesignerBatchAdd(sub, designerId, segments) {
     if (!canEditSubtask(sub)) return
+    const list = Array.isArray(segments) ? segments : []
+    if (list.length === 0) return
     // Optimistic pre-state for revert.
     const before = project?.subtasks?.find((s) => s.id === sub.id) ?? null
-    const optimisticBatch = {
-      id: `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    const stamp = new Date().toISOString()
+    const optimisticBatches = list.map((seg, i) => ({
+      id: `optimistic-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
       designer_id: designerId,
       designer_name: null,
-      pages,
-      start_page: startPage ?? null,
-      created_at: new Date().toISOString(),
+      pages: seg.pages,
+      start_page: seg.start ?? null,
+      created_at: stamp,
       redone_at: null,
       redone_by: null,
       redone_by_name: null,
-    }
+    }))
     setProject((prev) => {
       if (!prev) return prev
       const subs = (prev.subtasks ?? []).map((s) => {
         if (s.id !== sub.id) return s
         const total = Number(s.total_pages ?? 0)
-        const nextBatches = [optimisticBatch, ...(Array.isArray(s.designer_batches) ? s.designer_batches : [])]
+        // Newest first, and within one save the highest page first so
+        // the log reads the same way the server will return it.
+        const nextBatches = [
+          ...[...optimisticBatches].reverse(),
+          ...(Array.isArray(s.designer_batches) ? s.designer_batches : []),
+        ]
         const sum = nextBatches.reduce((acc, b) => acc + Number(b.pages ?? 0), 0)
         const pagesDoneClamped = total > 0 ? Math.min(sum, total) : sum
         return {
@@ -135,21 +148,20 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
       return { ...prev, subtasks: subs, progress: subtaskProgress(subs) }
     })
     try {
-      const res = await api.addSubtaskDesignerBatch(sub.id, { designerId, pages, startPage })
+      const res = await api.addSubtaskDesignerBatch(sub.id, { designerId, segments: list })
       if (res) {
         setProject((prev) => {
           if (!prev) return prev
           // The server's response carries:
           //   { subtask_id, project_id, total_pages, pages_done, is_done,
-          //     batch: { id, designer_id, designer_name, pages, ... },
-          //     designer_batches?: [...],   // not currently returned but
-          //                                    the trigger keeps pages_done in sync
+          //     batches: [{ id, designer_id, designer_name, pages, ... }],
+          //     batch: <batches[0]>,        // kept for older callers
           //     project_progress, project: { id, progress, version } }
           // Trust the server's pages_done / is_done. We keep the
-          // optimistically-appended batch (its id is the temp one)
-          // and let the next refetch swap the id — the user's draft is
-          // already cleared and the visible total is correct, which is
-          // what matters for the optimistic path.
+          // optimistically-appended batches (their ids are the temp
+          // ones) and let the next refetch swap them — the user's draft
+          // is already cleared and the visible total is correct, which
+          // is what matters for the optimistic path.
           const subs = (prev.subtasks ?? []).map((s) => (
             s.id === res.subtask_id
               ? {

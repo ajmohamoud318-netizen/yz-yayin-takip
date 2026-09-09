@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import { useProjects } from '@/hooks/useProjects'
 import { formatDateTr } from '@/lib/utils'
 
 export default function DeletedProjects() {
@@ -17,6 +18,9 @@ export default function DeletedProjects() {
   const [error, setError] = useState(null)
   const [restoreTarget, setRestoreTarget] = useState(null)
   const [restoring, setRestoring] = useState(false)
+  // Restoring puts the project back into `GET /api/projects`; without this the
+  // shared list keeps its pre-restore copy until the next 30 s tick.
+  const { refetch: refetchProjects } = useProjects()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -41,7 +45,7 @@ export default function DeletedProjects() {
       await api.restoreProject(restoreTarget.id)
       toast.success('Proje geri yüklendi.')
       setRestoreTarget(null)
-      await load()
+      await Promise.all([load(), refetchProjects()])
     } catch (err) {
       toast.error(err.message || 'Proje geri yüklenemedi.')
     } finally {

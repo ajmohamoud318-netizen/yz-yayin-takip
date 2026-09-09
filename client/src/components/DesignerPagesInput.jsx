@@ -4,7 +4,7 @@ import { Check, Loader2, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import UserAvatar from '@/components/UserAvatar.jsx'
 import { cn, formatDateTr } from '@/lib/utils'
-import { parsePageRange } from '@/lib/page-range'
+import { countPageListPages, formatPageList, parsePageList } from '@/lib/page-range'
 
 /**
  * migration 067/068 — the "İç Sayfalar" subtask renders as a session log.
@@ -21,6 +21,12 @@ import { parsePageRange } from '@/lib/page-range'
  * overlaps an existing batch on this subtask, so the designer's log
  * can never double-count a page.
  *
+ * The input also takes a comma list ("1,5, 7") for the common case of
+ * a designer finishing scattered pages rather than a clean run. Each
+ * comma segment becomes its own batch row — the table stores one
+ * contiguous range per row — but they're sent as a single request so
+ * one gesture is one atomic write (all the pages land, or none do).
+ *
  * Props:
  *   • subtask — kind='pages' row from project.subtasks:
  *       { id, total_pages, pages_done, is_done, designer_batches: […],
@@ -31,8 +37,11 @@ import { parsePageRange } from '@/lib/page-range'
  *           created_at, redone_at, redone_by, redone_by_name }
  *   • canEdit — boolean. Stages where the input is read-only still
  *       render the batch log so the team can see who shipped what.
- *   • onAddBatch — async (designerId, pages, startPage) => Promise.
- *       Hook wires the API call + optimistic merge + revert on failure.
+ *   • onAddBatch — async (designerId, segments) => Promise, where
+ *       `segments` is the normalised `[{ start, pages }, …]` list from
+ *       parsePageList (sorted, non-overlapping; one entry for the plain
+ *       "5" / "1-5" case). Hook wires the API call + optimistic merge
+ *       + revert on failure.
  *   • onRedoneBatch — async (batchId) => Promise. Idempotent — a second
  *       call after the first is a no-op.
  */
@@ -78,29 +87,49 @@ export default function DesignerPagesInput({
   // 1-5" misled the designer into typing numbers bigger than what the
   // route would accept; the route still rejects oversize ranges with
   // a clear Turkish message, but a placeholder that names the real
-  // ceiling means most attempts pass on the first try.
+  // ceiling means most attempts pass on the first try. The comma form
+  // rides along in the placeholder because it's the only place the
+  // designer would discover it.
+  // The comma example only appears once the book is big enough for it to
+  // be honest — "1,3,5" next to a 2-page remainder names pages that would
+  // be rejected on submit.
   const remaining = Math.max(0, total - pagesDone)
-  const placeholder = remaining > 0
-    ? `${remaining} veya 1-${remaining}`
-    : '—'
+  const placeholder = (() => {
+    if (remaining <= 0) return '—'
+    if (remaining >= 5) return `1-${remaining} veya 1,3,5`
+    return `1-${remaining}`
+  })()
+
+  // Live read-back of the draft. A comma list is normalised before it
+  // is sent (sorted, overlaps and adjacent runs merged), so "5,1-3,2"
+  // becomes "1-3, 5" — worth showing, or the designer can't tell what
+  // they're about to log. Only rendered for multi-segment drafts; a
+  // plain "1-5" already reads as itself.
+  const draftSegments = draftPage ? parsePageList(draftPage) : null
+  const draftPreview = draftSegments && draftSegments.length > 1
+    ? `${formatPageList(draftSegments)} · ${countPageListPages(draftSegments)} sayfa`
+    : null
 
   async function commitAdd(e) {
     if (e) e.preventDefault()
     if (!canEdit || saving) return
-    const parsed_range = parsePageRange(draftPage)
-    if (!parsed_range) {
-      setError('Sayfa numarası veya aralığı girin (örn. 5 veya 1-5).')
+    const segments = parsePageList(draftPage)
+    if (!segments) {
+      setError('Sayfa numarası, aralığı veya listesi girin (örn. 5, 1-5 veya 1,3,5).')
       return
     }
-    const { start: startPage, pages } = parsed_range
     // Migration 068 — the route checks both the range bounds (start + pages
     // - 1 ≤ total) and the overlap with existing batches. We mirror the
     // bounds check here so the designer gets feedback before the round
     // trip; the server still re-validates inside the FOR UPDATE lock,
-    // so a concurrent bump of total_pages can't sneak past.
-    if (total > 0 && startPage + pages - 1 > total) {
+    // so a concurrent bump of total_pages can't sneak past. With a comma
+    // list the highest page decides — parsePageList sorts, so it's the
+    // end of the last segment.
+    const last = segments[segments.length - 1]
+    const highest = last.start + last.pages - 1
+    if (total > 0 && highest > total) {
       setError(
-        `Sayfa aralığı (${startPage}-${startPage + pages - 1}) toplam sayfa sayısını (${total}) aşamaz.`,
+        `Sayfa ${highest} toplam sayfa sayısını (${total}) aşamaz.`,
       )
       return
     }
@@ -111,7 +140,7 @@ export default function DesignerPagesInput({
     setSaving(true)
     setError(null)
     try {
-      await onAddBatch(draftDesignerId, pages, startPage)
+      await onAddBatch(draftDesignerId, segments)
       setDraftPage('')
     } catch (e2) {
       setError(e2?.message || 'Sayfa eklenemedi.')
@@ -280,26 +309,27 @@ export default function DesignerPagesInput({
             <input
               type="text"
               inputMode="numeric"
-              // Migration 068 — accept either "5" or "1-5". The onChange
-              // strips anything that isn't a digit or a dash, so pasting
-              // "abc1-2xyz" lands as "1-2" and a stray "e" can't sneak
-              // through. parsePageRange then validates the shape; we don't
-              // rely on the regex here because the user might be mid-typing
-              // ("1-" while reaching for the end of the range).
+              // Accept "5", "1-5", or a comma list "1,5, 7". The onChange
+              // strips anything that isn't a digit, a dash or a comma, so
+              // pasting "abc1-2xyz" lands as "1-2" and a stray "e" can't
+              // sneak through. parsePageList then validates the shape; we
+              // don't rely on the regex here because the user might be
+              // mid-typing ("1-" while reaching for the end of the range,
+              // or "1,5," while reaching for the next page).
               value={draftPage}
               disabled={saving}
               onChange={(e) => {
-                const cleaned = e.target.value.replace(/[^\d-]/g, '')
+                const cleaned = e.target.value.replace(/[^\d,\s-]/g, '')
                 setDraftPage(cleaned)
                 if (error) setError(null)
               }}
               onBlur={() => {
-                if (draftPage && parsePageRange(draftPage)) commitAdd()
+                if (draftPage && parsePageList(draftPage)) commitAdd()
               }}
               onKeyDown={onKeyDown}
               placeholder={placeholder}
               className={cn(
-                'h-8 w-24 rounded-md border bg-background px-2 text-right tabular-nums text-sm shadow-sm',
+                'h-8 w-36 rounded-md border bg-background px-2 text-right tabular-nums text-sm shadow-sm',
                 'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',
                 'disabled:cursor-not-allowed disabled:opacity-60',
                 error ? 'border-rose-300 ring-1 ring-rose-200' : 'border-input',
@@ -322,10 +352,16 @@ export default function DesignerPagesInput({
               )}
             </Button>
           </div>
-          {error && (
+          {error ? (
             <span className="basis-full text-[11px] text-rose-600">
               {error}
             </span>
+          ) : (
+            draftPreview && (
+              <span className="basis-full text-[11px] tabular-nums text-muted-foreground">
+                → {draftPreview}
+              </span>
+            )
           )}
         </form>
       )}
