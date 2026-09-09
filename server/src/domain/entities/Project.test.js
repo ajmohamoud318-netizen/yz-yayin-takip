@@ -183,12 +183,15 @@ describe('Project.demoStart', () => {
 })
 
 describe('Project.ozalitCancel', () => {
-  it('cancels a not-yet-started request back to tasarim, no attempt bump', () => {
+  // NOT 'tasarim' — ozalit is requested FROM demo_onay, so undoing the
+  // request lands back there with the already-approved demo intact, rather
+  // than throwing away the whole demo round over a one-click undo.
+  it('cancels a not-yet-started request back to demo_onay, no attempt bump', () => {
     const project = new Project(baseProject({
       stage: 'ozalit_teslim', ozalit_requested: true, ozalit_attempt: 1,
     }))
     const event = project.ozalitCancel(L1)
-    assert.equal(project.stage, 'tasarim')
+    assert.equal(project.stage, 'demo_onay')
     assert.equal(project.ozalit_requested, false)
     assert.equal(project.ozalit_attempt, 1, 'attempt untouched')
     assert.equal(event.notification.kind, 'ozalitCancelled')
@@ -254,18 +257,25 @@ describe('Project.advance', () => {
     assert.equal(project.last_reject_type, null)
     assert.equal(event.type, 'project.advance')
     assert.equal(event.notification.kind, 'transition')
+    // A physical redo round makes the ozalit gate's old routing rows stale —
+    // see deleteParcaStateForGate. This is the entity-level wiring check
+    // (runFsm → event.parcaStateResetGate); the FSM's own decision is pinned
+    // in transitions.ozalit.test.js.
+    assert.equal(event.parcaStateResetGate, 'ozalit')
   })
 
   // Migration 061: the screen route skips the matbaa leg entirely and lands
   // on the approval stage itself.
   it('ozalit_onay (unchanged) on an ozalit rejection resubmit routed ekran', () => {
     const project = resubmit()
-    project.advance(L1, { route: 'ekran' })
+    const event = project.advance(L1, { route: 'ekran' })
     assert.equal(project.stage, 'ozalit_onay')
     assert.equal(project.ekran_ozalit, true)
     assert.equal(project.ozalit_requested, false)
     // Nothing physical arrived, so nothing may claim to have been received.
     assert.equal(project.ozalit_received, false)
+    // No round started on this leg — nothing to reset.
+    assert.equal(event.parcaStateResetGate, null)
   })
 
   it('refuses the resubmit when no route was chosen', () => {
@@ -285,6 +295,20 @@ describe('Project.advance', () => {
     }))
     assert.throws(() => project.advance(L1), /Revize bekleyen/)
   })
+
+  it('resets the demo gate on leaving tasarim — first send or a resubmit alike', () => {
+    // The generic forward branch (not the held-demo resend leg) handles both
+    // the very first "Demo İsteyin" and a resubmit after a whole-round
+    // reject-to-designer bounced the project back here. Either way, any
+    // parça_state rows left over from a PRIOR round (a per-parça reject/route
+    // choice before this project ever reached tasarim) are stale — see
+    // deleteParcaStateForGate.
+    const project = new Project(baseProject({ stage: 'tasarim' }))
+    const event = project.advance(L1)
+    assert.equal(project.stage, 'demo_teslim')
+    assert.equal(event.parcaStateResetGate, 'demo')
+  })
+
 
   it('approve at <100% holds the project at demo_onay (demo_held=true)', () => {
   // The "approve at <100% holds the project at demo_onay" branch is a

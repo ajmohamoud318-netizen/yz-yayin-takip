@@ -342,7 +342,8 @@ describe('ekran ozalit', () => {
   })
 
   it('the ekran route lands on ozalit_onay with no matbaa leg', () => {
-    const { project: next, history } = computeAdvance(revized(), D1, { route: 'ekran' })
+    const result = computeAdvance(revized(), D1, { route: 'ekran' })
+    const { project: next, history } = result
     assert.equal(next.stage, 'ozalit_onay')
     assert.equal(next.ekran_ozalit, true)
     assert.equal(next.ozalit_requested, false, 'the matbaa is never asked for a proof')
@@ -351,6 +352,8 @@ describe('ekran ozalit', () => {
     // physical route doesn't re-count either, so neither may this one.
     assert.equal(next.ozalit_attempt, 1)
     assert.equal(history.event, 'ekran_ozalit_requested')
+    // No round starts at the matbaa on this leg — nothing to reset.
+    assert.equal(result.parcaStateResetGate, undefined)
   })
 
   it('one leader approves it straight through to baski_onay', () => {
@@ -392,10 +395,16 @@ describe('ekran ozalit', () => {
   // The other half of the user-facing promise: picking "normal ozalit" must
   // still go through the matbaa and the full leader+designer ledger.
   it('the physical route is unchanged — matbaa leg plus multi-party sign-off', () => {
-    const { project: sent } = computeAdvance(revized(), D1, { route: 'ozalit' })
+    const result = computeAdvance(revized(), D1, { route: 'ozalit' })
+    const { project: sent } = result
     assert.equal(sent.stage, 'ozalit_teslim')
     assert.equal(sent.ekran_ozalit, false)
     assert.equal(sent.ozalit_requested, true, 'the matbaa is asked for a proof')
+    // A physical redo is a fresh round for every parça — any parça_state rows
+    // from the round this reject bounced back must not survive into it. See
+    // deleteParcaStateForGate; the entity-level wiring is pinned separately in
+    // Project.test.js.
+    assert.equal(result.parcaStateResetGate, 'ozalit')
 
     // ...and once delivered, one leader is still not enough.
     const delivered = ozalitProject({ ekran_ozalit: false })

@@ -97,9 +97,14 @@ describe('demo cancel', () => {
 })
 
 describe('ozalit cancel', () => {
-  it('sends the project back to tasarim without bumping ozalit_attempt', () => {
+  // NOT 'tasarim' — ozalit is requested FROM demo_onay (STAGE_PIPELINE.TR: …,
+  // demo_onay, ozalit_teslim, ozalit_onay, …), so undoing a mistaken request
+  // lands back there, with the already-approved demo intact. Bouncing all the
+  // way to tasarim (the old behaviour, copy-pasted from computeDemoCancel and
+  // never corrected) threw away a fully signed-off demo over a one-click undo.
+  it('sends the project back to demo_onay without bumping ozalit_attempt', () => {
     const { project: next } = computeOzalitCancel(ozalitProject(), leader, { designerIds: [] })
-    assert.equal(next.stage, 'tasarim')
+    assert.equal(next.stage, 'demo_onay')
     assert.equal(next.ozalit_attempt, 1)
     assert.equal(next.ozalit_requested, false)
   })

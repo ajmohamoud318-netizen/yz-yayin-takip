@@ -54,6 +54,26 @@ describe('reject-to-matbaa numbering', () => {
     assert.ok(!(next.subtasks ?? []).some((s) => s.needs_revize))
   })
 
+  // The reprint is a genuinely new round for every parça — a stale parca_state
+  // row from before this reject would make the new round's matbaa queue skip a
+  // parça, and its delivery gate think that parça already arrived. See
+  // deleteParcaStateForGate's comment.
+  it('resets the demo gate\'s per-parça routing table', () => {
+    const result = computeRejection(demoProject(), 'matbaa yeniden bassın', [], 'matbaa', ctx)
+    assert.equal(result.parcaStateResetGate, 'demo')
+  })
+
+  // A PARTIAL (per-parça) reject-to-matbaa must not take this branch — it
+  // already upserts exactly the one parça being sent back via `parcaState`,
+  // and resetting the whole gate would erase every other parça's routing.
+  it('does not reset the whole gate on a per-parça matbaa reject', () => {
+    const result = computeRejection(
+      demoProject(), 'matbaa yeniden bassın', [], 'matbaa',
+      { ...ctx, parcalar: ['KUTU'] },
+    )
+    assert.equal(result.parcaStateResetGate, undefined)
+  })
+
   it('reject-to-designer also bumps demo_attempt (genuine redesign)', () => {
     const { project: next } = computeRejection(
       demoProject(), 'tasarım değişsin', ['s1'], 'designer', ctx,
@@ -164,6 +184,30 @@ describe('demo re-send gating (demo_held)', () => {
     assert.equal(next.stage, 'demo_teslim')       // new round goes to the matbaa
     assert.equal(next.demo_attempt, 6)            // this IS a new demo — bump
     assert.equal(next.demo_held, false)           // hold cleared
+  })
+
+  // Same reasoning as the whole-round reject-to-matbaa test above: this round's
+  // parça_state rows describe a demo that is being superseded, and reading them
+  // against the new round is what corrupted the matbaa's queue and delivery
+  // gate for a resent demo (see deleteParcaStateForGate).
+  it('resets the demo gate\'s per-parça routing table on resend', () => {
+    const result = computeAdvance(demoProject({ demo_held: true }), leader)
+    assert.equal(result.parcaStateResetGate, 'demo')
+  })
+})
+
+// The reset is scoped to leaving 'tasarim' specifically — not "any generic
+// forward step". An ordinary mid-pipeline advance (here: past a plain,
+// non-redo ozalit_onay) has no demo-gate parça_state of its own round to
+// speak of, and must not reset one that belongs to an entirely different gate.
+describe('generic advance does not touch parça routing outside tasarim', () => {
+  it('leaves parcaStateResetGate unset advancing ozalit_onay → baski_onay', () => {
+    const result = computeAdvance(
+      demoProject({ stage: 'ozalit_onay', last_reject_type: null, progress: 100 }),
+      leader,
+    )
+    assert.equal(result.project.stage, 'baski_onay')
+    assert.equal(result.parcaStateResetGate, undefined)
   })
 })
 

@@ -231,6 +231,36 @@ export async function upsertParcaState(client, projectId, parca, patch = {}) {
 }
 
 /**
+ * Wipe one gate's routing rows for a project — what a genuinely NEW round owes
+ * the old one before it starts.
+ *
+ * `upsertParcaState` above only ever touches the one parça it's told to; nothing
+ * in this file (or in domain/transitions.js) ever cleared a round's rows
+ * wholesale, so a parça's row from a FINISHED round silently outlived it. The
+ * next round's queue derivation (`deriveTeslimParcalar`,
+ * services/parca-service.js) and delivery gate (`allParcalarDelivered`,
+ * `parcalarStillOwed`) all read this table unscoped by round — they see
+ * "there's a row for KUTU, and it isn't with_matbaa/in_round" and conclude KUTU
+ * is done, when the truth is KUTU has not been touched in the round that is
+ * actually live. A fresh round's matbaa queue came up short a parça, and the
+ * round could complete without it ever being reprinted.
+ *
+ * Scoped to `gate` because a project can hold both a demo round and an ozalit
+ * round's history at once — resetting the wrong one would erase live routing on
+ * the leg that isn't restarting.
+ *
+ * Callers: every transition in domain/transitions.js that begins a round the
+ * old rows have nothing to say about — a demo/ozalit resend, the first send out
+ * of `tasarim`, and a whole-round reject-to-matbaa. NOT a "not received"
+ * redelivery of the SAME round (computeDemoNotReceived / computeOzalitNotReceived)
+ * — there the physical work still exists, so the rows are still true.
+ */
+export async function deleteParcaStateForGate(client, projectId, gate) {
+  const q = client ?? getPool()
+  await q.query('DELETE FROM parca_state WHERE project_id = $1 AND gate = $2', [projectId, gate])
+}
+
+/**
  * Make sure every parça a round carries has a row, without disturbing the ones
  * it doesn't.
  *

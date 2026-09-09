@@ -71,6 +71,12 @@ function runFsm(project, computeFn, args, eventType, notification) {
     // orchestrator upserts them inside the same transaction. Null for the
     // verbs that don't — which is all of them but demoEdit / ozalitEdit.
     parcaState: result.parcaState ?? null,
+    // A round genuinely starting over (resend, first send, an ozalit redo)
+    // owes the routing table the same clean slate its own ledger columns
+    // already get — see deleteParcaStateForGate's comment. Only computeAdvance
+    // ever sets this; every other verb through this wrapper leaves it null and
+    // the service skips the delete.
+    parcaStateResetGate: result.parcaStateResetGate ?? null,
   }
 }
 
@@ -433,6 +439,9 @@ export class Project {
       // the service upserts these into `parca_state` in the same transaction,
       // exactly as it does for `updatedSubtasks` below.
       parcaState: result.parcaState ?? null,
+      // Set only on a WHOLE-round reject-to-matbaa — the routing table's own
+      // reset, parallel to parcaState above. See deleteParcaStateForGate.
+      parcaStateResetGate: result.parcaStateResetGate ?? null,
       // Only the designer route actually mutates subtasks. The matbaa
       // route leaves them alone (same values as before reject), so the
       // service's `after` hook has nothing to write — `updatedSubtasks`

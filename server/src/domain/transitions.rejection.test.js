@@ -236,6 +236,32 @@ describe('per-parça ozalit rejection (migrations 068/069/070)', () => {
     assert.deepEqual(next.ozalit_approvals, [])
     assert.deepEqual(next.ozalit_parca_approvals, {})
   })
+
+  // A whole-round reject-to-MATBAA (as opposed to the in-place designer redo
+  // above) bounces straight back to ozalit_teslim for a full reprint — a fresh
+  // round for every parça, so any parça_state rows from before this reject are
+  // stale. See deleteParcaStateForGate; the demo-gate twin of this is pinned in
+  // transitions.demo.test.js.
+  it('a whole-round ozalit reject-to-matbaa resets the ozalit gate\'s routing table', () => {
+    const p = ozalitOnayProject()
+    const result = computeRejection(
+      p, 'baskı lekeli', [], 'matbaa',
+      { actorName: leader.name, actor: leader },
+    )
+    assert.equal(result.project.stage, 'ozalit_teslim')
+    assert.equal(result.parcaStateResetGate, 'ozalit')
+  })
+
+  // The per-parça twin must not take the whole-gate reset — it already upserts
+  // exactly the one parça being sent back.
+  it('a per-parça ozalit reject-to-matbaa does not reset the whole gate', () => {
+    const p = ozalitOnayProject()
+    const result = computeRejection(
+      p, 'KAPAK lekeli', [], 'matbaa',
+      { actorName: leader.name, actor: leader, parcalar: ['KAPAK'] },
+    )
+    assert.equal(result.parcaStateResetGate, undefined)
+  })
 })
 
 describe('per-parça reject gate', () => {
@@ -493,12 +519,15 @@ describe('matbaa re-delivery works on ÇİN, not just TR', () => {
   }
 
   it('a whole-round ÇİN reject to the matbaa goes back to cin_demo_teslim', () => {
-    const { project: next } = computeRejection(
+    const result = computeRejection(
       cinDemoOnay(), 'baskı lekeli', [], 'matbaa',
       { actorName: leader.name, actor: leader },
     )
-    assert.equal(next.stage, 'cin_demo_teslim')
-    assert.equal(next.reject_target, 'matbaa')
+    assert.equal(result.project.stage, 'cin_demo_teslim')
+    assert.equal(result.project.reject_target, 'matbaa')
+    // The ÇİN demo leg reads the same parca_state.gate value as TR ('demo') —
+    // there's no separate 'cin_demo' gate — so the reset applies here too.
+    assert.equal(result.parcaStateResetGate, 'demo')
   })
 
   it('a ÇİN reject to the designer still goes to tasarim', () => {

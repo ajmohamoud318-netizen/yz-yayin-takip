@@ -97,6 +97,16 @@ describe('demo "Teslim Alınamadı" escape hatch', () => {
       /yalnızca demo onay aşamasında/,
     )
   })
+
+  // This is a redelivery of the SAME round — the printer's physical work still
+  // exists, only the handover failed (see the file header and the "Başladım"
+  // test above). It must never carry the routing-table reset a genuinely new
+  // round does (computeAdvance's resend leg): that would wipe rows describing
+  // work that is still valid and still theirs to finish delivering.
+  it('does not reset the per-parça routing table — the round is not new', () => {
+    const result = computeDemoNotReceived(demoProject(), leader, { designerIds: [] })
+    assert.equal(result.parcaStateResetGate, undefined)
+  })
 })
 
 describe('ozalit "Teslim Alınamadı" escape hatch', () => {
@@ -155,5 +165,11 @@ describe('ozalit "Teslim Alınamadı" escape hatch', () => {
       () => computeOzalitNotReceived(ozalitProject({ stage: 'ozalit_teslim' }), leader, { designerIds: [] }),
       /yalnızca ozalit onay aşamasında/,
     )
+  })
+
+  // See the demo leg's matching test — same redelivery-not-restart reasoning.
+  it('does not reset the per-parça routing table — the round is not new', () => {
+    const result = computeOzalitNotReceived(ozalitProject(), leader, { designerIds: [] })
+    assert.equal(result.parcaStateResetGate, undefined)
   })
 })

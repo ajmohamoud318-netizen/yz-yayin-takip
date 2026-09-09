@@ -219,7 +219,10 @@ export default function DesignerPagesInput({
               name: b.designer_name,
             }
             const isMine = currentUserId && b.designer_id === currentUserId
-            const canRedo = canEdit && !b.redone_at && (isMine || canEdit /* leader override */)
+            // Only the batch's own designer can redo it — canEdit alone
+            // (any assigned designer on this pages subtask) is not enough,
+            // or Mehmet could redo Ayşe's batch and vice versa.
+            const canRedo = canEdit && !b.redone_at && isMine
             const whenLabel = (() => {
               const d = b.created_at ? new Date(b.created_at) : null
               if (!d || Number.isNaN(d.getTime())) return ''

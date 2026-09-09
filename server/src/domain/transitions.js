@@ -484,6 +484,10 @@ export function computeAdvance(project, actor, { route = null } = {}) {
         ekran_ozalit: false,
         ozalit_requested: true,
       },
+      // See the demo resend leg's matching comment below — a physical redo
+      // round owes the same reset, on the ozalit gate. The 'ekran' branch just
+      // above never reaches ozalit_teslim, so it needs none.
+      parcaStateResetGate: 'ozalit',
       history: makeEntry(project, {
         action: 'advance',
         from_stage: 'ozalit_onay',
@@ -588,6 +592,11 @@ export function computeAdvance(project, actor, { route = null } = {}) {
         last_reject_target: null,
         updated_at: now,
       },
+      // The per-parça routing table's own reset (migration 074 has no equivalent
+      // of the ledger wipe just above). Old rows are from a round this one
+      // supersedes — see deleteParcaStateForGate's comment for what reading them
+      // unscoped breaks in the new round's queue and delivery gate.
+      parcaStateResetGate: 'demo',
       history: makeEntry(project, {
         action: 'advance',
         from_stage: project.stage,
@@ -626,6 +635,14 @@ export function computeAdvance(project, actor, { route = null } = {}) {
       last_reject_target: null,
       updated_at: now,
     },
+    // Leaving 'tasarim' means a demo round is about to start — the first ever
+    // send, or a resubmit after a whole-round reject-to-designer bounced the
+    // project back here. Either way any parça_state rows left over (from a
+    // per-parça reject/route choice on the round before that reject) describe a
+    // round that is no longer live. See deleteParcaStateForGate. Every other
+    // step this generic branch also handles (baski_onay → baskida, etc.) has no
+    // parça routing table to speak of, so the gate is only ever 'demo' here.
+    ...(project.stage === 'tasarim' ? { parcaStateResetGate: 'demo' } : {}),
     history: makeEntry(project, {
       action: 'advance',
       from_stage: project.stage,
@@ -658,10 +675,20 @@ export function computeAdvance(project, actor, { route = null } = {}) {
  * one must satisfy the other or the last parça's delivery would refuse its own
  * advance.
  *
- * @param {{ round_parcalar?: string[], parca_state?: Array<{parca: string, state: string}> }} project
+ * `gate` matters because `project.parca_state` is every routing row this
+ * project has ever had, across BOTH the demo and ozalit legs — the same parça
+ * names (KUTU, KİTAP, …) are reused by both. A demo round that finished with
+ * KUTU resolved to `'pending'` leaves a row behind that satisfies "not
+ * with_matbaa/in_round" just as well as a genuinely-delivered ozalit row would
+ * — so without this filter, an ozalit round could read as fully delivered
+ * before the matbaa had touched it at all, off nothing but a same-named row
+ * from the demo round that came before it.
+ *
+ * @param {{ round_parcalar?: string[], parca_state?: Array<{parca: string, gate: string, state: string}> }} project
+ * @param {'demo' | 'ozalit'} gate
  * @returns {string[]} parça names still owed, empty when the sheet may go whole
  */
-function parcalarStillOwed(project) {
+function parcalarStillOwed(project, gate) {
   const parcalar = Array.isArray(project?.round_parcalar) ? project.round_parcalar : []
   // A single-parça (or snapshot-less) round never enters the per-parça queue —
   // `deriveTeslimParcalar` skips it — so the whole sheet IS the parça, and the
@@ -670,6 +697,7 @@ function parcalarStillOwed(project) {
   if (parcalar.length < 2) return []
   const byParca = new Map(
     (Array.isArray(project?.parca_state) ? project.parca_state : [])
+      .filter((r) => r?.gate === gate)
       .map((r) => [r.parca, r.state]),
   )
   return parcalar.filter((p) => {
@@ -681,8 +709,8 @@ function parcalarStillOwed(project) {
 }
 
 /** The refusal both teslim legs share, naming what is actually missing. */
-function assertRoundFullyDelivered(project) {
-  const owed = parcalarStillOwed(project)
+function assertRoundFullyDelivered(project, gate) {
+  const owed = parcalarStillOwed(project, gate)
   if (owed.length > 0) {
     badRequest(
       `Bu turun teslim edilmemiş parçaları var: ${owed.join(', ')}. `
@@ -702,7 +730,9 @@ function computeDemoTeslimAdvance(project, actor, now, approvalStage) {
   if (project.demo_change_requested_at != null) {
     badRequest('Bekleyen bir değişiklik talebi var, önce kabul veya reddedin.')
   }
-  assertRoundFullyDelivered(project)
+  // TR and ÇİN share one gate value ('demo') — parca_state.gate has no
+  // separate cin_demo, same as everywhere else this table is read.
+  assertRoundFullyDelivered(project, 'demo')
   assertCanEnterProductionLocal(approvalStage, project.progress)
   return {
     project: {
@@ -778,7 +808,7 @@ function computeOzalitTeslimAdvance(project, actor, now) {
   }
   // Same split-round guard as the demo leg, and for the same reason: an ozalit
   // round splits into parçalar exactly like a demo one does.
-  assertRoundFullyDelivered(project)
+  assertRoundFullyDelivered(project, 'ozalit')
   assertCanEnterProductionLocal('ozalit_onay', project.progress)
   return {
     project: {
@@ -2050,7 +2080,14 @@ export function computeOzalitCancel(project, actor, ctx = {}) {
   return {
     project: {
       ...project,
-      stage: 'tasarim',
+      // NOT 'tasarim' — that was copied verbatim from computeDemoCancel and
+      // never corrected. Demo is requested FROM tasarim, so cancelling it
+      // correctly returns there; ozalit is requested from demo_onay
+      // (STAGE_PIPELINE.TR: …, demo_onay, ozalit_teslim, ozalit_onay, …), so
+      // undoing the request has to land back on demo_onay — the fully-approved
+      // demo that led here is still good and must not be thrown away along
+      // with a mistaken ozalit click.
+      stage: 'demo_onay',
       // Deliberately NOT touching ozalit_attempt — nothing was delivered.
       ozalit_requested: false,
       ozalit_received: false,
@@ -2075,9 +2112,9 @@ export function computeOzalitCancel(project, actor, ctx = {}) {
       action: 'system',
       event: 'ozalit_cancelled',
       from_stage: project.stage,
-      to_stage: 'tasarim',
+      to_stage: 'demo_onay',
       done_by_name: actorName,
-      note: 'Ozalit talebi iptal edildi, tasarıma geri döndü',
+      note: 'Ozalit talebi iptal edildi, demo onayına geri döndü',
     }),
   }
 }
@@ -3108,7 +3145,19 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
     // are left untouched — but the attempt counter advances just like a
     // reject-to-designer, so the re-delivered demo/ozalit carries its own
     // number (matching the project timeline, which already counts it).
-    return { project: { ...base, ...counter }, history, parcaState }
+    return {
+      project: { ...base, ...counter },
+      history,
+      parcaState,
+      // WHOLE-round only. A reprint of the entire round makes every parça's
+      // prior routing stale — see deleteParcaStateForGate — the same reasoning
+      // as the resend legs in computeAdvance. A PARTIAL (per-parça) reject to
+      // the matbaa must NOT take this branch: `parcaState` above already
+      // upserted exactly the one parça being sent back, and resetting the whole
+      // gate here would erase the routing of every OTHER parça still sitting
+      // fine at the gate or mid-rework.
+      ...(!isPartial ? { parcaStateResetGate: isOzalit ? 'ozalit' : 'demo' } : {}),
+    }
   }
 
   // Which subtasks the designer has to rework.

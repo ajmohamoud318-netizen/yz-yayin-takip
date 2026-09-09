@@ -197,6 +197,19 @@ export function dropOrphanedRouted(routed, rounds) {
  * actually starts or delivers that parça.
  *
  * Rows already routed explicitly are skipped, so a parça never appears twice.
+ *
+ * The `existing` query below is scoped to THIS round's own `gate`, and that
+ * scoping matters more here than almost anywhere else this table is read. A
+ * project's demo round and its later ozalit round reuse the same parça names
+ * (KUTU, KİTAP, …), and any per-parça activity during the demo leg — a reject,
+ * an edit, a re-round — leaves a row behind in a resolved state (`'pending'`)
+ * once that round finished. Read without the gate filter, that row satisfies
+ * the skip condition below for the OZALİT round too: the leader ticks all of
+ * KUTU/KİTAP/KILAVUZ for the ozalit sheet, sends it, and the matbaa's queue
+ * derives zero cards — every one of them "already has a row that isn't
+ * with_matbaa/in_round" — so `printerParcaJobs` comes back empty and the whole
+ * split-round board never renders, silently falling back to the old
+ * whole-sheet "İşlemi Başlatın" card despite a genuinely multi-parça round.
  */
 async function deriveTeslimParcalar(routed, rounds) {
   const pool = getPool()
@@ -211,8 +224,8 @@ async function deriveTeslimParcalar(routed, rounds) {
     // for some other parça.
     if (parcalar.length < 2) continue
     const { rows: existing } = await pool.query(
-      'SELECT parca, state, started_at, attempt FROM parca_state WHERE project_id = $1',
-      [p.id],
+      'SELECT parca, state, started_at, attempt FROM parca_state WHERE project_id = $1 AND gate = $2',
+      [p.id, gate],
     )
     const byParca = new Map(existing.map((r) => [r.parca, r]))
     for (const parca of parcalar) {
@@ -306,14 +319,26 @@ async function loadParcaForUpdate(client, projectId, parca) {
  * Only then does the PROJECT move — a partial delivery leaves it at its teslim
  * stage, which is the whole point: the parçalar the matbaa hasn't done stay
  * theirs until they do.
+ *
+ * Scoped to `gate`, and it has to be: a project's demo round and ozalit round
+ * reuse the same parça names, and a demo-gate row left over in a resolved
+ * state (`'pending'`, once that round finished) is not "with_matbaa" or
+ * "in_round" either. Without the filter it satisfies this check for the
+ * ozalit round too — a same-named leftover from a round that is already over
+ * could read the CURRENT round as fully delivered before the matbaa had
+ * touched it, and silently advance the project on no real work at all.
+ *
+ * Exported for its own tests — it already takes `client` rather than reaching
+ * for `getPool()` internally, so a fake client can drive it directly. See
+ * `parca-service.test.js`.
  */
-async function allParcalarDelivered(client, project, gate) {
+export async function allParcalarDelivered(client, project, gate) {
   const snapshot = await loadLatestDemoSnapshot(client, project.id, gate)
   const parcalar = snapshot?.selectedComponents ?? []
   if (parcalar.length < 2) return true // single-parça round: the old whole-sheet behaviour
   const { rows } = await client.query(
-    'SELECT parca, state FROM parca_state WHERE project_id = $1',
-    [project.id],
+    'SELECT parca, state FROM parca_state WHERE project_id = $1 AND gate = $2',
+    [project.id, gate],
   )
   const byParca = new Map(rows.map((r) => [r.parca, r.state]))
   return parcalar.every((p) => {

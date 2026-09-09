@@ -28,8 +28,13 @@ import { computeAdvance } from './transitions.js'
 const printer = { id: 'u-m', role: 'printer', name: 'Matbaa' }
 const PARCALAR = ['KAPAK', 'KUTU']
 
-const row = (parca, state) => ({
-  parca, gate: 'demo', state, owner_role: 'printer', attempt: 1,
+// `gate` defaults to 'demo' — the demo describe block below is most of this
+// file's cases. The ozalit block passes 'ozalit' explicitly: parcalarStillOwed
+// now scopes its read to the round's own gate (a same-named row left over
+// from the OTHER leg no longer counts as this round's), so a row built for
+// the wrong gate would silently read as "never touched" again.
+const row = (parca, state, gate = 'demo') => ({
+  parca, gate, state, owner_role: 'printer', attempt: 1,
   delivered_at: state === 'pending' ? '2026-09-08T09:00:00.000Z' : null,
   received_at: null,
 })
@@ -133,7 +138,7 @@ describe('ozalit_teslim — the same rule', () => {
     assert.throws(
       () => advance(ozalitTeslim({
         round_parcalar: PARCALAR,
-        parca_state: [row('KAPAK', 'pending'), row('KUTU', 'with_matbaa')],
+        parca_state: [row('KAPAK', 'pending', 'ozalit'), row('KUTU', 'with_matbaa', 'ozalit')],
       })),
       /teslim edilmemiş parçaları var/,
     )
@@ -142,9 +147,22 @@ describe('ozalit_teslim — the same rule', () => {
   it('allows a fully delivered one', () => {
     const result = advance(ozalitTeslim({
       round_parcalar: PARCALAR,
-      parca_state: [row('KAPAK', 'pending'), row('KUTU', 'pending')],
+      parca_state: [row('KAPAK', 'pending', 'ozalit'), row('KUTU', 'pending', 'ozalit')],
     }))
     assert.equal(result.project.stage, 'ozalit_onay')
+  })
+
+  // A same-named row left over from the demo round that already finished
+  // must not count for the ozalit round just because the parça name matches —
+  // see parcalarStillOwed's gate scoping.
+  it('does not accept a same-named demo-gate row in place of an ozalit delivery', () => {
+    assert.throws(
+      () => advance(ozalitTeslim({
+        round_parcalar: PARCALAR,
+        parca_state: [row('KAPAK', 'pending', 'demo'), row('KUTU', 'pending', 'demo')],
+      })),
+      /teslim edilmemiş parçaları var/,
+    )
   })
 
   it('leaves the leader’s "Ozalit İste" step alone', () => {

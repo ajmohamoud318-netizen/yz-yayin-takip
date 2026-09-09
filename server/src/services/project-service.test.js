@@ -175,6 +175,16 @@ function makeClient({ project, subtasks = [], assignees = [], leaders = [] } = {
       if (/INSERT INTO demos/.test(sql)) {
         return { rows: [{ id: 'd-test' }] }
       }
+      if (/INSERT INTO parca_state/.test(sql)) {
+        // upsertParcaState's RETURNING row. Real values only where a caller
+        // could plausibly assert on them (project_id, parca, gate, state) —
+        // rowToParcaState needs these four; everything else it defaults on
+        // its own via `?? null` / `?? 1` / `?? false`.
+        const [projectId, parca, gate, state] = params
+        return { rows: [{ project_id: projectId, parca, gate, state: state ?? 'pending' }] }
+      }
+      // DELETE FROM parca_state (this fix's own reset) falls through to the
+      // catch-all below — it returns no rows either way.
       return { rows: [] }
     },
   }
@@ -414,6 +424,77 @@ describe('project-service — reject', () => {
     assert.equal(hist.action, 'reject')
     assert.equal(hist.reason, 'yanlış')
     assert.equal(hist.reject_target, 'designer')
+  })
+})
+
+/**
+ * The routing table's own reset — the third write path, alongside the
+ * subtask UPDATEs and the parça upserts above. A project that starts a fresh
+ * round (resend, first send, an ozalit redo, a whole-round reject-to-matbaa)
+ * owes its old parça_state rows nothing; see deleteParcaStateForGate's
+ * comment for what reading them into the NEW round corrupted (the matbaa's
+ * queue and its delivery gate). These check that the event's
+ * `parcaStateResetGate` actually reaches a scoped DELETE, and that ordinary
+ * verbs never emit one.
+ */
+describe('project-service — parça routing reset', () => {
+  it('deletes the demo gate\'s rows on a plain first send out of tasarim', async () => {
+    const project = projectRow({ stage: 'tasarim', progress: 100 })
+    const client = makeClient({ project })
+
+    await service.advanceProject('p-1', L1, {}, client)
+
+    const del = client.one(/DELETE FROM parca_state/)
+    assert.deepEqual(del.params, ['p-1', 'demo'])
+  })
+
+  it('deletes the ozalit gate\'s rows on the physical redo leg', async () => {
+    const project = projectRow({ stage: 'ozalit_onay', last_reject_type: 'ozalit', progress: 100 })
+    const client = makeClient({ project })
+
+    await service.advanceProject('p-1', L1, { route: 'ozalit' }, client)
+
+    const del = client.one(/DELETE FROM parca_state/)
+    assert.deepEqual(del.params, ['p-1', 'ozalit'])
+  })
+
+  it('deletes nothing on the ekran redo leg — no round starts at the matbaa', async () => {
+    const project = projectRow({ stage: 'ozalit_onay', last_reject_type: 'ozalit', progress: 100 })
+    const client = makeClient({ project })
+
+    await service.advanceProject('p-1', L1, { route: 'ekran' }, client)
+
+    assert.equal(client.matching(/DELETE FROM parca_state/).length, 0)
+  })
+
+  it('deletes the right gate\'s rows on a whole-round reject-to-matbaa', async () => {
+    const project = projectRow({ stage: 'demo_onay', demo_received: true })
+    const client = makeClient({ project })
+
+    await service.rejectProject('p-1', L1, { reason: 'baskı lekeli', rejectTarget: 'matbaa' }, client)
+
+    const del = client.one(/DELETE FROM parca_state/)
+    assert.deepEqual(del.params, ['p-1', 'demo'])
+  })
+
+  it('deletes nothing on a per-parça reject-to-matbaa', async () => {
+    const project = projectRow({ stage: 'demo_onay', demo_received: true })
+    const client = makeClient({ project })
+
+    await service.rejectProject('p-1', L1, {
+      reason: 'KUTU lekeli', rejectTarget: 'matbaa', parcalar: ['KUTU'],
+    }, client)
+
+    assert.equal(client.matching(/DELETE FROM parca_state/).length, 0)
+  })
+
+  it('deletes nothing on an ordinary receive — no round starts', async () => {
+    const project = projectRow({ stage: 'demo_onay', demo_received: false, assignees: [D1] })
+    const client = makeClient({ project, assignees: [D1] })
+
+    await service.receiveDemo('p-1', L1, client)
+
+    assert.equal(client.matching(/DELETE FROM parca_state/).length, 0)
   })
 })
 

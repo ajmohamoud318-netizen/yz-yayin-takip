@@ -26,7 +26,7 @@ import { isTitleConflictError } from '../domain/project-title.js'
 import { Project } from '../domain/entities/Project.js'
 import { assertNotLegacy } from '../domain/pipeline.js'
 import { canonicalise } from './deep-equal.js'
-import { upsertParcaState } from './parca-state-repository.js'
+import { upsertParcaState, deleteParcaStateForGate } from './parca-state-repository.js'
 import {
   listProjects as repoListProjects,
   getProject,
@@ -272,6 +272,16 @@ async function runProjectCommand(projectId, actor, { prepare, run, after } = {},
           [s.id, !!s.is_done, s.done_at ?? null, s.pages_done ?? null, !!s.needs_revize],
         )
       }
+    }
+
+    // The routing table's own reset: a round that is genuinely starting over
+    // (resend, first send, an ozalit redo, a whole-round reject-to-matbaa) owes
+    // its old rows nothing — see deleteParcaStateForGate. Runs BEFORE the
+    // upserts below on principle (clear stale rows before writing fresh ones),
+    // though in practice no event carries both: a resend has no per-parça
+    // patches of its own, and a per-parça reject never resets a whole gate.
+    if (event.parcaStateResetGate) {
+      await deleteParcaStateForGate(client, projectId, event.parcaStateResetGate)
     }
 
     // Per-parça routing rows (migration 074) — the third write path, for the

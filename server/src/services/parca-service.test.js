@@ -22,7 +22,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { dropOrphanedRouted } from './parca-service.js'
+import { dropOrphanedRouted, allParcalarDelivered } from './parca-service.js'
 
 /** A routed row as `listParcaStateByOwner('printer')` hands it over. */
 const routedRow = (project_id, parca, gate = 'demo') => ({
@@ -119,5 +119,119 @@ describe('dropOrphanedRouted', () => {
     assert.deepEqual(dropOrphanedRouted([], rounds({})), [])
     assert.deepEqual(dropOrphanedRouted(null, rounds({})), [])
     assert.deepEqual(dropOrphanedRouted(undefined, rounds({})), [])
+  })
+})
+
+/**
+ * "Is every parça of this round now off the matbaa's desk?" — the check that
+ * decides whether the LAST delivery also advances the project.
+ *
+ * A project's demo round and its later ozalit round reuse the same parça
+ * names, and a demo-gate row left behind in a resolved state (`'pending'`,
+ * once that round finished) is not `with_matbaa`/`in_round` either — so read
+ * without a gate filter, it satisfies this check for the ozalit round too.
+ * These pin the fix: the query is scoped to the round's own `gate`, so a
+ * same-named row from the OTHER leg can never stand in for a real delivery.
+ */
+describe('allParcalarDelivered', () => {
+  /** A fake client serving the two queries this function issues, in order:
+   *  the demo/ozalit snapshot lookup (loadLatestDemoSnapshot), then the
+   *  parça-state read this fix scopes to `gate`. */
+  function fakeClient({ selectedComponents, attempt = 1, parcaStateRows = [] }) {
+    return {
+      async query(sql, params) {
+        if (/FROM demos\s+WHERE project_id = \$1 AND order_id IS NULL AND kind = \$2/.test(sql)) {
+          return {
+            rows: [{
+              payload: { _selectedComponents: selectedComponents },
+              attempt,
+            }],
+          }
+        }
+        if (/FROM parca_state WHERE project_id = \$1 AND gate = \$2/.test(sql)) {
+          const [, gate] = params
+          return { rows: parcaStateRows.filter((r) => r.gate === gate) }
+        }
+        throw new Error(`unexpected query: ${sql}`)
+      },
+    }
+  }
+
+  const project = { id: 'p-1' }
+
+  it('is true for a single-parça round regardless of parça_state — old whole-sheet behaviour', () => {
+    const client = fakeClient({ selectedComponents: ['KAPAK'], parcaStateRows: [] })
+    return allParcalarDelivered(client, project, 'ozalit').then((result) => {
+      assert.equal(result, true)
+    })
+  })
+
+  it('is false while a parça has never been touched in THIS round', () => {
+    const client = fakeClient({
+      selectedComponents: ['KAPAK', 'KUTU'],
+      parcaStateRows: [{ parca: 'KAPAK', state: 'pending', gate: 'ozalit' }],
+    })
+    return allParcalarDelivered(client, project, 'ozalit').then((result) => {
+      assert.equal(result, false, 'KUTU has no ozalit-gate row at all')
+    })
+  })
+
+  it('is false while a parça is still on the matbaa\'s desk in this round', () => {
+    const client = fakeClient({
+      selectedComponents: ['KAPAK', 'KUTU'],
+      parcaStateRows: [
+        { parca: 'KAPAK', state: 'pending', gate: 'ozalit' },
+        { parca: 'KUTU', state: 'in_round', gate: 'ozalit' },
+      ],
+    })
+    return allParcalarDelivered(client, project, 'ozalit').then((result) => {
+      assert.equal(result, false)
+    })
+  })
+
+  it('is true once every parça has a resolved row in THIS round\'s gate', () => {
+    const client = fakeClient({
+      selectedComponents: ['KAPAK', 'KUTU'],
+      parcaStateRows: [
+        { parca: 'KAPAK', state: 'pending', gate: 'ozalit' },
+        { parca: 'KUTU', state: 'pending', gate: 'ozalit' },
+      ],
+    })
+    return allParcalarDelivered(client, project, 'ozalit').then((result) => {
+      assert.equal(result, true)
+    })
+  })
+
+  // The regression: a demo round finished earlier and left resolved rows
+  // behind for the same parça names. Read without the gate filter, those
+  // rows alone would make a completely untouched ozalit round look finished.
+  it('does not let a resolved DEMO-gate row stand in for an ozalit delivery', () => {
+    const client = fakeClient({
+      selectedComponents: ['KAPAK', 'KUTU'],
+      parcaStateRows: [
+        { parca: 'KAPAK', state: 'pending', gate: 'demo' },
+        { parca: 'KUTU', state: 'pending', gate: 'demo' },
+      ],
+    })
+    return allParcalarDelivered(client, project, 'ozalit').then((result) => {
+      assert.equal(result, false, 'these rows belong to the demo round, not the live ozalit one')
+    })
+  })
+
+  it('is unaffected by rows on the other gate once its own gate is genuinely complete', () => {
+    const client = fakeClient({
+      selectedComponents: ['KAPAK', 'KUTU'],
+      parcaStateRows: [
+        { parca: 'KAPAK', state: 'pending', gate: 'ozalit' },
+        { parca: 'KUTU', state: 'pending', gate: 'ozalit' },
+        // Leftover demo-gate rows for the same names — must be ignored, not
+        // just harmlessly redundant.
+        { parca: 'KAPAK', state: 'with_matbaa', gate: 'demo' },
+        { parca: 'KUTU', state: 'in_round', gate: 'demo' },
+      ],
+    })
+    return allParcalarDelivered(client, project, 'ozalit').then((result) => {
+      assert.equal(result, true)
+    })
   })
 })

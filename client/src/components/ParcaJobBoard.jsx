@@ -6,6 +6,7 @@ import api from '@/api'
 import DemoFormDialog from '@/components/DemoFormDialog'
 import OzalitFormDialog from '@/components/OzalitFormDialog'
 import ParcaJobGroup from '@/components/ParcaJobGroup'
+import { opensNarrowed } from '@/lib/spec-form-scope'
 
 /**
  * The matbaa's per-parça jobs, wherever they are shown (migration 074).
@@ -201,6 +202,13 @@ export default function ParcaJobBoard({ rows = [], onChanged, compact = false })
         mode="view"
         onStartWork={demoForm ? () => commit(demoForm.parca, () => setDemoForm(null)) : undefined}
         parcaScope={demoForm?.scope ?? null}
+        // …and OPEN on it. `parcaScope` alone only makes the narrowing
+        // available; without this the sheet still opened on the whole round and
+        // the printer had to find their parça in it — the exact thing the scope
+        // was added to prevent. One parça (a card's own button, including a
+        // parça bounced back for a reprint) opens narrowed; "Hepsini Başlatın"
+        // covers the round and so opens on the round.
+        parcaScopeOnly={opensNarrowed(demoForm?.scope)}
         startWorkLabel={footerLabel(demoForm?.parca)}
         startingWork={!!busy}
         onDone={() => setDemoForm(null)}
@@ -212,6 +220,8 @@ export default function ParcaJobBoard({ rows = [], onChanged, compact = false })
         mode="view"
         onStartWork={ozalitForm ? () => commit(ozalitForm.parca, () => setOzalitForm(null)) : undefined}
         parcaScope={ozalitForm?.scope ?? null}
+        // See the demo dialog above — same rule on this leg.
+        parcaScopeOnly={opensNarrowed(ozalitForm?.scope)}
         startWorkLabel={footerLabel(ozalitForm?.parca)}
         startingWork={!!busy}
         onDone={() => setOzalitForm(null)}
