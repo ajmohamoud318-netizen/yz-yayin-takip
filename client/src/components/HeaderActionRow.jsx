@@ -17,6 +17,7 @@ import {
   canMarkDemoStarted, canMarkOzalitStarted,
   canCancelDemoRequest, canCancelOzalitRequest,
   canEditSentDemoRequest, canEditSentOzalitRequest,
+  canAddParcalarToRound,
   canRequestDemoChange, canRequestOzalitChange,
   canRespondDemoChange, canRespondOzalitChange,
   canRequestEkranDemo, canRespondEkranDemo,
@@ -184,9 +185,14 @@ export default function HeaderActionRow({ d }) {
         </span>
       )}
       {/* Parçalar this project has that the round never carried. See
-          openAddParcalarSheet — this is the header's remaining job on a round
-          the matbaa is holding, and it disappears once nothing is left. */}
-      {canEditSentDemoRequest(user, project) && hasUnsent && (
+          openAddParcalarSheet — this is the header's remaining job on the round,
+          and it disappears once nothing is left.
+
+          `canAddParcalarToRound`, NOT the edit gate below it: this one survives
+          into demo_onay, where a forgotten parça is usually what the returning
+          round makes obvious. The add reopens the round from there; the
+          whole-sheet edit underneath cannot, and keeps the stricter gate. */}
+      {canAddParcalarToRound(user, project, 'demo') && hasUnsent && (
         <Button
           size="sm"
           onClick={() => openAddParcalarSheet('demo')}
@@ -228,7 +234,7 @@ export default function HeaderActionRow({ d }) {
         </Button>
       )}
       {/* Ozalit twin of the pair above — same split, same reasoning. */}
-      {canEditSentOzalitRequest(user, project) && hasUnsent && (
+      {canAddParcalarToRound(user, project, 'ozalit') && hasUnsent && (
         <Button
           size="sm"
           onClick={() => openAddParcalarSheet('ozalit')}

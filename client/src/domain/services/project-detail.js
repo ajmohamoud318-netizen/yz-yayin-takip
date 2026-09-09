@@ -83,7 +83,9 @@ export function orderActionLabel(order) {
  * approval. The leader approves or rejects (reason required) at every *_onay
  * stage, and moves production / customs forward.
  */
-export function availableActions({ project, user, parcaRows = [], printerParcaJobs = [] }) {
+export function availableActions({
+  project, user, parcaRows = [], printerParcaJobs = [], parcaSnapshot = [],
+}) {
   if (!project || !user) return []
   // Imported backlist products (origin='legacy', migration 031) have no design
   // phase: no subtasks, no designer, no demo/ozalit history. Every pipeline
@@ -148,13 +150,40 @@ export function availableActions({ project, user, parcaRows = [], printerParcaJo
   // the moment the queue is empty.
   const printerSplitRound = role === 'printer' && (printerParcaJobs ?? []).length > 0
 
+  /**
+   * Is the per-parça panel the surface for APPROVING this round?
+   *
+   * On a multi-parça round it is, and the whole-round Onayla above it is not a
+   * shortcut but a way around it: one click signs off every parça the snapshot
+   * carries, which is the opposite of deciding them one at a time. The panel
+   * already has the shortcut that means it honestly — "Tüm parçaları onaylayın",
+   * which knows how many it is signing and refuses to appear when it cannot
+   * cover the round.
+   *
+   * It is also what let the gate close on a parça the round never carried: the
+   * header button asks nothing about the project's parça list, so a leader could
+   * approve two of three parçalar in one press and land on ozalit with the third
+   * never printed. (The server refuses that now — see assertNoNeverSentParcalar —
+   * but a button whose only outcome is a 400 is not a button.)
+   *
+   * `>= 2` is the same test ProjectDetail and Approvals use to render the panel
+   * at all, so suppression and surface always agree: below it the panel does not
+   * draw and the header pair is the only way to decide anything.
+   *
+   * REJECT is deliberately left alone. It is not a per-parça decision wearing the
+   * wrong hat — it bounces the whole round for rework, which is a real thing to
+   * want and has no per-parça equivalent that means the same. It also stays the
+   * way out of a round that turned out to be wrong wholesale.
+   */
+  const parcaPanelDecides = (parcaSnapshot ?? []).length >= 2
+
   if ((stage === 'demo_onay' || stage === 'cin_demo_onay') && role === 'team_leader' && !splitAcrossDesks) {
     // Hide Onayla + Reddet until the demo has been received (Teslim Alındı)
     // and while the demo is held. The leader can't approve/reject a demo
     // they haven't taken delivery of yet, and once held, the project is
     // waiting for the designer to re-send a second demo.
     if (project.demo_received === true && project.demo_held !== true) {
-      set.add('approve')
+      if (!parcaPanelDecides) set.add('approve')
       set.add('reject')
     }
   }
@@ -195,7 +224,11 @@ export function availableActions({ project, user, parcaRows = [], printerParcaJo
     // canApproveOzalitNow also carries the leader-first rule: an assigned
     // designer gets no Onayla until a team leader has signed off (the server
     // refuses it too), so the button is never offered as a dead end.
-    if (canApproveOzalitNow(user, project) && !alreadyApproved) {
+    // Same rule as the demo gate above — the panel is where a multi-parça round
+    // is signed off, one parça at a time. Safe for the designer's half of the
+    // multi-party sign-off too: ProjectDetail renders the grid at ozalit_onay
+    // for `isLeader || designer`, a superset of who gets this button.
+    if (canApproveOzalitNow(user, project) && !alreadyApproved && !parcaPanelDecides) {
       set.add('approve')
     }
     if (role === 'team_leader' && !alreadyApproved) {

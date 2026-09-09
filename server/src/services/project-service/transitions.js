@@ -18,6 +18,7 @@ import {
   listProjectSubtasks,
   insertDemoSnapshot,
   loadLatestDemoSnapshot,
+  loadProjectCatalogParcalar,
 } from '../project-repository.js'
 import { activeUserIdsByRole } from '../notifications.js'
 import { listParcaState } from '../parca-state-repository.js'
@@ -42,7 +43,14 @@ function withSnapshot(snapshotKind = 'demo') {
     // bulk shortcut approved the very parçalar the leader had just bounced.
     const parcaState = await listParcaState(client, row.id)
     row.parca_state = parcaState
-    return { ...base, snapshot, parcaState }
+    // The project's own parça list (Ürün Bilgileri), which the snapshot above
+    // cannot answer for: a parça left unticked when the round was composed is
+    // simply absent from it. The advancing approve compares the two so the gate
+    // cannot close on a parça that was never sent — see neverSentParcalar. Empty
+    // for any project without a product_info row, which the guard treats as
+    // "nothing missing" rather than "everything missing".
+    const catalogParcalar = await loadProjectCatalogParcalar(client, row.id)
+    return { ...base, snapshot, parcaState, catalogParcalar }
   }
 }
 
@@ -228,6 +236,7 @@ export function approveProject(projectId, actor, ctx = {}, client = null) {
       designerIds: pCtx.designerIds ?? [],
       teamLeaderIds: pCtx.teamLeaderIds ?? [],
       snapshot: pCtx.snapshot ?? null,
+      catalogParcalar: pCtx.catalogParcalar ?? [],
     }),
   }, client)
 }

@@ -29,7 +29,10 @@ import {
   parcaRejectPatch, parcaGateForStage, parcaDecidable,
   parcaEditLocked, parcaFixSettledPatch,
 } from './parca-routing.js'
-import { assertParcaSetUnchanged, lockedParcalarTouched } from './spec-parca-diff.js'
+import {
+  assertParcaSetUnchanged, lockedParcalarTouched,
+  neverSentParcalar, assertNoNeverSentParcalar,
+} from './spec-parca-diff.js'
 
 /** Match the client's badRequest semantics — throw a 400. */
 function badRequest(message) {
@@ -1383,6 +1386,23 @@ export function computeApproval(project, actor, ctx = {}) {
       }
     }
     // Per-parça advance.
+    //
+    // Every parça the ROUND carries is signed off — but the round is not the
+    // project. A parça left unticked when this round was composed was never on
+    // `snapshotParcalar`, so it could never appear in `stillPending`, and without
+    // this the demo gate closes on a parça that never had a demo at all, carrying
+    // it into ozalit past the point where "Kalan Parçaları Gönderin" could still
+    // send it.
+    //
+    // Deliberately below the legacy branch above: a round with NO parça list is a
+    // whole-sheet round that implicitly covers the project, so it has nothing to
+    // be measured against. And `neverSentParcalar` returns nothing for an absent
+    // or empty product_info, so projects predating Ürün Bilgileri advance exactly
+    // as before — the guard only ever fires where both lists genuinely exist.
+    assertNoNeverSentParcalar(
+      neverSentParcalar(ctx?.catalogParcalar, snapshotParcalar, project.parca_state, 'demo'),
+      'demo',
+    )
     const pipeline = pipelineFor(project)
     const stageIdx = pipeline.indexOf(project.stage)
     const next = pipeline[stageIdx + 1]
@@ -2132,11 +2152,99 @@ export function computeOzalitCancel(project, actor, ctx = {}) {
  *  once the matbaa has started, this is refused and the change-request flow
  *  must be used instead.
  * ========================================================================== */
+/**
+ * Is this save the leader sending parçalar the round never carried?
+ *
+ * "Kalan Parçaları Gönderin" is the only caller allowed to change the round's
+ * parça set, and it is the only thing that may run at an *_onay stage — an
+ * ordinary correction there is still refused, because the matbaa is not holding
+ * the sheet any more and there is nothing to correct.
+ */
+function isParcaAddSave(ctx) {
+  return !!ctx?.allowParcaAdd && (ctx?.parcaSetDelta?.added?.length ?? 0) > 0
+}
+
+/**
+ * Send a finished round back to the matbaa so it can produce the parçalar that
+ * were just added to it.
+ *
+ * The round GREW; it did not start over. That distinction is the whole reason
+ * this is not the resend leg in `computeAdvance`, which deliberately wipes the
+ * per-parça ledgers and the routing table because a fresh physical demo needs
+ * fresh eyes. Here the parçalar already delivered were genuinely produced and
+ * genuinely signed off, and taking that away would make the leader re-approve
+ * work they have already done — and make the matbaa reprint parçalar nobody
+ * asked them to.
+ *
+ * So this patch touches only the round's own liveness flags, and leaves
+ * `demo_parca_approvals` and `parca_state` exactly as they are. Everything else
+ * then follows from machinery that already exists: `deriveTeslimParcalar` skips
+ * parçalar whose routing row is resolved, so the matbaa's queue derives a card
+ * for the new parça and nothing else; `allParcalarDelivered` counts the old rows
+ * as already home, so the round completes when the new parça lands; and
+ * `pruneApprovalsToSnapshot` prunes nothing, because the snapshot grew.
+ *
+ * `demo_attempt` is deliberately NOT bumped. This is the same round on its way
+ * back out, and the snapshot this very save wrote is its sheet — bumping would
+ * strand that sheet under the previous attempt and renumber a round the matbaa
+ * has already half-produced.
+ */
+function reopenRoundForAddedParcalar(project, kind) {
+  if (kind === 'ozalit') {
+    return {
+      stage: 'ozalit_teslim',
+      // The matbaa's delivery cleared this on the way in; the round is live
+      // again and their advance refuses an unrequested one.
+      ozalit_requested: true,
+      ozalit_received: false,
+      ozalit_received_by: null,
+      ozalit_received_at: null,
+      ozalit_delivered_at: null,
+      ozalit_delivered_by: null,
+      ozalit_delivered_by_name: null,
+    }
+  }
+  return {
+    stage: project.type === 'CIN' ? 'cin_demo_teslim' : 'demo_teslim',
+    demo_received: false,
+    demo_received_by: null,
+    demo_received_at: null,
+    demo_delivered_at: null,
+    demo_delivered_by: null,
+    demo_delivered_by_name: null,
+    // A held demo is one waiting for a re-send, and this IS a send. Leaving it
+    // set would block the approve on the way back (availableActions hides
+    // Onayla while demo_held), and if the design is still short of 100% the
+    // next approve simply holds it again.
+    demo_held: false,
+    demo_held_at: null,
+    demo_held_by_name: null,
+    // A pending Ekran Demo Onayı request belonged to the gate we are leaving,
+    // and approve/reject for it both require the demo_onay stage — carrying it
+    // out would block every future request with no way to clear it. Same
+    // reasoning as the resend leg.
+    ekran_demo_requested_at: null,
+    ekran_demo_requested_by: null,
+    ekran_demo_requested_by_name: null,
+  }
+}
+
 export function computeDemoEdit(project, actor, ctx = {}) {
   const now = new Date().toISOString()
   const actorName = actor?.name ?? 'Bilinmeyen'
-  if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim') {
-    badRequest('Bildirim yalnızca demo matbaa sürecindeyken yapılabilir.')
+  // Adding parçalar is also allowed at the onay gate, where the leader finds out
+  // the round was short one. The round is finished there, so this does not
+  // correct a sheet the matbaa holds — it hands them a new job and sends the
+  // round back out (see reopenRoundForAddedParcalar). Without this the only way
+  // to send a forgotten parça was to reject a demo that was perfectly good.
+  const atOnayGate = project.stage === 'demo_onay' || project.stage === 'cin_demo_onay'
+  const reopening = atOnayGate && isParcaAddSave(ctx)
+  if (project.stage !== 'demo_teslim' && project.stage !== 'cin_demo_teslim' && !reopening) {
+    badRequest(
+      atOnayGate
+        ? 'Demo onay aşamasında yalnızca gönderilmemiş parçalar eklenebilir.'
+        : 'Bildirim yalnızca demo matbaa sürecindeyken yapılabilir.',
+    )
   }
   // Team-leader-only, unlike computeDemoCancel — two people (leader +
   // assigned designer) both able to edit-and-notify the same sent demo meant
@@ -2185,16 +2293,25 @@ export function computeDemoEdit(project, actor, ctx = {}) {
     // (computeDemoChangeAccept) — this submission IS the fix. A no-op patch
     // when there was nothing pending (already false), so it's safe to always
     // include.
-    project: { ...project, demo_fix_pending: false, updated_at: now },
+    project: {
+      ...project,
+      demo_fix_pending: false,
+      ...(reopening ? reopenRoundForAddedParcalar(project, 'demo') : {}),
+      updated_at: now,
+    },
     // The per-parça twin of the flag above — see settleParcaFixes.
     parcaState: settleParcaFixes(project, ctx.changedParcalar),
     history: makeEntry(project, {
       action: 'system',
       event: 'demo_form_edited',
       from_stage: project.stage,
-      to_stage: project.stage,
+      to_stage: reopening
+        ? (project.type === 'CIN' ? 'cin_demo_teslim' : 'demo_teslim')
+        : project.stage,
       done_by_name: actorName,
-      note: parcaAddNote(ctx.parcaSetDelta?.added) ?? 'Demo formu güncellendi',
+      note: reopening
+        ? `${parcaAddNote(ctx.parcaSetDelta?.added)}, tur matbaaya geri gönderildi`
+        : parcaAddNote(ctx.parcaSetDelta?.added) ?? 'Demo formu güncellendi',
       // Which snapshot this correction wrote (migration 052). Two
       // corrections of one round share an attempt slot, so without this the
       // older row's "Demo Formu" button resolves to the newer sheet.
@@ -2206,15 +2323,25 @@ export function computeDemoEdit(project, actor, ctx = {}) {
 export function computeOzalitEdit(project, actor, ctx = {}) {
   const now = new Date().toISOString()
   const actorName = actor?.name ?? 'Bilinmeyen'
-  if (project.stage !== 'ozalit_teslim') {
-    badRequest('Bildirim yalnızca ozalit matbaa sürecindeyken yapılabilir.')
+  // See computeDemoEdit — the ozalit leg has the same gap and the same way out.
+  const atOnayGate = project.stage === 'ozalit_onay'
+  const reopening = atOnayGate && isParcaAddSave(ctx)
+  if (project.stage !== 'ozalit_teslim' && !reopening) {
+    badRequest(
+      atOnayGate
+        ? 'Ozalit onay aşamasında yalnızca gönderilmemiş parçalar eklenebilir.'
+        : 'Bildirim yalnızca ozalit matbaa sürecindeyken yapılabilir.',
+    )
   }
   // Liveness, not `ozalit_requested`. Correcting the sheet the matbaa works
   // from applies to a reject-to-matbaa re-delivery every bit as much as to a
   // fresh request — the printer is holding a sheet either way. (Cancel is the
   // one action that genuinely needs `ozalit_requested`; see
   // computeOzalitCancel, where "nothing was delivered" is the whole premise.)
-  if (!isOzalitRoundLive(project)) {
+  //
+  // A round at the onay gate is finished by definition, so it cannot be live —
+  // the reopen below is what makes it live again.
+  if (!reopening && !isOzalitRoundLive(project)) {
     badRequest('Matbaada bekleyen bir ozalit yok.')
   }
   // Team-leader-only — see computeDemoEdit's comment.
@@ -2240,16 +2367,23 @@ export function computeOzalitEdit(project, actor, ctx = {}) {
   }
   return {
     // See computeDemoEdit's comment — this submission is the fix.
-    project: { ...project, ozalit_fix_pending: false, updated_at: now },
+    project: {
+      ...project,
+      ozalit_fix_pending: false,
+      ...(reopening ? reopenRoundForAddedParcalar(project, 'ozalit') : {}),
+      updated_at: now,
+    },
     // See computeDemoEdit — the per-parça twin of the flag above.
     parcaState: settleParcaFixes(project, ctx.changedParcalar),
     history: makeEntry(project, {
       action: 'system',
       event: 'ozalit_form_edited',
       from_stage: project.stage,
-      to_stage: project.stage,
+      to_stage: reopening ? 'ozalit_teslim' : project.stage,
       done_by_name: actorName,
-      note: parcaAddNote(ctx.parcaSetDelta?.added) ?? 'Ozalit formu güncellendi',
+      note: reopening
+        ? `${parcaAddNote(ctx.parcaSetDelta?.added)}, tur matbaaya geri gönderildi`
+        : parcaAddNote(ctx.parcaSetDelta?.added) ?? 'Ozalit formu güncellendi',
       demo_id: ctx.demoId ?? null,
     }),
   }
@@ -2778,6 +2912,14 @@ function computeOzalitOnayApproval(project, actor, now, actorName, ctx = {}) {
     return [...requiredIds].some((id) => !got.has(id))
   })
   if (remaining.length === 0) {
+    // The demo gate's rule, on the ozalit leg — see the twin in computeApproval.
+    // Same shape, same reason: `remaining` is measured against this round's
+    // snapshot, so a parça never ticked onto it cannot hold the gate open, and
+    // the project would reach baskı onayı with a parça nobody ever proofed.
+    assertNoNeverSentParcalar(
+      neverSentParcalar(ctx?.catalogParcalar, snapshotParcalar, project.parca_state, 'ozalit'),
+      'ozalit',
+    )
     assertCanEnterProductionLocal('baski_onay', project.progress)
     return {
       project: {

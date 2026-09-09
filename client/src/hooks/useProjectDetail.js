@@ -218,20 +218,29 @@ export function useProjectDetail(id) {
    * what "never sent" means: a parça out with the designer or already approved
    * is off the round too, and must not be handed to the matbaa as new work.
    *
-   * Leader-only, and only while the matbaa is actually holding a round — the
-   * catalog fetch is wasted work for anybody else, and the answer is
-   * meaningless at a stage where there is no round to add to. */
-  const catalogParcalar = useProjectCatalog(isLeader ? project?.id : undefined)
+   * Leader AND assigned designer, not leader-only. The button is still the
+   * leader's, but this list now feeds the parça grid as well — a never-sent
+   * parça is drawn there as `Gönderilmedi`, and it is the only explanation
+   * anybody gets for why the round refuses to close. A designer counter-signing
+   * an ozalit round sees the same wall the leader does, so they need the same
+   * reason for it. The matbaa never renders this grid, so the catalog fetch
+   * stays off their page. */
+  const wantsCatalog = isLeader || (user?.role === 'designer' && isAssigned)
+  const catalogParcalar = useProjectCatalog(wantsCatalog ? project?.id : undefined)
   const unsent = useMemo(
-    () => (isLeader ? unsentParcalar(catalogParcalar, parcaSnapshot, parcaRows) : []),
-    [isLeader, catalogParcalar, parcaSnapshot, parcaRows],
+    () => (wantsCatalog ? unsentParcalar(catalogParcalar, parcaSnapshot, parcaRows) : []),
+    [wantsCatalog, catalogParcalar, parcaSnapshot, parcaRows],
   )
 
   // Available actions + labels
   // parcaRows (migration 074) suppress the whole-round Onayla/Reddet while the
   // round is split across desks; printerParcaJobs does the same for the
   // matbaa's whole-sheet Teslim Edin — see availableActions.
-  const actions = availableActions({ project, user, parcaRows, printerParcaJobs })
+  // parcaSnapshot decides whether the per-parça panel is the approval surface;
+  // where it is, the whole-round Onayla is suppressed in favour of it.
+  const actions = availableActions({
+    project, user, parcaRows, printerParcaJobs, parcaSnapshot,
+  })
   const advLabel = project ? advanceActionLabel(project, user?.role) : 'İlerletin'
   const appLabel = project ? approveActionLabel(project) : 'Onaylayın'
   const sentStatus =

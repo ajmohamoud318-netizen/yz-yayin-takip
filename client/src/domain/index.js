@@ -32,6 +32,7 @@ export {
   canCancelOzalitRequest,
   canEditSentDemoRequest,
   canEditSentOzalitRequest,
+  canAddParcalarToRound,
   canRequestDemoChange,
   canRequestOzalitChange,
   canRespondDemoChange,

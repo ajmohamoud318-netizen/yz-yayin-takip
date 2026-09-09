@@ -766,6 +766,37 @@ export async function loadLatestDemoSnapshot(client, projectId, kind) {
 }
 
 /**
+ * Every parça this project HAS, off its Ürün Bilgileri spec — as opposed to the
+ * ones a round happens to be carrying, which is what `loadLatestDemoSnapshot`
+ * above answers.
+ *
+ * The distinction is the whole point: nothing joins the two, so "which parçalar
+ * were never sent to the matbaa?" can only be asked by holding both. The client
+ * has had this pair for a while (`useProjectCatalog` + `unsentParcalar`); this is
+ * the server's half, for the gate that must not close on a parça that never had
+ * a demo.
+ *
+ * Returns names only — the caller compares membership, never rows.
+ *
+ * **A missing row is normal and must stay harmless.** `product_info` is optional:
+ * projects that predate it, legacy imports, and anything whose leader has not
+ * filled in Ürün Bilgileri yet simply have no row. That returns `[]`, which
+ * `neverSentParcalar` reads as "nothing is missing" — so the guard built on this
+ * never fires where it has no evidence, rather than blocking every such project.
+ */
+export async function loadProjectCatalogParcalar(client, projectId) {
+  const { rows } = await client.query(
+    'SELECT components FROM product_info WHERE project_id = $1',
+    [projectId],
+  )
+  const components = rows[0]?.components
+  if (!Array.isArray(components)) return []
+  return components
+    .map((c) => (typeof c === 'string' ? c : c?.component))
+    .filter(Boolean)
+}
+
+/**
  * The sipariş's own latest ozalit sheet — the sipariş twin of
  * `loadLatestDemoSnapshot` above (migration 053).
  *

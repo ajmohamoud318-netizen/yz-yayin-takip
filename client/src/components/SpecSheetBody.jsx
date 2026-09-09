@@ -197,8 +197,7 @@ export default function SpecSheetBody({
           `parcaScope`): this picker governs the WHOLE selection — what the
           round carries and what a save writes back — so above a sheet showing
           one of three parçalar it would tick three boxes and contradict the
-          document under it. The dialog's "Tüm parçaları gösterin" brings both
-          back together. */}
+          document under it. */}
       {showsPicker && (
         <div className="border-b bg-muted/20 px-4 py-3 print:hidden">
           <div className="mb-2 flex items-center justify-between">

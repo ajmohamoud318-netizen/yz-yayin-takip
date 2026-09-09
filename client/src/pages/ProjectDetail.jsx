@@ -365,6 +365,11 @@ export default function ProjectDetail() {
               project={project}
               kind={ledgerKind}
               snapshotParcalar={parcaSnapshot}
+              // Parçalar the project has that no round ever carried. Not on the
+              // snapshot, so the grid cannot derive them — and the gate will not
+              // close while any exist, which makes this the only place the
+              // leader can find out why. See ParcaApprovalGrid's prop note.
+              neverSentParcalar={d.unsentParcalar}
               busy={d.processingEkranDemo}
               // Both open the sheet first; the decision is taken from its
               // footer. Reject then hands off to the reason/party dialog,

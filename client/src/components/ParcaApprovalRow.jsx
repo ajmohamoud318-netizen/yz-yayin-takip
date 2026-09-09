@@ -1,4 +1,4 @@
-import { Check, ThumbsUp, ThumbsDown, Hourglass, AlertCircle, PackageCheck, Clock } from 'lucide-react'
+import { Check, ThumbsUp, ThumbsDown, Hourglass, AlertCircle, PackageCheck, Clock, PackageX } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -26,6 +26,15 @@ import { cn } from '@/lib/utils'
  *              front of them cannot tell whether the round is waiting on the
  *              matbaa or on them.
  *
+ * And one that belongs to no round at all:
+ *
+ *   never_sent → the project has this parça (Ürün Bilgileri) and no round has
+ *              ever carried it. Not a decision anybody can take yet, so no
+ *              buttons — it is here because the round CANNOT be closed while it
+ *              is, and a grid that showed only what was sent gave the leader no
+ *              way to find that out. "Kalan Parçaları Gönderin" in the header is
+ *              what acts on it.
+ *
  * `signers` is the list of approver rows for this parça — the demo list shape
  * `{ by, by_name, at }` for the demo gate, the ozalit-object shape
  * `{ id, role, name, at }` for the ozalit gate. Normalised by the caller to
@@ -33,7 +42,7 @@ import { cn } from '@/lib/utils'
  *
  * @param {{
  *   parca: string,
- *   status: 'pending' | 'approved' | 'rejected' | 'awaiting_receipt' | 'out',
+ *   status: 'pending' | 'approved' | 'rejected' | 'awaiting_receipt' | 'out' | 'never_sent',
  *   signers?: Array<{ name: string, at: string }>,
  *   busy?: boolean,
  *   onApprove?: () => void,
@@ -59,6 +68,7 @@ export default function ParcaApprovalRow({
   const isRejected = status === 'rejected'
   const isAwaitingReceipt = status === 'awaiting_receipt'
   const isOut = status === 'out'
+  const isNeverSent = status === 'never_sent'
   return (
     <div
       className={cn(
@@ -69,6 +79,9 @@ export default function ParcaApprovalRow({
         isAwaitingReceipt && 'border-sky-200 bg-sky-50/40',
         // Somebody else's work: present, legible, visibly not yours.
         isOut && 'opacity-60',
+        // Not dimmed like `out`: this one is the leader's own outstanding job,
+        // and it is what is holding the round open.
+        isNeverSent && 'border-dashed border-amber-300 bg-amber-50/20',
         className,
       )}
     >
@@ -101,6 +114,12 @@ export default function ParcaApprovalRow({
           <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground ring-1 ring-inset ring-border">
             <Clock className="h-3 w-3" />
             {outLabel}
+          </span>
+        )}
+        {isNeverSent && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">
+            <PackageX className="h-3 w-3" />
+            Gönderilmedi
           </span>
         )}
         {isAwaitingReceipt && onReceive && (
@@ -169,6 +188,9 @@ function StatusDot({ status }) {
   }
   if (status === 'out') {
     return <Clock className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={2.5} />
+  }
+  if (status === 'never_sent') {
+    return <PackageX className="h-3.5 w-3.5 text-amber-700" strokeWidth={2.5} />
   }
   return <Hourglass className="h-3.5 w-3.5 text-amber-600" strokeWidth={2.5} />
 }

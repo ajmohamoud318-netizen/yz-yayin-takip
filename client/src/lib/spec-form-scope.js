@@ -114,8 +114,7 @@ export function opensNarrowed(parcaScope) {
  * whole subject of the action; the ones already on the round are context nobody
  * asked for, and unlike a bulk approve there is no count at which showing them
  * becomes the more useful answer — sending two parçalar is not "a decision about
- * all five". So an add always opens narrowed, however many it carries. The
- * banner's "Tüm parçaları gösterin" is still there for reading the rest.
+ * all five". So an add always opens narrowed, however many it carries.
  *
  * @param {{ decision?: string[]|null, add?: string[]|null, edit?: string[]|null }} scopes
  * @returns {{ scope: string[]|null, scopeOnly: boolean }}
@@ -154,20 +153,21 @@ export function resolveSheetScope({ decision = null, add = null, edit = null } =
 /**
  * What the sheet must SAY while it is showing more than the decision covers.
  *
- * `opensNarrowed` above starts a one-parça decision on its own block, but the
- * banner offers "Tüm parçaları gösterin" and reading the round is a legitimate
- * thing to want before signing — the leader deciding KUTU may need to see what
- * KİTAP says. The moment they take it, the document stops matching the button:
- * three blocks on screen, one parça in the footer, and nothing on the page
- * saying which. Widen it on a phone and the button is several screens below
- * the blocks it does not cover.
+ * `opensNarrowed` above starts a one-parça decision on its own block, but every
+ * decision not opened `scopeOnly` shows the whole round by default (see
+ * `resolveSheetScope`/`showAllParca`) — reading it before signing is legitimate,
+ * the leader deciding KUTU may need to see what KİTAP says. The moment the
+ * sheet is wider than the decision, it stops matching the button: three blocks
+ * on screen, one parça in the footer, and nothing on the page saying which.
+ * Widen it on a phone and the button is several screens below the blocks it
+ * does not cover.
  *
  * Nothing about the ACTION changes with the view — `commitParcaSheet` posts the
  * parçalar the row's button was clicked for, and the footer label names them —
  * so this is not a correctness hole. It is worse in a way: it is a UI that
- * looks like it might be one. So the widened sheet states the scope in the
- * banner, and every block on it is marked as either the one being decided or
- * as context, which leaves nothing for the reader to remember.
+ * looks like it might be one. So every block on the widened sheet is marked
+ * inline as either the one being decided or as context, which leaves nothing
+ * for the reader to remember.
  *
  * Returns null for anything that is not a decision, which is every other
  * caller of this sheet.

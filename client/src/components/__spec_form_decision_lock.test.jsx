@@ -190,12 +190,13 @@ describe('the footer under a decision', () => {
  * The second half of the rule: a sheet that has been WIDENED past the decision
  * must keep saying what the decision covers.
  *
- * The banner offers "Tüm parçaları gösterin" and reading the round before
- * signing one parça is legitimate — but once taken, the sheet shows blocks the
- * footer button does not cover, and on a phone that button is several screens
- * below them. The action never widens with the view (commitParcaSheet posts
- * the parçalar the row's button was clicked for), so this is about leaving
- * nothing for the reader to remember, not about a hole in the commit path.
+ * A decision not opened `scopeOnly` shows the whole round by default, and
+ * reading it before signing one parça is legitimate — but the sheet then shows
+ * blocks the footer button does not cover, and on a phone that button is
+ * several screens below them. The action never widens with the view
+ * (commitParcaSheet posts the parçalar the row's button was clicked for), so
+ * this is about leaving nothing for the reader to remember, not about a hole
+ * in the commit path.
  */
 describe('decisionScopeCopy', () => {
   it('is null for every non-decision opening of the sheet', () => {

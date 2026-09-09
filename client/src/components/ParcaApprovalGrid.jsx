@@ -28,6 +28,16 @@ import {
  *                   button at the top so the leader can bounce the whole
  *                   round in one click. Calls onRejectParcalar(null, …).
  *
+ * `neverSentParcalar` are parçalar the PROJECT has (Ürün Bilgileri) that no round
+ * has ever carried. They are not on the snapshot — that is what makes them
+ * invisible everywhere else — so without them here the grid describes the round
+ * and quietly implies it describes the project. It does not: a leader could sign
+ * off every row in this grid and still be leaving a parça that never had a demo.
+ * The server refuses to advance in that state (assertNoNeverSentParcalar), so
+ * these rows are also the only explanation the leader gets for why the round will
+ * not close. They carry no buttons; "Kalan Parçaları Gönderin" in the header is
+ * what acts on them.
+ *
  * `parcaRows` turns the grid into the surface for a round that is STILL OUT at
  * the matbaa (migration 076). Pass the project's routing rows and each parça is
  * rendered by where it actually is — waiting to be received, ready to decide, or
@@ -41,6 +51,7 @@ import {
  *   project: object,
  *   kind: 'demo' | 'ozalit' | 'baski_onay' | 'cin_baski_onay',
  *   snapshotParcalar?: Array<string | { component?: string }>,
+ *   neverSentParcalar?: string[],
  *   busy?: boolean,
  *   onApproveParcalar: (parcalar: string[] | null) => void,
  *   onRejectParcalar?: (parcalar: string[] | null, reason?: string, target?: 'designer' | 'matbaa') => void,
@@ -58,6 +69,7 @@ export default function ParcaApprovalGrid({
   project,
   kind,
   snapshotParcalar = [],
+  neverSentParcalar = [],
   busy = false,
   onApproveParcalar,
   onRejectParcalar,
@@ -86,6 +98,14 @@ export default function ParcaApprovalGrid({
   }, [parcaRows])
   const routingAware = !!parcaRows
 
+  /* Parçalar of the project that no round has ever carried. They are absent
+     from every ledger and from the snapshot, so they can only come in from
+     outside — see the prop's note above. */
+  const neverSent = useMemo(
+    () => new Set((neverSentParcalar ?? []).filter(Boolean)),
+    [neverSentParcalar],
+  )
+
   /**
    * A parça's state as the leader experiences it, most decided first.
    *
@@ -95,6 +115,9 @@ export default function ParcaApprovalGrid({
    * but on an unfinished round it is just as likely to be still in the press.
    */
   function statusOf(parca) {
+    // First, because it is the one status no ledger can contradict: a parça no
+    // round ever carried has nothing in any of them.
+    if (neverSent.has(parca)) return 'never_sent'
     if (rejected.includes(parca)) return 'rejected'
     if (!pending.includes(parca)) return 'approved'
     if (!routingAware) return 'pending'
@@ -115,12 +138,16 @@ export default function ParcaApprovalGrid({
   // parça; on an unfinished round it is only what is in their hands — a header
   // reading "3 bekliyor" above two rows marked "Matbaada" describes the round,
   // not the reader's to-do list, and the two are no longer the same thing.
+  //
+  // A never-sent parça counts: it is outstanding, it is the leader's to act on,
+  // and it is the reason the round will not close. Leaving it out of the count
+  // is what made the omission invisible in the first place.
   const awaitingLeader = () => (parcaRows
     ? orderedParcalar.filter((p) => {
       const status = statusOf(p)
-      return status === 'pending' || status === 'awaiting_receipt'
+      return status === 'pending' || status === 'awaiting_receipt' || status === 'never_sent'
     })
-    : pending)
+    : [...pending, ...neverSent])
 
   // What the bulk button may actually sign off. At the gate that is everything
   // pending; on an unfinished round only what is in the leader's hands — the
@@ -142,22 +169,32 @@ export default function ParcaApprovalGrid({
   // still owed — it is one already taken, and waiting for it would make the
   // shortcut unreachable for the rest of the round.
   const everyPendingDecidable = !routingAware || bulkTarget.length === pending.length
+  // …and never while a parça of this project has not been sent at all. The
+  // button's promise is the whole round, and the server will refuse to advance
+  // on that press anyway (assertNoNeverSentParcalar) — so offering it here would
+  // be a button whose only outcome is an error, on the one screen that is
+  // supposed to explain what is missing.
   const showBulk = bulkApproveAvailable(project, kind, snapshotParcalar)
     && bulkTarget.length > 0
     && everyPendingDecidable
+    && neverSent.size === 0
   const orderedParcalar = useMemo(() => {
     // Pending first (so the to-do list reads top-down), then approved, then
     // rejected. Stable order matters: the same parça keeps the same row
     // across reloads, so the leader's muscle memory survives a refresh.
+    //
+    // Never-sent last: they belong to the project rather than to this round, and
+    // grouping them at the bottom keeps the round's own decisions reading as one
+    // list instead of interleaving two different kinds of thing.
     const seen = new Set()
     const out = []
-    for (const p of [...pending, ...approved, ...rejected]) {
+    for (const p of [...pending, ...approved, ...rejected, ...neverSent]) {
       if (seen.has(p)) continue
       seen.add(p)
       out.push(p)
     }
     return out
-  }, [pending, approved, rejected])
+  }, [pending, approved, rejected, neverSent])
 
   // Normalise the per-parça approval rows into a `{ name }[]` shape that
   // ParcaApprovalRow can render without knowing the ledger shape.

@@ -15,6 +15,12 @@
  *
  * Either one silently undoes the split. While a parça is out, the parça grid
  * is the only surface; the whole-round pair returns once every parça is home.
+ *
+ * Note these cases deliberately pass NO `parcaSnapshot`, so they isolate this one
+ * rule. A round that does carry a multi-parça snapshot no longer gets the
+ * whole-round Onayla back even with every parça home — the panel owns approval
+ * there, and __available_actions_parca_panel.test.js pins that separately.
+ * Reddet, which these tests also cover, is unaffected by it.
  */
 
 import { describe, it, expect } from 'vitest'

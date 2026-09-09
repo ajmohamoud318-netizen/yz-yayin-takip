@@ -448,6 +448,37 @@ export function canEditSentOzalitRequest(user, project) {
   return user?.role === 'team_leader'
 }
 
+/**
+ * May the leader put parçalar the round never carried onto it right now?
+ *
+ * This is "Kalan Parçaları Gönderin", and it is deliberately WIDER than the edit
+ * gates above. Those two answer "may this sheet be corrected", which needs the
+ * matbaa to still be holding it. This answers "may a forgotten parça still be
+ * sent", and the honest answer stays yes for one stage longer.
+ *
+ * The onay gate is where a missing parça actually gets noticed — the round comes
+ * home, the panel lists what arrived, and the parça nobody ticked is conspicuous
+ * by its absence. Ending the window at *_teslim meant the leader's only remaining
+ * move was to reject a demo that was perfectly good, purely to get back to a
+ * stage where the button existed. At the onay gate the add reopens the round
+ * instead (computeDemoEdit / computeOzalitEdit send it back to *_teslim), and the
+ * parçalar already produced keep their sign-offs.
+ *
+ * Kept separate from `canEditSentDemoRequest` rather than folded into it: the
+ * whole-sheet "Gönderilen Demoyu Düzenleyin" must NOT gain this stage. There is
+ * no sheet with the matbaa to correct at the onay gate, and the server refuses
+ * exactly that.
+ */
+export function canAddParcalarToRound(user, project, kind) {
+  if (!project || user?.role !== 'team_leader') return false
+  if (kind === 'ozalit') {
+    return project.stage === 'ozalit_onay' || canEditSentOzalitRequest(user, project)
+  }
+  return project.stage === 'demo_onay'
+    || project.stage === 'cin_demo_onay'
+    || canEditSentDemoRequest(user, project)
+}
+
 // Team-leader-only, same as canCancelDemoRequest/canEditSentDemoRequest —
 // keeps all three of the leader/designer-facing demo/ozalit actions
 // (cancel, edit-notify, change-request) consistently gated to the one role.

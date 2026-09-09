@@ -1055,6 +1055,7 @@ function ApprovalRow({
               inOzalitRevision={inOzalitRevision}
               canApprove={canApprove}
               ekranBusy={ekranBusy}
+              showParcaGrid={showParcaGrid}
               onApprove={onApprove}
               onReject={onReject}
               onAdvance={onAdvance}
@@ -1093,6 +1094,15 @@ function ApprovalRow({
               // through the TR key showed every parça unsigned.
               kind={ledgerKindForStage(p.stage)}
               snapshotParcalar={snapshotParcalar}
+              // Deliberately no `neverSentParcalar` here, unlike ProjectDetail.
+              // Answering "never sent" needs the project's routing rows as well
+              // as its catalog — a parça out for rework is off the round too,
+              // and is not the same thing as one nobody ever sent. This queue
+              // loads rows only for the early-parça section above, so computing
+              // it here would over-report and draw phantom rows. The leader can
+              // still sign off each parça individually; the last press is the
+              // one that advances, and the server refuses it by name
+              // (assertNoNeverSentParcalar) with the project page one click away.
               busy={parcaBusy}
               onApproveParcalar={onApproveParcalar}
               onRejectParcalar={isLeader ? onRejectParcalar : undefined}
@@ -1128,7 +1138,7 @@ function StatusChip({ tone, children }) {
 function Actions({
   sub, p, user, isLeader, isDesigner, isPrinter,
   isAssignedDesigner, alreadyApproved, awaitingLeader, heldDemo, receiptFirst,
-  inOzalitRevision, canApprove, ekranBusy,
+  inOzalitRevision, canApprove, ekranBusy, showParcaGrid,
   onApprove, onReject, onAdvance, onStartWork,
   onEkranRequest, onEkranApprove, onEkranReject,
   onNavigate,
@@ -1233,6 +1243,23 @@ function Actions({
         <Button size="sm" variant="ghost" className="w-full justify-start gap-1.5 text-muted-foreground sm:w-auto" disabled>
           <Hourglass className="h-4 w-4" />
           Ekip lideri onayı bekleniyor
+        </Button>
+      )
+    }
+    // The grid below this row is the approval surface on a multi-parça round —
+    // the same rule availableActions applies on the project page, and it has to
+    // be applied here too because this strip has its own gating and never asked
+    // that function. One press signing off every parça at once is a way around
+    // the per-parça decision, not a shortcut for it; the grid's own
+    // "Tüm parçaları onaylayın" is the shortcut that counts what it signs.
+    //
+    // `receiptFirst` is exempt: there the primary button is "Teslim Alın", the
+    // receipt the whole round shares, not an approval at all.
+    if (showParcaGrid && !receiptFirst) {
+      return (
+        <Button size="sm" variant="ghost" className="w-full justify-start gap-1.5 text-muted-foreground sm:w-auto" disabled>
+          <Hourglass className="h-4 w-4" />
+          Parçaları aşağıdan onaylayın
         </Button>
       )
     }

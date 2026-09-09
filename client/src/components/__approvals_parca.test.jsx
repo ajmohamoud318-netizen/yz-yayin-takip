@@ -232,3 +232,109 @@ describe('ParcaApprovalGrid', () => {
     expect(container.textContent.trim()).toBe('')
   })
 })
+
+/**
+ * Parçalar the PROJECT has that no round ever carried.
+ *
+ * They are absent from the snapshot and from every ledger — which is exactly
+ * what made the bug invisible: the grid described the round and read as though
+ * it described the project. A leader could sign off every row here and still be
+ * leaving a parça that never had a demo, and the server would then refuse to
+ * advance with nothing on screen explaining why.
+ */
+describe('ParcaApprovalGrid — never-sent parçalar', () => {
+  const clean = { demo_parca_approvals: [], demo_parca_rejections: [] }
+
+  it('draws a row for a parça that is not on the round at all', () => {
+    render(
+      <ParcaApprovalGrid
+        project={clean}
+        kind="demo"
+        snapshotParcalar={['KAPAK', 'KUTU']}
+        neverSentParcalar={['KILAVUZ']}
+        onApproveParcalar={() => {}}
+      />,
+    )
+    expect(container.textContent).toContain('KILAVUZ')
+    expect(container.textContent).toContain('Gönderilmedi')
+  })
+
+  it('offers no decision on it — there is nothing to decide yet', () => {
+    render(
+      <ParcaApprovalGrid
+        project={clean}
+        kind="demo"
+        snapshotParcalar={['KAPAK', 'KUTU']}
+        neverSentParcalar={['KILAVUZ']}
+        onApproveParcalar={() => {}}
+        onRejectParcalar={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label*="KILAVUZ parçasını onayla"]')).toBe(null)
+    expect(container.querySelector('button[aria-label*="KILAVUZ parçasını reddet"]')).toBe(null)
+  })
+
+  it('hides the bulk shortcut while any parça has never been sent', () => {
+    // The button promises the whole round, and the server refuses that press
+    // (assertNoNeverSentParcalar) — a button whose only outcome is an error, on
+    // the one screen meant to explain what is missing.
+    render(
+      <ParcaApprovalGrid
+        project={clean}
+        kind="demo"
+        snapshotParcalar={['KAPAK', 'KUTU']}
+        neverSentParcalar={['KILAVUZ']}
+        onApproveParcalar={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label*="Tüm parçaları onaylayın"]')).toBe(null)
+  })
+
+  it('gives the bulk shortcut back once nothing is missing', () => {
+    render(
+      <ParcaApprovalGrid
+        project={clean}
+        kind="demo"
+        snapshotParcalar={['KAPAK', 'KUTU']}
+        neverSentParcalar={[]}
+        onApproveParcalar={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label*="Tüm parçaları onaylayın"]')).toBeTruthy()
+  })
+
+  it('counts the missing parça as outstanding in the header', () => {
+    // It is the leader's own job and the reason the round will not close, so
+    // leaving it out of "bekliyor" is what kept the omission invisible.
+    render(
+      <ParcaApprovalGrid
+        project={{
+          demo_parca_approvals: [
+            { parca: 'KAPAK', by: 'u-l', by_name: 'Ayşenur' },
+            { parca: 'KUTU', by: 'u-l', by_name: 'Ayşenur' },
+          ],
+          demo_parca_rejections: [],
+        }}
+        kind="demo"
+        snapshotParcalar={['KAPAK', 'KUTU']}
+        neverSentParcalar={['KILAVUZ']}
+        onApproveParcalar={() => {}}
+      />,
+    )
+    expect(container.textContent).toContain('1 bekliyor')
+    expect(container.textContent).toContain('3 parça')
+  })
+
+  it('changes nothing when the prop is omitted', () => {
+    render(
+      <ParcaApprovalGrid
+        project={clean}
+        kind="demo"
+        snapshotParcalar={['KAPAK', 'KUTU']}
+        onApproveParcalar={() => {}}
+      />,
+    )
+    expect(container.textContent).not.toContain('Gönderilmedi')
+    expect(container.querySelector('button[aria-label*="Tüm parçaları onaylayın"]')).toBeTruthy()
+  })
+})

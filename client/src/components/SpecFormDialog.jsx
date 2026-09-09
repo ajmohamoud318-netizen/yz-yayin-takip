@@ -24,7 +24,7 @@ import { ozalitLeaderApproved, needsOzalitRouteChoice, lockedParcaNames } from '
 import { buildChangeSummary } from '@/lib/spec-form-diff'
 import { openMultiPrint } from '@/lib/spec-form-print'
 import {
-  decisionScopeCopy, hiddenParcaNames, parcaAddFlag, scopeComponents,
+  decisionScopeCopy, parcaAddFlag, scopeComponents,
 } from '@/lib/spec-form-scope'
 import { VARIANTS, computeBaskiOnayLocked, canEditPreparedBaskiOnay, isDecisionReview, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
 import {
@@ -227,17 +227,16 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
    * produce a job, and has to see the rest of what that job is before
    * starting; the leader signing one parça reads the round it belongs to.
    * Nothing about the ACTION changes with it — the footer button still names
-   * the parça of the click, and the narrowed view is one tap away in the
-   * banner above the sheet ("Yalnızca KUTU"). Reset on every (re)open, so a
-   * narrowing chosen on the last sheet never carries into the next.
+   * the parça of the click. Reset on every (re)open, so a narrowing chosen on
+   * the last sheet never carries into the next.
    *
    * `parcaScopeOnly` is the one caller that opens the other way round, and
    * reject is why: the leader is about to send ONE parça back with a reason
    * naming what is wrong with it, and a sheet showing all three while the
    * dialog behind it says "KUTU" invites writing the reason against the wrong
-   * block. Reading the round is still one tap away in the same banner — the
-   * default simply flips for the action where being specific matters more than
-   * having context. Start and approve keep the reasoning above. */
+   * block — the default simply flips for the action where being specific
+   * matters more than having context. Start and approve keep the reasoning
+   * above. */
   const [showAllParca, setShowAllParca] = useState(!parcaScopeOnly)
 
   // Matbaa "Başladım" gate (migration 048): once the printer has started
@@ -467,15 +466,13 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
 
   const parcaNarrowed = scopedComponents.length < selectedComponents.length
   const sheetComponents = parcaNarrowed && !showAllParca ? scopedComponents : selectedComponents
-  const hiddenParca = parcaNarrowed ? hiddenParcaNames(selectedComponents, scopedComponents) : []
   const scopedParcaNames = scopedComponents.map((c) => c.component).join(', ')
-  /* What a widened DECISION sheet has to keep saying. Reading the whole round
-     before signing one parça is legitimate — that is what the banner's toggle
-     is for — but the moment it is taken, the document shows blocks the footer
-     button does not cover. The action never widens with the view
+  /* What a widened DECISION sheet has to keep saying. A decision sheet opens
+     showing the whole round (showAllParca defaults true whenever the caller
+     doesn't set parcaScopeOnly), and the action never widens with the view
      (commitParcaSheet posts the parçalar the row's button was clicked for), so
-     the fix is not to take the toggle away; it is to leave nothing for the
-     reader to remember. See decisionScopeCopy. */
+     the blocks outside the decision need their own inline note rather than
+     leaving it to the reader to remember. See decisionScopeCopy. */
   const decisionCopy = decisionScopeCopy(decisionContext)
   const decisionParcaNames = decisionCopy ? scopedComponents.map((c) => c.component) : null
 
@@ -1085,7 +1082,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
 
             The sheet opens showing only them, so this says what they ARE
             rather than that they were "added to the form" — on screen they are
-            the form. The banner below is what says the round has more. */}
+            the form. */}
         {(preselectParcalar ?? []).length > 0 && (
           <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs print:hidden">
             <p className="text-foreground">
@@ -1093,38 +1090,6 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               bu turda yok. Bilgilerini doldurup gönderdiğinizde matbaanın
               işine eklenecek — turun geri kalanı olduğu gibi kalır.
             </p>
-          </div>
-        )}
-
-        {/* Nothing leaves this document silently: when the sheet has been
-            narrowed to the parça the reader was handed, it says which parçalar
-            it is not showing and offers them back. Screen only — what goes on
-            paper is the sheet as displayed.
-
-            The matbaa is exempt: their sheet is read-only and opened for the
-            parça they clicked, never a decision over the round's scope, so the
-            "other parçalar" call-out has nothing for them to act on — it only
-            named work that isn't theirs to start or delivered. */}
-        {parcaNarrowed && user?.role !== 'printer' && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs print:hidden">
-            <p className="min-w-0 text-muted-foreground">
-              {showAllParca
-                ? (decisionCopy
-                  // A decision is pending, and the sheet is wider than it.
-                  // Say which parça the button below covers, here, rather than
-                  // leaving the footer label — several screens down on a phone
-                  // — as the only place it is written.
-                  ? <>Tüm parçalar gösteriliyor — ancak yalnızca <strong className="font-semibold text-foreground">{scopedParcaNames}</strong> {decisionCopy.verb}.</>
-                  : <>Bu turun <strong className="font-semibold text-foreground">tüm parçaları</strong> gösteriliyor.</>)
-                : <>Yalnızca <strong className="font-semibold text-foreground">{scopedParcaNames}</strong> gösteriliyor. Diğer parçalar: {hiddenParca.join(', ')}.</>}
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowAllParca((v) => !v)}
-              className="shrink-0 font-semibold text-primary hover:underline"
-            >
-              {showAllParca ? `Yalnızca ${scopedParcaNames}` : 'Tüm parçaları gösterin'}
-            </button>
           </div>
         )}
 

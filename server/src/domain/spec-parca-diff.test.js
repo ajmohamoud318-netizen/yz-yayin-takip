@@ -11,7 +11,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { changedParcaBlocks, lockedParcalarTouched, parcaSetDelta } from './spec-parca-diff.js'
+import {
+  changedParcaBlocks, lockedParcalarTouched, parcaSetDelta,
+  neverSentParcalar, assertNoNeverSentParcalar,
+} from './spec-parca-diff.js'
 
 const sheet = (blocks) => ({
   isinAdi: 'Zeka Küpü',
@@ -217,5 +220,116 @@ describe('lockedParcalarTouched', () => {
 
   it('matches names the Turkish way', () => {
     assert.deepEqual(lockedParcalarTouched(['KİTAP'], ['kitap']), ['KİTAP'])
+  })
+})
+
+/**
+ * "Which parçalar has this project never sent to the matbaa?"
+ *
+ * The server twin of the client's `unsentParcalar`, and the evidence the demo /
+ * ozalit gate needs before it may close. The subtraction has three terms and the
+ * third is the one that carries the weight: a parça absent from the round is not
+ * automatically fresh work — it may be out for rework, already signed off, or
+ * bounced back at the gate. Only a parça with NO routing row was genuinely never
+ * sent.
+ */
+describe('neverSentParcalar', () => {
+  const CATALOG = ['KUTU', 'KİTAP', 'KILAVUZ']
+
+  it('names the catalog parçalar the round never carried', () => {
+    assert.deepEqual(
+      neverSentParcalar(CATALOG, ['KUTU'], [], 'demo'),
+      ['KİTAP', 'KILAVUZ'],
+    )
+  })
+
+  it('is empty when the round carries the whole catalog', () => {
+    assert.deepEqual(neverSentParcalar(CATALOG, CATALOG, [], 'demo'), [])
+  })
+
+  it('does not count a parça that has a routing row, however it got one', () => {
+    // Out with the designer for rework, or already decided — either way it has
+    // been sent, and offering it as fresh work would jump a queue or reopen a
+    // decision the leader has already taken.
+    const rows = [
+      { parca: 'KİTAP', gate: 'demo', state: 'with_designer' },
+      { parca: 'KILAVUZ', gate: 'demo', state: 'pending' },
+    ]
+    assert.deepEqual(neverSentParcalar(CATALOG, ['KUTU'], rows, 'demo'), [])
+  })
+
+  // The cross-gate rule the rest of this table's reads now follow: a project's
+  // demo and ozalit rounds reuse the same parça NAMES, so a demo-gate row must
+  // not be evidence that a parça was sent to OZALIT.
+  it('ignores rows belonging to the other gate', () => {
+    const rows = [
+      { parca: 'KİTAP', gate: 'demo', state: 'pending' },
+      { parca: 'KILAVUZ', gate: 'demo', state: 'pending' },
+    ]
+    assert.deepEqual(
+      neverSentParcalar(CATALOG, ['KUTU'], rows, 'ozalit'),
+      ['KİTAP', 'KILAVUZ'],
+    )
+  })
+
+  it('counts a row on its own gate', () => {
+    const rows = [{ parca: 'KİTAP', gate: 'ozalit', state: 'pending' }]
+    assert.deepEqual(
+      neverSentParcalar(CATALOG, ['KUTU'], rows, 'ozalit'),
+      ['KILAVUZ'],
+    )
+  })
+
+  // The legacy-safety case, and the reason a guard can be built on this at all:
+  // product_info is optional, so "no catalog" must read as "nothing is missing"
+  // rather than blocking every project that predates Ürün Bilgileri.
+  it('is empty when the catalog is absent or empty', () => {
+    assert.deepEqual(neverSentParcalar([], ['KUTU'], [], 'demo'), [])
+    assert.deepEqual(neverSentParcalar(null, ['KUTU'], [], 'demo'), [])
+    assert.deepEqual(neverSentParcalar(undefined, ['KUTU'], [], 'demo'), [])
+  })
+
+  it('survives an absent round list and absent routing rows', () => {
+    assert.deepEqual(neverSentParcalar(CATALOG, null, null, 'demo'), CATALOG)
+  })
+
+  it('accepts block objects on either side, not just names', () => {
+    assert.deepEqual(
+      neverSentParcalar(
+        [{ component: 'KUTU' }, { component: 'KİTAP' }],
+        [{ component: 'KUTU' }],
+        [],
+        'demo',
+      ),
+      ['KİTAP'],
+    )
+  })
+
+  it('matches names the Turkish way', () => {
+    // 'ı'/'I' and 'i'/'İ' fold the other way round than en-US — a KILAVUZ
+    // stored as "Kılavuz" is the same parça and must not read as unsent.
+    assert.deepEqual(
+      neverSentParcalar(['KILAVUZ', 'KİTAP'], ['Kılavuz', 'kitap'], [], 'demo'),
+      [],
+    )
+  })
+})
+
+describe('assertNoNeverSentParcalar', () => {
+  it('passes when nothing is missing', () => {
+    assert.doesNotThrow(() => assertNoNeverSentParcalar([], 'demo'))
+    assert.doesNotThrow(() => assertNoNeverSentParcalar(null, 'demo'))
+  })
+
+  it('names the parçalar and points at the way out', () => {
+    assert.throws(
+      () => assertNoNeverSentParcalar(['KILAVUZ'], 'demo'),
+      /KILAVUZ.*Kalan Parçaları Gönderin/s,
+    )
+  })
+
+  it('says "demoya" or "ozalite" to match the gate', () => {
+    assert.throws(() => assertNoNeverSentParcalar(['KUTU'], 'demo'), /demoya gönderilmemiş/)
+    assert.throws(() => assertNoNeverSentParcalar(['KUTU'], 'ozalit'), /ozalite gönderilmemiş/)
   })
 })

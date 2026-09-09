@@ -28,6 +28,7 @@ import {
   canMarkOzalitStarted,
   canEditSentDemoRequest,
   canEditSentOzalitRequest,
+  canAddParcalarToRound,
   isOzalitRoundLive,
   canCancelDemoRequest,
   canCancelOzalitRequest,
@@ -817,5 +818,73 @@ describe('bulkApproveAvailable', () => {
 
   it('false on an empty snapshot (no parça list at all)', () => {
     expect(bulkApproveAvailable({}, 'demo', [])).toBe(false)
+  })
+})
+
+/**
+ * "Kalan Parçaları Gönderin" — the window for sending a parça the round forgot.
+ *
+ * Deliberately wider than the edit gates it sits beside. Those answer "may this
+ * sheet be corrected", which needs the matbaa to still be holding it. This one
+ * answers "may a forgotten parça still be sent", and the honest answer runs one
+ * stage longer: the onay gate is precisely where the omission gets noticed, when
+ * the round comes home and the panel lists what arrived.
+ *
+ * Ending the window at *_teslim meant a leader who spotted it at the gate had
+ * one move left — reject a demo that was perfectly good, purely to get back to a
+ * stage where the button existed.
+ */
+describe('canAddParcalarToRound', () => {
+  const AYSE = { id: 'u-ayse', role: 'team_leader' }
+  const AYLIN = { id: 'u-aylin', role: 'designer' }
+  const OKTAY = { id: 'u-oktay', role: 'printer' }
+
+  it('is open while the matbaa holds the demo round', () => {
+    expect(canAddParcalarToRound(AYSE, { stage: 'demo_teslim' }, 'demo')).toBe(true)
+  })
+
+  it('stays open at the demo onay gate, where the edit gate has closed', () => {
+    const atGate = { stage: 'demo_onay', demo_received: true }
+    expect(canEditSentDemoRequest(AYSE, atGate)).toBe(false)
+    expect(canAddParcalarToRound(AYSE, atGate, 'demo')).toBe(true)
+  })
+
+  it('covers the ÇİN gate too', () => {
+    expect(canAddParcalarToRound(AYSE, { stage: 'cin_demo_onay' }, 'demo')).toBe(true)
+  })
+
+  it('closes at demo_teslim once the matbaa has started the sheet', () => {
+    // Inherited from canEditSentDemoRequest, and it has to be: computeDemoEdit
+    // refuses outright while `demo_started`, so opening the button here would
+    // only produce a 400. Note this barely bites in practice — on a split round
+    // the flag is structurally false (startParca never sets it), which is why
+    // the button survives a matbaa working parça by parça.
+    expect(canAddParcalarToRound(AYSE, { stage: 'demo_teslim', demo_started: true }, 'demo')).toBe(false)
+  })
+
+  it('is unaffected by that flag at the onay gate — the round is finished there', () => {
+    // computeDemoTeslimAdvance clears demo_started on delivery, so the gate is
+    // reached with it false and the reopen path is never blocked by it.
+    expect(canAddParcalarToRound(AYSE, { stage: 'demo_onay', demo_started: false }, 'demo')).toBe(true)
+  })
+
+  it('is team-leader-only, like every other send action', () => {
+    expect(canAddParcalarToRound(AYLIN, { stage: 'demo_onay' }, 'demo')).toBe(false)
+    expect(canAddParcalarToRound(OKTAY, { stage: 'demo_onay' }, 'demo')).toBe(false)
+  })
+
+  it('is shut where there is no round to add to', () => {
+    expect(canAddParcalarToRound(AYSE, { stage: 'tasarim' }, 'demo')).toBe(false)
+    expect(canAddParcalarToRound(AYSE, { stage: 'baski_onay' }, 'demo')).toBe(false)
+    expect(canAddParcalarToRound(AYSE, null, 'demo')).toBe(false)
+  })
+
+  it('mirrors all of it on the ozalit leg', () => {
+    const live = { stage: 'ozalit_teslim', ozalit_requested: true }
+    expect(canAddParcalarToRound(AYSE, live, 'ozalit')).toBe(true)
+    expect(canAddParcalarToRound(AYSE, { stage: 'ozalit_onay' }, 'ozalit')).toBe(true)
+    expect(canAddParcalarToRound(AYLIN, { stage: 'ozalit_onay' }, 'ozalit')).toBe(false)
+    // The demo gate is not an ozalit round.
+    expect(canAddParcalarToRound(AYSE, { stage: 'demo_onay' }, 'ozalit')).toBe(false)
   })
 })
