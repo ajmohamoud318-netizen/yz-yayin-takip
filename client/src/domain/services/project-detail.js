@@ -58,10 +58,44 @@ export function parcaPanelViewer(user, ledgerKind, { isAssigned = false } = {}) 
  * Split from `parcaPanelViewer` rather than folded into it because seeing a
  * round and deciding it are different rights, and only at the demo gate do they
  * come apart: an assigned designer takes delivery there and signs nothing.
+ *
+ * The OZALIT leg does not answer on role alone, and this used to try. Three
+ * rules sit between a designer and an ozalit sign-off, all of them enforced by
+ * `computeOzalitOnayApproval`:
+ *
+ *   assigned    — "yalnızca ekip lideri veya atanmış tasarımcı"; any other
+ *                 designer is refused outright
+ *   leader-first— the ozalit is the leadership's call and a designer only
+ *                 COUNTER-signs: until a team leader has signed some parça,
+ *                 "Önce ekip lideri onaylamalıdır"
+ *   ekran       — a screen round is a flat single-leader sign-off with no
+ *                 designer counter-sign at all: "Ekran ozalit onayını yalnızca
+ *                 ekip lideri verebilir"
+ *
+ * `canApproveOzalitNow` is where those three already live — it is what gates the
+ * HEADER's Onayla. Role-only here meant the two surfaces disagreed on exactly
+ * the rounds this panel exists for: on a multi-parça round the header button is
+ * suppressed in favour of the panel, so the only Onayla on screen was the one
+ * with the weaker gate. A designer got thumbs-up buttons on an ekran round, or
+ * before any leader had signed, and every press returned a 400.
+ *
+ * `project` is therefore required for the ozalit leg. Without it the answer
+ * falls back to leader-only, which is the safe half of the rule rather than the
+ * permissive one.
+ *
+ * @param {{ role?: string, id?: string } | null} user
+ * @param {'demo' | 'ozalit' | 'baski_onay' | 'cin_baski_onay'} ledgerKind
+ * @param {{ project?: object }} [opts]
  */
-export function parcaPanelDecider(user, ledgerKind) {
+export function parcaPanelDecider(user, ledgerKind, { project = null } = {}) {
   if (ledgerKind === 'demo') return user?.role === 'team_leader'
-  if (ledgerKind === 'ozalit') return user?.role === 'team_leader' || user?.role === 'designer'
+  if (ledgerKind === 'ozalit') {
+    // Both roles answer to the same gate the header's Onayla answers to — no
+    // second copy of the rules to drift. Without a project to ask it about, only
+    // a leader could ever be right, so that is the fallback.
+    if (!project) return user?.role === 'team_leader'
+    return canApproveOzalitNow(user, project)
+  }
   return user?.role === 'team_leader'
 }
 

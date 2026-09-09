@@ -30,6 +30,7 @@
 import { describe, it, expect } from 'vitest'
 
 import { availableActions, parcaPanelViewer, parcaPanelDecider } from './project-detail.js'
+import { ozalitLeaderApproved } from './pipeline.js'
 
 const leader = { id: 'u-l', role: 'team_leader' }
 const designer = { id: 'u-d', role: 'designer' }
@@ -222,12 +223,118 @@ describe('parcaPanelDecider — who may act on its rows', () => {
     expect(parcaPanelDecider(designer, 'demo')).toBe(false)
   })
 
-  it('matches the viewer on ozalit and baskı, where the two do not diverge', () => {
-    for (const kind of ['ozalit', 'baski_onay']) {
-      for (const u of [leader, designer, printer]) {
-        expect(parcaPanelDecider(u, kind)).toBe(parcaPanelViewer(u, kind))
-      }
+  it('matches the viewer on baskı, where the two do not diverge', () => {
+    for (const u of [leader, designer, printer]) {
+      expect(parcaPanelDecider(u, 'baski_onay')).toBe(parcaPanelViewer(u, 'baski_onay'))
     }
+  })
+
+  /**
+   * The ozalit leg is not a role question, and treating it as one is what put
+   * 400-ing buttons in front of designers.
+   *
+   * On a multi-parça round the header's Onayla is suppressed in favour of this
+   * panel — so the panel's gate IS the gate. Role-only, it was strictly weaker
+   * than the header's (`canApproveOzalitNow`), which is the one place all three
+   * ozalit rules live. It now delegates there instead of restating them.
+   */
+  describe('the ozalit leg answers to the full gate, not the role', () => {
+    const otherDesigner = { id: 'u-d2', role: 'designer' }
+    // How a leader's sign-off ACTUALLY looks on a multi-parça round: in the
+    // per-parça ledger, and nowhere else. `ozalit_approvals` stays empty for the
+    // life of the round — see ozalitLeaderApproved.
+    const leaderSigned = {
+      ozalit_parca_approvals: { KUTU: [{ id: 'u-l', role: 'team_leader', name: 'Ayşenur' }] },
+    }
+
+    it('lets an assigned designer counter-sign once a leader has', () => {
+      expect(parcaPanelDecider(designer, 'ozalit', { project: ozalitOnay(leaderSigned) })).toBe(true)
+    })
+
+    it('refuses one before any leader has signed — the ozalit is leader-first', () => {
+      const p = ozalitOnay({ ozalit_parca_approvals: {} })
+      expect(parcaPanelDecider(designer, 'ozalit', { project: p })).toBe(false)
+      // …and the leader themselves is unaffected: they are the one who goes first.
+      expect(parcaPanelDecider(leader, 'ozalit', { project: p })).toBe(true)
+    })
+
+    it('does not mistake a fellow designer’s row for the leader’s', () => {
+      const p = ozalitOnay({
+        ozalit_parca_approvals: { KUTU: [{ id: 'u-d2', role: 'designer' }] },
+      })
+      expect(parcaPanelDecider(designer, 'ozalit', { project: p })).toBe(false)
+    })
+
+    it('refuses a designer who is not on the project', () => {
+      expect(parcaPanelDecider(otherDesigner, 'ozalit', { project: ozalitOnay(leaderSigned) }))
+        .toBe(false)
+    })
+
+    it('gives a designer nothing on an ekran round, even after the leader signs', () => {
+      // A screen ozalit is a flat single-leader sign-off — no proof, no receipt,
+      // no counter-sign. The server says so outright: "Ekran ozalit onayını
+      // yalnızca ekip lideri verebilir."
+      const ekran = ozalitOnay({ ...leaderSigned, ekran_ozalit: true, ozalit_received: false })
+      expect(parcaPanelDecider(designer, 'ozalit', { project: ekran })).toBe(false)
+      expect(parcaPanelDecider(leader, 'ozalit', { project: ekran })).toBe(true)
+    })
+
+    it('withholds every sign-off until the proof has been received', () => {
+      const unreceived = ozalitOnay({ ...leaderSigned, ozalit_received: false })
+      expect(parcaPanelDecider(leader, 'ozalit', { project: unreceived })).toBe(false)
+      expect(parcaPanelDecider(designer, 'ozalit', { project: unreceived })).toBe(false)
+    })
+
+    it('falls back to leader-only when the caller supplies no project', () => {
+      // The safe half of the rule, not the permissive one.
+      expect(parcaPanelDecider(leader, 'ozalit')).toBe(true)
+      expect(parcaPanelDecider(designer, 'ozalit')).toBe(false)
+    })
+
+    it('still DRAWS the panel for a designer it will not let sign', () => {
+      // Same split the demo gate has: they need to see the round they are
+      // waiting on, and on the physical leg they take delivery of it.
+      const ekran = ozalitOnay({ ...leaderSigned, ekran_ozalit: true })
+      expect(parcaPanelViewer(designer, 'ozalit')).toBe(true)
+      expect(parcaPanelDecider(designer, 'ozalit', { project: ekran })).toBe(false)
+    })
+  })
+})
+
+/**
+ * The leader-first check has to read the ledger the leader actually wrote to.
+ *
+ * On a multi-parça round `computeOzalitOnayApproval` appends to
+ * `ozalit_parca_approvals` and never to `ozalit_approvals`, so a check that
+ * only knew the project-level list answered "no leader yet" forever — freezing
+ * the designer out of their counter-sign on exactly the rounds the per-parça
+ * panel is for.
+ */
+describe('ozalitLeaderApproved — both ledgers', () => {
+  it('sees a leader row in the per-parça ledger', () => {
+    expect(ozalitLeaderApproved({
+      ozalit_approvals: [],
+      ozalit_parca_approvals: { KUTU: [{ id: 'u-l', role: 'team_leader' }] },
+    })).toBe(true)
+  })
+
+  it('still sees the legacy project-level ledger', () => {
+    expect(ozalitLeaderApproved({
+      ozalit_approvals: [{ id: 'u-l', role: 'team_leader' }],
+    })).toBe(true)
+  })
+
+  it('is false when only designers have signed', () => {
+    expect(ozalitLeaderApproved({
+      ozalit_approvals: [],
+      ozalit_parca_approvals: { KUTU: [{ id: 'u-d', role: 'designer' }] },
+    })).toBe(false)
+  })
+
+  it('is false on an empty or absent ledger', () => {
+    expect(ozalitLeaderApproved({ ozalit_parca_approvals: {} })).toBe(false)
+    expect(ozalitLeaderApproved({})).toBe(false)
+    expect(ozalitLeaderApproved(null)).toBe(false)
   })
 })
 

@@ -229,6 +229,29 @@ export function isOzalitApprover(user) {
  * @param {{ ozalit_approvals?: Array<{ role?: string }> }} project
  */
 export function ozalitLeaderApproved(project) {
+  /* The per-parça ledger FIRST, because on a multi-parça round it is the only
+   * place a leader's sign-off is written.
+   *
+   * `computeOzalitOnayApproval`'s per-parça path appends to
+   * `ozalit_parca_approvals` and nothing else — the project-level
+   * `ozalit_approvals` list stays empty for the life of the round (it is the
+   * legacy/no-snapshot path's ledger, and the advance branches only ever reset
+   * it). Reading that list alone therefore answers "no leader has signed yet"
+   * forever, on exactly the rounds the per-parça panel exists for: the designer
+   * never gets their counter-sign, and their queue row reads "Ekip lideri onayı
+   * bekleniyor" long after every parça has been signed.
+   *
+   * The server's own leader-first gate is written this way round too — it looks
+   * for a leader row on SOME parça of the snapshot and only falls back to the
+   * project-level list when there is no snapshot. This mirrors it. The ledger is
+   * pruned to the snapshot on every write (`pruneApprovalsToSnapshot`), so "some
+   * parça in the ledger" and "some parça on the round" are the same set. */
+  const perParca = project?.ozalit_parca_approvals
+  if (perParca && typeof perParca === 'object') {
+    for (const rows of Object.values(perParca)) {
+      if (Array.isArray(rows) && rows.some((a) => a?.role === 'team_leader')) return true
+    }
+  }
   return (project?.ozalit_approvals ?? []).some((a) => a.role === 'team_leader')
 }
 

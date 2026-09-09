@@ -24,6 +24,7 @@ import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
 import ParcaJobBoard from '@/components/ParcaJobBoard'
 import ParcaRejectDialog from '@/components/ParcaRejectDialog'
 import { ledgerKindForStage, parcaRoundDecidable } from '@/hooks/useParcaSnapshot'
+import { parcaPanelDecider } from '@/domain/services/project-detail'
 import { useParcaQueue } from '@/hooks/useParcaQueue'
 import { STAGE_LABELS, TYPE_LABELS } from '@/api'
 import {
@@ -1104,7 +1105,15 @@ function ApprovalRow({
               // the gate rather than advancing, and the project page is one
               // click away with the `Gönderilmedi` row that explains why.
               busy={parcaBusy}
-              onApproveParcalar={onApproveParcalar}
+              // Same gate as the project page's panel, from the same helper —
+              // the ozalit leg is not a role question. A designer needs to be
+              // ASSIGNED, needs a team leader to have signed first, and gets
+              // nothing at all on an ekran round (a flat single-leader sign-off).
+              // Passed unconditionally, this handed them thumbs-up buttons that
+              // `computeOzalitOnayApproval` answers with a 400.
+              onApproveParcalar={parcaPanelDecider(user, ledgerKindForStage(p.stage), { project: p })
+                ? onApproveParcalar
+                : undefined}
               onRejectParcalar={isLeader ? onRejectParcalar : undefined}
               // The row's own Reddet is suppressed while this grid draws — same
               // gates as that button carried, re-stated here because this queue

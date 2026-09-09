@@ -308,7 +308,7 @@ export default function ProjectDetail() {
      these apart: an assigned designer takes delivery of the round here but the
      server lets only the leader or the matbaa sign it off, so they get the rows
      and the receipt and no thumbs. */
-  const canDecideParca = parcaPanelDecider(user, ledgerKind)
+  const canDecideParca = parcaPanelDecider(user, ledgerKind, { project })
 
   // ---------------------------------------------------------------------------
   // Loading / empty states
