@@ -449,6 +449,44 @@ describe('ParcaApprovalGrid — bulk reject', () => {
     expect(container.querySelector('button[aria-label*="Tümünü Reddedin"]')).toBeTruthy()
   })
 
+  /**
+   * The ozalit leg gets all of this for free — one grid, one `kind` prop — but
+   * "for free" is worth two tests, because the two ledgers are not the same
+   * SHAPE. `demo_parca_approvals` is a list of rows; `ozalit_parca_approvals` is
+   * an object keyed by parça whose values are the signer lists. A partialArrival
+   * that only knew how to count a list would read every ozalit round as
+   * undecided and leave the wiping button on screen for exactly the case it was
+   * just removed from.
+   */
+  it('does the same on the ozalit leg, whose ledger is object-shaped', () => {
+    render(
+      <ParcaApprovalGrid
+        project={{
+          ozalit_parca_approvals: { KAPAK: [{ id: 'u-l', name: 'Ayşenur' }] },
+          ozalit_parca_rejections: [],
+        }}
+        kind="ozalit"
+        snapshotParcalar={['KAPAK', 'KİTAP', 'KUTU']}
+        onApproveParcalar={() => {}}
+        onBulkReject={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label*="Tümünü Reddedin"]')).toBe(null)
+  })
+
+  it('…and still offers it on an ozalit round nobody has signed', () => {
+    render(
+      <ParcaApprovalGrid
+        project={{ ozalit_parca_approvals: {}, ozalit_parca_rejections: [] }}
+        kind="ozalit"
+        snapshotParcalar={['KAPAK', 'KİTAP', 'KUTU']}
+        onApproveParcalar={() => {}}
+        onBulkReject={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label*="Tümünü Reddedin"]')).toBeTruthy()
+  })
+
   it('stays off the unfinished-round surface', () => {
     // With routing rows the grid is showing a round still out at the matbaa.
     // Bouncing the whole round there would discard parçalar still in the press.
