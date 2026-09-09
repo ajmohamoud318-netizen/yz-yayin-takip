@@ -240,7 +240,6 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
     setCustomDraft('')
     setPageCount(32)
     setStickerCount(1)
-    setPagesBulkAssign('')
   }
 
   function addCustomSubtask() {
