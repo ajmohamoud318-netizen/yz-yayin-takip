@@ -669,18 +669,36 @@ const parcaKey = (name) => String(name ?? '').trim().toLocaleUpperCase('tr')
  * materialised on first action, so their ABSENCE is precisely the record that
  * nothing has ever happened to this parça — which is what "never sent" means.
  *
+ * `gate` scopes that third term, and it is not optional detail — it is the
+ * difference between the demo leg and the ozalit leg agreeing with the server or
+ * not. Rows carry the gate they were written at, and "sent" is a question about
+ * ONE leg: a parça that was bounced during the demo round has a `gate: 'demo'`
+ * row forever, and reading that row while composing an OZALIT round says the
+ * parça has had an ozalit when it has not. The server is gate-scoped
+ * (`neverSentParcalar` in domain/spec-parca-diff.js) and refuses to close the
+ * ozalit gate for exactly that parça — so an unscoped read here strands the
+ * project: no "Kalan Parçaları Gönderin", no `Gönderilmedi` row in the panel,
+ * and a gate that will not close with nothing on screen explaining why.
+ *
+ * Omitting `gate` keeps the unscoped reading, which is the conservative one —
+ * it offers less, never more. Callers that know their leg should pass it.
+ *
  * The server enforces the same rule (`assertParcalarNeverSent`); this is what
  * keeps the button from offering what that would refuse.
  *
  * @param {Array<string | { component?: string }>} catalogParcalar
  * @param {Array<string | { component?: string }>} roundParcalar
- * @param {Array<{ parca?: string }>} parcaRows
+ * @param {Array<{ parca?: string, gate?: string }>} parcaRows
+ * @param {'demo' | 'ozalit' | null} [gate] — the leg this round is running
  * @returns {string[]} catalog names, in catalog order
  */
-export function unsentParcalar(catalogParcalar, roundParcalar, parcaRows = []) {
+export function unsentParcalar(catalogParcalar, roundParcalar, parcaRows = [], gate = null) {
+  const rows = gate
+    ? (parcaRows ?? []).filter((r) => r?.gate === gate)
+    : (parcaRows ?? [])
   const spokenFor = new Set([
     ...parcaNames(roundParcalar).map(parcaKey),
-    ...(parcaRows ?? []).map((r) => r?.parca).filter(Boolean).map(parcaKey),
+    ...rows.map((r) => r?.parca).filter(Boolean).map(parcaKey),
   ])
   return parcaNames(catalogParcalar).filter((name) => !spokenFor.has(parcaKey(name)))
 }

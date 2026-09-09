@@ -227,9 +227,23 @@ export function useProjectDetail(id) {
    * stays off their page. */
   const wantsCatalog = isLeader || (user?.role === 'designer' && isAssigned)
   const catalogParcalar = useProjectCatalog(wantsCatalog ? project?.id : undefined)
+  /* Which leg's routing rows count as "already sent".
+   *
+   * `parca_state` rows are gate-stamped and they outlive their round, so a parça
+   * bounced during the demo round keeps a `gate: 'demo'` row for good. Reading
+   * every row at the OZALIT gate therefore treats that parça as sent when it has
+   * never had an ozalit — while the server, which IS gate-scoped, refuses to
+   * close the ozalit gate over exactly that parça. The project strands: the
+   * button that would send it is hidden and the panel draws no `Gönderilmedi`
+   * row, so nothing on screen explains the wall.
+   *
+   * Baskı Onayı gets null (the unscoped reading it always had): it has no
+   * routing rows and no never-sent rule on the server, so there is nothing to
+   * agree with and the conservative answer is the right one. */
+  const roundGate = ledgerKind === 'ozalit' ? 'ozalit' : ledgerKind === 'demo' ? 'demo' : null
   const unsent = useMemo(
-    () => (wantsCatalog ? unsentParcalar(catalogParcalar, parcaSnapshot, parcaRows) : []),
-    [wantsCatalog, catalogParcalar, parcaSnapshot, parcaRows],
+    () => (wantsCatalog ? unsentParcalar(catalogParcalar, parcaSnapshot, parcaRows, roundGate) : []),
+    [wantsCatalog, catalogParcalar, parcaSnapshot, parcaRows, roundGate],
   )
 
   // Available actions + labels

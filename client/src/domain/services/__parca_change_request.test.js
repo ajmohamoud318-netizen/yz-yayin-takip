@@ -104,6 +104,55 @@ describe('unsentParcalar', () => {
   })
 })
 
+/**
+ * The third term is per-LEG, and getting that wrong strands the ozalit gate.
+ *
+ * `parca_state` rows are gate-stamped and outlive their round, so a parça
+ * bounced during the demo keeps its `gate: 'demo'` row for good. Read unscoped
+ * at the ozalit gate, that row says "already sent" about a parça that has never
+ * had an ozalit — while the server's `neverSentParcalar` IS gate-scoped and
+ * refuses to close the gate over it. The button disappears, the panel draws no
+ * `Gönderilmedi` row, and the project sits at a wall with nothing explaining it.
+ */
+describe('unsentParcalar — gate scoping', () => {
+  const catalog = ['KUTU', 'KİTAP', 'KILAVUZ']
+  const demoRow = (parca) => row(parca, { gate: 'demo', state: 'approved', owner_role: null })
+  const ozalitRow = (parca) => row(parca, { gate: 'ozalit', state: 'approved', owner_role: null })
+
+  it('ignores a demo-gate row when the round is an ozalit', () => {
+    // The stranding case, exactly. KILAVUZ went through the demo leg and is off
+    // the ozalit round: it has never had an ozalit, and the server says so.
+    expect(unsentParcalar(catalog, ['KUTU', 'KİTAP'], [demoRow('KILAVUZ')], 'ozalit'))
+      .toEqual(['KILAVUZ'])
+  })
+
+  it('counts an ozalit-gate row at the ozalit gate', () => {
+    expect(unsentParcalar(catalog, ['KUTU', 'KİTAP'], [ozalitRow('KILAVUZ')], 'ozalit'))
+      .toEqual([])
+  })
+
+  it('mirrors it on the demo leg', () => {
+    expect(unsentParcalar(catalog, ['KUTU', 'KİTAP'], [ozalitRow('KILAVUZ')], 'demo'))
+      .toEqual(['KILAVUZ'])
+    expect(unsentParcalar(catalog, ['KUTU', 'KİTAP'], [demoRow('KILAVUZ')], 'demo'))
+      .toEqual([])
+  })
+
+  it('keeps the unscoped reading when no gate is given', () => {
+    // The conservative default: every row counts, so the button offers less.
+    // Baskı Onayı takes this path — no routing rows, no server rule to agree
+    // with.
+    expect(unsentParcalar(catalog, ['KUTU', 'KİTAP'], [demoRow('KILAVUZ')]))
+      .toEqual([])
+  })
+
+  it('still keeps a parça that is mid-rework on THIS leg off the button', () => {
+    // Gate scoping must not undo the third term's original job.
+    const rows = [row('KILAVUZ', { gate: 'ozalit', state: 'with_designer', owner_role: 'designer' })]
+    expect(unsentParcalar(catalog, ['KUTU'], rows, 'ozalit')).toEqual(['KİTAP'])
+  })
+})
+
 describe('parça lock predicates', () => {
   it('locked = started and not released', () => {
     expect(parcaEditLocked(onPress('KUTU'))).toBe(true)
