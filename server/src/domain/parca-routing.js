@@ -301,6 +301,51 @@ export function parcaFixSettledPatch(row) {
 }
 
 /**
+ * Every correction a save discharges, as `[{ parca, patch }]` upserts.
+ *
+ * Only the parçalar the save actually TOUCHED are settled: a save that
+ * corrected KİTAP does not discharge the correction owed on KUTU. With no
+ * baseline to compare against (`changedParcalar === null`) the save counts as
+ * covering the whole sheet — the same fallback `lockedParcalarTouched` makes
+ * for the edit guard.
+ *
+ * Shared by the project's demo/ozalit edits and the sipariş's ozalit edit. The
+ * sipariş leg set `fix_pending` on accept and had nothing that ever cleared it,
+ * so the parça could never be started again.
+ *
+ * @param {Array<{ parca: string, fix_pending?: boolean }>} rows
+ * @param {string[] | null | undefined} changedParcalar
+ */
+export function parcaFixSettlements(rows, changedParcalar) {
+  const key = (name) => String(name ?? '').trim().toLocaleUpperCase('tr')
+  const touched = changedParcalar == null ? null : new Set(changedParcalar.map(key))
+  return (rows ?? [])
+    .filter((r) => r?.fix_pending)
+    .filter((r) => touched === null || touched.has(key(r.parca)))
+    .map((r) => ({ parca: r.parca, patch: parcaFixSettledPatch(r) }))
+}
+
+/**
+ * "Teslim Alınamadı" on a round the matbaa handed back parça by parça.
+ *
+ * The proof was produced and delivered; it just never reached anyone. So the
+ * parça goes back on the matbaa's desk still STARTED — their next move is
+ * "Teslim Edin", not "İşlemi Başlatın" — the per-parça twin of the whole-order
+ * `ozalit_started` flag surviving the same report. The delivery and receipt
+ * stamps clear because they described the handover that failed.
+ */
+export function parcaNotReceivedPatch({ now }) {
+  return {
+    state: 'in_round',
+    owner_role: 'printer',
+    route: 'physical',
+    started_at: now,
+    delivered_at: null,
+    fix_pending: false,
+  }
+}
+
+/**
  * The leader took delivery of this parça (migration 076).
  *
  * The per-parça twin of `computeDemoReceive` / `computeOzalitReceive`: nothing
@@ -367,35 +412,6 @@ export function parcaAwaitsReceipt(row) {
  */
 export function parcaDecidable(row) {
   return !!row && row.state === 'pending' && !!row.delivered_at && !!row.received_at
-}
-
-/** The leader signed this parça off. Terminal until a new round reopens it. */
-export function parcaApprovePatch() {
-  return {
-    state: 'approved',
-    owner_role: null,
-    route: null,
-    started_at: null,
-    delivered_at: null,
-    // See parcaRejectPatch — the round is over either way, and a signed-off
-    // parça that still owed a correction would block its next start.
-    fix_pending: false,
-  }
-}
-
-/**
- * Is every parça signed off?
- *
- * This is the advance gate, and it reads the routing table rather than the
- * round's snapshot on purpose. The snapshot only knows what THIS round carried;
- * once a re-round can carry a single parça, gating on it would advance a project
- * whose other parçalar are still out with the designer. An empty list is not
- * "all approved" — it means no parça routing exists, and the caller should fall
- * back to the pre-074 whole-round behaviour.
- */
-export function allParcalarApproved(rows) {
-  if (!Array.isArray(rows) || rows.length === 0) return false
-  return rows.every((r) => r?.state === 'approved')
 }
 
 /** The parçalar currently on one role's desk, for that role's queue. */

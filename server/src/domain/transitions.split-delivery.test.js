@@ -100,9 +100,9 @@ describe('demo_teslim — whole-sheet delivery on a split round', () => {
   })
 
   it('allows it on a round whose parçalar were signed off on a previous round', () => {
-    // parca_state rows outlive their round (they are never set to 'approved' —
-    // see parcaApprovePatch, still dead code), so a later whole-sheet round
-    // meets rows left at 'pending'. Those are not owed and must not block.
+    // parca_state rows outlive their round (they are never set to 'approved'),
+    // so a later whole-sheet round meets rows left at 'pending'. Those are not
+    // owed and must not block.
     const result = advance(demoTeslim({
       demo_attempt: 1,
       round_parcalar: PARCALAR,

@@ -10,6 +10,7 @@ import api from '@/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useProjects } from '@/hooks/useProjects'
 import { Card, CardContent } from '@/components/ui/card'
+import OrderNoBadge from '@/components/OrderNoBadge'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -263,6 +264,12 @@ export default function Approvals({ tab = 'demo' }) {
       // Designers only act on ozalit (multi-party), never demo.
       if (sub === 'demo') {
         if (!isLeader) return false
+        // ÇİN's "leader incelemesinde" stage (cin_demo_teslim): the matbaa is
+        // not in the loop — the demo came back from China and the leader
+        // forwards the round on to cin_demo_onay (server computeDemoTeslimAdvance).
+        // Was unreachable from the queue: the leader had to land on the project
+        // page directly, or follow the notification deep link, to act on it.
+        if (p.stage === 'cin_demo_teslim') return true
         if (p.stage !== 'demo_onay' && p.stage !== 'cin_demo_onay') return false
         // A held demo below 100% progress has no pending action yet — it's
         // waiting on the designer to finish. But once progress hits 100%
@@ -335,18 +342,9 @@ export default function Approvals({ tab = 'demo' }) {
     }
   }
 
-  async function handleEkranDemoApprove(project) {
-    setEkranBusyId(project.id)
-    try {
-      const updated = await api.approveEkranDemo(project.id)
-      updateOne(updated)
-      toast.success('Ekran demo onaylandı.')
-    } catch (err) {
-      toast.error(err.message || 'İşlem tamamlanamadı.')
-    } finally {
-      setEkranBusyId(null)
-    }
-  }
+  // Approving is no longer bound straight to the button's onClick — see
+  // onEkranApprove below, which opens ApprovalDialog (mode='ekran-demo-approve')
+  // instead. That dialog owns api.approveEkranDemo and its own busy state.
 
   async function handleStartWork(project, sub) {
     if (!project) return
@@ -435,9 +433,13 @@ export default function Approvals({ tab = 'demo' }) {
    *
    * { project, action: 'approve' | 'reject', parcalar, sub }
    */
-  function openParcaSheet(project, action, parcalar, sub) {
-    const form = { project, mode: 'view', parcaAction: { action, parcalar, sub } }
+  // `wholeRound`: opened on a one-parça round — see renderQueue.
+  function openParcaSheet(project, action, parcalar, sub, { wholeRound = false } = {}) {
+    const form = { project, mode: 'view', parcaAction: { action, parcalar, sub, wholeRound } }
     if (sub === 'ozalit') setOzalitForm(form)
+    // Baskı Onayı signs its own sheet. This used to fall through to the demo
+    // one, so a leader signed KUTU's baskı onayı off a different document.
+    else if (sub === 'baski-onay') setBaskiOnayForm(form)
     else setDemoForm(form)
   }
 
@@ -446,7 +448,11 @@ export default function Approvals({ tab = 'demo' }) {
     const pending = form?.parcaAction
     if (!pending) return
     close()
-    if (pending.action === 'approve') {
+    if (pending.wholeRound) {
+      // A round of one: the round's own dialog, exactly as the row's Onaylayın /
+      // Reddedin opened it — with the sheet read first.
+      setDialog({ project: form.project, mode: pending.action })
+    } else if (pending.action === 'approve') {
       await handleApproveParcalar(form.project, pending.parcalar, pending.sub)
     } else {
       // Reject needs a reason and a responsible party — neither lives on the
@@ -647,8 +653,9 @@ export default function Approvals({ tab = 'demo' }) {
         {queue.map((p) => {
           // Per-parça gate (migrations 068/069/070): pick the matching
           // snapshot kind for the queue tab, then decide whether to render
-          // the per-parça grid (≥2 parçalar on the snapshot) or fall through
-          // to the single-parça button row.
+          // the per-parça grid (any parça list on the snapshot — one parça or
+          // several) or fall through to the whole-round button row, which is
+          // left for a legacy round with no snapshot.
           const snapshotKind = sub === 'demo'
             ? 'demo'
             : sub === 'ozalit' ? 'ozalit' : 'baski_onay'
@@ -656,7 +663,7 @@ export default function Approvals({ tab = 'demo' }) {
           // Same receipt gate the single Onayla button answers to: the row
           // leads with "Teslim Alın" while a proof is undelivered, so the
           // grid must not offer a sign-off the server would refuse.
-          const showParcaGrid = snap.length >= 2 && parcaRoundDecidable(p) && (
+          const showParcaGrid = snap.length > 0 && parcaRoundDecidable(p) && (
             sub === 'demo'
               ? canActOnDemo
               : sub === 'ozalit'
@@ -669,6 +676,15 @@ export default function Approvals({ tab = 'demo' }) {
                 ? canActOnOzalit && ozalitDecidable(p)
                 : isLeader
           )
+          // A round of one: decided in the grid all the same, but the decision
+          // is the round's — see ProjectDetail's singleParcaRound for why reject
+          // in particular cannot go per parça there.
+          const singleParca = snap.length === 1
+          const approveRound = () => {
+            if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
+            else if (sub === 'baski-onay') setBaskiOnayForm({ project: p, mode: 'approve' })
+            else setDialog({ project: p, mode: 'approve' })
+          }
           return (
             <ApprovalRow
               key={p.id}
@@ -682,7 +698,12 @@ export default function Approvals({ tab = 'demo' }) {
               showParcaGrid={showParcaGrid}
               snapshotParcalar={snap}
               parcaBusy={parcaBusyId === p.id}
-              onApproveParcalar={(parcalar) => openParcaSheet(p, 'approve', parcalar, sub)}
+              onApproveParcalar={(parcalar) => {
+                // On a round of one the ozalit and baskı approve dialogs are the
+                // sheet itself; the demo's is a confirm, so its sheet opens first.
+                if (singleParca && sub !== 'demo') approveRound()
+                else openParcaSheet(p, 'approve', parcalar, sub, { wholeRound: singleParca })
+              }}
               // Reject is demo/ozalit only. Baskı Onayı is a leader-to-leader
               // maker-checker (migration 070) with no designer or matbaa leg —
               // there is no desk to send a parça back to, and computeRejection
@@ -691,13 +712,9 @@ export default function Approvals({ tab = 'demo' }) {
               // yapılabilir"). Offering the button here is a guaranteed 400.
               onRejectParcalar={sub === 'baski-onay'
                 ? undefined
-                : (parcalar) => openParcaSheet(p, 'reject', parcalar, sub)}
+                : (parcalar) => openParcaSheet(p, 'reject', parcalar, sub, { wholeRound: singleParca })}
               onPrepareBaskiParcalar={(parcalar) => handlePrepareBaskiParcalar(p, parcalar)}
-              onApprove={() => {
-                if (sub === 'ozalit') setOzalitForm({ project: p, mode: 'approve' })
-                else if (sub === 'baski-onay') setBaskiOnayForm({ project: p, mode: 'approve' })
-                else setDialog({ project: p, mode: 'approve' })
-              }}
+              onApprove={approveRound}
               onReject={() => setDialog({ project: p, mode: 'reject' })}
               onAdvance={() => {
                 if (sub === 'demo') setDemoForm({ project: p, mode: 'advance' })
@@ -710,7 +727,10 @@ export default function Approvals({ tab = 'demo' }) {
                 else setOzalitForm({ project: p, mode: 'view', startWork: true })
               }}
               onEkranRequest={() => handleEkranDemoRequest(p)}
-              onEkranApprove={() => handleEkranDemoApprove(p)}
+              // Opens ApprovalDialog rather than posting straight from the
+              // button's onClick — the leader's approve is a real signature
+              // on the demo sheet. See matbaa-sees-form-first.
+              onEkranApprove={() => setDialog({ project: p, mode: 'ekran-demo-approve' })}
               onEkranReject={() => setEkranDemoRejectFor(p)}
               onNavigate={() => navigate(`/projects/${p.id}`)}
             />
@@ -827,6 +847,17 @@ export default function Approvals({ tab = 'demo' }) {
         onOpenChange={(v) => setBaskiOnayForm(v ? baskiOnayForm : null)}
         project={baskiOnayForm?.project}
         mode={baskiOnayForm?.mode ?? 'approve'}
+        // A per-parça baskı onayı opens here now, on its own sheet — with the
+        // same read-only decision footer as the two dialogs above.
+        onStartWork={
+          baskiOnayForm?.parcaAction
+            ? () => commitParcaSheet(baskiOnayForm, () => setBaskiOnayForm(null))
+            : undefined
+        }
+        parcaScope={baskiOnayForm?.parcaAction?.parcalar ?? null}
+        decisionContext={baskiOnayForm?.parcaAction ?? null}
+        startWorkLabel={parcaSheetLabel(baskiOnayForm)}
+        startingWork={parcaBusyId === baskiOnayForm?.project?.id}
         onDone={onDone}
       />
       <EkranDemoRejectDialog
@@ -862,7 +893,15 @@ export default function Approvals({ tab = 'demo' }) {
  * instead of an "Onaylayın" that can't be honoured yet.
  */
 function awaitsReceipt(sub, p) {
-  if (sub === 'demo') return p.demo_received !== true
+  if (sub === 'demo') {
+    // ÇİN's teslim leg has no matbaa — the demo comes back from China and
+    // the leader forwards it directly (server computeDemoTeslimAdvance).
+    // The receipt concept does not apply, so gating the row on a missing
+    // demo_received flag would show "Teslim Alınmadı" for work that never
+    // had a matbaa leg to deliver it.
+    if (p.stage === 'cin_demo_teslim') return false
+    return p.demo_received !== true
+  }
   // Not every un-received ozalit owes a receipt: a screen round has no proof
   // to take delivery of, and a rejected one is parked on the stage while the
   // designer revizes. Both used to read "Ozaliti Teslim Alın" — an action the
@@ -1002,6 +1041,13 @@ function ApprovalRow({
   // Demo/ozalit both gate their sign-off behind a "Teslim Alındı" — when
   // that's still owed the action is a receipt step, not an approval.
   const receiptFirst = awaitsReceipt(sub, p)
+  // The whole-round Reddet's gates. Baskı has no reject leg, an unreceived
+  // proof cannot be bounced, and a round in revision is already back with the
+  // designer — see Actions' own `reject` below for the same list.
+  const wholeRoundRejectAllowed = isLeader && !alreadyApproved && sub !== 'baski-onay'
+    && !receiptFirst && !inOzalitRevision
+  // A round whose sheet carries one parça — see renderQueue.
+  const singleParca = (snapshotParcalar ?? []).length === 1
 
   // Build the state for the disc + status chip + primary action.
   let state
@@ -1102,6 +1148,7 @@ function ApprovalRow({
               canApprove={canApprove}
               ekranBusy={ekranBusy}
               showParcaGrid={showParcaGrid}
+              singleParca={singleParca}
               onApprove={onApprove}
               onReject={onReject}
               onAdvance={onAdvance}
@@ -1161,16 +1208,14 @@ function ApprovalRow({
               onApproveParcalar={parcaPanelDecider(user, ledgerKindForStage(p.stage), { project: p })
                 ? onApproveParcalar
                 : undefined}
-              onRejectParcalar={isLeader ? onRejectParcalar : undefined}
+              // On a round of one the row's thumbs-down IS the whole-round
+              // reject (renderQueue routes it there), so it takes that button's
+              // gates rather than the per-parça one's.
+              onRejectParcalar={(singleParca ? wholeRoundRejectAllowed : isLeader) ? onRejectParcalar : undefined}
               // The row's own Reddet is suppressed while this grid draws — same
               // gates as that button carried, re-stated here because this queue
               // does not go through `availableActions`.
-              onBulkReject={
-                isLeader && !alreadyApproved && sub !== 'baski-onay'
-                  && !receiptFirst && !inOzalitRevision
-                  ? onReject
-                  : undefined
-              }
+              onBulkReject={wholeRoundRejectAllowed ? onReject : undefined}
               // Baskı's maker half, opening the same form the row's button did.
               // `onApprove` already routes baskı to setBaskiOnayForm.
               onPrepareSheet={isLeader && sub === 'baski-onay' ? onApprove : undefined}
@@ -1206,7 +1251,7 @@ function StatusChip({ tone, children }) {
 function Actions({
   sub, p, user, isLeader, isDesigner, isPrinter,
   isAssignedDesigner, alreadyApproved, awaitingLeader, heldDemo, receiptFirst,
-  inOzalitRevision, canApprove, ekranBusy, showParcaGrid,
+  inOzalitRevision, canApprove, ekranBusy, showParcaGrid, singleParca,
   onApprove, onReject, onAdvance, onStartWork,
   onEkranRequest, onEkranApprove, onEkranReject,
   onNavigate,
@@ -1278,6 +1323,23 @@ function Actions({
     )
   }
 
+  // ÇİN: leader forwards the demo at cin_demo_teslim (server
+  // computeDemoTeslimAdvance). Approve at this stage 400s — there is no
+  // approval gate here, the leader's act is the matbaa-style "Onaya Gönderin"
+  // the project page uses for the same case (advanceActionLabel,
+  // project-detail.js). The callback opens DemoFormDialog with mode='advance',
+  // and `isCinDemoForward` (lib/spec-form-variants) makes the dialog forward
+  // the round on file instead of composing a new one — same wiring the
+  // project page already uses.
+  if (sub === 'demo' && p.stage === 'cin_demo_teslim' && isLeader) {
+    return (
+      <Button size="sm" className="w-full sm:w-auto" onClick={onAdvance}>
+        <Send className="h-4 w-4" />
+        Onaya Gönderin
+      </Button>
+    )
+  }
+
   // Standard approval lane.
   const primary = (() => {
     // Revision in flight — the work is the designer's revize plus the route
@@ -1333,7 +1395,7 @@ function Actions({
       return (
         <Button size="sm" variant="ghost" className="w-full justify-start gap-1.5 text-muted-foreground sm:w-auto" disabled>
           <Hourglass className="h-4 w-4" />
-          Parçaları aşağıdan onaylayın
+          {singleParca ? 'Aşağıdan onaylayın' : 'Parçaları aşağıdan onaylayın'}
         </Button>
       )
     }
@@ -1413,6 +1475,7 @@ function SiparisOrderCard({ order, action, onSign }) {
               {order.project_title?.replace(/ \/ /g, ' ')}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
+              <OrderNoBadge order={order} className="mr-1.5" />
               Talep eden: {order.requested_by_name} · {date}
             </p>
           </div>

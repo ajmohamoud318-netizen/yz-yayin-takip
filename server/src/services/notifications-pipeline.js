@@ -495,9 +495,20 @@ export async function notifyProjectTransition(client, {
   }
 
   switch (toStage) {
+    // ÇİN has no matbaa leg: the demo comes back from China to the team
+    // leaders, and sending it on to the approval gate is theirs
+    // (computeDemoTeslimAdvance). Pinging the printers told the one party with
+    // nothing to do and nobody who had. Same deep link — it opens the form the
+    // leader forwards from.
+    case 'cin_demo_teslim':
+      return emit(client, {
+        ...base, recipientIds: leaders, type: 'demo_delivery_pending', tone: 'blue',
+        body: 'Çin demosu geldi, inceleyip onaya gönderin',
+        link: `/projects/${project.id}?action=teslim`,
+      })
+
     // Matbaa must deliver the requested demo.
     case 'demo_teslim':
-    case 'cin_demo_teslim':
       // ?action=teslim tells ProjectDetail to open the demo form itself on
       // arrival, instead of the printer landing on the page and having to
       // find the "Teslim Edin" button — the printer's whole job here IS the

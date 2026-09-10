@@ -37,6 +37,9 @@ export default function SpecFormFooter({
   // nobody may type into — a button promising to save edits that cannot be
   // made. The decision buttons themselves are unaffected.
   decisionReview = false,
+  // What the advance button says when the dialog knows better than the
+  // variant's role-only label — the ÇİN forward, which is not a "Demo İsteyin".
+  advanceLabelOverride = null,
   onClose,
   onPrint,
   onSave,
@@ -162,7 +165,7 @@ export default function SpecFormFooter({
             : rejectContext ? 'Reddedin ve Gönderin'
               : offersOzalitRoute ? 'Matbaadan Ozalit İsteyin'
                 : authoringOrderOzalit ? 'Ozalit İsteyin'
-                  : variant.advanceLabel(user)}
+                  : advanceLabelOverride ?? variant.advanceLabel(user)}
         </Button>
       )}
       {isBaskiOnayApproval && !baskiOnayPrepared && (

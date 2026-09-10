@@ -212,12 +212,14 @@ async function dispatchProjectNotification(client, { notification, project, acto
  * @param {function} [hooks.after] — async ({ client, event, updated, project, actor, ctx })
  *   cross-aggregate work that must happen in the same tx (e.g. subtask
  *   UPDATEs on reject, product-info capture on baski_onay approve).
+ * @param {string|null} [hooks.expectedStage] — the stage the caller was looking
+ *   at (approve and reject echo it). A different stage on the locked row is a 409.
  * @param {object} [client] — an already-open transaction to run inside.
  *   Production routes never pass one (each request is its own transaction);
  *   the service tests use it to drive a fake pg client through this exact
  *   orchestration.
  */
-async function runProjectCommand(projectId, actor, { prepare, run, after } = {}, client = null) {
+async function runProjectCommand(projectId, actor, { prepare, run, after, expectedStage = null } = {}, client = null) {
   const body = async (client) => {
     const row = await getProjectForUpdate(client, projectId)
     if (!row) notFound('Proje bulunamadı.')
@@ -226,6 +228,13 @@ async function runProjectCommand(projectId, actor, { prepare, run, after } = {},
     // uniformly — admins (create/import/patch/catalog) and the two CRUD
     // paths below don't go through this orchestrator.
     assertNotLegacy(row)
+    // A decision is about the round the caller was looking at. The approve and
+    // reject bodies have always carried that stage and nothing read it, so a
+    // stale tab's Onayla landed on whatever gate the project had moved to since
+    // — the next gate's approval, taken off a screen showing the previous one.
+    if (expectedStage && row.stage !== expectedStage) {
+      conflict('Proje bu arada başka bir aşamaya geçti. Sayfayı yenileyip tekrar deneyin.')
+    }
 
     // `prepare` runs BEFORE the entity is built so its mutations to `row`
     // (e.g. loading subtasks / assignees that the FSM needs) propagate into

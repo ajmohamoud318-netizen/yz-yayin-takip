@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import api from '@/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import OrderNoBadge from '@/components/OrderNoBadge'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -167,6 +168,7 @@ function ApprovalRow({ handover: h, saving, onConfirm }) {
                 Yeni Baskı
               </span>
             )}
+            {isReprint && <OrderNoBadge order={h} />}
             <span>Matbaa: {h.raised_by_name ?? '—'} · {fmtDate(h.created_at)}</span>
           </p>
         </div>

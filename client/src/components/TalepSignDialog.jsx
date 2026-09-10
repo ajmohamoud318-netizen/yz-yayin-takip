@@ -16,7 +16,8 @@ import { isSubtaskDone } from '@/domain/services/progress'
 // `ozalit_parca_approvals` / `_rejections`, which the ORDER carries under the
 // identical names (migration 080) — so the sipariş gate is answered by the
 // same code rather than by a lookalike.
-import { pendingParcalar } from '@/domain'
+import { pendingParcalar, parcaNames } from '@/domain'
+import { orderLabel } from '@/domain/constants/orders'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -35,6 +36,7 @@ import TalepRejectForm from '@/components/TalepRejectForm'
 import { TalepAssignDesigners, TalepOrderSummary } from '@/components/TalepOrderSummary'
 import { TalepMatbaaReceiptBanner, TalepOzalitPanel } from '@/components/TalepOzalitPanel'
 import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
+import ParcaChangeRequestPanel from '@/components/ParcaChangeRequestPanel'
 import ParcaReturnedPanel from '@/components/ParcaReturnedPanel'
 import { ProductInfoPanel, SubtaskPanel } from '@/components/TalepSpecEditors'
 
@@ -336,6 +338,31 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
 
   const roundParcalar = order.ozalit_parcalar ?? []
 
+  /**
+   * A round whose sheet carries ONE parça.
+   *
+   * Decided in the grid below like a split round, but as the WHOLE order — the
+   * order's own approve (`handleSign` → advance, the flat `matbaa_approvals`
+   * ledger) and its own reject form, exactly what the footer offered before. A
+   * per-parça reject is the wrong verb for a round of one: it parks the order at
+   * imza_bekleniyor and routes the parça through `parca_state`, where the
+   * whole-order reject sends the round back — to the matbaa, the designer or a
+   * new team — with its route and revize choices. And both halves have to use
+   * the same ledger, or the grid would show a signature the gate does not count.
+   *
+   * The grid reads the per-parça shape, so it is handed the flat ledger in that
+   * shape: the one parça's signers ARE the order's.
+   */
+  const singleParcaName = parcaNames(roundParcalar)[0]
+  const singleParcaRound = roundParcalar.length === 1 && !!singleParcaName
+  const gridOrder = singleParcaRound
+    ? {
+        ...order,
+        ozalit_parca_approvals: { [singleParcaName]: order.matbaa_approvals ?? [] },
+        ozalit_parca_rejections: [],
+      }
+    : order
+
   /* Which parçalar THIS viewer still owes a signature on. Ozalit is
      multi-party, so "pending" is a question about a person, not the parça —
      passing `user` is what stops the leader's own sign-off from closing the
@@ -415,6 +442,30 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     }
   }
 
+  /**
+   * The leader asks the matbaa to release a started parça. Mirrors the
+   * project-side `handleRequestParcaChange` (ProjectDetail.jsx) — same
+   * UX, same panel, same per-parça routing rows refetch afterwards.
+   *
+   * Server-side role check: order-parca-service.js refuses non-leaders
+   * with a 400, so this panel stays leader-only in the UI too (see the
+   * mount below).
+   */
+  async function handleRequestOrderParcaChange(parca, note) {
+    setParcaBusy(true)
+    setBusyParca(parca)
+    try {
+      await api.requestOrderParcaChange(order.id, parca, note)
+      toast.success(`${parca} için değişiklik istendi, matbaanın yanıtı bekleniyor.`)
+      refetchParcaRows()
+    } catch (err) {
+      toast.error(err.message || 'Talep gönderilemedi.')
+    } finally {
+      setParcaBusy(false)
+      setBusyParca(null)
+    }
+  }
+
   const ozalitStarted = !!order.ozalit_started
   const ozalitChangePending = order.ozalit_change_requested_at != null
   const ozalitFixPending = !!order.ozalit_fix_pending
@@ -443,8 +494,9 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   // is "done" via pages_done, not is_done.
   const revisableSubtasks = rejectSubtasks.filter((s) => s.kind !== 'revize' && isSubtaskDone(s))
 
+  // Also the grid's thumbs-up on a round of one, which has no event to stop.
   async function handleSign(e) {
-    e.preventDefault()
+    e?.preventDefault()
     if (!user) return
     if (isAssignStep && assignIds.length === 0) {
       toast.error('En az bir tasarımcı seçin.')
@@ -590,7 +642,9 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Ozalit Teslim Alma</DialogTitle>
-            <DialogDescription>{order.project_title?.replace(/ \/ /g, ' ')}</DialogDescription>
+            <DialogDescription>
+              {order.project_title?.replace(/ \/ /g, ' ')} · {orderLabel(order)}
+            </DialogDescription>
           </DialogHeader>
 
           {confirmMatbaaNotReceived ? (
@@ -759,17 +813,25 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
               `ozalit_parca_rejections` under the same names the project does
               (migration 080), so the grid and every domain helper behind it
               read a sipariş without knowing it is one. */}
-          {isMatbaaOnayStep && splitRound && canActOnMatbaaOnay && !showReject && (
+          {/* …and a round of ONE parça is decided here too, as the whole order
+              — see `singleParcaRound`. */}
+          {isMatbaaOnayStep && (splitRound || singleParcaRound) && canActOnMatbaaOnay && !showReject && (
             <ParcaApprovalGrid
-              project={order}
+              project={gridOrder}
               kind="ozalit"
               user={user}
               snapshotParcalar={roundParcalar}
-              parcaRows={parcaRows}
+              // A round of one has no routing rows: its parça is wherever the
+              // order is, and the receipt in front of this dialog covered it.
+              parcaRows={singleParcaRound ? null : parcaRows}
               roundAwaitsReceipt={false}
-              busy={parcaBusy}
-              onApproveParcalar={handleApproveParcalar}
-              onReceiveParca={handleReceiveParca}
+              busy={singleParcaRound ? saving : parcaBusy}
+              onApproveParcalar={singleParcaRound
+                // The footer's Onaylayın, moved here: the same submit, carrying
+                // the note and any spec edit, behind the same gate.
+                ? (canApproveMatbaaOnayNow(user, order) ? () => handleSign() : undefined)
+                : handleApproveParcalar}
+              onReceiveParca={singleParcaRound ? undefined : handleReceiveParca}
               // Reject is the leader's alone, matching the server.
               //
               // The grid calls this POSITIONALLY — (parcalar, reason, target)
@@ -777,10 +839,15 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
               // object through instead would have handed `reason` in where
               // `{ reason, target }` was expected: every matbaa reject would
               // have gone silently to the designer, and the reason lost.
-              onRejectParcalar={user?.role === 'team_leader'
-                ? (parcalar, reason, target) =>
-                  handleRejectParcalar(parcalar, { reason, target: target ?? 'designer' })
-                : undefined}
+              //
+              // On a round of one it is the footer's Reddedin instead: the
+              // whole-order reject form, with its route and revize choices.
+              onRejectParcalar={user?.role !== 'team_leader'
+                ? undefined
+                : singleParcaRound
+                  ? () => setShowReject(true)
+                  : (parcalar, reason, target) =>
+                    handleRejectParcalar(parcalar, { reason, target: target ?? 'designer' })}
               bulkApproveLabel="Tüm parçaları onaylayın"
             />
           )}
@@ -798,6 +865,28 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
             />
           )}
 
+          {/* What the leader can still change on the sheet the matbaa is
+              holding this round, and what they have to ask for — full parity
+              with the project pipeline's ParcaChangeRequestPanel (see
+              ProjectDetail.jsx). Mounted only on a split round, because a
+              round of one has no per-parça surface and the footer's
+              Onaylayın / Reddedin already cover the whole sheet.
+
+              Leader-only: order-parca-service.js's `requestOrderParcaChange`
+              refuses non-leaders, and the panel's "started parça → ask the
+              matbaa to release it" affordance is meaningless for the printer
+              or designer — they are the OTHER side of the same conversation. */}
+          {isMatbaaOnayStep && splitRound && !showReject && user?.role === 'team_leader' && (
+            <ParcaChangeRequestPanel
+              rows={parcaRows}
+              snapshotParcalar={roundParcalar}
+              gate="ozalit"
+              canAct={user?.role === 'team_leader'}
+              busyParca={busyParca}
+              onRequestChange={handleRequestOrderParcaChange}
+            />
+          )}
+
           {canActOnMatbaaOnay && !showReject && matbaaReceived && (
             <TalepMatbaaReceiptBanner
               order={order}
@@ -808,7 +897,8 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
 
           <DialogFooter className="gap-2 sm:justify-between">
             <div>
-              {canReject && !showReject && (
+              {/* On a round of one the grid's thumbs-down is this button. */}
+              {canReject && !showReject && !(isMatbaaOnayStep && singleParcaRound) && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -843,8 +933,9 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
                 // own it. See `splitRound` above.
                 !(user?.role === 'printer' && isTasarimciOnayStep && splitRound) &&
                 // Nor a whole-order approve on a split round — the grid above
-                // owns that decision, one parça at a time.
-                !(isMatbaaOnayStep && splitRound) && (
+                // owns that decision, one parça at a time — nor on a round of
+                // one, where the grid's thumbs-up is this button.
+                !(isMatbaaOnayStep && (splitRound || singleParcaRound)) && (
                   <Button
                     type="submit"
                     disabled={

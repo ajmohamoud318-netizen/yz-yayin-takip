@@ -23,9 +23,13 @@ import {
   getProject, getProjectForUpdate, patchProject, logHistory, insertDemoSnapshot,
   loadLatestOrderOzalitSnapshot,
 } from './project-repository.js'
-import { parcaSetDelta } from '../domain/spec-parca-diff.js'
-import { parcaRejectPatch } from '../domain/parca-routing.js'
-import { listParcaStateForOrder, upsertOrderParcaState } from './parca-state-repository.js'
+import { changedParcaBlocks, parcaSetDelta } from '../domain/spec-parca-diff.js'
+import {
+  parcaRejectPatch, parcaReceivePatch, parcaAwaitsReceipt, parcaFixSettlements, parcaNotReceivedPatch,
+} from '../domain/parca-routing.js'
+import {
+  listParcaStateForOrder, upsertOrderParcaState, deleteParcaStateForOrder,
+} from './parca-state-repository.js'
 import {
   notifyOrderTransition, notifyOrderRejected, notifyMatbaaReceived, notifyMatbaaApprovalPending,
   notifyOrderOzalitStarted, notifyOrderOzalitCancelled, notifyOrderOzalitEdited,
@@ -356,22 +360,25 @@ export async function advanceOrder(orderId, actor, {
   return runOrderCommand(orderId, actor, {
     async prepare({ client, row }) {
       const wasPending = row.status === 'atama_bekleniyor'
-      // Is the printer's round split into parçalar? The entity cannot see
-      // `parca_state` or the round's sheet, so the answer is loaded here and
-      // handed to it — see Order._authorizeAdvance for what it does with it.
-      // Only asked at the step where a whole-order delivery is even possible.
+      // Is the round split into parçalar? The entity cannot see `parca_state`
+      // or the round's sheet, so the answer is loaded here and handed to it —
+      // see Order._authorizeAdvance for what it does with it. Asked at the two
+      // steps where a whole-order click could stand in for per-parça work: the
+      // matbaa's delivery and the leaders' approval.
+      const splitRound = async () => (
+        (await loadLatestOrderOzalitSnapshot(client, orderId))?.selectedComponents ?? []
+      ).length >= 2
       if (row.status === 'matbaa_ozalit_yapiyor') {
-        const snapshot = await loadLatestOrderOzalitSnapshot(client, orderId)
-        return {
-          wasPending,
-          splitRound: (snapshot?.selectedComponents ?? []).length >= 2,
-        }
+        return { wasPending, splitRound: await splitRound() }
       }
+      // Leaving kontroller_tamam starts a new round — see the after hook.
+      if (row.status === 'kontroller_tamam') return { wasPending, startsRound: true }
       // The active leader set is only consulted by a multi-party imza_bekleniyor
       // round, so it stays unqueried for every other step.
       if (row.status !== 'imza_bekleniyor') return { wasPending }
       return {
         wasPending,
+        splitRound: await splitRound(),
         teamLeaderIds: await repo.activeTeamLeaderIds(client),
         designerIds: Array.isArray(row.assignee_ids) ? row.assignee_ids : [],
       }
@@ -390,6 +397,15 @@ export async function advanceOrder(orderId, actor, {
       designerIds: ctx.designerIds ?? [],
     }),
     async after({ client, ctx }) {
+      // A new round owes the last one's routing rows nothing, and inheriting
+      // them sank a split round before it started: a parça still marked
+      // delivered or approved derived no card for the matbaa, refused their
+      // İşlemi Başlatın, and counted as already delivered. Every exit from a
+      // round clears them now; this is the backstop for orders already stuck.
+      if (ctx.startsRound) {
+        await deleteParcaStateForOrder(client, orderId)
+        return
+      }
       // Only the pending → tasarimciya_atandi handoff carries assignees. Validated
       // after the entity's state/role gates so a caller sees the same error
       // the route used to produce, and inside the transaction so a bad id
@@ -405,23 +421,57 @@ export async function advanceOrder(orderId, actor, {
   }, client)
 }
 
-/** POST /api/order-requests/:id/matbaa-receive */
+/**
+ * POST /api/order-requests/:id/matbaa-receive
+ *
+ * One "Teslim Alındı" covers every parça the matbaa handed back, and the
+ * routing rows now record it — the project's computeOzalitReceive stamps them
+ * the same way (roundReceiptParcaState). Without it the approval grid asked for
+ * a second, per-parça receipt on every proof the leader had just received.
+ */
 export async function receiveMatbaaOzalit(orderId, actor, client = null) {
   return runOrderCommand(orderId, actor, {
-    prepare: ({ row }) => ({
+    prepare: async ({ client, row }) => ({
       designerIds: Array.isArray(row.assignee_ids) ? row.assignee_ids : [],
+      parcaRows: await listParcaStateForOrder(client, orderId),
     }),
     run: (order, ctx) => order.receiveMatbaaOzalit(actor, ctx),
+    async after({ client, updated, ctx }) {
+      const now = new Date().toISOString()
+      for (const row of (ctx.parcaRows ?? []).filter(parcaAwaitsReceipt)) {
+        await upsertOrderParcaState(client, updated.project_id, orderId, row.parca, parcaReceivePatch({
+          actor, actorName: actor?.name ?? 'Bilinmeyen', now, deliveredAt: row.delivered_at,
+        }))
+      }
+    },
   }, client)
 }
 
-/** POST /api/order-requests/:id/matbaa-not-received */
+/**
+ * POST /api/order-requests/:id/matbaa-not-received
+ *
+ * On a split round, every parça the matbaa handed back goes back on their desk
+ * still started. Left as delivered it was a dead end: the queue derived no card
+ * for it, a second "Teslim Edin" was a silent no-op, and the whole-order
+ * delivery is refused on a split round.
+ */
 export async function markMatbaaNotReceived(orderId, actor, client = null) {
   return runOrderCommand(orderId, actor, {
-    prepare: ({ row }) => ({
+    prepare: async ({ client, row }) => ({
       designerIds: Array.isArray(row.assignee_ids) ? row.assignee_ids : [],
+      parcaRows: await listParcaStateForOrder(client, orderId),
     }),
     run: (order, ctx) => order.markMatbaaNotReceived(actor, ctx),
+    async after({ client, updated, ctx }) {
+      const now = new Date().toISOString()
+      // Only what the matbaa delivered. A parça out with the designer, or
+      // already back with the matbaa, is mid-rework and not part of the
+      // handover that failed.
+      const delivered = (ctx.parcaRows ?? []).filter((r) => r.state === 'pending' && r.delivered_at)
+      for (const row of delivered) {
+        await upsertOrderParcaState(client, updated.project_id, orderId, row.parca, parcaNotReceivedPatch({ now }))
+      }
+    },
   }, client)
 }
 
@@ -430,9 +480,19 @@ export async function startOzalit(orderId, actor, client = null) {
   return runOrderCommand(orderId, actor, { run: (order) => order.startOzalit(actor) }, client)
 }
 
-/** POST /api/order-requests/:id/ozalit-cancel */
+/**
+ * POST /api/order-requests/:id/ozalit-cancel
+ *
+ * The entity refuses while any parça is on the press. Once through, the
+ * withdrawn round's routing rows go with it — the designer's resubmission must
+ * not inherit them.
+ */
 export async function cancelOzalit(orderId, actor, client = null) {
-  return runOrderCommand(orderId, actor, { run: (order) => order.cancelOzalit(actor) }, client)
+  return runOrderCommand(orderId, actor, {
+    prepare: async ({ client }) => ({ parcaRows: await listParcaStateForOrder(client, orderId) }),
+    run: (order, ctx) => order.cancelOzalit(actor, ctx),
+    after: ({ client }) => deleteParcaStateForOrder(client, orderId),
+  }, client)
 }
 
 /**
@@ -457,8 +517,13 @@ export async function editOzalit(orderId, actor, { payload, attempt } = {}, clie
       const setDelta = payload
         ? parcaSetDelta(baseline?.payload, payload)
         : null
+      // Which parçalar this save rewrites — for the per-parça lock, and for the
+      // corrections it discharges. A payload-less notify writes no sheet, so it
+      // rewrites nothing.
+      const changedParcalar = payload ? changedParcaBlocks(baseline?.payload, payload) : []
+      const parcaRows = await listParcaStateForOrder(client, orderId)
 
-      if (!payload) return { demoId: null, parcaSetDelta: null }
+      if (!payload) return { demoId: null, parcaSetDelta: null, changedParcalar, parcaRows }
       const snapshot = await insertDemoSnapshot(client, {
         project_id: row.project_id,
         order_id: orderId,
@@ -467,9 +532,18 @@ export async function editOzalit(orderId, actor, { payload, attempt } = {}, clie
         attempt: attempt ?? (row.ozalit_attempt ?? 0) + 1,
         created_by: actor?.id,
       })
-      return { demoId: snapshot?.id ?? null, parcaSetDelta: setDelta }
+      return { demoId: snapshot?.id ?? null, parcaSetDelta: setDelta, changedParcalar, parcaRows }
     },
     run: (order, ctx) => order.editOzalit(actor, ctx),
+    // The per-parça half of clearing `ozalit_fix_pending`. Accepting a change
+    // request leaves `fix_pending` on the parça and this correction is what
+    // settles it; nothing did before, so startOrderParca refused that parça for
+    // good and the round could never be delivered.
+    async after({ client, updated, ctx }) {
+      for (const { parca, patch } of parcaFixSettlements(ctx.parcaRows, ctx.changedParcalar)) {
+        await upsertOrderParcaState(client, updated.project_id, orderId, parca, patch)
+      }
+    },
   }, client)
 }
 
@@ -502,6 +576,10 @@ export async function rejectOrder(orderId, actor, { reason, rejectTarget = 'matb
   return runOrderCommand(orderId, actor, {
     run: (order) => order.reject(actor, { reason, rejectTarget, revizeIds }),
     async after({ client, event }) {
+      // The rejected round's routing rows go with its ledger (the entity clears
+      // that). Left behind they sank the next split round: no card for the
+      // matbaa, "Bu parça sizde değil" on start, parçalar counted as delivered.
+      await deleteParcaStateForOrder(client, orderId)
       // Only the 'designer' route reworks the design: a 'matbaa' rejection
       // re-delivers the same files, and 'reassign' hands the order to a new
       // team. needs_revize is set and is_done / progress left alone — the
@@ -690,6 +768,10 @@ async function loadParcaGateContext(client, orderId, row) {
     designerIds: Array.isArray(row.assignee_ids) ? row.assignee_ids : [],
     roundParcalar: snapshot?.selectedComponents ?? [],
     ekranParcalar: parcaRows.filter((r) => r.route === 'ekran').map((r) => r.parca),
+    // Parçalar on somebody's desk for rework — not signable until they return.
+    outForRework: parcaRows
+      .filter((r) => r.state === 'with_designer' || r.state === 'with_matbaa' || r.state === 'in_round')
+      .map((r) => r.parca),
     parcaRows,
   }
 }
@@ -708,7 +790,14 @@ export async function approveOrderParcalar(orderId, actor, { parcalar = [], note
       //
       // On the completing click the notification carries no parça list (it is
       // a plain transition), so the whole round is what got signed.
-      const signed = event.notification?.parcalar ?? ctx.roundParcalar ?? []
+      //
+      // Only a parça with EVERY required signature leaves the gate. Marking it
+      // approved on the first one took it out of the decidable state the
+      // approval grid reads, so the second leader and the assigned designer saw
+      // it as "Matbaada" with no Onayla — and the round could never finish.
+      const stillOwed = new Set(event.notification?.stillPending ?? [])
+      const signed = (event.notification?.parcalar ?? ctx.roundParcalar ?? [])
+        .filter((parca) => !stillOwed.has(parca))
       const byParca = new Map((ctx.parcaRows ?? []).map((r) => [r.parca, r]))
       for (const parca of signed) {
         await upsertOrderParcaState(client, updated.project_id, orderId, parca, {

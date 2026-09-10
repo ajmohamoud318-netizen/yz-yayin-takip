@@ -130,7 +130,16 @@ export function ledgerKindForStage(stage) {
  */
 export function parcaRoundDecidable(project) {
   const stage = project?.stage
-  if (stage === 'demo_onay' || stage === 'cin_demo_onay') return project?.demo_received === true
+  if (stage === 'demo_onay' || stage === 'cin_demo_onay') {
+    if (project?.demo_received !== true) return false
+    // A held demo (approved once already below 100%) can only be closed out
+    // by a fresh look — a re-send or an ekran demo onayı — never by this
+    // grid completing the same round again. Below 100% the hold is still
+    // open and per-parça sign-offs are legitimate; matches the server 400 in
+    // transitions.js#computeApproval once progress reaches 100%.
+    if (project?.demo_held === true && (project?.progress ?? 0) >= 100) return false
+    return true
+  }
   if (stage === 'ozalit_onay') return ozalitDecidable(project)
   if (stage === 'baski_onay' || stage === 'cin_baski_onay') return true
   return false

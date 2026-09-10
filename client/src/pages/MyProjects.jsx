@@ -9,6 +9,7 @@ import { useProjects } from '@/hooks/useProjects'
 import { useOpenOrdersByProject } from '@/hooks/useOpenOrders'
 import FilterChip from '@/components/FilterChip'
 import { Card, CardContent } from '@/components/ui/card'
+import OrderNoBadge from '@/components/OrderNoBadge'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -75,8 +76,10 @@ export default function MyProjects() {
     const pipelineIds = new Set(pipelineMine.map((p) => p.id))
     const legacyMine = allProjects.filter((p) => {
       if (p.origin !== 'legacy' || pipelineIds.has(p.id)) return false
-      const order = openOrders.get(p.id)
-      return !!order && isOrderAssignedToDesigner(order, user?.id, pipelineIds)
+      // ANY open order: the designer may be on the second reprint only.
+      return (openOrders.get(p.id) ?? []).some(
+        (order) => isOrderAssignedToDesigner(order, user?.id, pipelineIds),
+      )
     })
     return legacyMine.length ? [...pipelineMine, ...legacyMine] : pipelineMine
   }, [projects, allProjects, openOrders, user?.id])
@@ -248,7 +251,7 @@ export default function MyProjects() {
                     <div className="flex items-start gap-2">
                       <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', meta.dot)} />
                       <p className="text-sm font-semibold leading-snug">{p.title}</p>
-                      <OrderBadge order={openOrders.get(p.id)} className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                      <OrderBadge orders={openOrders.get(p.id)} className="mt-0.5" />
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <span className="truncate">{TYPE_LABELS[p.type]} · {STAGE_LABELS[p.stage]} · {p.assigned_name}</span>
@@ -297,7 +300,7 @@ export default function MyProjects() {
                           <div className="flex items-center gap-2.5">
                             <span className={cn('h-2 w-2 shrink-0 rounded-full', meta.dot)} />
                             <span className="font-medium text-foreground">{p.title}</span>
-                            <OrderBadge order={openOrders.get(p.id)} />
+                            <OrderBadge orders={openOrders.get(p.id)} />
                           </div>
                         </td>
                         <td className="px-4 py-3">
@@ -398,6 +401,7 @@ function SiparisOrderRow({ order, onSign, onOzalitRequest }) {
               {order.project_title?.replace(/ \/ /g, ' ')}
             </p>
             <p className="text-xs text-muted-foreground">
+              <OrderNoBadge order={order} className="mr-1.5" />
               Talep eden: {order.requested_by_name}
             </p>
             {items.length > 0 ? (

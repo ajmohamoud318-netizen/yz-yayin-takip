@@ -26,7 +26,7 @@ import { openMultiPrint } from '@/lib/spec-form-print'
 import {
   decisionScopeCopy, parcaAddFlag, scopeComponents,
 } from '@/lib/spec-form-scope'
-import { VARIANTS, computeBaskiOnayLocked, canEditPreparedBaskiOnay, isDecisionReview, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
+import { VARIANTS, computeBaskiOnayLocked, canEditPreparedBaskiOnay, isCinDemoForward, isDecisionReview, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
 import {
   fetchServerSnapshot,
   loadSaved,
@@ -270,6 +270,9 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   const offersProjectOzalitRoute =
     !orderScoped && mode === 'advance' && variantName === 'ozalit'
     && needsOzalitRouteChoice(project)
+  // ÇİN's teslim leg: the leader forwards the sheet on file rather than
+  // composing a new round — see isCinDemoForward.
+  const forwardsCinDemo = isCinDemoForward({ mode, variant, project, user, orderScoped })
   /* ── Baskı Onayı dual-approval (migration 045) ────────────────────────────
    * One team leader PREPARES the form; a DIFFERENT team leader gives the
    * actual "Baskı Onayı". The server is the source of truth for "different
@@ -334,6 +337,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     // can see them; the caller passes the decision instead. See
     // isDecisionReview.
     || decisionReview
+    // The ÇİN forward sends the sheet on exactly as it is — see forwardsCinDemo.
+    || forwardsCinDemo
   const printable = variant.canPrint({ user, project, readOnly })
   // The plain "Demo Formu" button (mode='view', no notify) always opens a
   // round that has ALREADY been sent: at demo_onay it's the sheet sitting with
@@ -383,6 +388,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     !orderScoped &&
     mode === 'advance' &&
     user?.role !== 'printer' &&
+    !forwardsCinDemo &&
     DEMO_RESEND_STAGES.has(project?.stage)
   // Editing an already-sent round ("Gönderilen Demoyu/Ozaliti Düzenleyin",
   // mode='view' + notifyOnSave) must not overwrite the pristine as-first-sent
@@ -410,7 +416,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // and the lookahead would drag the previous round's edit into a fresh
   // sheet) and the edit dialog itself, whose attemptNo already IS the edit
   // slot.
-  const composingNewRound = mode === 'advance' && user?.role !== 'printer'
+  const composingNewRound = mode === 'advance' && user?.role !== 'printer' && !forwardsCinDemo
   const liveAttempts =
     composingNewRound || notifyOnSave ? attemptNo : [attemptNo, attemptNo + 1]
 
@@ -771,6 +777,12 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           teslimTarihi: today,
           matbaaYetkilisi: user?.name ?? '',
         }
+      } else if (forwardsCinDemo) {
+        // The ÇİN forward is this round's delivery, so it carries the teslim
+        // stamps a matbaa delivery would — but not matbaaYetkilisi, which is a
+        // matbaa's signature, and no matbaa gave one.
+        const today = new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+        payload = { ...form, teslimEdenKisi: user?.name ?? '', teslimTarihi: today }
       } else if (variant.kind === 'ozalit') {
         // Requesting the ozalit — the first ask or a resubmit after an
         // ozalit rejection — is always the current user's ask, even though
@@ -834,7 +846,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               ? 'Ekran ozalit istendi, ekip liderine gönderildi.'
               : offersProjectOzalitRoute && routeOverride === 'ozalit'
                 ? 'Ozalit istendi, matbaaya gönderildi.'
-                : variant.advanceToast(project),
+                : forwardsCinDemo ? 'Demo onaya gönderildi.' : variant.advanceToast(project),
       )
       // The sipariş's ozalit request is where the designer's work actually
       // leaves their desk (the checks step before it is only half a turn), so
@@ -1190,6 +1202,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           decisionReview={decisionReview}
           authoringOrderOzalit={authoringOrderOzalit}
           offersOzalitRoute={offersProjectOzalitRoute}
+          advanceLabelOverride={forwardsCinDemo ? 'Onaya Gönderin' : null}
           rejectContext={rejectContext}
           onAdvance={handleAdvance}
           isBaskiOnayApproval={isBaskiOnayApproval}

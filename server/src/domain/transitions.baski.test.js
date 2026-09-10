@@ -16,7 +16,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { computeApproval, computeBaskiOnayPrepare } from './transitions.js'
+import { computeApproval, computeBaskiOnayPrepare, computeRejection } from './transitions.js'
 
 const L1 = { id: 'L1', role: 'team_leader', name: 'Ayşenur' }
 const L2 = { id: 'L2', role: 'team_leader', name: 'İkinci Lider' }
@@ -283,5 +283,67 @@ describe('baskı onayı with only one active team leader', () => {
       p, L1, { ...soloCtx(['KAPAK', 'KUTU']), parcalar: ['KAPAK', 'KUTU'] },
     )
     assert.equal(next.stage, 'baskida')
+  })
+})
+
+/**
+ * Regression: a rejected baskı onayı round must not leave its maker-checker
+ * ledger behind. Nothing cleared it on reject — only computeApproval ever
+ * wrote these columns, and only on a completing/partial APPROVE. A reject
+ * bounces the project to tasarım for a full redesign, but the OLD
+ * preparer/approval pair stayed keyed under the same parça names. Since a
+ * reprint of the same title reuses those names, the next baski_onay round
+ * could read a stale approval — signed on a sheet that was rejected and
+ * never printed — as already maker-checked, and reach production unsigned.
+ */
+describe('a rejected baskı onayı round clears its maker-checker ledger', () => {
+  it('on reject-to-designer', () => {
+    const p = baskiProject({
+      baski_onay_prepared: true,
+      baski_onay_prepared_by: 'L1',
+      baski_onay_prepared_by_name: 'Ayşenur',
+      baski_onay_prepared_at: 't0',
+      baski_parca_preparers: { KAPAK: { by: 'L1', by_name: 'Ayşenur', at: 't1' } },
+      baski_parca_approvals: { KAPAK: { by: 'L2', by_name: 'İkinci Lider', at: 't2' } },
+    })
+    const { project: next } = computeRejection(
+      p, 'Renkler yanlış', [], 'designer', { actorName: 'Ayşenur', actor: L1 },
+    )
+    assert.equal(next.stage, 'tasarim')
+    assert.equal(next.baski_onay_prepared, false)
+    assert.equal(next.baski_onay_prepared_by, null)
+    assert.deepEqual(next.baski_parca_preparers, {})
+    assert.deepEqual(next.baski_parca_approvals, {})
+  })
+
+  it('on reject-to-matbaa too — the reprint is the same design, but the sign-off is not', () => {
+    const p = baskiProject({
+      stage: 'cin_baski_onay',
+      cin_baski_parca_preparers: { KAPAK: { by: 'L1', by_name: 'Ayşenur', at: 't1' } },
+      cin_baski_parca_approvals: { KAPAK: { by: 'L2', by_name: 'İkinci Lider', at: 't2' } },
+    })
+    const { project: next } = computeRejection(
+      p, 'Baskı hatalı', [], 'matbaa', { actorName: 'Ayşenur', actor: L1 },
+    )
+    assert.deepEqual(next.cin_baski_parca_preparers, {})
+    assert.deepEqual(next.cin_baski_parca_approvals, {})
+  })
+
+  it('does not touch the ledger on a per-parça reject — the rest of the round is still live', () => {
+    const p = baskiProject({
+      baski_parca_preparers: {
+        KAPAK: { by: 'L1', by_name: 'Ayşenur', at: 't1' },
+        KUTU: { by: 'L1', by_name: 'Ayşenur', at: 't1' },
+      },
+      baski_parca_approvals: { KUTU: { by: 'L2', by_name: 'İkinci Lider', at: 't2' } },
+    })
+    // Baskı Onayı has no designer/matbaa leg to send a parça back to — a
+    // per-parça reject here would be refused server-side either way
+    // (computeRejection's "yalnızca demo ve ozalit" guard) — this only pins
+    // that the WHOLE-round reset stays scoped to a whole-round reject.
+    assert.throws(
+      () => computeRejection(p, 'x', [], 'designer', { actorName: 'Ayşenur', actor: L1, parcalar: ['KUTU'] }),
+      /Parça bazlı red yalnızca demo ve ozalit/,
+    )
   })
 })

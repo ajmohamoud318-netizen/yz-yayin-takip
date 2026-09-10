@@ -275,14 +275,15 @@ export function useProjectDetail(id) {
    *
    * The permission itself (canReceiveDemo / canReceiveOzalit above) is unchanged
    * — this only says where the buttons live, so the header can stop drawing them
-   * where the panel does. Both halves are required: a multi-parça round AND a
-   * viewer the panel actually draws for. The second is not redundant. An
+   * where the panel does. Both halves are required: a round with a parça list
+   * (one parça or several — the panel draws for both) AND a viewer the panel
+   * actually draws for. The second is not redundant. An
    * assigned designer may take delivery of a demo but is not a demo approver, so
    * no panel renders for them — hiding their header pair on that alone would
    * leave them with no way to acknowledge a proof they are holding.
    * `parcaPanelViewer` is shared with ProjectDetail's own showParcaGrid so the
    * two answers cannot drift apart. */
-  const receiptInPanel = parcaSnapshotReady && parcaSnapshot.length >= 2
+  const receiptInPanel = parcaSnapshotReady && parcaSnapshot.length > 0
     && parcaPanelViewer(user, ledgerKind, { isAssigned })
   const advLabel = project ? advanceActionLabel(project, user?.role) : 'İlerletin'
   const appLabel = project ? approveActionLabel(project) : 'Onaylayın'

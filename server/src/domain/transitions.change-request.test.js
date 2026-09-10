@@ -219,4 +219,33 @@ describe('"Teslim Alınamadı" keeps the started ledger', () => {
     )
     assert.equal(next.ozalit_started, true)
   })
+
+  // The tests above hand computeDemoNotReceived/computeOzalitNotReceived an
+  // input that already claims demo_started/ozalit_started: true — which is
+  // not how the flag actually arrives there. `computeDemoTeslimAdvance` /
+  // computeOzalitTeslimAdvance (the delivery step that must run first, to
+  // reach demo_onay/ozalit_onay at all) unconditionally reset the flag to
+  // false on every delivery. Chaining the real sequence — start → deliver →
+  // not received — is what actually exercised the bug: the flag came back
+  // false, so the printer saw "İşlemi Başlatın" again for a demo they had
+  // already physically made, instead of "Teslim Edin".
+  it('survives the REAL sequence: started → delivered → not received', () => {
+    const started = computeDemoStart(demoProject(), printer).project
+    const delivered = computeAdvance(started, printer).project
+    assert.equal(delivered.demo_started, false, 'sanity: delivery does reset it')
+    assert.equal(delivered.stage, 'demo_onay')
+    const { project: reported } = computeDemoNotReceived(delivered, leader, { designerIds: [] })
+    assert.equal(reported.demo_started, true)
+    assert.equal(reported.stage, 'demo_teslim')
+  })
+
+  it('same real sequence, ozalit leg', () => {
+    const started = computeOzalitStart(ozalitProject(), printer).project
+    const delivered = computeAdvance(started, printer).project
+    assert.equal(delivered.ozalit_started, false, 'sanity: delivery does reset it')
+    assert.equal(delivered.stage, 'ozalit_onay')
+    const { project: reported } = computeOzalitNotReceived(delivered, leader, { designerIds: [] })
+    assert.equal(reported.ozalit_started, true)
+    assert.equal(reported.stage, 'ozalit_teslim')
+  })
 })

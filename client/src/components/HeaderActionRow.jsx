@@ -279,7 +279,7 @@ export default function HeaderActionRow({ d }) {
       )}
       {!canRequestDemoChange(user, project) && project?.demo_change_requested_at &&
         (isLeader || (user?.role === 'designer' && isAssigned)) &&
-        ['demo_teslim', 'cin_demo_teslim'].includes(project.stage) && (
+        project.stage === 'demo_teslim' && (
         <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700">
           <Clock className="h-4 w-4" />
           Değişiklik talebi gönderildi, matbaa yanıtı bekleniyor
@@ -328,11 +328,10 @@ export default function HeaderActionRow({ d }) {
       )}
       {/* Demo "Teslim Alındı" gate — before the Onay.
 
-          `!receiptInPanel`: on a multi-parça round the parça panel carries this
-          pair instead, beside the round's other whole-round decisions. It stays
-          here for single-parça and legacy rounds, and for anyone the panel does
-          not draw for — an assigned designer may take delivery of a demo but is
-          not a demo approver, so the panel is not their surface. */}
+          `!receiptInPanel`: on any round with a parça list — one parça or
+          several — the parça panel carries this pair instead, beside the
+          round's other decisions. It stays here for a legacy round with no
+          snapshot, and for anyone the panel does not draw for. */}
       {canReceiveDemo && !receiptInPanel && (
         <Button size="sm" onClick={() => setTeslimConfirm('demo-received')} disabled={receiving || reportingNotReceived}>
           <CheckCircle2 className="h-4 w-4" />
@@ -402,8 +401,10 @@ export default function HeaderActionRow({ d }) {
           {approveLabel}
         </Button>
       )}
-      {/* Demo-held hint */}
-      {(project.stage === 'demo_onay' || project.stage === 'cin_demo_onay') &&
+      {/* Demo-held hint — TR only. At cin_demo_onay the leader has already
+          forwarded the round, so this banner (designer-re-sends-new-demo) does
+          not apply. */}
+      {project.stage === 'demo_onay' &&
         project.demo_held === true &&
         (project.progress ?? 0) < 100 && (
           <span
@@ -437,11 +438,14 @@ export default function HeaderActionRow({ d }) {
       )}
       {canRespondEkranDemo(user, project) && (
         <>
+          {/* Opens ApprovalDialog rather than the bare teslimConfirm
+              ConfirmDialog every other button on this row uses — the leader's
+              approve is a real signature on the demo sheet, not a "bu işlem
+              geri alınamaz" confirm. See matbaa-sees-form-first. */}
           <Button
             size="sm"
             variant="success"
-            onClick={() => setTeslimConfirm('ekran-demo-approve')}
-            disabled={processingEkranDemo}
+            onClick={() => setDialog('ekran-demo-approve')}
           >
             <ThumbsUp className="h-4 w-4" />
             Ekran Demoyu Onaylayın

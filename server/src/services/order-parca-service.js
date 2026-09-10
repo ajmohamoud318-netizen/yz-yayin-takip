@@ -300,8 +300,14 @@ export async function deliverOrderParca(orderId, parca, actor, client = null) {
     // before they can sign it off, and this parça is no longer a rejected one.
     await settleOrderParcaAtGate(client, order, parca, { received: true })
 
-    // The ORDER only follows once the LAST parça is off their desk.
-    if (await allOrderParcalarDelivered(client, orderId)) {
+    // The ORDER only follows once the LAST parça is off their desk — and only on
+    // the round the matbaa is producing. A parça rejected back to the matbaa at
+    // imza_bekleniyor returns to a gate the order is already standing at;
+    // "advancing" from there ran the leaders' approval as the printer, which
+    // refused and rolled the delivery back. The project twin draws the same line
+    // (TESLIM_GATES in deliverParca).
+    const atGate = order.status !== ORDER_MATBAA_STATUS
+    if (!atGate && await allOrderParcalarDelivered(client, orderId)) {
       // The same transition the whole-sheet "Teslim Edin" performs, run inside
       // this transaction so the last parça's delivery and the status move
       // commit together. It carries its own history row and notifications.
@@ -319,7 +325,9 @@ export async function deliverOrderParca(orderId, parca, actor, client = null) {
       title: order.project_title,
       projectId: order.project_id,
       orderId,
-      body: `${parca} teslim edildi, diğer parçalar bekleniyor`,
+      body: atGate
+        ? `${parca} yeniden teslim edildi, teslim alınması bekleniyor`
+        : `${parca} teslim edildi, diğer parçalar bekleniyor`,
       link: '/siparis-talepleri',
       event: { type: 'order.parca_delivered', aggregateId: orderId },
     })
@@ -583,7 +591,7 @@ export async function dropOrderParca(orderId, parca, client = null) {
 async function loadLiveOrderRounds(db = null) {
   const pool = db ?? getPool()
   const { rows: orders } = await pool.query(
-    `SELECT o.id, o.project_id, o.status, o.assignee_ids,
+    `SELECT o.id, o.project_id, o.order_no, o.status, o.assignee_ids,
             p.title AS project_title, p.stage AS project_stage, p.type AS project_type
        FROM order_requests o
        JOIN projects p ON p.id = o.project_id
@@ -662,6 +670,7 @@ async function deriveOrderParcalar(routed, rounds, db = null) {
         project_type: o.project_type,
         order_status: o.status,
         order_assignee_ids: o.assignee_ids ?? [],
+        order_no: o.order_no,
       })
     }
   }
@@ -681,7 +690,13 @@ export async function listMyOrderParcaQueue(actor, db = null) {
     // advanced, was rejected, or the parça left the round. The twin of
     // `dropOrphanedRouted`: a stale row would otherwise offer the printer a
     // card whose action the service refuses.
-    const live = routed.filter((r) => rounds.has(r.order_id))
+    //
+    // …except a parça the leader rejected back to the matbaa at the gate. The
+    // order stays at imza_bekleniyor while it is reprinted, so it is never on
+    // `rounds`, and filtering on that alone hid real work: the printer was
+    // notified, opened Matbaa İşleri and found nothing. `dropOrphanedRouted`
+    // keeps the project's equivalent rows for the same reason.
+    const live = routed.filter((r) => rounds.has(r.order_id) || r.order_status === 'imza_bekleniyor')
     const fresh = await deriveOrderParcalar(live, rounds, db)
     return [...live, ...fresh]
   }

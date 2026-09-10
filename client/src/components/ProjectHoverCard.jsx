@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, Package } from 'lucide-react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import OrderBadge from '@/components/OrderBadge'
-import { STATUS_META, statusKeyForProject, TYPE_LABELS } from '@/api'
+import { ORDER_STEP_LABELS, STATUS_META, statusKeyForProject, TYPE_LABELS } from '@/api'
+import { orderLabel } from '@/domain/constants/orders'
 import { cn, initials, formatRelativeTr, daysUntilTargetEnd } from '@/lib/utils'
 
 // Hover-open delays. 200ms in to keep quick passes from flashing the
@@ -21,8 +21,8 @@ const CLOSE_DELAY_MS = 120
  * Wraps any `children` in a Radix Popover that opens on hover (200ms in,
  * 120ms out) and renders the rich body the Yıllık Plan bars used to show:
  * status badge + market tag, full title, assignee avatar stack, 3-cell
- * stat row (İlerleme / Kalan / Son aktivite), optional "Baskı bekliyor"
- * pill, and a "Projeyi aç" CTA.
+ * stat row (İlerleme / Kalan / Son aktivite), one line per open sipariş
+ * ("Sipariş #2 · Baskıda"), and a "Projeyi aç" CTA.
  *
  * Click on the trigger is *not* intercepted — it bubbles up to whatever
  * click target the parent set up (e.g. the row's navigate handler). The
@@ -30,7 +30,7 @@ const CLOSE_DELAY_MS = 120
  */
 export default function ProjectHoverCard({
   project,
-  order,
+  orders,
   children,
   side = 'top',
   align = 'center',
@@ -124,7 +124,7 @@ export default function ProjectHoverCard({
         <HoverCardBody
           project={project}
           meta={meta}
-          order={order}
+          orders={orders}
           key_={key}
           assignees={assignees}
           days={days}
@@ -147,7 +147,7 @@ export default function ProjectHoverCard({
 function HoverCardBody({
   project,
   meta,
-  order,
+  orders,
   key_,
   assignees,
   days,
@@ -229,11 +229,17 @@ function HoverCardBody({
         </div>
       </div>
 
-      {/* Order state — only when there's an open sipariş in flight */}
-      {order && (
-        <div className="flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900 ring-1 ring-amber-200">
-          <OrderBadge order={order} className="h-3.5 w-3.5 text-amber-600" />
-          <span>Baskı bekliyor</span>
+      {/* Order state — one line per open sipariş, so a second reprint in
+          flight is named rather than folded into the first. */}
+      {orders?.length > 0 && (
+        <div className="space-y-1 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900 ring-1 ring-amber-200">
+          {orders.map((o) => (
+            <div key={o.id} className="flex items-center gap-1.5">
+              <Package className="h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden="true" />
+              <span className="font-semibold">{orderLabel(o)}</span>
+              <span className="truncate">· {ORDER_STEP_LABELS[o.status] ?? o.status}</span>
+            </div>
+          ))}
         </div>
       )}
 

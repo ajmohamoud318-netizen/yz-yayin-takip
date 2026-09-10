@@ -142,8 +142,12 @@ export default function ParcaApprovalRow({
             Gönderilmedi
           </span>
         )}
+        {/* type="button" on every button in this row: the grid is also drawn
+            inside TalepSignDialog's <form>, where an untyped button submits the
+            order — its whole-order approve — on top of its own click. */}
         {isAwaitingReceipt && onReceive && (
           <Button
+            type="button"
             size="sm"
             className="h-7 gap-1.5 px-2.5 text-xs"
             onClick={onReceive}
@@ -165,6 +169,7 @@ export default function ParcaApprovalRow({
           <>
             {onReject && (
               <Button
+                type="button"
                 size="sm"
                 variant="ghost"
                 className="h-7 px-2 text-rose-700 hover:bg-rose-100"
@@ -178,6 +183,7 @@ export default function ParcaApprovalRow({
             )}
             {onApprove && (
               <Button
+                type="button"
                 size="sm"
                 variant="success"
                 className="h-7 px-2"

@@ -22,9 +22,12 @@
  * identically; only the name changes, so a caller rendering neither name simply
  * does not offer the action.
  *
- * The suppression keys on `parcaSnapshot.length >= 2` — the same test
+ * The suppression keys on `parcaSnapshot.length > 0` — the same test
  * ProjectDetail and Approvals use to render the panel at all, so the surface and
- * the suppression can never disagree.
+ * the suppression can never disagree. It used to be `>= 2`, and a one-parça
+ * round kept the header pair. It no longer does: every decision on a round with
+ * a parça list is taken in the panel, and only a legacy round with no snapshot
+ * keeps the header.
  */
 
 import { describe, it, expect } from 'vitest'
@@ -74,13 +77,16 @@ describe('demo_onay — the panel is the approval surface', () => {
     expect(actions).toContain('reject-parca')
   })
 
-  it('keeps the header pair on a single-parça round, where no panel draws', () => {
+  it('hands a single-parça round to the panel too', () => {
+    // The panel draws for a round of one now, so the header pair goes with it:
+    // the row's thumbs-up opens the same approve, and the whole-round reject is
+    // handed over under the panel's name, exactly as on a split round.
     const actions = availableActions({
       project: demoOnay(), user: leader, parcaSnapshot: SINGLE,
     })
-    expect(actions).toContain('approve')
-    expect(actions).toContain('reject')
-    expect(actions).not.toContain('reject-parca')
+    expect(actions).not.toContain('approve')
+    expect(actions).not.toContain('reject')
+    expect(actions).toContain('reject-parca')
   })
 
   it('keeps the header pair on a legacy round with no snapshot at all', () => {
@@ -125,12 +131,13 @@ describe('ozalit_onay — same rule', () => {
     expect(actions).not.toContain('approve')
   })
 
-  it('keeps it on a single-parça round', () => {
+  it('hands a single-parça round to the panel too', () => {
     const actions = availableActions({
       project: ozalitOnay(), user: leader, parcaSnapshot: SINGLE,
     })
-    expect(actions).toContain('approve')
-    expect(actions).toContain('reject')
+    expect(actions).not.toContain('approve')
+    expect(actions).not.toContain('reject')
+    expect(actions).toContain('reject-parca')
   })
 
   it('gives the designer no reject at all — that was always leader-only', () => {
@@ -376,11 +383,13 @@ describe('baski_onay — the panel owns it too', () => {
     expect(actions).not.toContain('approve')
   })
 
-  it('keeps it on a single-parça round', () => {
+  it('hands a single-parça round to the panel too', () => {
+    // The row's thumbs-up opens this same approve dialog, and the prepare step
+    // is the panel's "Baskı Onayı Hazırlayın (1)".
     const actions = availableActions({
       project: baskiOnay(), user: leader, parcaSnapshot: SINGLE,
     })
-    expect(actions).toContain('approve')
+    expect(actions).not.toContain('approve')
   })
 
   it('keeps it on a legacy round with no snapshot', () => {

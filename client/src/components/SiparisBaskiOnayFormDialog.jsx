@@ -10,6 +10,7 @@ import {
   isBasimYeriLabel, missingBasimYeriLabel, withBasimYeriRow, applyBasimYeriToBlocks,
 } from '@/lib/spec-form-basim'
 import { buildFormSheet, printSpecSheets } from '@/lib/specPrint'
+import { orderLabel } from '@/domain/constants/orders'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import {
@@ -299,7 +300,7 @@ export default function SiparisBaskiOnayFormDialog({
      switch between input and plain text. */
   const body = (
     <FormSheet>
-      <FormSheetHead title="Baskı Onay Formu" subtitle={bookTitle} icon={ShoppingCart} />
+      <FormSheetHead title="Baskı Onay Formu" subtitle={`${bookTitle} · ${orderLabel(order)}`} icon={ShoppingCart} />
 
       {/* One card per parça — each of these prints as its own sheet, and side
           by side on screen so the count is simply visible (same layout and the

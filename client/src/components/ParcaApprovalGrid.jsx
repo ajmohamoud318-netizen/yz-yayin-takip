@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import ParcaApprovalRow from '@/components/ParcaApprovalRow'
 import {
   pendingParcalar, approvedParcalar, rejectedParcalar, bulkApproveAvailable,
-  parcaAwaitsReceipt, parcaDecidable, unpreparedParcalar,
+  parcaAwaitsReceipt, parcaDecidable, unpreparedParcalar, parcaNames,
 } from '@/domain'
 
 /**
@@ -71,6 +71,15 @@ import {
  * whole round has arrived and one project-level receipt covers it; passing rows
  * there would offer "Teslim Alın" on parçalar that were already received that
  * way.
+ *
+ * A round of ONE parça draws this grid too: every decision on a round with a
+ * parça list is taken here, however many parçalar it has. What changes is only
+ * what would misdescribe a round of one — no bulk pair, "Teslim Alın" rather
+ * than "Tümünü Teslim Alın" — plus one thing the caller owes it. A one-parça
+ * round's reject is the WHOLE-round reject, so its `onRejectParcalar` must
+ * perform that (and "Tümünü Reddedin", being the same act, is not drawn). A
+ * per-parça reject there would park the round at its gate and route the parça
+ * through `parca_state`, which only a split round has.
  *
  * @param {{
  *   project: object,
@@ -146,6 +155,11 @@ export default function ParcaApprovalGrid({
     () => new Set(unpreparedParcalar(project, kind, snapshotParcalar)),
     [project, kind, snapshotParcalar],
   )
+
+  /* A round whose sheet carries exactly one parça. That parça IS the round, so
+     the bulk pair — which exists to say "all of them" — has nothing to add to
+     the row's own buttons. See the note on one-parça rounds above. */
+  const singleParcaRound = parcaNames(snapshotParcalar).length === 1
 
   /**
    * A parça's state as the leader experiences it, most decided first.
@@ -287,8 +301,12 @@ export default function ParcaApprovalGrid({
   // its rows and leaves the others locked). "Tümünü Reddedin" is what it says on
   // a round nobody has started deciding — everything goes back, nothing is lost —
   // and that is the only round it is offered on now.
+  //
+  // …and not on a one-parça round, where the row's own thumbs-down already is
+  // the whole-round reject (the caller wires it that way): a second button
+  // saying "Tümünü" would be the same act twice, under a name that overstates it.
   const showBulkReject = !!onBulkReject && !routingAware && !roundAwaitsReceipt
-    && !partialArrival
+    && !partialArrival && !singleParcaRound
 
   // The whole-round receipt, in the panel for the same reason the other two are:
   // it is the round's decision, and the round is what this panel describes.
@@ -298,7 +316,8 @@ export default function ParcaApprovalGrid({
   // single reprint, and "Teslim Alınamadı" is worse than a lie: it bounces the
   // WHOLE round and wipes those sign-offs (the server refuses it now — see
   // computeDemoNotReceived — so offering it would only produce an error).
-  const receiptLabel = partialArrival ? 'Teslim Alın' : 'Tümünü Teslim Alın'
+  // "Tümünü" is just as wrong about a round of one.
+  const receiptLabel = partialArrival || singleParcaRound ? 'Teslim Alın' : 'Tümünü Teslim Alın'
 
   // Baskı Onayı's first step, and the reason it is one button rather than one
   // per row: the baskı formu is a single document, so a leader fills it once and
@@ -377,9 +396,11 @@ export default function ParcaApprovalGrid({
         </div>
       )}
 
+      {/* Every button in the panel is type="button" — see ParcaApprovalRow. */}
       {showBulkReceipt && (
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <Button
+            type="button"
             size="sm"
             className="w-full gap-1.5 sm:w-auto"
             disabled={busy}
@@ -391,6 +412,7 @@ export default function ParcaApprovalGrid({
           </Button>
           {onBulkNotReceived && !partialArrival && (
             <Button
+              type="button"
               size="sm"
               variant="outline"
               className="w-full gap-1.5 sm:w-auto"
@@ -409,6 +431,7 @@ export default function ParcaApprovalGrid({
         <div className="mb-2 flex flex-wrap items-center gap-2">
           {showPrepare && (
             <Button
+              type="button"
               size="sm"
               className="w-full gap-1.5 sm:w-auto"
               disabled={busy}
@@ -421,6 +444,7 @@ export default function ParcaApprovalGrid({
           )}
           {showBulk && (
             <Button
+              type="button"
               size="sm"
               variant="success"
               className="w-full gap-1.5 sm:w-auto"
@@ -437,6 +461,7 @@ export default function ParcaApprovalGrid({
           )}
           {showBulkReject && (
             <Button
+              type="button"
               size="sm"
               variant="destructive"
               className="w-full gap-1.5 sm:w-auto"

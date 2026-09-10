@@ -274,8 +274,11 @@ describe('Project.advance', () => {
     assert.equal(project.ozalit_requested, false)
     // Nothing physical arrived, so nothing may claim to have been received.
     assert.equal(project.ozalit_received, false)
-    // No round started on this leg — nothing to reset.
-    assert.equal(event.parcaStateResetGate, null)
+    // No round started at the matbaa on this leg, but the reject that led
+    // here (reject-to-designer) never reset parca_state — only reject-to-
+    // matbaa does — so this new round still owes the old one's rows the same
+    // clean slate the physical leg above gets.
+    assert.equal(event.parcaStateResetGate, 'ozalit')
   })
 
   it('refuses the resubmit when no route was chosen', () => {

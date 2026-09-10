@@ -221,6 +221,13 @@ export function dropOrphanedRouted(routed, rounds) {
  * with_matbaa/in_round" — so `printerParcaJobs` comes back empty and the whole
  * split-round board never renders, silently falling back to the old
  * whole-sheet "İşlemi Başlatın" card despite a genuinely multi-parça round.
+ *
+ * Also carries `order_id IS NULL` — this queries `parca_state` directly
+ * rather than through parca-state-repository.js's own project-scoped
+ * helpers, which all carry the same filter (see that file's header). Without
+ * it, a sipariş reprint sharing this project's title and `gate: 'ozalit'`
+ * would count as "already routed" here, and its rows would silently answer
+ * for the project's own round.
  */
 async function deriveTeslimParcalar(routed, rounds) {
   const pool = getPool()
@@ -235,7 +242,7 @@ async function deriveTeslimParcalar(routed, rounds) {
     // for some other parça.
     if (parcalar.length < 2) continue
     const { rows: existing } = await pool.query(
-      'SELECT parca, state, started_at, attempt FROM parca_state WHERE project_id = $1 AND gate = $2',
+      'SELECT parca, state, started_at, attempt FROM parca_state WHERE project_id = $1 AND gate = $2 AND order_id IS NULL',
       [p.id, gate],
     )
     const byParca = new Map(existing.map((r) => [r.parca, r]))
@@ -294,8 +301,14 @@ async function deriveTeslimParcalar(routed, rounds) {
 async function loadParcaForUpdate(client, projectId, parca) {
   const project = await getProjectForUpdate(client, projectId)
   if (!project) notFound('Proje bulunamadı.')
+  // `order_id IS NULL` — same invariant parca-state-repository.js's own
+  // project-scoped helpers all carry (see that file's header). Without it, a
+  // sipariş reprint sharing this project and parça name could be read back as
+  // THIS round's row: `gate` matches ('ozalit' either way), so a project-side
+  // start/deliver would land on the order's routing row instead of the
+  // project's own — or materialise a duplicate the order's upsert can't see.
   const { rows } = await client.query(
-    'SELECT * FROM parca_state WHERE project_id = $1 AND parca = $2 FOR UPDATE',
+    'SELECT * FROM parca_state WHERE project_id = $1 AND parca = $2 AND order_id IS NULL FOR UPDATE',
     [projectId, parca],
   )
   const existing = rows[0] ?? null
@@ -374,13 +387,19 @@ async function loadParcaForUpdate(client, projectId, parca) {
  * Exported for its own tests — it already takes `client` rather than reaching
  * for `getPool()` internally, so a fake client can drive it directly. See
  * `parca-service.test.js`.
+ *
+ * Also carries `order_id IS NULL`, the same reason as the gate filter above:
+ * a sipariş reprint on this same project can carry rows for the same parça
+ * names under `gate: 'ozalit'` too. Left unscoped, an order's already-signed
+ * parçalar could read as this round's own delivery and advance the project
+ * on matbaa work that was never done for it.
  */
 export async function allParcalarDelivered(client, project, gate) {
   const snapshot = await loadLatestDemoSnapshot(client, project.id, gate)
   const parcalar = snapshot?.selectedComponents ?? []
   if (parcalar.length < 2) return true // single-parça round: the old whole-sheet behaviour
   const { rows } = await client.query(
-    'SELECT parca, state FROM parca_state WHERE project_id = $1 AND gate = $2',
+    'SELECT parca, state FROM parca_state WHERE project_id = $1 AND gate = $2 AND order_id IS NULL',
     [project.id, gate],
   )
   const byParca = new Map(rows.map((r) => [r.parca, r.state]))

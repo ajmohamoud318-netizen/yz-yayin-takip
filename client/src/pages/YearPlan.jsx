@@ -199,7 +199,7 @@ export default function YearPlan() {
                   {bars.map(({ p, start, end }, rowIdx) => {
                     const leftPct = (start / 12) * 100
                     const widthPct = ((end - start + 1) / 12) * 100
-                    const order = openOrders.get(p.id)
+                    const orders = openOrders.get(p.id)
                     // Stagger: cap at 10 rows, 50ms each = 500ms total — matches
                     // the animate.md budget. 11th+ rows land together at 500ms.
                     const staggerIdx = Math.min(rowIdx, 10)
@@ -221,7 +221,7 @@ export default function YearPlan() {
                               chip that navigates on click. */}
                           <YearPlanBar
                             project={p}
-                            order={order}
+                            orders={orders}
                             leftPct={leftPct}
                             widthPct={widthPct}
                             animationDelay={staggerIdx * 50 + 80}
@@ -256,7 +256,7 @@ export default function YearPlan() {
                     >
                       <span className={cn('h-1.5 w-1.5 rounded-full', meta.dot)} />
                       {p.title}
-                      <OrderBadge order={openOrders.get(p.id)} className="h-3 w-3 shrink-0 text-amber-600" />
+                      <OrderBadge orders={openOrders.get(p.id)} iconClassName="h-3 w-3" />
                     </button>
                   )
                 })}

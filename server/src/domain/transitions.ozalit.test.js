@@ -352,8 +352,12 @@ describe('ekran ozalit', () => {
     // physical route doesn't re-count either, so neither may this one.
     assert.equal(next.ozalit_attempt, 1)
     assert.equal(history.event, 'ekran_ozalit_requested')
-    // No round starts at the matbaa on this leg — nothing to reset.
-    assert.equal(result.parcaStateResetGate, undefined)
+    // No round starts at the matbaa on this leg, but the ROUND is still new —
+    // whatever the rejected round left in parca_state (a parça still
+    // 'in_round' from before the bounce) is stale and must be cleared, or
+    // `parcalarOutForRework` would refuse it forever on a round where nothing
+    // is ever coming back from the matbaa to update that row.
+    assert.equal(result.parcaStateResetGate, 'ozalit')
   })
 
   it('one leader approves it straight through to baski_onay', () => {
@@ -390,6 +394,15 @@ describe('ekran ozalit', () => {
     assert.equal(next.stage, 'ozalit_onay')
     assert.equal(next.ekran_ozalit, false)
     assert.equal(next.last_reject_type, 'ozalit')
+  })
+
+  it('refuses a reject-to-matbaa — an ekran round has nothing there to redeliver', () => {
+    // The matbaa never printed this round, so routing it to ozalit_teslim
+    // would park the project awaiting a delivery nobody has to make.
+    assert.throws(
+      () => computeRejection(onScreen(), 'olmamış', [], 'matbaa', { actorName: 'Ayşenur', actor: L1 }),
+      /matbaada bir teslimat yok/,
+    )
   })
 
   // The other half of the user-facing promise: picking "normal ozalit" must

@@ -7,6 +7,7 @@ import api, {
 } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import OrderNoBadge from '@/components/OrderNoBadge'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import ConfirmDialog from '@/components/ConfirmDialog'
@@ -186,6 +187,7 @@ export default function TeslimTalepleri() {
                           {cleanTitle(o.project?.title)}
                         </p>
                         <p className="mt-0.5 text-xs text-muted-foreground">
+                          <OrderNoBadge order={o} className="mr-1.5" />
                           Baskı tamamlandı
                           {o.quantity ? ` · ${formatNumber(o.quantity)} adet` : ''}
                         </p>
@@ -284,6 +286,7 @@ function HandoverRow({ handover: h }) {
             {/* `confirmed_by_name` / `confirmed_at` are what GET /handovers
                 actually returns — the old `received_*` names matched no column,
                 so every completed row read "undefined teslim aldı · —". */}
+            {isReprint && <OrderNoBadge order={h} className="mr-1.5" />}
             {received
               ? `${h.confirmed_by_name ?? '—'} teslim aldı · ${fmtDate(h.confirmed_at)}`
               : `Oluşturuldu · ${fmtDate(h.created_at)}`}

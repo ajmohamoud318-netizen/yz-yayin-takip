@@ -369,6 +369,44 @@ describe('per-parça demo approval gate (migrations 068/069/070)', () => {
     assert.equal(next.demo_parca_approvals.length, PARCALAR.length)
   })
 
+  it('refuses to complete a held demo once progress catches up to 100%', () => {
+    // The hold above already recorded every parça's sign-off (the leader
+    // approved everything on offer at <100%). Without the guard, the very
+    // next approve — issued once the design finished — found `pending` empty
+    // from that stale ledger and slid the round straight through with nobody
+    // having looked at the finished design.
+    const p = multiParcaProject({
+      progress: 100,
+      demo_held: true,
+      demo_parca_approvals: PARCALAR.map((parca) => (
+        { parca, by: 'u-l', by_name: 'Ayşenur', at: '2026-01-01T00:00:00.000Z' }
+      )),
+    })
+    assert.throws(
+      () => computeApproval(p, leader, leaderCtx),
+      /demo askıda/,
+    )
+  })
+
+  it('still allows a held demo to be signed off further while under 100%', () => {
+    // The narrow guard only blocks the ≥100% completion path — a partial
+    // sign-off recorded while genuinely still held must keep working.
+    const p = multiParcaProject({
+      progress: 60,
+      demo_held: true,
+      demo_parca_approvals: [
+        { parca: 'KAPAK', by: 'u-l', by_name: 'Ayşenur', at: '2026-01-01T00:00:00.000Z' },
+      ],
+    })
+    const { project: next } = computeApproval(
+      p, leader, { ...leaderCtx, parcalar: ['KUTU'] },
+    )
+    assert.equal(next.stage, 'demo_onay')
+    assert.equal(next.demo_held, true)
+    const approved = next.demo_parca_approvals.map((r) => r.parca).sort()
+    assert.deepEqual(approved, ['KAPAK', 'KUTU'])
+  })
+
   it('a partial reject clears only the rejected parça’s approval', () => {
     const p = multiParcaProject({
       demo_parca_approvals: [

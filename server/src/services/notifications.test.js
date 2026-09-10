@@ -125,6 +125,27 @@ test('a delivered demo asks for receipt, never for a designer\'s approval', asyn
   }
 })
 
+test("a ÇİN demo coming back is the leaders' to forward, not the matbaa's", async () => {
+  // ÇİN has no matbaa leg — the leader forwards the demo (computeDemoTeslimAdvance).
+  // Pinging the printers told the one party with nothing to do.
+  const client = fakeClient()
+  await notifyProjectTransition(client, {
+    project: { ...project, type: 'CIN' }, fromStage: 'tasarim', toStage: 'cin_demo_teslim',
+    action: 'advance', actor: { id: 'u-aylin', name: 'Aylin' }, assignees,
+  })
+  assert.deepEqual(client.rows.map((r) => r.userId), ['u-ayse'], 'the team leaders, and only them')
+  assert.equal(client.rows[0].type, 'demo_delivery_pending')
+})
+
+test('a TR demo request still goes to the matbaa', async () => {
+  const client = fakeClient()
+  await notifyProjectTransition(client, {
+    project, fromStage: 'tasarim', toStage: 'demo_teslim',
+    action: 'advance', actor: { id: 'u-aylin', name: 'Aylin' }, assignees,
+  })
+  assert.deepEqual(client.rows.map((r) => r.userId), ['u-oktay'])
+})
+
 test('marking Teslim Alındı pings the other side, not the person who clicked', async () => {
   const client = fakeClient()
   await notifyDemoReceived(client, {

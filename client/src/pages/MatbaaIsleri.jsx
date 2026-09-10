@@ -10,6 +10,7 @@ import api from '@/api'
 import { useAuth } from '@/hooks/useAuth'
 import { useProjects } from '@/hooks/useProjects'
 import { Card, CardContent } from '@/components/ui/card'
+import OrderNoBadge from '@/components/OrderNoBadge'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -297,6 +298,7 @@ export default function MatbaaIsleri() {
               {title}
             </p>
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              {sub === 'siparis' && <OrderNoBadge order={item} />}
               <span className="truncate">{meta}</span>
               <span aria-hidden className="h-0.5 w-0.5 rounded-full bg-muted-foreground/40" />
               <Badge variant="outline" className="text-[10px]">{typeLabel}</Badge>

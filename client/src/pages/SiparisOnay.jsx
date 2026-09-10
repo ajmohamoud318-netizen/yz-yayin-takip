@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useProjects } from '@/hooks/useProjects'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import OrderNoBadge from '@/components/OrderNoBadge'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import TalepSignDialog from '@/components/TalepSignDialog'
@@ -213,6 +214,7 @@ function DesignerOrderCard({ order, onSign, onOzalit }) {
               {order.project_title?.replace(/ \/ /g, ' ')}
             </p>
             <p className="text-sm text-muted-foreground">
+              <OrderNoBadge order={order} className="mr-1.5" />
               Talep eden: {order.requested_by_name} · {date}
             </p>
 

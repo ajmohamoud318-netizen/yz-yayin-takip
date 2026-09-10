@@ -24,6 +24,8 @@ export const ORDER_STEP_LABELS = {
   // order_step_label lookup falls back to the raw step key.
   matbaa_received: 'Matbaa Teslimi Alındı',
   matbaa_not_received: 'Matbaa Teslimi Alınamadı',
+  // A per-parça reject at imza_bekleniyor (migration 080) — see the server twin.
+  parca_rejected: 'Parça Reddedildi',
   matbaa_approve: 'Matbaa Onayı Verildi',
   // The sipariş's own ozalit sheet, written when the designer submits the
   // Ozalit Üretim Formu at kontroller_tamam (migration 053's demos.order_id).
@@ -50,7 +52,7 @@ export const ORDER_STEP_LABELS = {
 // so they belong to the same round as imza_bekleniyor itself.
 export const ORDER_OZALIT_ROUND_STEPS = new Set([
   'matbaa_ozalit_yapiyor', 'ekran_onayinda', 'imza_bekleniyor',
-  'matbaa_received', 'matbaa_not_received', 'matbaa_approve',
+  'matbaa_received', 'matbaa_not_received', 'matbaa_approve', 'parca_rejected',
   'ozalit_form', 'ozalit_started', 'ozalit_cancelled', 'ozalit_edited',
   'ozalit_change_requested', 'ozalit_change_accepted', 'ozalit_change_declined',
 ])
@@ -170,6 +172,17 @@ export const ORDER_TERMINAL_STEPS = new Set(['teslim_edildi', 'rejected'])
 /** Is this order still in flight? */
 export function isOrderOpen(order) {
   return !!order && !ORDER_TERMINAL_STEPS.has(order.status)
+}
+
+/**
+ * An order's name on screen: "Sipariş #2" is its book's second order
+ * (migration 083). A sipariş reprints its project's title, so two live orders
+ * on one book are identical everywhere without it. Takes any row carrying
+ * `order_no` — an order, a parça-queue row, a handover — and falls back to a
+ * bare "Sipariş" when the number is not on it.
+ */
+export function orderLabel(row) {
+  return row?.order_no ? `Sipariş #${row.order_no}` : 'Sipariş'
 }
 
 /**

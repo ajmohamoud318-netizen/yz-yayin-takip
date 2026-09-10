@@ -24,14 +24,44 @@ import {
   parcaFixSettledPatch,
   parcaAlreadyDelivered,
   parcaReceivePatch,
-  parcaApprovePatch,
-  allParcalarApproved,
   parcalarOwnedBy,
   canActOnParca,
+  parcaFixSettlements,
+  parcaNotReceivedPatch,
 } from './parca-routing.js'
 
 const leader = { id: 'u-l', role: 'team_leader', name: 'Ayşenur' }
 const NOW = '2026-09-07T10:00:00.000Z'
+
+describe('parcaFixSettlements', () => {
+  const owing = (parca) => ({ parca, fix_pending: true, owner_role: 'printer', route: 'physical', started_at: null })
+
+  it('settles only the parçalar the save touched', () => {
+    const out = parcaFixSettlements(
+      [owing('KUTU'), owing('KİTAP'), { parca: 'KILAVUZ', fix_pending: false }], ['kutu'],
+    )
+    assert.deepEqual(out.map((s) => s.parca), ['KUTU'])
+    assert.equal(out[0].patch.fix_pending, false)
+    assert.equal(out[0].patch.owner_role, 'printer', 'the owner survives the verbatim upsert')
+  })
+
+  it('treats a save with no baseline as covering the whole sheet', () => {
+    assert.deepEqual(
+      parcaFixSettlements([owing('KUTU'), owing('KİTAP')], null).map((s) => s.parca),
+      ['KUTU', 'KİTAP'],
+    )
+  })
+})
+
+describe('parcaNotReceivedPatch', () => {
+  it("puts a delivered parça back on the matbaa's desk, still started", () => {
+    const patch = parcaNotReceivedPatch({ now: NOW })
+    assert.equal(patch.state, 'in_round')
+    assert.equal(patch.started_at, NOW)
+    assert.equal(patch.delivered_at, null)
+    assert.ok(canActOnParca({ role: 'printer' }, patch), 'and it is theirs to deliver again')
+  })
+})
 
 describe('parcaGateForStage', () => {
   it('maps both demo onay stages to the demo gate', () => {
@@ -212,7 +242,6 @@ describe('the change-request handshake (migration 077)', () => {
 
   it('and every patch that hands it back clears the owner', () => {
     assert.equal(parcaDeliverPatch({ now: NOW }).owner_role, null)
-    assert.equal(parcaApprovePatch().owner_role, null)
   })
 
   // The structural guard for the whole bug class, rather than one more case.
@@ -236,7 +265,6 @@ describe('the change-request handshake (migration 077)', () => {
       start: parcaStartPatch({ now: NOW }),
       deliver: parcaDeliverPatch({ now: NOW }),
       receive: parcaReceivePatch({ actor: leader, actorName: leader.name, now: NOW }),
-      approve: parcaApprovePatch(),
       changeRequest: parcaChangeRequestPatch({ note: 'x', actor: leader, now: NOW, startedAt: NOW }),
       changeAccept: parcaChangeAcceptPatch(),
       changeDecline: parcaChangeDeclinePatch({ startedAt: NOW }),
@@ -295,7 +323,6 @@ describe('the change-request handshake (migration 077)', () => {
     }).fix_pending, false)
     assert.equal(parcaRequestRoundPatch({ route: 'physical', now: NOW }).fix_pending, false)
     assert.equal(parcaRequestRoundPatch({ route: 'ekran', now: NOW }).fix_pending, false)
-    assert.equal(parcaApprovePatch().fix_pending, false)
   })
 
   it('ask → accept → fix → start: the matbaa can pick it up again', () => {
@@ -320,33 +347,6 @@ describe('the change-request handshake (migration 077)', () => {
     assert.equal(row.state, 'in_round')
     assert.equal(parcaEditLocked(row), true, 'still locked — the leader waits for delivery')
     assert.equal(parcaChangeRequestable(row), true, 'but they may ask again')
-  })
-})
-
-describe('the advance gate', () => {
-  const approved = (parca) => ({ parca, state: 'approved' })
-
-  it('holds while any parça is still out', () => {
-    assert.equal(allParcalarApproved([
-      approved('KUTU'),
-      { parca: 'KİTAP', state: 'with_designer' },
-    ]), false)
-  })
-
-  it('opens once every parça is signed off', () => {
-    assert.equal(allParcalarApproved([approved('KUTU'), approved('KİTAP')]), true)
-  })
-
-  it('treats an empty list as "no routing", not as "all approved"', () => {
-    // A project with no parça rows predates this feature; the caller must fall
-    // back to the whole-round behaviour rather than advance on emptiness.
-    assert.equal(allParcalarApproved([]), false)
-    assert.equal(allParcalarApproved(null), false)
-  })
-
-  it('is not fooled by a parça that merely came back to the gate', () => {
-    // `pending` means delivered and awaiting the leader — not approved.
-    assert.equal(allParcalarApproved([approved('KUTU'), { parca: 'KİTAP', state: 'pending' }]), false)
   })
 })
 
@@ -389,33 +389,6 @@ describe('two parties on one project at the same time', () => {
     const printer = { role: 'printer' }
     assert.equal(canActOnParca(printer, { owner_role: 'printer', state: 'with_matbaa' }), true)
     assert.equal(canActOnParca(printer, { owner_role: 'printer', state: 'in_round' }), true)
-  })
-})
-
-describe('a full round trip returns the parça to the gate', () => {
-  it('reject → request → başlat → teslim → approve', () => {
-    let row = { parca: 'KİTAP', state: 'pending', attempt: 1 }
-
-    row = { ...row, ...parcaRejectPatch({
-      target: 'designer', reason: 'kerning', actor: leader,
-      actorName: leader.name, now: NOW, gate: 'ozalit', currentAttempt: row.attempt,
-    }) }
-    assert.equal(row.state, 'with_designer')
-
-    row = { ...row, ...parcaRequestRoundPatch({ route: 'physical', now: NOW }) }
-    assert.equal(row.state, 'with_matbaa')
-
-    row = { ...row, ...parcaStartPatch({ now: NOW }) }
-    assert.equal(row.state, 'in_round')
-
-    row = { ...row, ...parcaDeliverPatch({ now: NOW }) }
-    assert.equal(row.state, 'pending')
-    assert.equal(row.owner_role, null)
-
-    row = { ...row, ...parcaApprovePatch() }
-    assert.equal(row.state, 'approved')
-    // The attempt bump from the reject survives the whole trip.
-    assert.equal(row.attempt, 2)
   })
 })
 

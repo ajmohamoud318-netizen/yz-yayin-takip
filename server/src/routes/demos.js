@@ -6,24 +6,13 @@ import {
   insertDemoSnapshot,
   logHistory,
   loadLatestDemoSnapshot,
+  loadLatestOrderOzalitSnapshot,
 } from '../services/project-repository.js'
+import { listParcaState, listParcaStateForOrder } from '../services/parca-state-repository.js'
+import { lockedParcaNames } from '../domain/parca-routing.js'
+import { changedParcaBlocks, lockedParcalarTouched } from '../domain/spec-parca-diff.js'
 
-/**
- * Which sheet an approval gate reads, by stage.
- *
- * Deliberately not `parcaGateForStage` (domain/parca-routing.js): that answers
- * "which gate is this parça being ROUTED on", and it returns null for baskı
- * onayı because that gate has no designer or matbaa leg to route to. The
- * question here is different — "is a round sitting in front of an approver
- * right now, and off which sheet" — and baskı onayı very much is one.
- */
-const APPROVAL_GATE_SHEET = {
-  demo_onay: 'demo',
-  cin_demo_onay: 'demo',
-  ozalit_onay: 'ozalit',
-  baski_onay: 'baski_onay',
-  cin_baski_onay: 'baski_onay',
-}
+import { APPROVAL_GATE_SHEET } from '../domain/stages.js'
 import { schemas } from '../schemas/index.js'
 
 /**
@@ -105,20 +94,83 @@ export async function demoRoutes(fastify) {
       // written while started is true by definition. Everyone else must go
       // through "Değişiklik İsteyin" and wait for the accept, which un-starts
       // the round and reopens this path.
+      //
+      // Named because the per-parça guards below answer the same underlying
+      // question — is the matbaa currently holding a sheet of this kind —
+      // just at a finer grain than the whole-round flags this checks.
+      const roundLive = order
+        ? order.status === 'matbaa_ozalit_yapiyor'
+        : (kind === 'demo' && (project.stage === 'demo_teslim' || project.stage === 'cin_demo_teslim'))
+          || (kind === 'ozalit' && project.stage === 'ozalit_teslim')
       if (request.user.role !== 'printer') {
         if (order) {
           // The sipariş's own round lives at matbaa_ozalit_yapiyor (migration 051),
           // with the same flag under a different name.
-          if (order.ozalit_started && order.status === 'matbaa_ozalit_yapiyor') {
+          if (order.ozalit_started && roundLive) {
             badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
           }
         } else {
-          const stage = project.stage
-          if (kind === 'demo' && project.demo_started && (stage === 'demo_teslim' || stage === 'cin_demo_teslim')) {
+          if (kind === 'demo' && project.demo_started && roundLive) {
             badRequest('Matbaa demo çalışmasına başladı, değişiklik isteyin.')
           }
-          if (kind === 'ozalit' && project.ozalit_started && stage === 'ozalit_teslim') {
+          if (kind === 'ozalit' && project.ozalit_started && roundLive) {
             badRequest('Matbaa ozalit çalışmasına başladı, değişiklik isteyin.')
+          }
+        }
+      }
+      // The attempt stamps which demo/ozalit round this form belongs to (see
+      // the fuller comment where it used to live, below). Computed here only
+      // because it is needed at the bottom of the function; unrelated to the
+      // per-parça guard just below, which deliberately does NOT use it (see
+      // that guard's own comment on why attempt numbers turned out to be an
+      // unreliable way to tell a correction apart from a new round — a
+      // caller wanting past the guard need only omit `attempt`).
+      const fallbackAttempt = (order
+        ? order.ozalit_attempt
+        : (kind === 'ozalit' ? project.ozalit_attempt : project.demo_attempt)) ?? 0
+      const attemptNo = attempt ?? fallbackAttempt + 1
+      // Per-parça content lock (migration 077), enforced here too.
+      //
+      // `/projects/:id/demo-edit-notify` and `/order-requests/:id/ozalit-edit-notify`
+      // already run this check — but they do their OWN insert into `demos` inside
+      // their own transaction; they never call this route. A save that comes
+      // through THIS route directly (the SPA's own mirror-to-server call on every
+      // Kaydet/advance/approve — see SpecFormDialog#persistServerSnapshot) was
+      // never checked here at all: on a split round `order.ozalit_started` /
+      // `project.*_started` stay false forever (a split round's "started" lives
+      // per parça, in parca_state — see order-parca-service.js's own comment on
+      // this), so neither whole-round gate above ever fires there either. A
+      // hand-rolled POST — or, in practice, any save issued while some but not
+      // all parçalar are locked — could silently rewrite a parça the matbaa is
+      // mid-production on, with no refusal at all.
+      //
+      // Gated on `locked.length > 0` alone — read fresh from `parca_state`,
+      // not on anything the caller sent. An earlier version of this guard
+      // tried to also tell a same-round correction apart from a brand-new
+      // round (free to define its own content) by comparing the incoming
+      // `attempt` against the stored snapshot's — but `attempt` is
+      // caller-supplied and optional, so omitting it (accidentally, in an
+      // older client, or on purpose) silently produced a fresh fallback
+      // number every time and walked straight past that comparison, which is
+      // exactly backwards for a guard whose job is to survive a caller that
+      // does not cooperate. `parca_state` cannot be steered the same way: it
+      // only carries a lock when the matbaa actually clicked "İşlemi
+      // Başlatın" on that parça, on THIS live round (a new round's own
+      // resend/reject-to-matbaa transition resets it first — see
+      // parcaStateResetGate — so a genuinely fresh round starts with nothing
+      // locked and this simply does not fire).
+      if (request.user.role !== 'printer' && roundLive) {
+        const parcaRows = order
+          ? await listParcaStateForOrder(client, order_id)
+          : (await listParcaState(client, project_id)).filter((r) => r.gate === kind)
+        const locked = lockedParcaNames(parcaRows)
+        if (locked.length > 0) {
+          const baseline = order
+            ? await loadLatestOrderOzalitSnapshot(client, order_id)
+            : await loadLatestDemoSnapshot(client, project_id, kind)
+          const touched = lockedParcalarTouched(locked, changedParcaBlocks(baseline?.payload, payload))
+          if (touched.length > 0) {
+            badRequest(`Matbaa şu parçalara başladı: ${touched.join(', ')}. Bu parçalar için değişiklik isteyin.`)
           }
         }
       }
@@ -194,8 +246,18 @@ export async function demoRoutes(fastify) {
       // the list the gate reads. An ABSENT key is not the same thing — it
       // COALESCEs to `[]`, which is an array, and an empty list drops the gate
       // to its legacy single-click path. That one is refused.
-      if (!order && APPROVAL_GATE_SHEET[project.stage] === kind) {
-        const pinned = (await loadLatestDemoSnapshot(client, project_id, kind))?.selectedComponents ?? []
+      //
+      // A sipariş has the same gate — imza_bekleniyor, whose approvals are
+      // measured against the order's latest ozalit sheet (loadParcaGateContext)
+      // — so it gets the same pin. Without it, dropping a parça from that sheet
+      // let the order reach baskı onayı with that parça never signed.
+      const atApprovalGate = order
+        ? order.status === 'imza_bekleniyor' && kind === 'ozalit'
+        : APPROVAL_GATE_SHEET[project.stage] === kind
+      if (atApprovalGate) {
+        const pinned = (order
+          ? await loadLatestOrderOzalitSnapshot(client, order_id)
+          : await loadLatestDemoSnapshot(client, project_id, kind))?.selectedComponents ?? []
         const raw = payload?._selectedComponents
         if (pinned.length > 0 && raw !== null) {
           const incoming = Array.isArray(raw)
@@ -212,14 +274,10 @@ export async function demoRoutes(fastify) {
           }
         }
       }
-      // The attempt stamps which demo/ozalit round this form belongs to, so
-      // the history timeline can reopen the exact sheet later — from any
-      // browser (the SPA used to keep these only in localStorage). When the
-      // client doesn't send one, derive it from the project's counter.
-      const fallbackAttempt = (order
-        ? order.ozalit_attempt
-        : (kind === 'ozalit' ? project.ozalit_attempt : project.demo_attempt)) ?? 0
-      const attemptNo = attempt ?? fallbackAttempt + 1
+      // attemptNo (computed above, alongside the per-parça guards that need
+      // it too) stamps which demo/ozalit round this form belongs to, so the
+      // history timeline can reopen the exact sheet later — from any browser
+      // (the SPA used to keep these only in localStorage).
       const row = await insertDemoSnapshot(client, {
         project_id, order_id, kind, payload, attempt: attemptNo, created_by: request.user.id,
       })

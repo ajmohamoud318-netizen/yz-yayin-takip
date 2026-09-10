@@ -24,6 +24,8 @@ import { activeUserIdsByRole } from '../notifications.js'
 import { listParcaState } from '../parca-state-repository.js'
 import { changedParcaBlocks, parcaSetDelta } from '../../domain/spec-parca-diff.js'
 import { runProjectCommand } from '../project-service.js'
+import { APPROVAL_GATE_SHEET } from '../../domain/stages.js'
+import { handoverStageFor } from '../../domain/pipeline.js'
 
 /**
  * Per-parça approve context (migrations 068/069/070): the FSM gate at
@@ -35,7 +37,9 @@ import { runProjectCommand } from '../project-service.js'
 function withSnapshot(snapshotKind = 'demo') {
   return async function snapshotPrepare({ client, row }) {
     const base = await withAssigneesAndLeaders({ client, row })
-    const snapshot = await loadLatestDemoSnapshot(client, row.id, snapshotKind)
+    // A function picks the sheet off the locked row itself — see approveProject.
+    const kind = typeof snapshotKind === 'function' ? snapshotKind(row) : snapshotKind
+    const snapshot = await loadLatestDemoSnapshot(client, row.id, kind)
     // Per-parça routing rows (migration 074), stamped onto `row` the same way
     // `withSubtasks` does it for reject. Approve needs them for a different
     // question than reject does: which parçalar are out for rework right now,
@@ -233,7 +237,11 @@ export function approveProject(projectId, actor, ctx = {}, client = null) {
   // off on this click. Load the latest snapshot for the matching gate
   // (demo/ozalit/baski) so the FSM has the parça list in scope.
   return runProjectCommand(projectId, actor, {
-    prepare: withSnapshot(ctx.snapshotKind ?? 'demo'),
+    // Off the locked row's stage, not the request. The body's `snapshotKind`
+    // was a client hint the gate trusted, so a click carrying the wrong one
+    // measured the ozalit gate against the demo round's parça list.
+    prepare: withSnapshot((row) => APPROVAL_GATE_SHEET[row.stage] ?? 'demo'),
+    expectedStage: ctx.stage ?? null,
     run: (project, pCtx) => project.approve(actor, {
       stage: ctx.stage,
       note: ctx.note ?? '',
@@ -464,6 +472,7 @@ export function ekranDemoReject(projectId, actor, ctx = {}, client = null) {
 export function rejectProject(projectId, actor, ctx = {}, client = null) {
   return runProjectCommand(projectId, actor, {
     prepare: withSubtasks,
+    expectedStage: ctx.stage ?? null,
     run: (project) => project.reject(actor, {
       reason: ctx.reason,
       rejectTarget: ctx.rejectTarget ?? null,
@@ -474,5 +483,26 @@ export function rejectProject(projectId, actor, ctx = {}, client = null) {
       // approval rows get cleared.
       parcalar: ctx.parcalar ?? null,
     }),
+    // A whole-round reject that bounces the project OFF its handover-eligible
+    // stage (baskida for TR, gümrük for ÇİN — the only stage the matbaa can
+    // ever raise a project's own teslim from) leaves any pending handover row
+    // stale: PATCH /handovers/:id/confirm used to trust that row blindly and
+    // jump the project straight to `satista`, skipping the entire redesign
+    // and re-approval the reject just demanded. `confirmProjectHandoverReceipt`
+    // now re-checks the stage itself and refuses — but without deleting the
+    // row here, it would sit 'pending' forever: there's no cancel endpoint,
+    // and the unique partial index (one pending row per project) would then
+    // block the matbaa from ever raising a legitimate one once the redo
+    // reaches baskida/gümrük again. `handovers` has no audit value of its own
+    // once superseded — the raise was already logged to stage_history
+    // (`handover_request`) independently of this row's lifetime.
+    after: async ({ client, project }) => {
+      if (project.__prevStage !== handoverStageFor(project.type)) return
+      if (project.stage === project.__prevStage) return
+      await client.query(
+        "DELETE FROM handovers WHERE project_id = $1 AND order_id IS NULL AND status = 'pending'",
+        [projectId],
+      )
+    },
   }, client)
 }

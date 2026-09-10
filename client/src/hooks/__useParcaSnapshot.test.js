@@ -102,6 +102,26 @@ describe('parcaRoundDecidable', () => {
     expect(parcaRoundDecidable({ stage: 'cin_demo_onay', demo_received: true })).toBe(true)
   })
 
+  it('refuses a held demo once progress reaches 100%, allows it below', () => {
+    // Exactly the reported bug: a demo held at <100% (approved once already)
+    // has its per-parça ledger already full, so once progress catches up the
+    // grid's Onayla would 400 straight into computeApproval's own held guard
+    // — the round needs a re-send or an ekran demo onayı, not this again.
+    // Below 100% the hold is still open and per-parça sign-offs are legit.
+    expect(parcaRoundDecidable({
+      stage: 'demo_onay', demo_received: true, demo_held: true, progress: 100,
+    })).toBe(false)
+    expect(parcaRoundDecidable({
+      stage: 'cin_demo_onay', demo_received: true, demo_held: true, progress: 100,
+    })).toBe(false)
+    expect(parcaRoundDecidable({
+      stage: 'demo_onay', demo_received: true, demo_held: true, progress: 60,
+    })).toBe(true)
+    expect(parcaRoundDecidable({
+      stage: 'demo_onay', demo_received: true, demo_held: false, progress: 100,
+    })).toBe(true)
+  })
+
   it('allows both baskı onayı stages, which have no receipt step', () => {
     expect(parcaRoundDecidable({ stage: 'baski_onay' })).toBe(true)
     expect(parcaRoundDecidable({ stage: 'cin_baski_onay' })).toBe(true)

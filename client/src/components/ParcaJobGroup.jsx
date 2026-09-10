@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import ParcaJobCard from '@/components/ParcaJobCard'
+import OrderNoBadge from '@/components/OrderNoBadge'
 
 /**
  * One project's parçalar as a single matbaa job, with the choice of doing them
@@ -88,15 +89,9 @@ export default function ParcaJobGroup({
                 {/* A sipariş round and the project's own round look identical
                     otherwise — same book, same parça names, same buttons — and
                     the printer needs to know which job they are stamping. Two
-                    concurrent reprints of one title are two of these cards. */}
-                {orderId && (
-                  <Badge
-                    variant="outline"
-                    className="border-violet-200 bg-violet-50 text-[10px] text-violet-700"
-                  >
-                    Sipariş
-                  </Badge>
-                )}
+                    concurrent reprints of one title are two of these cards,
+                    told apart only by the number (migration 083). */}
+                {orderId && <OrderNoBadge order={rows[0]} />}
               </p>
             </div>
 

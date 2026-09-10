@@ -148,9 +148,9 @@ describe('allParcalarDelivered', () => {
             }],
           }
         }
-        if (/FROM parca_state WHERE project_id = \$1 AND gate = \$2/.test(sql)) {
+        if (/FROM parca_state WHERE project_id = \$1 AND gate = \$2 AND order_id IS NULL/.test(sql)) {
           const [, gate] = params
-          return { rows: parcaStateRows.filter((r) => r.gate === gate) }
+          return { rows: parcaStateRows.filter((r) => r.gate === gate && r.order_id == null) }
         }
         throw new Error(`unexpected query: ${sql}`)
       },
@@ -232,6 +232,23 @@ describe('allParcalarDelivered', () => {
     })
     return allParcalarDelivered(client, project, 'ozalit').then((result) => {
       assert.equal(result, true)
+    })
+  })
+
+  // The other cross-pipeline regression (migration 080): a sipariş reprint on
+  // the same project shares `gate: 'ozalit'` and can share parça names too.
+  // Read without `order_id IS NULL`, a fully-signed ORDER round could stand in
+  // for a completely untouched PROJECT round and advance it on no real work.
+  it('does not let a sipariş reprint\'s resolved rows stand in for the project\'s own delivery', () => {
+    const client = fakeClient({
+      selectedComponents: ['KAPAK', 'KUTU'],
+      parcaStateRows: [
+        { parca: 'KAPAK', state: 'approved', gate: 'ozalit', order_id: 'o-1' },
+        { parca: 'KUTU', state: 'approved', gate: 'ozalit', order_id: 'o-1' },
+      ],
+    })
+    return allParcalarDelivered(client, project, 'ozalit').then((result) => {
+      assert.equal(result, false, 'these rows belong to the order, not the project\'s own round')
     })
   })
 })

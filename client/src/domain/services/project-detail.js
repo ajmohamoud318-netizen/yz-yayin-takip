@@ -266,14 +266,20 @@ export function availableActions({
   const printerSplitRound = role === 'printer' && (printerParcaJobs ?? []).length > 0
 
   /**
-   * Is the per-parça panel the surface for APPROVING this round?
+   * Is the per-parça panel the surface for DECIDING this round?
    *
-   * On a multi-parça round it is, and the whole-round Onayla above it is not a
-   * shortcut but a way around it: one click signs off every parça the snapshot
-   * carries, which is the opposite of deciding them one at a time. The panel
-   * already has the shortcut that means it honestly — "Tüm parçaları onaylayın",
-   * which knows how many it is signing and refuses to appear when it cannot
-   * cover the round.
+   * Whenever the round has a parça list at all — one parça or ten.
+   *
+   * On a multi-parça round the whole-round Onayla above it is not a shortcut but
+   * a way around it: one click signs off every parça the snapshot carries, which
+   * is the opposite of deciding them one at a time. The panel already has the
+   * shortcut that means it honestly — "Tüm parçaları onaylayın", which knows how
+   * many it is signing and refuses to appear when it cannot cover the round.
+   *
+   * A one-parça round has nothing to go around, and the panel owns it anyway:
+   * every decision on a round with a parça list is taken in one place, so nobody
+   * has to count a sheet's parçalar to know where its buttons are. Its row opens
+   * the same dialogs this header pair did — see ProjectDetail's approveFromPanel.
    *
    * It is also what let the gate close on a parça the round never carried: the
    * header button asks nothing about the project's parça list, so a leader could
@@ -281,16 +287,18 @@ export function availableActions({
    * never printed. (The server refuses that now — see assertNoNeverSentParcalar —
    * but a button whose only outcome is a 400 is not a button.)
    *
-   * `>= 2` is the same test ProjectDetail and Approvals use to render the panel
-   * at all, so suppression and surface always agree: below it the panel does not
-   * draw and the header pair is the only way to decide anything.
+   * `> 0` is the same test ProjectDetail and Approvals use to render the panel at
+   * all, so suppression and surface always agree: a legacy round with no snapshot
+   * draws no panel, and the header pair is the only way to decide anything there.
    *
-   * REJECT is deliberately left alone. It is not a per-parça decision wearing the
-   * wrong hat — it bounces the whole round for rework, which is a real thing to
-   * want and has no per-parça equivalent that means the same. It also stays the
-   * way out of a round that turned out to be wrong wholesale.
+   * REJECT keeps its meaning. It is not a per-parça decision wearing the wrong
+   * hat — it bounces the whole round for rework, which is a real thing to want
+   * and the way out of a round that turned out to be wrong wholesale. Only its
+   * home changes, so it is emitted as 'reject-parca' wherever the panel is that
+   * home: "Tümünü Reddedin" on a split round, the row's own thumbs-down on a
+   * round of one.
    */
-  const parcaPanelDecides = (parcaSnapshot ?? []).length >= 2
+  const parcaPanelDecides = (parcaSnapshot ?? []).length > 0
   /* …and until the snapshot has actually been read, we do not know which it is.
    *
    * The list arrives from an async fetch and starts empty, so "not asked yet"
@@ -468,10 +476,13 @@ export function advanceActionLabel(project, userRole) {
       // Leader / assigned designer requesting the ozalit proof.
       return 'Ozalit İsteyin'
     case 'demo_teslim':
-    case 'cin_demo_teslim':
       // At demo_teslim the matbaa delivers (printer). The team leader
       // or assigned designer re-triggers a new demo round.
       return userRole === 'printer' ? "Demo'yu Teslim Edin" : 'Demo İsteyin'
+    case 'cin_demo_teslim':
+      // ÇİN has no matbaa leg: the leader sends the demo that came back from
+      // China on to its approval gate (server computeDemoTeslimAdvance).
+      return userRole === 'printer' ? "Demo'yu Teslim Edin" : 'Onaya Gönderin'
     case 'baskida':
       // Only ÇİN reaches here as a leader-advanceable stage (→ Gümrük). TR
       // Baskıda is closed out via the Sales handover, not this button.

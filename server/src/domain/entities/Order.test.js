@@ -746,3 +746,90 @@ describe('role fixtures', () => {
     assert.equal(satis.role, 'satis')
   })
 })
+
+describe('Order — split-round guards (migration 080)', () => {
+  const started = (parca) => ({
+    parca, state: 'in_round', owner_role: 'printer', started_at: '2026-09-10T00:00:00.000Z', fix_pending: false,
+  })
+
+  it('refuses a whole-round Teslim Alınamadı once a parça has been signed', () => {
+    const order = new Order(baseOrder({
+      status: 'imza_bekleniyor', ozalit_parca_approvals: { KUTU: [{ id: 'L1', role: 'team_leader' }] },
+    }))
+    assert.throws(() => order.markMatbaaNotReceived(L1, { designerIds: [] }), /tek tek reddedin/)
+    assert.equal(order.status, 'imza_bekleniyor')
+  })
+
+  it('refuses to cancel with a parça on the press, and wipes the ledger once free', () => {
+    const busy = new Order(baseOrder({ status: 'matbaa_ozalit_yapiyor' }))
+    assert.throws(() => busy.cancelOzalit(L1, { parcaRows: [started('KUTU')] }), /şu parçalara başladı: KUTU/)
+
+    const free = new Order(baseOrder({
+      status: 'matbaa_ozalit_yapiyor',
+      ozalit_parca_approvals: { KUTU: [{ id: 'L1' }] },
+      ozalit_parca_rejections: [{ parca: 'KİTAP' }],
+    }))
+    // Released by an accepted change request: un-started, correction owed.
+    free.cancelOzalit(L1, { parcaRows: [{ ...started('KUTU'), started_at: null, fix_pending: true }] })
+    assert.deepEqual(free.ozalit_parca_approvals, {})
+    assert.deepEqual(free.ozalit_parca_rejections, [])
+  })
+
+  it('refuses an edit that rewrites a started parça, and allows one that does not', () => {
+    const order = () => new Order(baseOrder({ status: 'matbaa_ozalit_yapiyor' }))
+    assert.throws(
+      () => order().editOzalit(L1, { parcaRows: [started('KUTU')], changedParcalar: ['KUTU'] }),
+      /şu parçalara başladı: KUTU/,
+    )
+    assert.doesNotThrow(
+      () => order().editOzalit(L1, { parcaRows: [started('KUTU')], changedParcalar: ['KİTAP'] }),
+    )
+  })
+
+  it('refuses the whole-order approve on a split round', () => {
+    const order = new Order(baseOrder({ status: 'imza_bekleniyor', matbaa_received: true }))
+    assert.throws(
+      () => order.advance(L1, { teamLeaderIds: ['L1'], designerIds: [], splitRound: true }),
+      /parça bazlı onaylanıyor/,
+    )
+    assert.deepEqual(order.matbaa_approvals, [])
+  })
+
+  it('starts a new round with an empty per-parça ledger', () => {
+    const order = new Order(baseOrder({
+      status: 'kontroller_tamam',
+      ozalit_parca_approvals: { KUTU: [{ id: 'L1' }] },
+      ozalit_parca_rejections: [{ parca: 'KUTU' }],
+    }))
+    order.advance(D1, {})
+    assert.equal(order.status, 'matbaa_ozalit_yapiyor')
+    assert.deepEqual(order.ozalit_parca_approvals, {})
+    assert.deepEqual(order.ozalit_parca_rejections, [])
+  })
+
+  it('wipes the per-parça ledger on a whole-order reject', () => {
+    const order = new Order(baseOrder({
+      status: 'imza_bekleniyor', ozalit_parca_approvals: { KUTU: [{ id: 'L1' }] },
+    }))
+    order.reject(L1, { reason: 'X', rejectTarget: 'matbaa' })
+    assert.deepEqual(order.ozalit_parca_approvals, {})
+  })
+
+  it('refuses to sign a parça that is out for rework', () => {
+    const order = new Order(baseOrder({ status: 'imza_bekleniyor', matbaa_received: true }))
+    assert.throws(
+      () => order.approveParcalar(L1, { parcalar: ['KUTU'] }, {
+        teamLeaderIds: ['L1'], designerIds: [], roundParcalar: ['KUTU', 'KİTAP'], outForRework: ['KUTU'],
+      }),
+      /Revizede olan parça onaylanamaz, önce geri gelmeli: KUTU/,
+    )
+  })
+
+  it('logs a per-parça reject as a rejection, not a failed delivery', () => {
+    const order = new Order(baseOrder({ status: 'imza_bekleniyor' }))
+    const event = order.rejectParcalar(L1, { parcalar: ['KUTU'], reason: 'kesim', target: 'matbaa' }, {
+      roundParcalar: ['KUTU', 'KİTAP'],
+    })
+    assert.equal(event.orderHistory.step, 'parca_rejected')
+  })
+})

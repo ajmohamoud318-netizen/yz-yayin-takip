@@ -8,6 +8,7 @@ import { orderOzalitFormMode } from '@/domain/constants/orders'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import OrderNoBadge from '@/components/OrderNoBadge'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -248,7 +249,10 @@ function RequestCard({ request, onSign, onReject, onOzalit, onBaskiOnay }) {
 
           <div className="min-w-0 flex-1 space-y-1.5">
             <p className="font-semibold leading-snug">{request.project_title?.replace(/ \/ /g, ' ')}</p>
-            <p className="text-sm text-muted-foreground">Talep eden: {request.requested_by_name}</p>
+            <p className="text-sm text-muted-foreground">
+              <OrderNoBadge order={request} className="mr-1.5" />
+              Talep eden: {request.requested_by_name}
+            </p>
 
             {items.length > 0 ? (
               <div className="flex flex-wrap gap-1.5 pt-0.5">

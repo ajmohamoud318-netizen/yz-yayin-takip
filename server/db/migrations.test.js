@@ -433,3 +433,76 @@ test('082: the backfill keeps ticked stickers done and refreshes stuck progress'
   assert.equal(again.rows[0].n, 3)
   await db.close()
 })
+
+/* ==========================================================================
+ *  083 — every sipariş gets a number within its book
+ * ======================================================================== */
+
+const M083 = '083__order_no.sql'
+
+test('083: the backfill numbers each project\'s orders in the order they were raised', { skip: !PGlite }, async () => {
+  const db = await freshDb({ upToExclusive: M083 })
+  await db.exec(`
+    INSERT INTO users (id, name, email, role) VALUES ('u1','Esra','e@e.com','satis');
+    INSERT INTO projects (id, title, type, stage) VALUES ('pa','A','TR','satista'), ('pb','B','TR','satista');
+    INSERT INTO order_requests (id, project_id, requested_by, status, created_at) VALUES
+      ('a-new','pa','u1','atama_bekleniyor','2026-05-01'),
+      ('a-old','pa','u1','teslim_edildi','2026-01-01'),
+      ('b-only','pb','u1','baskida','2026-02-01'),
+      ('a-mid','pa','u1','imza_bekleniyor','2026-03-01');
+  `)
+  await applyMigration(db, M083)
+
+  const { rows } = await db.query('SELECT id, order_no FROM order_requests ORDER BY id')
+  assert.deepEqual(
+    Object.fromEntries(rows.map((r) => [r.id, r.order_no])),
+    // Counted per book, oldest first — not by insertion order, not globally.
+    { 'a-mid': 2, 'a-new': 3, 'a-old': 1, 'b-only': 1 },
+  )
+
+  // A re-run must not renumber anything a person has already seen on screen.
+  await applyMigration(db, M083)
+  const again = await db.query('SELECT id, order_no FROM order_requests ORDER BY id')
+  assert.deepEqual(again.rows, rows)
+  await db.close()
+})
+
+test('083: a new order gets the next number on its own book, whoever inserts it', { skip: !PGlite }, async () => {
+  // The trigger is the point: insertOrder, the seed and every hand-written
+  // fixture insert without naming order_no, and all of them must get one.
+  const db = await freshDb()
+  await db.exec(`
+    INSERT INTO users (id, name, email, role) VALUES ('u1','Esra','e@e.com','satis');
+    INSERT INTO projects (id, title, type, stage) VALUES ('pa','A','TR','satista'), ('pb','B','TR','satista');
+    INSERT INTO order_requests (id, project_id, requested_by) VALUES ('a1','pa','u1');
+    INSERT INTO order_requests (id, project_id, requested_by) VALUES ('a2','pa','u1'), ('b1','pb','u1'), ('a3','pa','u1');
+  `)
+  const { rows } = await db.query('SELECT id, order_no FROM order_requests ORDER BY id')
+  assert.deepEqual(
+    Object.fromEntries(rows.map((r) => [r.id, r.order_no])),
+    { a1: 1, a2: 2, a3: 3, b1: 1 },
+    'one multi-row INSERT must still hand out distinct numbers',
+  )
+  await db.close()
+})
+
+test('083: two orders on one book can never share a number', { skip: !PGlite }, async () => {
+  const db = await freshDb()
+  await db.exec(`
+    INSERT INTO users (id, name, email, role) VALUES ('u1','Esra','e@e.com','satis');
+    INSERT INTO projects (id, title, type, stage) VALUES ('pa','A','TR','satista'), ('pb','B','TR','satista');
+    INSERT INTO order_requests (id, project_id, requested_by) VALUES ('a1','pa','u1');
+  `)
+  await assert.rejects(
+    () => db.query("INSERT INTO order_requests (id, project_id, requested_by, order_no) VALUES ('dup','pa','u1',1)"),
+    /ux_order_requests_project_order_no/,
+    'two "Sipariş #1" cards on one book is exactly what the column exists to prevent',
+  )
+  // The same number on a different book is fine — the title tells them apart.
+  await db.query("INSERT INTO order_requests (id, project_id, requested_by, order_no) VALUES ('b1','pb','u1',1)")
+  await assert.rejects(
+    () => db.query("UPDATE order_requests SET order_no = NULL WHERE id = 'a1'"),
+    'order_no must be NOT NULL',
+  )
+  await db.close()
+})

@@ -458,13 +458,19 @@ describe('project-service — parça routing reset', () => {
     assert.deepEqual(del.params, ['p-1', 'ozalit'])
   })
 
-  it('deletes nothing on the ekran redo leg — no round starts at the matbaa', async () => {
+  it('deletes the ozalit gate\'s rows on the ekran redo leg too', async () => {
+    // No round starts at the matbaa on this leg, but the reject that led here
+    // (reject-to-designer) never touched parca_state — only reject-to-matbaa
+    // does. Whatever the rejected round left behind (a parça still 'in_round')
+    // is stale on this new screen-only round and would otherwise sit there
+    // forever, since nothing on the ekran leg ever delivers to clear it.
     const project = projectRow({ stage: 'ozalit_onay', last_reject_type: 'ozalit', progress: 100 })
     const client = makeClient({ project })
 
     await service.advanceProject('p-1', L1, { route: 'ekran' }, client)
 
-    assert.equal(client.matching(/DELETE FROM parca_state/).length, 0)
+    const del = client.one(/DELETE FROM parca_state/)
+    assert.deepEqual(del.params, ['p-1', 'ozalit'])
   })
 
   it('deletes the right gate\'s rows on a whole-round reject-to-matbaa', async () => {
@@ -507,6 +513,53 @@ describe('project-service — baski_onay approve', () => {
       () => service.approveProject('p-1', D1, { stage: 'baski_onay' }, client),
       /Baskı onayını yalnızca ekip lideri/,
     )
+  })
+})
+
+describe('project-service — approve and reject act on the stage the caller saw', () => {
+  it('refuses an approve whose stage echo is stale, before writing anything', async () => {
+    const project = projectRow({ stage: 'ozalit_onay', ozalit_received: true, progress: 100 })
+    const client = makeClient({ project, leaders: ['L1'] })
+
+    await assert.rejects(
+      () => service.approveProject('p-1', L1, { stage: 'demo_onay' }, client),
+      (err) => { assert.equal(err.status, 409); return true },
+    )
+    assert.equal(client.matching(/UPDATE projects SET/).length, 0)
+  })
+
+  it('refuses a reject whose stage echo is stale', async () => {
+    const project = projectRow({ stage: 'baski_onay', progress: 100 })
+    const client = makeClient({ project })
+
+    await assert.rejects(
+      () => service.rejectProject('p-1', L1, { stage: 'ozalit_onay', reason: 'x', rejectTarget: 'designer' }, client),
+      (err) => { assert.equal(err.status, 409); return true },
+    )
+    assert.equal(client.matching(/UPDATE projects SET/).length, 0)
+  })
+
+  it('reads the gate sheet off the project stage, not the request', async () => {
+    const project = projectRow({ stage: 'ozalit_onay', ozalit_received: true, progress: 100 })
+    const client = makeClient({ project, leaders: ['L1', 'L2'] })
+
+    await service.approveProject('p-1', L1, { stage: 'ozalit_onay', snapshotKind: 'demo' }, client)
+
+    const read = client.matching(/FROM demos/)
+    assert.ok(read.length > 0, 'the gate read its sheet')
+    assert.equal(read[0].params[1], 'ozalit', 'a client hint of "demo" must not pick the demo round')
+  })
+
+  it('refuses /approve at a stage with nothing to approve, whoever asks', async () => {
+    for (const actor of [P1, D1, L1, { id: 'S1', role: 'satis', name: 'Esra' }]) {
+      const project = projectRow({ stage: 'baskida', progress: 100 })
+      const client = makeClient({ project })
+      await assert.rejects(
+        () => service.approveProject('p-1', actor, { stage: 'baskida' }, client),
+        /onaylanacak bir adım yok/,
+      )
+      assert.equal(client.matching(/UPDATE projects SET/).length, 0)
+    }
   })
 })
 

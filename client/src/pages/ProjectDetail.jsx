@@ -78,10 +78,11 @@ export default function ProjectDetail() {
   } = d
 
   // Per-parça approval (migrations 068/069/070) — the same grid the Onaylar
-  // queue shows, on the project's own page. It is additive: it renders only
-  // on a round whose snapshot lists 2+ parçalar, where the single whole-round
-  // Onayla button can't express "KUTU is fine, KİTAP isn't". A single-parça
-  // sheet keeps the header's Onayla/Reddet pair and nothing changes.
+  // queue shows, on the project's own page. It renders on every round whose
+  // snapshot lists parçalar — one or several — and is where that round is
+  // decided: the header's Onayla/Reddet stay only for a legacy round with no
+  // snapshot. A round of one is still decided as the round; see
+  // singleParcaRound below.
   //
   // Loaded by useProjectDetail rather than here: the header's "Kalan Parçaları
   // Gönderin" needs the same snapshot to work out which parçalar the round left
@@ -105,11 +106,19 @@ export default function ProjectDetail() {
   // buttons offered. Cleared once they pick one.
   const [reviewedParca, setReviewedParca] = useState(null)
 
-  function openParcaSheet(action, parcalar) {
-    setParcaSheet({ action, parcalar: parcalar ?? [] })
+  // `wholeRound`: opened on a one-parça round, where the decision is the
+  // round's rather than the parça's — the footer then hands off to the dialog
+  // the header's Onayla / Reddet used to open. See approveFromPanel.
+  function openParcaSheet(action, parcalar, { wholeRound = false } = {}) {
+    setParcaSheet({ action, parcalar: parcalar ?? [], wholeRound })
     // The gate decides which sheet — the same variant the round was authored in.
+    // Baskı Onayı has its own. It used to fall through to the demo sheet, so a
+    // leader signed KUTU's baskı onayı off a different document from the one
+    // being approved.
     if (ledgerKind === 'ozalit') {
       d.setOzalitFormMode('view'); d.setOzalitFormAttempt(null); setOzalitFormOpen(true)
+    } else if (ledgerKind === 'baski_onay' || ledgerKind === 'cin_baski_onay') {
+      d.setBaskiOnayFormMode('view'); setBaskiOnayFormOpen(true)
     } else {
       d.setDemoFormMode('view'); d.setDemoFormAttempt(null); setDemoFormOpen(true)
     }
@@ -122,10 +131,16 @@ export default function ProjectDetail() {
     setParcaSheet(null)
     setDemoFormOpen(false)
     setOzalitFormOpen(false)
+    setBaskiOnayFormOpen(false)
     if (pending.action === 'review') {
       // Designer has read what they are about to send back round; now they
       // choose the road.
       setReviewedParca(pending.parcalar[0] ?? null)
+    } else if (pending.wholeRound) {
+      // A round of one: the round's own dialog, as the header opened it — the
+      // reason, designer/matbaa choice and revize picker on a reject; the
+      // "tasarım tamamlanmadı" hold copy and the sheet signature on an approve.
+      setDialog(pending.action)
     } else if (pending.action === 'approve') {
       await d.handleApproveParcalar(pending.parcalar)
       refetchParcaRows()
@@ -134,6 +149,42 @@ export default function ProjectDetail() {
       // cannot express — so the sheet hands off to the dialog that can.
       setParcaReject(pending.parcalar)
     }
+  }
+
+  /**
+   * A round whose sheet carries ONE parça.
+   *
+   * Decided in the panel like every other round with a parça list, but the
+   * decisions are the round's, and the server treats them that way. Approving
+   * the one parça signs the same ledger and moves the stage exactly as the
+   * whole-round approve does. Rejecting it per parça does not: that parks the
+   * project at the gate and routes the parça through `parca_state`, machinery
+   * only a split round has — the matbaa's parça queue skips a one-parça sheet
+   * (deriveTeslimParcalar), so the parça would sit on a desk no queue shows.
+   * So the row opens the dialogs the header's pair did, sheet first.
+   */
+  const singleParcaRound = parcaSnapshot.length === 1
+
+  /** The panel's thumbs-up. */
+  function approveFromPanel(parcalar) {
+    if (!singleParcaRound) { openParcaSheet('approve', parcalar); return }
+    setParcaSheet(null)
+    // The ozalit and baskı approve dialogs ARE the sheet, with the round's own
+    // Onaylayın in the footer — and its required-field guard, its maker-checker
+    // and the ONAYLAYAN KİŞİ it writes onto the record come with it.
+    if (ledgerKind === 'ozalit') {
+      d.setOzalitFormMode('approve'); setOzalitFormOpen(true)
+    } else if (ledgerKind === 'baski_onay' || ledgerKind === 'cin_baski_onay') {
+      d.setBaskiOnayFormMode('approve'); setBaskiOnayFormOpen(true)
+    } else {
+      // The demo's approve dialog is a confirm, so the sheet goes in front of it.
+      openParcaSheet('approve', parcalar, { wholeRound: true })
+    }
+  }
+
+  /** The panel's thumbs-down: the sheet, then the reason dialog. */
+  function rejectFromPanel(parcalar) {
+    openParcaSheet('reject', parcalar, { wholeRound: singleParcaRound })
   }
 
   const PARCA_SHEET_VERB = { approve: 'Onaylayın', reject: 'Reddedin', review: 'Gönderin' }
@@ -315,7 +366,7 @@ export default function ProjectDetail() {
     ? awaitsOzalitReceipt(project)
     : ((project?.stage === 'demo_onay' || project?.stage === 'cin_demo_onay')
       && project?.demo_received !== true)
-  const showParcaGrid = parcaSnapshot.length >= 2 && (
+  const showParcaGrid = parcaSnapshot.length > 0 && (
     earlyParcaGate
       // Leader-only was too narrow, and it contradicted the round-level rule
       // one branch down. `receiveParca` accepts "ekip lideri veya atanmış
@@ -417,18 +468,25 @@ export default function ProjectDetail() {
               // assigned designer sees this panel so they can take delivery of
               // the round, but the sign-off there is the leader's — offering
               // them a thumbs-up would be a button the server refuses.
-              onApproveParcalar={canDecideParca
-                ? (parcalar) => openParcaSheet('approve', parcalar)
-                : undefined}
+              onApproveParcalar={canDecideParca ? approveFromPanel : undefined}
               // Reject is demo/ozalit only. Baskı Onayı is a leader-to-leader
               // maker-checker (migration 070) with no designer or matbaa leg —
               // there is no desk to send a parça back to, and computeRejection
               // refuses a per-parça reject outside the demo/ozalit onay stages
               // ("Parça bazlı red yalnızca demo ve ozalit onay aşamalarında
               // yapılabilir"). Offering the button here is a guaranteed 400.
-              onRejectParcalar={canDecideParca && isLeader && ledgerKind !== 'baski_onay' && ledgerKind !== 'cin_baski_onay'
-                ? (parcalar) => openParcaSheet('reject', parcalar)
-                : undefined}
+              //
+              // On a round of one the row's thumbs-down is the WHOLE-round
+              // reject, so it answers to that gate instead: `availableActions`
+              // hands it over as 'reject-parca' only past the receipt, to a
+              // leader who has not already signed, and never at baskı.
+              onRejectParcalar={
+                (singleParcaRound
+                  ? d.actions.includes('reject-parca')
+                  : canDecideParca && isLeader && ledgerKind !== 'baski_onay' && ledgerKind !== 'cin_baski_onay')
+                  ? rejectFromPanel
+                  : undefined
+              }
               // "Tümünü Reddedin" — the header's old whole-round Reddet, moved
               // in here so both bulk decisions live beside the per-parça ones.
               // Same dialog, same action; `availableActions` still owns every
@@ -446,7 +504,7 @@ export default function ProjectDetail() {
               // grid's prop note. It opens the same form the header's button
               // used to, in the same mode; only its home moved.
               onPrepareSheet={canDecideParca && (ledgerKind === 'baski_onay' || ledgerKind === 'cin_baski_onay')
-                ? () => { d.setBaskiOnayFormMode('approve'); setBaskiOnayFormOpen(true) }
+                ? () => { setParcaSheet(null); d.setBaskiOnayFormMode('approve'); setBaskiOnayFormOpen(true) }
                 : undefined}
               onBulkReceive={d.receiptInPanel && (d.canReceiveDemo || d.canReceiveOzalit)
                 ? () => d.setTeslimConfirm(ledgerKind === 'ozalit' ? 'ozalit-received' : 'demo-received')
@@ -663,9 +721,19 @@ export default function ProjectDetail() {
 
       <BaskiOnayFormDialog
         open={baskiOnayFormOpen}
-        onOpenChange={setBaskiOnayFormOpen}
+        onOpenChange={(v) => { setBaskiOnayFormOpen(v); if (!v) setParcaSheet(null) }}
         project={project}
         mode={baskiOnayFormMode}
+        // A per-parça baskı onayı opens here (see openParcaSheet), on its own
+        // sheet, with the same read-only decision footer the demo and ozalit
+        // sheets carry. All absent for the prepare / whole-round approve this
+        // dialog is also opened for.
+        onStartWork={parcaSheet ? commitParcaSheet : undefined}
+        parcaScope={sheetParcaScope}
+        parcaScopeOnly={sheetScopeOnly}
+        decisionContext={parcaSheet}
+        startWorkLabel={parcaSheetLabel}
+        startingWork={d.processingEkranDemo}
         onDone={onActionDone}
       />
 

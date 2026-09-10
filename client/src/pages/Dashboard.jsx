@@ -299,7 +299,7 @@ export default function Dashboard() {
                   {bars.map(({ p, start, end }) => {
                     const leftPct = (start / 12) * 100
                     const widthPct = ((end - start + 1) / 12) * 100
-                    const order = openOrders.get(p.id)
+                    const orders = openOrders.get(p.id)
                     return (
                       <div
                         key={p.id}
@@ -318,7 +318,7 @@ export default function Dashboard() {
                           <YearPlanBar
                             variant="comfortable"
                             project={p}
-                            order={order}
+                            orders={orders}
                             leftPct={leftPct}
                             widthPct={widthPct}
                             animationDelay={0}

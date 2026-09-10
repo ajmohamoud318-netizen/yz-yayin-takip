@@ -4,6 +4,7 @@ import { Package } from 'lucide-react'
 import api, { ORDER_STEP_LABELS } from '@/api'
 import { useAuth } from '@/hooks/useAuth'
 import { Card, CardContent } from '@/components/ui/card'
+import OrderNoBadge from '@/components/OrderNoBadge'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn, formatNumber } from '@/lib/utils'
@@ -115,6 +116,7 @@ function RequestRow({ request }) {
           <Package className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium sm:truncate">{request.project_title?.replace(/ \/ /g, ' ')}</p>
+            <OrderNoBadge order={request} className="mt-1" />
             {items.length > 0 ? (
               <div className="mt-1 flex flex-wrap gap-1.5">
                 {items.map((item) => (

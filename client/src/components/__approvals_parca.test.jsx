@@ -938,3 +938,149 @@ describe('ParcaApprovalGrid — the ozalit ledger is per-party', () => {
     expect(container.textContent).toContain('Onaylandı')
   })
 })
+
+/**
+ * A round of ONE parça is decided in the panel too.
+ *
+ * The header's Onayla/Reddet used to stay for it, on the reasoning that one
+ * button is enough for one parça. Every decision on a round with a parça list is
+ * now taken in one place instead — so the grid draws, and the only things that
+ * change are the ones that would misdescribe a round of one.
+ */
+describe('ParcaApprovalGrid — a round of one parça', () => {
+  const clean = { demo_parca_approvals: [], demo_parca_rejections: [] }
+  const props = { project: clean, kind: 'demo', snapshotParcalar: ['ANA PARÇA'] }
+
+  it('draws the row with both of its buttons', () => {
+    render(<ParcaApprovalGrid {...props} onApproveParcalar={() => {}} onRejectParcalar={() => {}} />)
+    expect(container.textContent).toContain('1 parça')
+    expect(container.querySelector('button[aria-label="ANA PARÇA parçasını onayla"]')).toBeTruthy()
+    expect(container.querySelector('button[aria-label="ANA PARÇA parçasını reddet"]')).toBeTruthy()
+  })
+
+  it('offers no "Tümünü Reddedin" — the row’s thumbs-down is that button', () => {
+    // The caller wires the row to the whole-round reject on a round of one; a
+    // second button for the same act would only disagree with it about the name.
+    render(
+      <ParcaApprovalGrid
+        {...props}
+        onApproveParcalar={() => {}}
+        onRejectParcalar={() => {}}
+        onBulkReject={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label*="Tümünü Reddedin"]')).toBe(null)
+    expect(container.querySelector('button[aria-label="ANA PARÇA parçasını reddet"]')).toBeTruthy()
+  })
+
+  it('offers no bulk approve either', () => {
+    render(<ParcaApprovalGrid {...props} onApproveParcalar={() => {}} />)
+    expect(container.querySelector('button[aria-label*="Tüm parçaları onaylayın"]')).toBe(null)
+  })
+
+  it('takes delivery with "Teslim Alın", not "Tümünü Teslim Alın"', () => {
+    render(
+      <ParcaApprovalGrid
+        {...props}
+        roundAwaitsReceipt
+        onApproveParcalar={() => {}}
+        onBulkReceive={() => {}}
+        onBulkNotReceived={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label="Teslim Alın"]')).toBeTruthy()
+    expect(container.querySelector('button[aria-label*="Tümünü Teslim Alın"]')).toBe(null)
+    // Nothing is signed yet, so the not-received escape stays.
+    expect(container.querySelector('button[aria-label="Teslim Alınamadı"]')).toBeTruthy()
+  })
+
+  it('offers the baskı prepare step for the one parça', () => {
+    render(
+      <ParcaApprovalGrid
+        project={{ baski_parca_preparers: {}, baski_parca_approvals: {} }}
+        kind="baski_onay"
+        snapshotParcalar={['ANA PARÇA']}
+        onApproveParcalar={() => {}}
+        onPrepareSheet={() => {}}
+      />,
+    )
+    const prepare = container.querySelector('button[aria-label*="Baskı Onayı Hazırlayın"]')
+    expect(prepare).toBeTruthy()
+    expect(prepare.textContent).toContain('(1)')
+  })
+})
+
+/**
+ * No button in the panel may submit a form it happens to be drawn inside.
+ *
+ * TalepSignDialog renders the grid inside its <form onSubmit={handleSign}>, and
+ * `Button` sets no `type` of its own — so every thumb in it was a submit button,
+ * and a per-parça click on a split sipariş round also fired the whole-order
+ * approve.
+ */
+describe('ParcaApprovalGrid — buttons never submit a surrounding form', () => {
+  const expectAllTyped = () => {
+    const all = $$('button')
+    expect(all.length).toBeGreaterThan(0)
+    for (const b of all) expect(b.getAttribute('type')).toBe('button')
+  }
+
+  it('on the decision rows and the bulk pair', () => {
+    render(
+      <ParcaApprovalGrid
+        project={{ demo_parca_approvals: [], demo_parca_rejections: [] }}
+        kind="demo"
+        snapshotParcalar={['KAPAK', 'KUTU']}
+        onApproveParcalar={() => {}}
+        onRejectParcalar={() => {}}
+        onBulkReject={() => {}}
+      />,
+    )
+    expectAllTyped()
+  })
+
+  it('on the whole-round receipt pair', () => {
+    render(
+      <ParcaApprovalGrid
+        project={{ demo_parca_approvals: [], demo_parca_rejections: [] }}
+        kind="demo"
+        snapshotParcalar={['KAPAK', 'KUTU']}
+        roundAwaitsReceipt
+        onApproveParcalar={() => {}}
+        onBulkReceive={() => {}}
+        onBulkNotReceived={() => {}}
+      />,
+    )
+    expectAllTyped()
+  })
+
+  it('on the baskı prepare button', () => {
+    render(
+      <ParcaApprovalGrid
+        project={{ baski_parca_preparers: {}, baski_parca_approvals: {} }}
+        kind="baski_onay"
+        snapshotParcalar={['KAPAK', 'KUTU']}
+        onApproveParcalar={() => {}}
+        onPrepareSheet={() => {}}
+      />,
+    )
+    expectAllTyped()
+  })
+
+  it('on the per-parça receipt of an unfinished round', () => {
+    render(
+      <ParcaApprovalGrid
+        project={{ demo_parca_approvals: [], demo_parca_rejections: [] }}
+        kind="demo"
+        snapshotParcalar={['KAPAK', 'KUTU']}
+        parcaRows={[{
+          parca: 'KAPAK', state: 'pending', owner_role: null,
+          delivered_at: '2026-09-08T09:00:00Z', received_at: null,
+        }]}
+        onApproveParcalar={() => {}}
+        onReceiveParca={() => {}}
+      />,
+    )
+    expectAllTyped()
+  })
+})

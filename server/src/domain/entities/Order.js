@@ -19,7 +19,8 @@ import { ORDER_STEP_NEXT, ORDER_STEP_OWNER, ORDER_REJECT_TARGETS } from '../orde
 import { badRequest, conflict, forbidden } from '../errors.js'
 import { everyBlockHasAdet } from '../adet.js'
 import { everyBlockHasBasimYeri } from '../basim-yeri.js'
-import { assertParcaSetUnchanged } from '../spec-parca-diff.js'
+import { assertParcaSetUnchanged, lockedParcalarTouched } from '../spec-parca-diff.js'
+import { lockedParcaNames } from '../parca-routing.js'
 // The per-parça ledger engine, shared with the project pipeline. Calling the
 // same functions is what makes "the sipariş behaves exactly like the project"
 // a property of the code rather than a promise in a comment.
@@ -158,9 +159,11 @@ export class Order {
     // for imza_bekleniyor only once every required approver has signed.
     const advancing = matbaaInfo ? matbaaInfo.advanced : true
     const wasPending = this.status === 'atama_bekleniyor'
+    // Leaving kontroller_tamam is always a brand-new ozalit round.
+    const startsRound = this.status === 'kontroller_tamam'
 
     this._applyAdvance({
-      next, advancing, wasPending, clearResubmitFlag, matbaaInfo, assignees: ctx.assignees,
+      next, advancing, wasPending, clearResubmitFlag, matbaaInfo, assignees: ctx.assignees, startsRound,
     })
     return this._record(this._composeAdvanceEvent({ next, advancing, wasPending, matbaaInfo, ctx }))
   }
@@ -218,6 +221,14 @@ export class Order {
    */
   _authorizeAdvance(actor, ctx) {
     if (this.status === 'imza_bekleniyor') {
+      // The approve half of the split-round rule below. The flat
+      // `matbaa_approvals` tally knows nothing about parçalar, so on a split
+      // round it moved the order on while a parça was still out with the
+      // designer or the matbaa. The dialog hides this button there; the
+      // endpoint has to refuse it too.
+      if (ctx.splitRound) {
+        badRequest('Bu tur parça bazlı onaylanıyor, tek seferde onaylanamaz. Parçaları tek tek onaylayın.')
+      }
       return computeMatbaaOnayApproval(this, actor, {
         teamLeaderIds: ctx.teamLeaderIds ?? [],
         designerIds: ctx.designerIds ?? [],
@@ -291,12 +302,19 @@ export class Order {
   }
 
   /** Apply the advance to this aggregate. */
-  _applyAdvance({ next, advancing, wasPending, clearResubmitFlag, matbaaInfo, assignees }) {
+  _applyAdvance({ next, advancing, wasPending, clearResubmitFlag, matbaaInfo, assignees, startsRound }) {
     this.version = (this.version ?? 0) + 1
     if (wasPending) this.assignee_ids = assignees
     if (advancing) this.status = next
     if (clearResubmitFlag) this.last_reject_type = null
     if (matbaaInfo) this.matbaa_approvals = matbaaInfo.order.matbaa_approvals
+    // A new round starts with an empty per-parça ledger. Every path out of the
+    // previous round already clears it; this is the backstop for any order
+    // left carrying a stale one, which would otherwise arrive pre-approved.
+    if (startsRound) {
+      this.ozalit_parca_approvals = {}
+      this.ozalit_parca_rejections = []
+    }
   }
 
   /**
@@ -409,6 +427,19 @@ export class Order {
     if (this.matbaa_received) {
       badRequest('Matbaa teslimi zaten teslim alındı olarak işaretlenmiş.')
     }
+    // A signature on any parça means the round DID arrive — somebody held that
+    // proof and signed it. The receipt can only be down again because one parça
+    // came back on its own (settleOrderParcaAtGate), and that is a question about
+    // that parça, not the round. The project twin refuses the same click
+    // (assertNotPartialArrival in domain/transitions.js).
+    const signed = Object.values(this.ozalit_parca_approvals ?? {})
+      .some((rows) => Array.isArray(rows) && rows.length > 0)
+    if (signed) {
+      badRequest(
+        'Bu turun bazı parçaları onaylandı — turun tamamı teslim alınamadı olarak '
+        + 'işaretlenemez. Sorunlu parçayı tek tek reddedin.',
+      )
+    }
 
     const now = new Date().toISOString()
     this.status = 'matbaa_ozalit_yapiyor'
@@ -479,7 +510,7 @@ export class Order {
    * Team leader cancels a pending (not-yet-started) ozalit outright —
    * back to tasarimciya_atandi, no attempt bump (nothing was delivered).
    */
-  cancelOzalit(actor) {
+  cancelOzalit(actor, ctx = {}) {
     if (this.status !== 'matbaa_ozalit_yapiyor') {
       badRequest('İptal yalnızca ozalit matbaa sürecindeyken yapılabilir.')
     }
@@ -489,8 +520,20 @@ export class Order {
     if (this.ozalit_started) {
       badRequest('Matbaa ozalit çalışmasına başladı, doğrudan iptal edilemez, değişiklik isteyin.')
     }
+    // The per-parça twin of the flag above. A split round never sets
+    // `ozalit_started` (startOrderParca leaves it alone), so without this the
+    // leader could withdraw a sheet the matbaa is physically printing. Same
+    // refusal as the project's computeOzalitCancel.
+    const locked = lockedParcaNames(ctx.parcaRows)
+    if (locked.length > 0) {
+      badRequest(`Matbaa şu parçalara başladı: ${locked.join(', ')}. İptal için önce değişiklik isteyin.`)
+    }
 
     this.status = 'tasarimciya_atandi'
+    // The round is withdrawn, so its sign-offs describe nothing any more. The
+    // service clears the routing rows alongside.
+    this.ozalit_parca_approvals = {}
+    this.ozalit_parca_rejections = []
     this.ozalit_started = false
     this.ozalit_started_at = null
     this.ozalit_started_by = null
@@ -547,6 +590,14 @@ export class Order {
     // The day one exists, the flag threads through the same call rather than
     // around it.
     assertParcaSetUnchanged(ctx.parcaSetDelta)
+    // …and content, per parça. `ozalit_started` is structurally false on a
+    // split round, so this is the only thing between the leader and a silent
+    // rewrite of a parça already on the press. Scoped to the parçalar this save
+    // actually changes, as the project's computeOzalitEdit does.
+    const touched = lockedParcalarTouched(lockedParcaNames(ctx.parcaRows), ctx.changedParcalar)
+    if (touched.length > 0) {
+      badRequest(`Matbaa şu parçalara başladı: ${touched.join(', ')}. Bu parçalar için değişiklik isteyin.`)
+    }
 
     this.ozalit_fix_pending = false
     this.version = (this.version ?? 0) + 1
@@ -693,6 +744,12 @@ export class Order {
     this.matbaa_received_by = null
     this.matbaa_received_at = null
     this.matbaa_approvals = []
+    // The per-parça ledgers too — the rejected round is spent, and the next one
+    // needs fresh sign-off on every parça. Leaving them meant a parça signed on
+    // this round arrived pre-approved on the next (the project had the same bug,
+    // fixed in computeRejection). The service clears the routing rows.
+    this.ozalit_parca_approvals = {}
+    this.ozalit_parca_rejections = []
     if (rejectTarget === 'designer') {
       this.last_reject_type = 'designer'
     }
@@ -853,6 +910,15 @@ export class Order {
     if (target.length === 0) {
       badRequest('Onaylanacak parça bulunamadı.')
     }
+    // A parça out with the designer or the matbaa is in front of nobody. The
+    // project gate refuses the same click (approvableTarget); here it signed the
+    // rejected parça off, pulled it off the designer's desk and let the order
+    // move on with the rework never done.
+    const out = new Set(ctx.outForRework ?? [])
+    const blocked = target.filter((p) => out.has(p))
+    if (blocked.length > 0) {
+      badRequest(`Revizede olan parça onaylanamaz, önce geri gelmeli: ${blocked.join(', ')}`)
+    }
 
     // An EKRAN parça is the leader's alone. The designer asked for the screen
     // check, and their request IS the sign-off — asking them to counter-sign
@@ -988,7 +1054,7 @@ export class Order {
     return this._record({
       type: 'order.parca_rejected',
       orderHistory: {
-        step: 'matbaa_not_received',
+        step: 'parca_rejected',
         note: reason
           ? `Reddedilen: ${hit.join(', ')} — ${reason}`
           : `Reddedilen: ${hit.join(', ')}`,

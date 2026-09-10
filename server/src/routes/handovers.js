@@ -1,9 +1,9 @@
 import { nanoid } from 'nanoid'
 import { attachUser } from '../middleware/auth.js'
-import { badRequest, forbidden, notFound } from '../domain/errors.js'
+import { badRequest, conflict, forbidden, notFound } from '../domain/errors.js'
 import { withTx } from '../db/pool.js'
 import { getPool } from '../db/pool.js'
-import { assertHandoverEligible, assertOrderHandoverEligible } from '../domain/pipeline.js'
+import { assertHandoverEligible, assertOrderHandoverEligible, handoverStageFor } from '../domain/pipeline.js'
 import {
   getProject, getProjectForUpdate, patchProject, logHistory,
 } from '../services/project-repository.js'
@@ -43,9 +43,11 @@ export async function handoverRoutes(fastify) {
       // `order_id` and the order's status ride along so the SPA can label a
       // reprint's teslim as one — both kinds carry the same project_id and
       // title, so without them the two are indistinguishable on the card.
+      // `order_no` (migration 083) does the same between two reprints of one
+      // title.
       `SELECT h.id, h.project_id, h.order_id, h.status, h.from_stage, h.raised_by, h.confirmed_by,
               h.created_at, h.confirmed_at, p.title AS project_title, p.type AS project_type,
-              o.status AS order_status,
+              o.status AS order_status, o.order_no,
               rb.name AS raised_by_name, cb.name AS confirmed_by_name
        FROM handovers h
        JOIN projects p ON p.id = h.project_id AND p.deleted_at IS NULL
@@ -215,10 +217,22 @@ async function insertHandover(client, { projectId, orderId, fromStage, raisedBy 
  * Confirming
  * ------------------------------------------------------------------------- */
 
-/** Project teslim confirmed → the project goes on sale. Unchanged behaviour. */
-async function confirmProjectHandoverReceipt(client, request, handover, updatedHandover) {
+/** Project teslim confirmed → the project goes on sale. Exported for its own tests. */
+export async function confirmProjectHandoverReceipt(client, request, handover, updatedHandover) {
   const project = await getProjectForUpdate(client, handover.project_id)
   if (!project) notFound('Proje bulunamadı.')
+  // The project may have moved on since this handover was raised — a leader
+  // rejecting the whole round back to tasarım for a redesign, most notably.
+  // Without this, confirming a now-stale handover jumped the project straight
+  // to `satista` regardless of where it actually was, skipping the entire
+  // redesign and re-approval the reject demanded. `rejectProject`'s `after`
+  // hook (project-service/transitions.js) deletes the pending row itself once
+  // this happens, so reaching a stale one here should be rare — this is the
+  // backstop for whatever gap opens between the two, same reasoning as
+  // `runProjectCommand`'s `expectedStage` check for approve/reject.
+  if (project.stage !== handoverStageFor(project.type)) {
+    conflict('Proje bu arada başka bir aşamaya geçti, bu teslim artık geçerli değil.')
+  }
   // Pass the locked row's version as the SQL-level OCC guard so a
   // concurrent writer that slipped past `getProjectForUpdate`'s row
   // lock (admin scripts, future non-locking paths) can't silently

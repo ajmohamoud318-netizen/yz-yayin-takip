@@ -20,6 +20,7 @@ import {
   DISPLAY_ORDER_STEP_LABELS, orderActionLabel,
 } from '@/domain/services/project-detail'
 
+import OrderNoBadge from '@/components/OrderNoBadge'
 import HeaderActionRow from '@/components/HeaderActionRow'
 import HeaderBanners from '@/components/HeaderBanners'
 
@@ -61,6 +62,8 @@ function OrderProgressStepper({ order, handoverPending, canAct, onAct }) {
       <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <Package className="h-3.5 w-3.5" />
         Baskı Talebi
+        {/* A book can have two of these trackers stacked at once. */}
+        <OrderNoBadge order={order} />
       </div>
       <ol className="flex items-center">
         {displaySteps.map((step, i) => {

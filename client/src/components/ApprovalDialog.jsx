@@ -117,6 +117,18 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
   const isOzalitLeaderStep =
     project?.stage === 'ozalit_onay'
 
+  // A pending Ekran Demo Onayı request (migration 050) — the leader signing
+  // off the digital stand-in for a second physical demo. Its own mode rather
+  // than `mode: 'approve'` + a flag: it answers to a different endpoint
+  // (`approveEkranDemo`, not `approveProject` — the latter now refuses this
+  // exact state, see transitions.js's held-demo guard) and none of the
+  // held/receive copy below applies — the demo behind it was received and
+  // signed off long ago, this decision is only about the screen round.
+  // Previously this had no dialog at all: HeaderActionRow opened a bare
+  // ConfirmDialog with no signature, and Approvals.jsx's queue row called
+  // the API straight from the button's onClick. See matbaa-sees-form-first.
+  const isEkranDemoApprove = mode === 'ekran-demo-approve'
+
   // Destination of this approval (e.g. Demo Onay → Ozalit). Null on non-approve.
   const approveDest = project ? APPROVE_DEST[project.stage] : null
 
@@ -151,6 +163,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
       : isOzalitLeaderStep
         ? 'Ozalit onayı'
         : approveDest?.label ?? 'Aşamayı onaylayın',
+    'ekran-demo-approve': 'Ekran demo onayı',
     reject: 'Reddedin ve geri gönderin',
     advance: advanceLabel,
   }
@@ -164,6 +177,9 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
         : approveDest
           ? `Onaylandığında proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylamaya emin misiniz?`
           : 'Bu proje bir sonraki aşamaya ilerleyecek. Onaylamaya emin misiniz?',
+    'ekran-demo-approve': approveDest
+      ? `Tasarımcının ekrandan gönderdiği demoyu onaylıyorsunuz — fiziksel bir ikinci demo istenmeyecek. Proje "${STAGE_LABELS[approveDest.stage]}" aşamasına geçecek. Onaylıyor musunuz?`
+      : 'Tasarımcının ekrandan gönderdiği demoyu onaylıyorsunuz — fiziksel bir ikinci demo istenmeyecek. Onaylıyor musunuz?',
     reject:
       rejectTarget === 'matbaa'
         ? `Proje "${teslimLabel}" aşamasına döner; matbaa yeniden teslim eder. Tasarım değişmez. Bir red sebebi yazın.`
@@ -252,6 +268,16 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
           stampSpecSignature(specVariant, project, { onaylayanKisi: user?.name ?? '' })
             .catch(() => {})
         }
+      } else if (isEkranDemoApprove) {
+        // A different endpoint, not `approveProject` — the demo round this
+        // signs off is HELD, and approveProject now refuses that state
+        // outright (a held demo can only be closed by a re-send or this
+        // ekran approve, never a repeat of the ordinary approve click).
+        updated = await api.approveEkranDemo(project.id)
+        if (specVariant) {
+          stampSpecSignature(specVariant, project, { onaylayanKisi: user?.name ?? '' })
+            .catch(() => {})
+        }
       } else if (mode === 'reject')
         updated = await api.rejectProject(
           project.id,
@@ -276,7 +302,9 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
       }
       updateOne(updated)
       toast.success(
-        mode === 'approve' ? 'Onaylandı.' : mode === 'reject' ? 'Reddedildi.' : 'İlerletildi.',
+        mode === 'approve' || isEkranDemoApprove
+          ? 'Onaylandı.'
+          : mode === 'reject' ? 'Reddedildi.' : 'İlerletildi.',
       )
       onDone?.(updated)
       onOpenChange(false)
@@ -298,7 +326,7 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {mode === 'approve' && <Check className="h-4 w-4 text-emerald-600" />}
+            {(mode === 'approve' || isEkranDemoApprove) && <Check className="h-4 w-4 text-emerald-600" />}
             {mode === 'reject' && <X className="h-4 w-4 text-destructive" />}
             {mode === 'advance' && <Send className="h-4 w-4 text-primary" />}
             {titles[mode]}
@@ -364,8 +392,12 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
 
           {/* "Matbaa" re-delivery only exists in the TR pipeline; ÇİN demos have
               no matbaa teslim step, so ÇİN rejections always go to the designer
-              (→ Tasarım) and the chooser is hidden. */}
-          {mode === 'reject' && project?.type === 'TR' && (
+              (→ Tasarım) and the chooser is hidden. An EKRAN OZALIT round has
+              no physical proof either — the matbaa never printed this round —
+              so routing its reject there sent the project to Ozalit Teslim to
+              await a redelivery the matbaa had no job for and would never make. */}
+          {mode === 'reject' && project?.type === 'TR'
+            && !(isOzalitReject && project?.ekran_ozalit === true) && (
             <div className="space-y-1.5">
               <Label>Kime gönderilsin?</Label>
               <div className="grid grid-cols-2 gap-2">
@@ -473,15 +505,17 @@ export default function ApprovalDialog({ open, onOpenChange, project, mode = 'ap
                       revisableSubtasks.length > 0 &&
                       revizeIds.length === 0)))
               }
-              variant={mode === 'reject' ? 'destructive' : mode === 'approve' ? 'success' : 'default'}
+              variant={mode === 'reject' ? 'destructive' : (mode === 'approve' || isEkranDemoApprove) ? 'success' : 'default'}
             >
               {busy
                 ? 'İşleniyor…'
-                : mode === 'approve'
-                  ? approveLabel
-                  : mode === 'reject'
-                    ? (rejectTarget === 'matbaa' ? 'Devam Edin' : 'Reddedin')
-                    : offersOzalitRoute ? 'Matbaadan Ozalit İsteyin' : advanceLabel}
+                : isEkranDemoApprove
+                  ? 'Ekran Demoyu Onaylayın'
+                  : mode === 'approve'
+                    ? approveLabel
+                    : mode === 'reject'
+                      ? (rejectTarget === 'matbaa' ? 'Devam Edin' : 'Reddedin')
+                      : offersOzalitRoute ? 'Matbaadan Ozalit İsteyin' : advanceLabel}
             </Button>
           </DialogFooter>
         </form>

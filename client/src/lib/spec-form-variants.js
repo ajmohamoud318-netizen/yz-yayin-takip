@@ -161,6 +161,21 @@ export const VARIANTS = {
   },
 }
 
+/**
+ * Is this "advance" the team leader forwarding a ÇİN demo to its approval gate?
+ *
+ * ÇİN has no matbaa leg: the demo comes back from China and the leader sends
+ * the round on (server computeDemoTeslimAdvance). On a TR demo stage the same
+ * click by a non-printer composes a NEW round — a re-send — and the dialog
+ * assumes that of every non-printer advance. This one forwards the sheet
+ * already on file, the way the matbaa's own teslim does, so it opens read-only,
+ * in the round's own slot, and is stamped like a delivery.
+ */
+export function isCinDemoForward({ mode, variant, project, user, orderScoped = false }) {
+  return !orderScoped && mode === 'advance' && variant?.kind === 'demo'
+    && project?.stage === 'cin_demo_teslim' && user?.role === 'team_leader'
+}
+
 /** Which spec sheet (if any) a project stage belongs to. */
 const STAGE_VARIANT = {
   demo_teslim: 'demo',

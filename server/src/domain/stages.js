@@ -31,6 +31,26 @@ export const ORDERABLE_STAGES = new Set(['baskida', 'gumruk', 'satista'])
 export const HANDOVER_ELIGIBLE_STAGE = { TR: 'baskida', CIN: 'gumruk' }
 
 /**
+ * Which sheet an approval gate reads, by stage.
+ *
+ * Deliberately not `parcaGateForStage` (domain/parca-routing.js): that answers
+ * "which gate is this parça being ROUTED on", and it returns null for baskı
+ * onayı because that gate has no designer or matbaa leg to route to. The
+ * question here is different — "is a round sitting in front of an approver
+ * right now, and off which sheet" — and baskı onayı very much is one.
+ *
+ * Read by POST /demos (the parça-list pin) and by the approve route's prepare
+ * hook, which used to take the client's word for it.
+ */
+export const APPROVAL_GATE_SHEET = {
+  demo_onay: 'demo',
+  cin_demo_onay: 'demo',
+  ozalit_onay: 'ozalit',
+  baski_onay: 'baski_onay',
+  cin_baski_onay: 'baski_onay',
+}
+
+/**
  * Stages that require the design to be 100% complete to enter. The gate
  * starts at the print proof (ozalit) — that's where the matbaa actually runs
  * paper through a press and a half-finished design is expensive to recall.

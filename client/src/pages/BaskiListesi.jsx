@@ -5,6 +5,7 @@ import { Printer, Factory, Ship, PackageCheck } from 'lucide-react'
 import api, { STAGE_LABELS, TYPE_LABELS } from '@/api'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { Card, CardContent } from '@/components/ui/card'
+import OrderNoBadge from '@/components/OrderNoBadge'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatTargetDate } from '@/lib/utils'
@@ -178,6 +179,7 @@ export default function BaskiListesi() {
                       {cleanTitle(o.project_title)}
                     </p>
                     <p className="mt-0.5 text-xs text-muted-foreground sm:truncate">
+                      <OrderNoBadge order={o} className="mr-1.5" />
                       Yeni baskı · Talep eden: {o.requested_by_name ?? '—'}
                     </p>
                   </button>

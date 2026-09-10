@@ -20,7 +20,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import * as svc from './order-parca-service.js'
-import { advanceOrder, approveOrderParcalar, rejectOrderParcalar } from './orders-service.js'
+import {
+  advanceOrder, approveOrderParcalar, rejectOrderParcalar,
+  rejectOrder, markMatbaaNotReceived, receiveMatbaaOzalit, cancelOzalit, editOzalit,
+} from './orders-service.js'
 import { listParcaStateForOrder } from './parca-state-repository.js'
 
 const MIGRATIONS_DIR = path.resolve(
@@ -534,5 +537,204 @@ test('an Ekran parça needs no Teslim Alındı — there is nothing to receive',
   await db.exec("UPDATE order_requests SET matbaa_received = FALSE WHERE id = 'o1'")
   await approveOrderParcalar('o1', LEADER, { parcalar: ['KUTU'] }, db)
   assert.ok((await ledgerOf(db)).KUTU)
+  await db.close()
+})
+
+/* ==========================================================================
+ *  Rounds that start over, and the ways back into one
+ *
+ *  Each test below was a dead end found by driving the real API: an order that
+ *  no button could move on, whoever pressed it. None of them is visible from a
+ *  single command — they only appear across a sequence.
+ * ======================================================================== */
+
+const rowOf = async (db, parca) => (await listParcaStateForOrder(db, 'o1')).find((r) => r.parca === parca)
+
+/** A sheet whose parça blocks carry rows, so a correction can touch one of them. */
+const sheet = (blocks) => ({
+  _selectedComponents: PARCALAR.map((component) => ({ component, rows: blocks[component] ?? [] })),
+})
+
+test('a parça stays decidable until every required party has signed it', { skip: !PGlite }, async () => {
+  const db = await atGate()
+  await approveOrderParcalar('o1', LEADER, { parcalar: ['KUTU'] }, db)
+
+  // Marking it approved here took it out of the state the approval grid reads,
+  // and the designer was shown "Matbaada" with no Onayla on a parça they owed.
+  const half = await rowOf(db, 'KUTU')
+  assert.equal(half.state, 'pending', 'the designer still owes a signature, so the parça is still at the gate')
+  assert.ok(half.delivered_at, 'and still reads as delivered')
+
+  await approveOrderParcalar('o1', DESIGNER, { parcalar: ['KUTU'] }, db)
+  assert.equal((await rowOf(db, 'KUTU')).state, 'approved', 'the last signature is what closes it')
+  await db.close()
+})
+
+test("Teslim Alınamadı puts a split round back on the matbaa's desk, still started", { skip: !PGlite }, async () => {
+  const db = await seeded()
+  for (const parca of PARCALAR) {
+    await svc.startOrderParca('o1', parca, PRINTER, db)
+    await svc.deliverOrderParca('o1', parca, PRINTER, db)
+  }
+  await markMatbaaNotReceived('o1', LEADER, db)
+  assert.equal(await statusOf(db), 'matbaa_ozalit_yapiyor')
+
+  const queue = await svc.listMyOrderParcaQueue(PRINTER, db)
+  assert.deepEqual(queue.map((r) => r.parca).sort(), [...PARCALAR].sort(), 'every parça is back in their queue')
+  assert.ok(queue.every((r) => r.state === 'in_round'), 'as started — their next move is Teslim Edin')
+
+  for (const parca of PARCALAR) await svc.deliverOrderParca('o1', parca, PRINTER, db)
+  assert.equal(await statusOf(db), 'imza_bekleniyor', 'and redelivering brings the order back to the gate')
+  await db.close()
+})
+
+test('Teslim Alınamadı is refused once a parça of the round has been signed', { skip: !PGlite }, async () => {
+  const db = await atGate()
+  await approveOrderParcalar('o1', LEADER, { parcalar: ['KUTU'] }, db)
+  // What one parça's redelivery leaves behind (settleOrderParcaAtGate).
+  await db.exec("UPDATE order_requests SET matbaa_received = FALSE WHERE id = 'o1'")
+
+  await assert.rejects(
+    () => markMatbaaNotReceived('o1', LEADER, db),
+    /tek tek reddedin/,
+    'a signed parça evidently arrived, so the round cannot be reported lost',
+  )
+  await db.close()
+})
+
+test('a whole-order reject starts the next round clean', { skip: !PGlite }, async () => {
+  const db = await atGate()
+  await approveOrderParcalar('o1', LEADER, { parcalar: ['KUTU'] }, db)
+
+  await rejectOrder('o1', LEADER, { reason: 'hepsi yeniden', rejectTarget: 'matbaa' }, db)
+  assert.equal(await statusOf(db), 'matbaa_ozalit_yapiyor')
+  assert.deepEqual(await listParcaStateForOrder(db, 'o1'), [], "the spent round's routing rows are gone")
+  assert.deepEqual(await ledgerOf(db), {}, 'and no signature carries into the next round')
+
+  const queue = await svc.listMyOrderParcaQueue(PRINTER, db)
+  assert.equal(queue.length, PARCALAR.length, 'the matbaa gets a fresh card for every parça')
+  for (const parca of PARCALAR) {
+    await svc.startOrderParca('o1', parca, PRINTER, db)
+    await svc.deliverOrderParca('o1', parca, PRINTER, db)
+  }
+  assert.equal(await statusOf(db), 'imza_bekleniyor')
+  await db.close()
+})
+
+test('a new round clears rows and signatures an earlier round left behind', { skip: !PGlite }, async () => {
+  const db = await seeded({ status: 'kontroller_tamam' })
+  await db.exec(`
+    INSERT INTO parca_state (project_id, order_id, parca, gate, state, delivered_at)
+    VALUES ('p1','o1','KUTU','ozalit','pending', NOW());
+  `)
+  await db.query(
+    "UPDATE order_requests SET ozalit_parca_approvals = $1::jsonb WHERE id = 'o1'",
+    [JSON.stringify({ KUTU: [{ id: LEADER.id, role: 'team_leader' }] })],
+  )
+
+  await advanceOrder('o1', DESIGNER, {}, db)
+  assert.equal(await statusOf(db), 'matbaa_ozalit_yapiyor')
+  assert.deepEqual(await listParcaStateForOrder(db, 'o1'), [])
+  assert.deepEqual(await ledgerOf(db), {})
+  assert.equal((await svc.listMyOrderParcaQueue(PRINTER, db)).length, PARCALAR.length)
+  await db.close()
+})
+
+test('cancel is refused while a parça is on the press, and clears the round once free', { skip: !PGlite }, async () => {
+  const db = await seeded()
+  await svc.startOrderParca('o1', 'KUTU', PRINTER, db)
+  await assert.rejects(() => cancelOzalit('o1', LEADER, db), /şu parçalara başladı: KUTU/)
+
+  // The way through is the handshake, as on the project: ask, and the matbaa releases it.
+  await svc.requestOrderParcaChange('o1', 'KUTU', LEADER, {}, db)
+  await svc.acceptOrderParcaChange('o1', 'KUTU', PRINTER, db)
+  await cancelOzalit('o1', LEADER, db)
+
+  assert.equal(await statusOf(db), 'tasarimciya_atandi')
+  assert.deepEqual(await listParcaStateForOrder(db, 'o1'), [], 'the withdrawn round leaves nothing to inherit')
+  await db.close()
+})
+
+test('the leader cannot rewrite a started parça, but may still correct the others', { skip: !PGlite }, async () => {
+  const db = await seeded()
+  await svc.startOrderParca('o1', 'KUTU', PRINTER, db)
+
+  // The route runs this in a transaction; the snapshot the refused save wrote
+  // has to roll back with it, or it becomes the baseline for the next save.
+  await db.exec('BEGIN')
+  await assert.rejects(
+    () => editOzalit('o1', LEADER, { payload: sheet({ KUTU: [{ label: 'EN', value: '20' }] }) }, db),
+    /şu parçalara başladı: KUTU/,
+  )
+  await db.exec('ROLLBACK')
+
+  await editOzalit('o1', LEADER, { payload: sheet({ 'KİTAP': [{ label: 'EN', value: '20' }] }) }, db)
+  await db.close()
+})
+
+test('a correction settles the fix an accepted change request owed', { skip: !PGlite }, async () => {
+  const db = await seeded()
+  await svc.startOrderParca('o1', 'KUTU', PRINTER, db)
+  await svc.requestOrderParcaChange('o1', 'KUTU', LEADER, { note: 'ISBN' }, db)
+  await svc.acceptOrderParcaChange('o1', 'KUTU', PRINTER, db)
+
+  await editOzalit('o1', LEADER, { payload: sheet({ KUTU: [{ label: 'ISBN', value: '978' }] }) }, db)
+  assert.equal((await rowOf(db, 'KUTU')).fix_pending, false, 'the correction landed')
+
+  // Nothing ever cleared the flag before, so this refused for good.
+  await svc.startOrderParca('o1', 'KUTU', PRINTER, db)
+  assert.ok((await rowOf(db, 'KUTU')).started_at)
+  await db.close()
+})
+
+test('a parça rejected to the matbaa at the gate reaches them and comes back', { skip: !PGlite }, async () => {
+  const db = await atGate()
+  await rejectOrderParcalar('o1', LEADER, { parcalar: ['KUTU'], reason: 'kesim', target: 'matbaa' }, db)
+
+  const { rows: history } = await db.query(
+    "SELECT step FROM order_history WHERE order_id = 'o1' ORDER BY created_at DESC LIMIT 1",
+  )
+  assert.equal(history[0].step, 'parca_rejected', 'logged as a rejection, not as a failed delivery')
+
+  const queue = await svc.listMyOrderParcaQueue(PRINTER, db)
+  assert.deepEqual(queue.map((r) => r.parca), ['KUTU'], 'the order is at the gate, but the reprint is theirs')
+
+  await svc.startOrderParca('o1', 'KUTU', PRINTER, db)
+  await svc.deliverOrderParca('o1', 'KUTU', PRINTER, db)
+  assert.equal(await statusOf(db), 'imza_bekleniyor', 'the order was already at the gate and stays there')
+  const kutu = await rowOf(db, 'KUTU')
+  assert.equal(kutu.state, 'pending')
+  assert.ok(kutu.delivered_at)
+  const { rows } = await db.query("SELECT matbaa_received FROM order_requests WHERE id = 'o1'")
+  assert.equal(rows[0].matbaa_received, false, 'the reprint owes a fresh Teslim Alındı')
+  await db.close()
+})
+
+test('a parça out for rework cannot be signed off', { skip: !PGlite }, async () => {
+  const db = await atGate()
+  await rejectOrderParcalar('o1', LEADER, { parcalar: ['KUTU'], target: 'designer' }, db)
+  await assert.rejects(
+    () => approveOrderParcalar('o1', LEADER, { parcalar: ['KUTU', 'KİTAP'] }, db),
+    /Revizede olan parça onaylanamaz, önce geri gelmeli: KUTU/,
+  )
+  assert.equal((await rowOf(db, 'KUTU')).state, 'with_designer', "still on the designer's desk")
+  await db.close()
+})
+
+test('the whole-order approve is refused on a split round', { skip: !PGlite }, async () => {
+  const db = await atGate()
+  await assert.rejects(() => advanceOrder('o1', LEADER, {}, db), /parça bazlı onaylanıyor/)
+  await db.close()
+})
+
+test('one order-level Teslim Alındı covers every delivered parça', { skip: !PGlite }, async () => {
+  const db = await seeded()
+  for (const parca of PARCALAR) {
+    await svc.startOrderParca('o1', parca, PRINTER, db)
+    await svc.deliverOrderParca('o1', parca, PRINTER, db)
+  }
+  await receiveMatbaaOzalit('o1', LEADER, db)
+  const rows = await listParcaStateForOrder(db, 'o1')
+  assert.ok(rows.every((r) => r.received_at), 'no second, per-parça receipt is owed on top of it')
   await db.close()
 })

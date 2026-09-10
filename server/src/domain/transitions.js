@@ -42,7 +42,7 @@ import {
 } from './parca-ledger.js'
 import {
   parcaRejectPatch, parcaGateForStage, parcaDecidable,
-  parcaEditLocked, parcaFixSettledPatch, parcaReceivePatch, parcaAwaitsReceipt,
+  parcaEditLocked, parcaFixSettlements, parcaReceivePatch, parcaAwaitsReceipt,
 } from './parca-routing.js'
 import {
   assertParcaSetUnchanged, lockedParcalarTouched,
@@ -422,6 +422,16 @@ export function computeAdvance(project, actor, { route = null } = {}) {
           done_by_name: actorName,
           note: 'Ozalit revizyonu tamamlandı, ekran ozalit onayına gönderildi',
         }),
+        // The reject that brought the project here did NOT reset `parca_state`
+        // (only a reject-to-MATBAA does — see computeRejection). Whatever the
+        // rejected round left behind (a parça still 'in_round' or 'with_matbaa'
+        // from before the bounce) is stale the moment a new round starts, and
+        // this IS a new round — just one with no matbaa leg of its own to ever
+        // overwrite those rows. Left in place, `parcalarOutForRework` reads
+        // them as still out for rework and permanently refuses to let the
+        // leader approve those parçalar on a round where nothing is ever
+        // coming back from the matbaa to clear them.
+        parcaStateResetGate: 'ozalit',
       }
     }
     assertCanEnterProductionLocal('ozalit_teslim', project.progress)
@@ -433,9 +443,10 @@ export function computeAdvance(project, actor, { route = null } = {}) {
         ekran_ozalit: false,
         ozalit_requested: true,
       },
-      // See the demo resend leg's matching comment below — a physical redo
-      // round owes the same reset, on the ozalit gate. The 'ekran' branch just
-      // above never reaches ozalit_teslim, so it needs none.
+      // Same reset as the 'ekran' branch above, for the same reason — the
+      // reject that led here left `parca_state` untouched, and a physical
+      // redo round owes the routing table a clean slate before matbaa
+      // delivery starts writing to it again.
       parcaStateResetGate: 'ozalit',
       history: makeEntry(project, {
         action: 'advance',
@@ -479,6 +490,12 @@ export function computeAdvance(project, actor, { route = null } = {}) {
         return computeDemoTeslimAdvance(project, actor, now, approvalStage)
       }
       badRequest('Matbaa yalnızca demo teslim aşamasında ilerletebilir.')
+    }
+    // ÇİN's own teslim leg: the team leader forwards the demo that came back
+    // from China. Not a re-send — a demo is never held at cin_demo_teslim — so
+    // it has to be answered before the re-send refusal below claims the click.
+    if (project.stage === 'cin_demo_teslim' && role === 'team_leader') {
+      return computeDemoTeslimAdvance(project, actor, now, 'cin_demo_onay')
     }
     if (role !== 'team_leader' && !isAssigned) {
       badRequest('Tekrar demo göndermek için ekip lideri veya atanmış tasarımcı olmalısınız.')
@@ -669,8 +686,34 @@ function assertRoundFullyDelivered(project, gate) {
   }
 }
 
+/**
+ * The ÇİN forward's split-round guard.
+ *
+ * `assertRoundFullyDelivered` counts a parça with no routing row as still owed,
+ * which is right for the matbaa: rows appear the moment they act, so no row
+ * means they have not produced it. The leader forwarding a ÇİN demo is not
+ * producing anything — the round came back from China whole — so under that
+ * rule every multi-parça ÇİN round would be refused forever. What the leader
+ * must not do is forward a round while the matbaa IS holding a parça of it,
+ * which strands that row exactly as the old whole-sheet delivery did.
+ */
+function assertNoParcaAtMatbaa(project, gate) {
+  const held = parcaStateRows(project)
+    .filter((r) => r?.gate === gate && (r.state === 'with_matbaa' || r.state === 'in_round'))
+    .map((r) => r.parca)
+  if (held.length > 0) {
+    badRequest(`Matbaada devam eden parçalar var: ${held.join(', ')}. Önce matbaa bu parçaları teslim etmeli.`)
+  }
+}
+
 function computeDemoTeslimAdvance(project, actor, now, approvalStage) {
-  if (actor?.role !== 'printer') {
+  // ÇİN has no matbaa teslim leg: the demo comes back from China to the team
+  // leader, who reviews it ("Lider incelemesinde") and sends it to the approval
+  // gate. Every ÇİN screen is built on that — the leader's button at
+  // cin_demo_teslim, the TR-only matbaa queues — while this check admitted only
+  // the printer, so no ÇİN project could leave the stage from the app.
+  const leaderForwardsCin = approvalStage === 'cin_demo_onay' && actor?.role === 'team_leader'
+  if (actor?.role !== 'printer' && !leaderForwardsCin) {
     badRequest('Demo teslimini yalnızca matbaa yapabilir.')
   }
   // A pending change-request must be accepted or declined before the matbaa
@@ -681,7 +724,8 @@ function computeDemoTeslimAdvance(project, actor, now, approvalStage) {
   }
   // TR and ÇİN share one gate value ('demo') — parca_state.gate has no
   // separate cin_demo, same as everywhere else this table is read.
-  assertRoundFullyDelivered(project, 'demo')
+  if (leaderForwardsCin) assertNoParcaAtMatbaa(project, 'demo')
+  else assertRoundFullyDelivered(project, 'demo')
   assertCanEnterProductionLocal(approvalStage, project.progress)
   return {
     project: {
@@ -720,7 +764,9 @@ function computeDemoTeslimAdvance(project, actor, now, approvalStage) {
       from_stage: project.stage,
       to_stage: approvalStage,
       done_by_name: actor?.name ?? 'Bilinmeyen',
-      note: 'Demo teslim edildi, onaya gönderildi',
+      note: leaderForwardsCin
+        ? 'Çin demosu incelendi, onaya gönderildi'
+        : 'Demo teslim edildi, onaya gönderildi',
     }),
   }
 }
@@ -940,18 +986,8 @@ function assertParcalarNeverSent(project, added) {
  * write path has nothing to do, and the orchestrator skips it.
  */
 function settleParcaFixes(project, changedParcalar) {
-  // A save that corrected KİTAP does not discharge the correction owed on
-  // KUTU. When there is no baseline to diff against (`null`) the save is
-  // treated as covering the whole sheet, which is the same fallback
-  // lockedParcalarTouched makes for the guard.
-  const touched = changedParcalar === null || changedParcalar === undefined
-    ? null
-    : new Set(changedParcalar.map((n) => String(n ?? '').trim().toLocaleUpperCase('tr')))
-  return parcaStateRows(project)
-    .filter((r) => r?.fix_pending)
-    .filter((r) => touched === null
-      || touched.has(String(r.parca ?? '').trim().toLocaleUpperCase('tr')))
-    .map((r) => ({ parca: r.parca, patch: parcaFixSettledPatch(r) }))
+  // Shared with the sipariş's ozalit edit — see parcaFixSettlements.
+  return parcaFixSettlements(parcaStateRows(project), changedParcalar)
 }
 
 /**
@@ -1393,6 +1429,22 @@ export function computeApproval(project, actor, ctx = {}) {
         }),
       }
     }
+    // A held demo (recorded above, at <100%) only reaches this point by the
+    // design finishing in the background — not by anyone looking at THIS
+    // demo again. Its per-parça ledger can already be fully signed from the
+    // hold click itself, which let this same approve slide the round
+    // straight through the moment progress caught up: `pending` came out
+    // empty below, and the finished design was never actually reviewed.
+    // Closing out a held demo needs a fresh look — a re-send (computeAdvance)
+    // or the designer's ekran demo onayı (computeEkranDemoRequest/Approve) —
+    // never a repeat of this same click. Scoped to ≥100% only: below that the
+    // <100% branch above already handled the click and returned, so reaching
+    // here at all means progress is 100.
+    if (project.demo_held === true) {
+      badRequest(
+        'Bu demo askıda; ilerlemek için yeni bir demo isteyin veya ekran demo onayı verin.',
+      )
+    }
     // At 100% progress: the leader's click either completes the round
     // (every parça now approved) or signs off just the chosen parçalar.
     // When `parcalar` is specified, only the targeted parçalar are
@@ -1512,20 +1564,12 @@ export function computeApproval(project, actor, ctx = {}) {
     }
   }
 
-  const pipeline = pipelineFor(project)
-  const i = pipeline.indexOf(project.stage)
-  if (i === -1 || i === pipeline.length - 1) return { project, history: null }
-  const next = pipeline[i + 1]
-  assertCanEnterProductionLocal(next, project.progress)
-  return {
-    project: { ...project, stage: next, updated_at: now },
-    history: makeEntry(project, {
-      action: 'approve',
-      from_stage: project.stage,
-      to_stage: next,
-      done_by_name: actorName,
-    }),
-  }
+  // Every stage with something to approve has returned above. What is left —
+  // tasarım, baskıda, gümrük, satışta — moves by advance or by satış confirming
+  // the teslim, never by an approval. This used to push the project one stage
+  // on with no role check at all, so any signed-in account could POST /approve
+  // on a Baskıda project and put it on sale without the teslim ever happening.
+  badRequest('Bu aşamada onaylanacak bir adım yok.')
 }
 
 /* ============================================================================
@@ -1878,11 +1922,19 @@ export function computeDemoNotReceived(project, actor, ctx = {}) {
       demo_received: false,
       demo_received_by: null,
       demo_received_at: null,
-      // The "Başladım" gate deliberately does NOT reset here, unlike a resend
-      // or computeDemoTeslimAdvance. The matbaa's physical work still exists —
-      // only the handover failed — so the printer's next action is "Teslim
-      // Edin", not "İşlemi Başlatın" again, and the leader keeps "Değişiklik
-      // İste" instead of dropping back to free cancel/edit.
+      // Restored, not merely left alone: `computeDemoTeslimAdvance` already
+      // cleared this the moment the demo was (apparently) delivered — a
+      // delivery that reaches demo_onay always resets it, on the assumption
+      // that whatever comes back to demo_teslim next is a genuinely new
+      // round. That assumption is wrong here. The matbaa's physical work
+      // still exists — only the handover failed — so the printer's next
+      // action must be "Teslim Edin", not "İşlemi Başlatın" again, and the
+      // leader keeps "Değişiklik İste" instead of dropping back to free
+      // cancel/edit. `_at`/`_by`/`_by_name` stay cleared — that stamp was
+      // already lost at delivery and nothing here can honestly recover it —
+      // but `canMarkDemoStarted`/`canRequestDemoChange` (client pipeline.js)
+      // gate on the boolean alone, so this is the only field either reads.
+      demo_started: true,
       demo_change_requested_at: null,
       demo_change_requested_by: null,
       demo_change_requested_by_name: null,
@@ -2038,8 +2090,11 @@ export function computeOzalitNotReceived(project, actor, ctx = {}) {
       // redelivered proof arrived carrying the previous round's signatures.
       ozalit_parca_approvals: {},
       ozalit_parca_rejections: [],
-      // Started stays set — see computeDemoNotReceived. The proof was made,
-      // it just never arrived, so the matbaa owes a re-delivery, not a restart.
+      // Restored — see computeDemoNotReceived's matching comment.
+      // computeOzalitTeslimAdvance already cleared this on delivery; the
+      // proof was made, it just never arrived, so the matbaa owes a
+      // re-delivery, not a restart.
+      ozalit_started: true,
       ozalit_change_requested_at: null,
       ozalit_change_requested_by: null,
       ozalit_change_requested_by_name: null,
@@ -3216,6 +3271,7 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
   }
 
   const isOzalit = project.stage === 'ozalit_onay'
+  const isBaskiOnay = project.stage === 'baski_onay' || project.stage === 'cin_baski_onay'
   // Which ledger a PARTIAL reject writes to. `isOzalit` answers a different
   // question — which leg a WHOLE-round bounce takes, and that still belongs to
   // the onay stages alone — but a per-parça reject can now also happen at
@@ -3235,6 +3291,15 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
   // satisfies it on its own and any pipeline without a teslim leg still can't
   // route here.
   const toMatbaa = target === 'matbaa' && teslimStage.endsWith('_teslim')
+  // An ekran ozalit round never went through the matbaa — there is no
+  // physical proof to send back for redelivery. Routing it to
+  // `ozalit_teslim` anyway (the `toMatbaa` branch below) parked the project
+  // in the matbaa's queue awaiting a print job that was never made and never
+  // would be: nobody there had anything to deliver. The client hides the
+  // "Matbaa" choice for this case (ApprovalDialog); this is the backstop.
+  if (!isPartial && toMatbaa && project.stage === 'ozalit_onay' && project.ekran_ozalit === true) {
+    badRequest('Bu ozalit ekrandan onaylandı, matbaada bir teslimat yok. Reddi tasarımcıya gönderin.')
+  }
   // Ozalit-onay rejections to the designer stay on ozalit_onay (no longer
   // bounce all the way to tasarım) — the designer revizes flagged subtasks
   // in-place and then resubmits via the post-revize ozalit route picker
@@ -3293,29 +3358,51 @@ export function computeRejection(project, reason, revizeIds, target, { actorName
         ozalit_change_requested_note: null,
         ozalit_fix_pending: false,
       }
-    : {
-        demo_held: false,
-        demo_held_at: null,
-        demo_held_by_name: null,
-        demo_delivered_at: null,
-        demo_delivered_by: null,
-        demo_delivered_by_name: null,
-        demo_received: false,
-        demo_received_by: null,
-        demo_received_at: null,
-        demo_started: false,
-        demo_started_at: null,
-        demo_started_by: null,
-        demo_started_by_name: null,
-        demo_change_requested_at: null,
-        demo_change_requested_by: null,
-        demo_change_requested_by_name: null,
-        demo_change_requested_note: null,
-        demo_fix_pending: false,
-        ekran_demo_requested_at: null,
-        ekran_demo_requested_by: null,
-        ekran_demo_requested_by_name: null,
-      }
+    : isBaskiOnay
+      ? {
+          // The maker-checker ledger (migrations 045/068/069/070): rejecting
+          // bounces the project all the way to tasarım for a full redesign,
+          // but nothing cleared these — a stale preparer/approval entry keyed
+          // only by parça NAME survived into the next baski_onay round. If
+          // that round reuses the same parça names (the usual case — a
+          // reprint of the same title), `preparerFor`/`nextApprovals` in
+          // computeApproval read the OLD pair as already maker-checked, and a
+          // reprint could reach production signed by nobody who ever saw it.
+          // A project only ever runs one pipeline (TR or ÇİN), so only one of
+          // this pair is ever non-empty for it — clearing both is harmless on
+          // whichever one was already empty.
+          baski_onay_prepared: false,
+          baski_onay_prepared_by: null,
+          baski_onay_prepared_by_name: null,
+          baski_onay_prepared_at: null,
+          baski_parca_preparers: {},
+          baski_parca_approvals: {},
+          cin_baski_parca_preparers: {},
+          cin_baski_parca_approvals: {},
+        }
+      : {
+          demo_held: false,
+          demo_held_at: null,
+          demo_held_by_name: null,
+          demo_delivered_at: null,
+          demo_delivered_by: null,
+          demo_delivered_by_name: null,
+          demo_received: false,
+          demo_received_by: null,
+          demo_received_at: null,
+          demo_started: false,
+          demo_started_at: null,
+          demo_started_by: null,
+          demo_started_by_name: null,
+          demo_change_requested_at: null,
+          demo_change_requested_by: null,
+          demo_change_requested_by_name: null,
+          demo_change_requested_note: null,
+          demo_fix_pending: false,
+          ekran_demo_requested_at: null,
+          ekran_demo_requested_by: null,
+          ekran_demo_requested_by_name: null,
+        }
 
   const base = {
     ...project,

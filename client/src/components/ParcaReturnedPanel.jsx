@@ -110,7 +110,11 @@ function ReturnedRow({ row, canAct, busy, reviewed, onReview, onRequestRound }) 
           // The two roads back. Stacked on a phone so neither is a mis-tap
           // away from the other.
           <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {/* type="button" throughout: this panel is also drawn inside
+                TalepSignDialog's <form>, where an untyped button submits the
+                order on top of its own click. */}
             <Button
+              type="button"
               size="sm"
               className="w-full gap-1.5"
               disabled={busy}
@@ -120,6 +124,7 @@ function ReturnedRow({ row, canAct, busy, reviewed, onReview, onRequestRound }) 
               Matbaadan İsteyin
             </Button>
             <Button
+              type="button"
               size="sm"
               variant="outline"
               className="w-full gap-1.5"
@@ -132,6 +137,7 @@ function ReturnedRow({ row, canAct, busy, reviewed, onReview, onRequestRound }) 
           </div>
         ) : (
           <Button
+            type="button"
             size="sm"
             variant="success"
             className="mt-2.5 w-full gap-1.5 sm:w-auto"

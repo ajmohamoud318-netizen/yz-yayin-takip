@@ -122,5 +122,10 @@ test("listOrders exposes the round's parça list from the sheet", { skip: !PGlit
   assert.deepEqual(byId.split, ['KUTU', 'KITAP', 'KILAVUZ'], 'a split round reports its parçalar')
   assert.deepEqual(byId.single, ['KAPAK'], 'a one-parça round is not split')
   assert.deepEqual(byId.nosheet, [], 'an order with no sheet yet must not break the list')
+
+  // Three live orders on one title: `order_no` (migration 083) is the only
+  // thing that tells their cards apart, so it has to reach the client.
+  const nos = rows.map((r) => r.row.order_no).sort()
+  assert.deepEqual(nos, [1, 2, 3])
   await db.close()
 })

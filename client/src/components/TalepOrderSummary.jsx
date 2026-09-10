@@ -1,6 +1,7 @@
 import { Check, ShoppingCart } from 'lucide-react'
 
 import { Label } from '@/components/ui/label'
+import OrderNoBadge from '@/components/OrderNoBadge'
 import { cn, formatNumber } from '@/lib/utils'
 
 /**
@@ -18,6 +19,7 @@ export function TalepOrderSummary({ order, items }) {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold leading-snug">
             {order.project_title?.replace(/ \/ /g, ' ')}
+            <OrderNoBadge order={order} className="ml-1.5" />
           </p>
           {items.length > 0 ? (
             <div className="mt-1 flex flex-wrap gap-1">

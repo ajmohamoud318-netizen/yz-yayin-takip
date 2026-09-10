@@ -22,6 +22,10 @@ export const ORDER_STEP_LABELS = {
   // order_step_label lookup falls back to the raw step key.
   matbaa_received: 'Matbaa Teslimi Alındı',
   matbaa_not_received: 'Matbaa Teslimi Alınamadı',
+  // A per-parça reject at imza_bekleniyor (migration 080). Logged as
+  // matbaa_not_received before, so the history called every one of them a
+  // failed delivery.
+  parca_rejected: 'Parça Reddedildi',
   matbaa_approve: 'Matbaa Onayı Verildi',
   // The sipariş's own ozalit sheet, written when the designer submits the
   // Ozalit Üretim Formu at kontroller_tamam (migration 053's demos.order_id).

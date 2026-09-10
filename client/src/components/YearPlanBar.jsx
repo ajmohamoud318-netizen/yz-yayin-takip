@@ -21,9 +21,9 @@ const VARIANT_STYLES = {
     hover: 'hover:shadow-md hover:brightness-105',
     showOrderBadge: true,
   },
-  // Dashboard — taller 48px bar, lifts on hover, no in-bar order badge
-  // (Dashboard doesn't fetch open orders, so the badge would always
-  // be absent and the bar keeps the surface clean).
+  // Dashboard — taller 48px bar, lifts on hover. It used to hide the order
+  // badge because the Dashboard did not fetch open orders; it does, and a
+  // reprint in flight is exactly what the Dashboard should say.
   comfortable: {
     bar: 'h-12 px-3',
     avatar: 'h-6 w-6 text-[10px]',
@@ -32,7 +32,7 @@ const VARIANT_STYLES = {
     progressTrack: 'inset-x-3 bottom-1.5 h-1',
     progressBar: 'h-full rounded-full bg-white/95',
     hover: 'hover:-translate-y-[54%] hover:shadow-lg hover:brightness-105',
-    showOrderBadge: false,
+    showOrderBadge: true,
   },
 }
 
@@ -48,7 +48,7 @@ const VARIANT_STYLES = {
  */
 export default function YearPlanBar({
   project,
-  order,
+  orders,
   leftPct,
   widthPct,
   animationDelay,
@@ -100,7 +100,7 @@ export default function YearPlanBar({
           {project.title}
         </span>
         {v.showOrderBadge && (
-          <OrderBadge order={order} className="h-3 w-3 shrink-0 opacity-90" />
+          <OrderBadge orders={orders} className="text-current opacity-90" iconClassName="h-3 w-3" />
         )}
         <span className={cn('ml-auto shrink-0 font-semibold tabular-nums', v.chip)}>
           %{project.progress}

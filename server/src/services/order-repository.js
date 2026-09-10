@@ -17,14 +17,20 @@ import { conflict, HttpError } from '../domain/errors.js'
  * Every column of `order_requests`, in the order the HTTP responses have
  * always carried them. Used as the RETURNING list on every write so the
  * shape the SPA receives never depends on which route produced it.
+ *
+ * The per-parça ledgers (migration 080) have to be on it. The SPA merges a
+ * command's response into the order it is showing, so a response without them
+ * left the approval grid reading the ledger from BEFORE the click — offering
+ * Onayla again on the parça just signed.
  */
-export const ORDER_COLUMNS = `id, project_id, status, requested_by, payload, assignee_ids,
+export const ORDER_COLUMNS = `id, project_id, order_no, status, requested_by, payload, assignee_ids,
   matbaa_received, matbaa_received_by, matbaa_received_at, matbaa_approvals,
   ozalit_started, ozalit_started_by, ozalit_started_by_name, ozalit_started_at,
   ozalit_change_requested_at, ozalit_change_requested_by, ozalit_change_requested_by_name,
   ozalit_change_requested_note, ozalit_fix_pending,
   last_reject_type, baski_onay_form, ozalit_attempt,
   baski_onay_prepared, baski_onay_prepared_by, baski_onay_prepared_by_name, baski_onay_prepared_at,
+  ozalit_parca_approvals, ozalit_parca_rejections, baski_parca_preparers, baski_parca_approvals,
   version, created_at, updated_at`
 
 /**
@@ -70,7 +76,7 @@ export const ORDER_JSONB_COLUMNS = new Set([
  */
 export async function listOrders(db = getPool()) {
   const { rows } = await db.query(
-    `SELECT o.id, o.project_id, o.status, o.requested_by, o.payload, o.assignee_ids,
+    `SELECT o.id, o.project_id, o.order_no, o.status, o.requested_by, o.payload, o.assignee_ids,
             o.matbaa_received, o.matbaa_received_by, o.matbaa_received_at, o.matbaa_approvals,
             o.ozalit_started, o.ozalit_started_by, o.ozalit_started_by_name, o.ozalit_started_at,
             o.ozalit_change_requested_at, o.ozalit_change_requested_by, o.ozalit_change_requested_by_name,
@@ -175,7 +181,8 @@ export async function lockOrderForSubtaskPatch(client, orderId) {
  * concern, not a domain one.
  *
  * The RETURNING list is deliberately the narrow original set: this is the
- * body POST /order-requests has always answered with.
+ * body POST /order-requests has always answered with — plus `order_no`,
+ * which migration 083's trigger assigns and the caller cannot know otherwise.
  *
  * `status` is hard-coded to `'atama_bekleniyor'` (the workflow's first step),
  * which matches the column DEFAULT set in migration 066. The previous literal
@@ -190,7 +197,7 @@ export async function insertOrder(client, { projectId, requestedBy, payload }) {
   const { rows } = await client.query(
     `INSERT INTO order_requests (id, project_id, status, requested_by, payload)
      VALUES ($1,$2,'atama_bekleniyor',$3,$4)
-     RETURNING id, project_id, status, requested_by, payload, version, created_at, updated_at`,
+     RETURNING id, project_id, order_no, status, requested_by, payload, version, created_at, updated_at`,
     [`o-${nanoid(16)}`, projectId, requestedBy, payload],
   )
   return rows[0]

@@ -99,10 +99,10 @@ export async function projectRoutes(fastify) {
       note: request.body.note,
       // Per-parça payload (migrations 068/069/070): the leader's click may
       // target a single parça, a subset, or all still-pending parçalar
-      // (omit → "Tüm parçaları onaylayın" bulk shortcut). `snapshotKind`
-      // tells the prepare hook which gate to read the snapshot from.
+      // (omit → "Tüm parçaları onaylayın" bulk shortcut). A `snapshotKind` in
+      // the body is still accepted and ignored: the service reads the sheet off
+      // the project's own stage.
       parcalar: request.body.parcalar ?? null,
-      snapshotKind: request.body.snapshotKind ?? 'demo',
     })
   })
 

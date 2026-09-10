@@ -154,20 +154,9 @@ export function useProjectDelivery(project, refetch, user) {
     }
   }
 
-  async function handleEkranDemoApprove() {
-    if (!project) return
-    setProcessingEkranDemo(true)
-    try {
-      await api.approveEkranDemo(project.id)
-      await refetch()
-      toast.success('Ekran demo onaylandı.')
-    } catch (err) {
-      toast.error(err.message || 'İşlem tamamlanamadı.')
-    } finally {
-      setProcessingEkranDemo(false)
-      setTeslimConfirm(null)
-    }
-  }
+  // Approving is no longer a ConfirmDialog verb (see the 'ekran-demo-approve'
+  // note by TESLIM_CONFIRMS below) — ApprovalDialog now owns that request via
+  // api.approveEkranDemo, with its own busy state.
 
   // ---------------------------------------------------------------------------
   // Per-parça approval handlers (migrations 068/069/070)
@@ -387,8 +376,12 @@ export function useProjectDelivery(project, refetch, user) {
     },
     'demo-not-received': {
       title: 'Demo size ulaşmadı mı?',
+      // At demo_onay the matbaa re-delivers; at cin_demo_onay the round goes
+      // back to cin_demo_teslim for the next leg. Either way, demo_attempt
+      // ticks up and the round restarts — describe the mechanism, not the
+      // (stage-dependent) actor, so the copy reads correctly on both ÇİN and TR.
       description:
-        'Proje matbaanın demo teslim aşamasına geri döner ve matbaa yeniden teslim eder (Demo sayacı +1). Bu işlem geri alınamaz.',
+        'Proje demo teslim aşamasına geri döner ve yeni bir tur başlatılır (Demo sayacı +1). Bu işlem geri alınamaz.',
       confirmLabel: 'Teslim Alınamadı',
       variant: 'destructive',
       onConfirm: handleDemoNotReceived,
@@ -467,13 +460,11 @@ export function useProjectDelivery(project, refetch, user) {
       variant: 'default',
       onConfirm: handleEkranDemoRequest,
     },
-    'ekran-demo-approve': {
-      title: 'Ekran demo onaylansın mı?',
-      description: 'Onayınızla proje bir sonraki aşamaya geçecek. Bu işlem geri alınamaz.',
-      confirmLabel: 'Onaylayın',
-      variant: 'success',
-      onConfirm: handleEkranDemoApprove,
-    },
+    // No 'ekran-demo-approve' entry — see matbaa-sees-form-first. The leader's
+    // approve is a real sign-off, not a "bu işlem geri alınamaz" confirm, so
+    // it now opens ApprovalDialog (mode='ekran-demo-approve') instead, which
+    // stamps the signature the way every other approve does. HeaderActionRow
+    // calls `setDialog('ekran-demo-approve')`, not `setTeslimConfirm`.
   }
   const teslimConfirmConfig = teslimConfirm ? TESLIM_CONFIRMS[teslimConfirm] : null
 
@@ -492,7 +483,7 @@ export function useProjectDelivery(project, refetch, user) {
     handleReceiveDemo, handleReceiveOzalit,
     handleDemoNotReceived, handleOzalitNotReceived,
     handleDemoStart, handleOzalitStart,
-    handleEkranDemoRequest, handleEkranDemoApprove,
+    handleEkranDemoRequest,
     handleDemoCancel, handleOzalitCancel,
     handleRequestChange,
     handleDemoChangeAccept, handleDemoChangeDecline,

@@ -194,7 +194,7 @@ export async function listOrderParcaStateByOwner(client, ownerRole, states = nul
             ps.change_requested_by_name, ps.change_requested_note, ps.fix_pending,
             ps.created_at, ps.updated_at,
             p.title AS project_title, p.stage AS project_stage, p.type AS project_type,
-            o.status AS order_status, o.assignee_ids AS order_assignee_ids
+            o.status AS order_status, o.assignee_ids AS order_assignee_ids, o.order_no
        FROM parca_state ps
        JOIN order_requests o ON o.id = ps.order_id
        JOIN projects p ON p.id = ps.project_id
@@ -212,6 +212,7 @@ export async function listOrderParcaStateByOwner(client, ownerRole, states = nul
     project_type: r.project_type,
     order_status: r.order_status,
     order_assignee_ids: r.order_assignee_ids ?? [],
+    order_no: r.order_no,
   }))
 }
 

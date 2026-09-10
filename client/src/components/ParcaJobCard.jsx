@@ -3,6 +3,7 @@ import { ArrowRight, CheckCircle2, Send, Package, MessageSquareWarning, Ban } fr
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import OrderNoBadge from '@/components/OrderNoBadge'
 import { cn } from '@/lib/utils'
 
 /**
@@ -97,6 +98,10 @@ export default function ParcaJobCard({
             {row.attempt > 1 && (
               <Badge variant="outline" className="text-[10px]">{row.attempt}. tur</Badge>
             )}
+            {/* The last parça of a sipariş round lands here alone, and without
+                this it reads exactly like the project's own round of the
+                same book — or like the other reprint of it. */}
+            {row.order_id && <OrderNoBadge order={row} />}
           </p>
           <span className={cn(
             'mt-2 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset',

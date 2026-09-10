@@ -8,6 +8,7 @@ import {
 import { useProjects } from '@/hooks/useProjects'
 import FilterChip from '@/components/FilterChip'
 import { Card, CardContent } from '@/components/ui/card'
+import OrderNoBadge from '@/components/OrderNoBadge'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Progress } from '@/components/ui/progress'
@@ -477,7 +478,10 @@ function OrderCard({ order: o }) {
       </div>
 
       <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-        <span className="truncate">{o.requested_by_name}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <OrderNoBadge order={o} />
+          <span className="truncate">{o.requested_by_name}</span>
+        </span>
         {quantity > 0 && <span className="shrink-0 font-medium text-foreground">{formatNumber(quantity)} adet</span>}
       </div>
     </>

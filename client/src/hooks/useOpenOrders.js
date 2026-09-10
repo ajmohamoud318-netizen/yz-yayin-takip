@@ -11,6 +11,11 @@ import { isOrderOpen } from '@/domain/constants/orders'
  * Used to badge a project row/bar when it has a sipariş in flight, without
  * pulling order_requests into the projects list itself (orders are a separate
  * entity — see AGENTS.md).
+ *
+ * Each value is a LIST, oldest order first. Nothing stops satış raising a
+ * second order while the first is printing, and a map of one order per project
+ * kept whichever the loop saw last — the older, since the list arrives newest
+ * first — so the newer order vanished from every badge.
  */
 export function useOpenOrdersByProject() {
   const [byProject, setByProject] = useState(new Map())
@@ -22,7 +27,12 @@ export function useOpenOrdersByProject() {
       const map = new Map()
       for (const r of reqs) {
         if (!isOrderOpen(r)) continue
-        map.set(r.project_id, r)
+        const list = map.get(r.project_id)
+        if (list) list.push(r)
+        else map.set(r.project_id, [r])
+      }
+      for (const list of map.values()) {
+        list.sort((a, b) => (a.order_no ?? 0) - (b.order_no ?? 0))
       }
       setByProject(map)
     }).catch(() => {})

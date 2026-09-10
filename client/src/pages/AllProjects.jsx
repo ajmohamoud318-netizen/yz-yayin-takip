@@ -198,7 +198,7 @@ export default function AllProjects() {
                         the <Card> onClick (tap → navigate) unchanged. */}
                     <ProjectHoverCard
                       project={p}
-                      order={openOrders.get(p.id)}
+                      orders={openOrders.get(p.id)}
                       side="top"
                       align="start"
                       sideOffset={6}
@@ -206,7 +206,7 @@ export default function AllProjects() {
                       <div className="flex items-start gap-2">
                         <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', meta.dot)} />
                         <p className="text-sm font-semibold leading-snug">{p.title}</p>
-                        <OrderBadge order={openOrders.get(p.id)} className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                        <OrderBadge orders={openOrders.get(p.id)} className="mt-0.5" />
                       </div>
                     </ProjectHoverCard>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -265,7 +265,7 @@ export default function AllProjects() {
                               and navigates. */}
                           <ProjectHoverCard
                             project={p}
-                            order={openOrders.get(p.id)}
+                            orders={openOrders.get(p.id)}
                             side="right"
                             align="start"
                             sideOffset={8}
@@ -273,7 +273,7 @@ export default function AllProjects() {
                             <div className="flex items-center gap-2.5">
                               <span className={cn('h-2 w-2 shrink-0 rounded-full', meta.dot)} />
                               <span className="font-medium text-foreground">{p.title}</span>
-                              <OrderBadge order={openOrders.get(p.id)} />
+                              <OrderBadge orders={openOrders.get(p.id)} />
                             </div>
                           </ProjectHoverCard>
                         </td>
