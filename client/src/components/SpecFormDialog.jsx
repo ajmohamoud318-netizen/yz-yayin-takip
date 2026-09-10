@@ -904,8 +904,29 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     if (!parcaChosen()) return
     setBusy(true)
     try {
-      const updated = await api.prepareBaskiOnay(project.id)
+      /* Snapshot FIRST, then prepare — the order is the whole of this fix.
+       *
+       * `baskiOnayPrepare` runs `withSnapshot('baski_onay')` and stamps a
+       * preparer row for every parça on it. On a FIRST prepare that snapshot
+       * does not exist yet: `persistAfterStep` is what writes it. Called the
+       * other way round, the server found no snapshot, `snapshotParcalar` came
+       * out empty, and `appendBaskiParcaRow` stamped nobody — while the
+       * project-level `baski_onay_prepared` flag was set anyway, so the dialog
+       * closed saying "hazırlandı" and the leader had every reason to believe
+       * it had been.
+       *
+       * The bill arrived at the approve: the snapshot written a moment later
+       * listed all three parçalar, the preparer ledger was empty, and the gate
+       * answered "Önce baskı onay formu hazırlanmalıdır: Bilsem, Bilsem KUTU,
+       * Bilsem KILAVUZ" — naming parçalar the leader had just prepared. No
+       * amount of re-preparing fixed it, because every attempt repeated the
+       * same order.
+       *
+       * The panel's own prepare (useProjectDelivery / Approvals) never hit
+       * this: it passes the parça names explicitly, so it does not need the
+       * snapshot to know what to stamp. */
       await persistAfterStep(form)
+      const updated = await api.prepareBaskiOnay(project.id)
       updateOne(updated)
       toast.success('Baskı onay formu hazırlandı, başka bir ekip liderinin onayı bekleniyor.')
       onDone?.(updated)
