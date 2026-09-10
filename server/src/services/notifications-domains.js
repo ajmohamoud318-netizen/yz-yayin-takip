@@ -488,3 +488,47 @@ export async function notifyOrderParcaRejected(client, {
     event: { type: 'order.parca_rejected', aggregateId: order?.id },
   })
 }
+
+/**
+ * A reprint went into production on a title that is ALREADY at or past baskıda
+ * — most often one that is `satista`.
+ *
+ * This exists because the project's stage cannot represent the work. The flip
+ * to `baskida` is forward-only, correctly: a sold book really is on sale, and
+ * regressing it would be a lie about the title rather than a fact about the
+ * reprint. But /baski-listesi filters PROJECTS by stage, so a reprint of a
+ * sold title lands on no production queue anywhere, and the stage-flip
+ * notification never fires because there was no flip.
+ *
+ * The result was a sipariş that ran the whole pipeline — assigned, checked,
+ * proofed, signed — and then reached the matbaa as silence. Nobody printed it
+ * because nobody was told, and nothing in the app showed it as owed.
+ *
+ * So the printers are told about the ORDER instead of about a stage that did
+ * not move. Leaders and designers are not: they just approved the sheet that
+ * caused this, and they hear it through the order's own approval path.
+ */
+export async function notifyOrderReprintIntoProduction(client, { order, project, actor }) {
+  const printers = await activeUserIdsByRole(client, 'printer')
+  const title = project?.title ?? order?.project_title ?? 'Baskı'
+  return emit(client, {
+    actorId: actor?.id,
+    recipientIds: printers,
+    type: 'production_ready',
+    title,
+    // Named as a REPRINT. "Proje baskıda alındı" would be wrong twice over on a
+    // sold title: the project did not move, and the printer's own queue will go
+    // on showing it as satışta while this run is outstanding.
+    body: 'Yeni baskı talebi onaylandı, üretime alındı',
+    tone: 'green',
+    projectId: order?.project_id ?? project?.id,
+    orderId: order?.id,
+    // /baski-listesi — the print queue, and the one page with no RoleGuard on
+    // it, so the matbaa can actually open it. It now lists reprints of titles
+    // that are past baskıda alongside the projects at it; without that section
+    // this link would land them somewhere the job is invisible, which the
+    // pipeline's own baskida branch warns is worse than no link at all.
+    link: '/baski-listesi',
+    event: { type: 'order.reprint_into_production', aggregateId: order?.id },
+  })
+}

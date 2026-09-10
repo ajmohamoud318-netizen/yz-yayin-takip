@@ -32,6 +32,7 @@ import {
   notifyOrderOzalitChangeRequested, notifyOrderOzalitChangeAccepted, notifyOrderOzalitChangeDeclined,
   notifyOrderBaskiOnayPrepared, notifyProjectTransition,
   notifyOrderParcaApproved, notifyOrderParcaRejected,
+  notifyOrderReprintIntoProduction,
 } from './notifications.js'
 import * as repo from './order-repository.js'
 import { canonicalise } from './deep-equal.js'
@@ -162,6 +163,14 @@ async function dispatchNotification(client, { notification, order, project, acto
       // or past baskida, and re-announcing would put a duplicate row-arrival
       // in the printers' bell for a queue entry that has been there all along.
       const n = await notifyOrderTransition(client, { ...base, newStatus: 'baskida', requesterId })
+
+      // A reprint of a title already at (or past) baskıda. No stage moved, so
+      // notifyProjectTransition has nothing to announce — but the matbaa still
+      // has a print run to do, and this is the only thing that tells them.
+      if (notification.reprintIntoProduction) {
+        return n + await notifyOrderReprintIntoProduction(client, { order, project, actor })
+      }
+
       if (!notification.projectEnteredProduction || !project) return n
       return n + await notifyProjectTransition(client, {
         project,
@@ -600,6 +609,17 @@ export async function approveBaskiOnayForm(orderId, actor, {
           event: 'order_final', action: 'system',
           note: 'Baskı onaylandı (proje zaten baskıda veya sonrasında)',
         }]
+        // The project is already at or past baskıda, so the stage cannot say
+        // this reprint exists — and for a SOLD title it never will. That is
+        // correct (the book really is on sale; the reprint is separate work),
+        // but it leaves the matbaa with nothing: /baski-listesi filters
+        // PROJECTS by stage, so a reprint of a satışta book appears on no
+        // production queue anywhere, and the stage-flip notification above
+        // never fires because there was no flip.
+        //
+        // The order is genuinely in production either way, so the printers are
+        // told about the ORDER instead of about a stage that did not move.
+        if (event.notification) event.notification.reprintIntoProduction = true
       }
     },
   }, client)

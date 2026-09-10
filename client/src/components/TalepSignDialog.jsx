@@ -256,20 +256,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
     }
   }, [open, order?.id, order?.project_id, isAssignStep, subscribe])
 
-  if (!order) return null
-
-  const nextStep = ORDER_STEP_NEXT[order.status]
-  const nextLabel = ORDER_STEP_LABELS[nextStep] ?? 'Onayla'
-  const currentStepLabel = ORDER_STEP_LABELS[order.status] ?? order.status
-
-  // imza_bekleniyor is multi-party, leader-first — full parity with the main
-  // pipeline's ozalit_onay gate (see domain/constants/orders.js). Nobody can
-  // approve until the delivered proof is "Teslim Alındı", and a designer only
-  // counter-signs once a team leader has. A click here never claims finality
-  // ("Son Onay") — the client can't see the full required-approver set, only
-  // whether ITS OWN vote clears; the server decides when the round is done.
-  const isMatbaaOnayStep = order.status === 'imza_bekleniyor'
-
   /* The order's per-parça routing rows — where each parça physically is.
      Loaded only when the round is actually split; a one-parça reprint has no
      parça surface and this would be a request per dialog open for nothing. */
@@ -286,21 +272,6 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
       // every parça — it just cannot say which desk each one is on.
       .catch(() => setParcaRows([]))
   }, [order?.id])
-  const isAssignedMatbaaDesigner =
-    user?.role === 'designer' && (order.assignee_ids ?? []).includes(user?.id)
-  const canActOnMatbaaOnay = isMatbaaOnayStep && (user?.role === 'team_leader' || isAssignedMatbaaDesigner)
-  const matbaaReceived = !!order.matbaa_received
-  const matbaaAwaitingLeader =
-    isMatbaaOnayStep && isAssignedMatbaaDesigner && !matbaaOnayLeaderApproved(order)
-  const matbaaAlreadyApproved =
-    isMatbaaOnayStep && (order.matbaa_approvals ?? []).some((a) => a.id === user?.id)
-
-  // Full parity with the main pipeline's demo/ozalit started/cancel/edit/
-  // change-request flow (migrations 048/049), scoped to the order's own
-  // ozalit round delivered at matbaa_ozalit_yapiyor (migration 051). Team-leader
-  // only, same restriction as the main pipeline (avoids two people racing
-  // to edit/notify the same sent request).
-  const isTasarimciOnayStep = order.status === 'matbaa_ozalit_yapiyor'
 
   /**
    * Is this round split into parçalar (migration 080)?
@@ -321,13 +292,49 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
    * splitRound guard). This is the half that stops the button being there to
    * press in the first place.
    */
-  const splitRound = (order.ozalit_parcalar ?? []).length >= 2
-  const roundParcalar = order.ozalit_parcalar ?? []
+  const splitRound = (order?.ozalit_parcalar ?? []).length >= 2
 
   useEffect(() => {
     if (!open || !splitRound) { setParcaRows([]); return }
     refetchParcaRows()
   }, [open, splitRound, refetchParcaRows])
+
+  // Every hook must run before this: `order` goes null → non-null while the
+  // dialog stays mounted (the ledger row is cleared on close, re-set on the
+  // next open), so a guard above a hook makes React see a different hook count
+  // between renders — React error #310. Anything below here may deref `order`
+  // freely; anything above it must not.
+  if (!order) return null
+
+  const nextStep = ORDER_STEP_NEXT[order.status]
+  const nextLabel = ORDER_STEP_LABELS[nextStep] ?? 'Onayla'
+  const currentStepLabel = ORDER_STEP_LABELS[order.status] ?? order.status
+
+  // imza_bekleniyor is multi-party, leader-first — full parity with the main
+  // pipeline's ozalit_onay gate (see domain/constants/orders.js). Nobody can
+  // approve until the delivered proof is "Teslim Alındı", and a designer only
+  // counter-signs once a team leader has. A click here never claims finality
+  // ("Son Onay") — the client can't see the full required-approver set, only
+  // whether ITS OWN vote clears; the server decides when the round is done.
+  const isMatbaaOnayStep = order.status === 'imza_bekleniyor'
+
+  const isAssignedMatbaaDesigner =
+    user?.role === 'designer' && (order.assignee_ids ?? []).includes(user?.id)
+  const canActOnMatbaaOnay = isMatbaaOnayStep && (user?.role === 'team_leader' || isAssignedMatbaaDesigner)
+  const matbaaReceived = !!order.matbaa_received
+  const matbaaAwaitingLeader =
+    isMatbaaOnayStep && isAssignedMatbaaDesigner && !matbaaOnayLeaderApproved(order)
+  const matbaaAlreadyApproved =
+    isMatbaaOnayStep && (order.matbaa_approvals ?? []).some((a) => a.id === user?.id)
+
+  // Full parity with the main pipeline's demo/ozalit started/cancel/edit/
+  // change-request flow (migrations 048/049), scoped to the order's own
+  // ozalit round delivered at matbaa_ozalit_yapiyor (migration 051). Team-leader
+  // only, same restriction as the main pipeline (avoids two people racing
+  // to edit/notify the same sent request).
+  const isTasarimciOnayStep = order.status === 'matbaa_ozalit_yapiyor'
+
+  const roundParcalar = order.ozalit_parcalar ?? []
 
   /* Which parçalar THIS viewer still owes a signature on. Ozalit is
      multi-party, so "pending" is a question about a person, not the parça —

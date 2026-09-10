@@ -655,10 +655,21 @@ describe('orders-service — baskı onay', () => {
     assert.equal(toSales[0].type, 'order_approved')
   })
 
-  // The forward-only guard skipped the flip, so the project has been on the
-  // printers' queue since whatever put it there. Re-announcing would ring the
-  // bell for an arrival that already happened.
-  it('does not re-announce production when the project was already past baskida', async () => {
+  /* ------------------------------------------------------------------
+   * Re-ordering a title that is already SOLD.
+   *
+   * The stage flip is forward-only, so a satışta project stays satışta — and
+   * it should: the book really is on sale, and the reprint is separate work.
+   * But /baski-listesi filters PROJECTS by stage, so that reprint appears on
+   * no production queue anywhere, and the stage-flip announcement never fires
+   * because there was no flip.
+   *
+   * The result was a sipariş that ran the whole pipeline — assigned, checked,
+   * proofed, signed — and then reached the matbaa as silence. Printed by
+   * nobody, because nobody was told and nothing showed it as owed.
+   * ------------------------------------------------------------------ */
+
+  it('tells the matbaa about a reprint of a title that is already sold', async () => {
     const client = makeClient({
       order: preparedRow(), leaders: bothLeaders,
       project: { id: 'p-1', stage: 'satista', type: 'TR', title: 'Kitap' },
@@ -667,12 +678,41 @@ describe('orders-service — baskı onay', () => {
 
     await service.approveBaskiOnayForm('o-1', L1, approvedForm, client)
 
+    assert.equal(client.matching(/UPDATE projects SET/).length, 0, 'the sold title must not regress')
+
     const rows = notifications(client)
-    assert.equal(rows.filter((n) => n.type === 'production_ready').length, 0, 'no duplicate arrival')
+    const toPrinter = rows.filter((n) => n.userId === 'P1')
+    assert.equal(toPrinter.length, 1, 'the matbaa hears about the reprint exactly once')
+    assert.equal(toPrinter[0].type, 'production_ready')
+    assert.match(
+      toPrinter[0].body, /[Yy]eni baskı/,
+      'named as a reprint — "Proje baskıda alındı" would be wrong twice over on a sold title',
+    )
+    assert.equal(
+      toPrinter[0].link, '/baski-listesi',
+      'the one page with no RoleGuard, and the one that now lists reprints',
+    )
+
     assert.ok(
       rows.some((n) => n.userId === 'S1' && n.type === 'order_approved'),
       'the requester is told either way — their talep did just clear',
     )
+  })
+
+  it('does not double-announce when the flip DID happen', async () => {
+    // A first print run: the project moves, so notifyProjectTransition owns the
+    // announcement and the reprint path must stay quiet. One ping, not two.
+    const client = makeClient({
+      order: preparedRow(), leaders: bothLeaders,
+      project: { id: 'p-1', stage: 'baski_onay', type: 'TR', title: 'Kitap' },
+      roleUsers: { team_leader: bothLeaders, printer: ['P1'], satis: ['S1'] },
+    })
+
+    await service.approveBaskiOnayForm('o-1', L1, approvedForm, client)
+
+    const toPrinter = notifications(client).filter((n) => n.userId === 'P1')
+    assert.equal(toPrinter.length, 1, 'exactly one printer notification, whichever path ran')
+    assert.match(toPrinter[0].body, /baskıda alındı/, 'the stage-flip copy, not the reprint copy')
   })
 
   it('requires the mandatory fields', async () => {

@@ -1,8 +1,8 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Printer, Factory, Ship, PackageCheck } from 'lucide-react'
 
-import { STAGE_LABELS, TYPE_LABELS } from '@/api'
+import api, { STAGE_LABELS, TYPE_LABELS } from '@/api'
 import { useProjectsStore } from '@/hooks/useProjectsStore'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -93,10 +93,41 @@ function ProjectRow({ project, icon: Icon, onOpen }) {
 export default function BaskiListesi() {
   const { projects, loading } = useProjectsStore()
   const navigate = useNavigate()
+  const [orders, setOrders] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+    api.listOrderRequests()
+      .then((rows) => { if (!cancelled) setOrders(Array.isArray(rows) ? rows : []) })
+      // Transient: reprints are additive to the stage-driven queue below, so a
+      // failed load hides that section rather than breaking the page.
+      .catch(() => { if (!cancelled) setOrders([]) })
+    return () => { cancelled = true }
+  }, [])
 
   const queue = useMemo(
     () => projects.filter((p) => QUEUE_STAGES.includes(p.stage)).sort(byTargetDate),
     [projects],
+  )
+
+  /**
+   * Reprints in production on a title this list cannot otherwise show.
+   *
+   * The stage-driven queue above cannot see them, and no amount of widening it
+   * would help: the flip to `baskida` is forward-only, so re-ordering a book
+   * that is already `satista` leaves the project exactly where it is. That is
+   * correct — the book really is on sale — but it meant a sipariş could run the
+   * entire pipeline and reach the matbaa as silence, printed by nobody because
+   * it appeared on no queue anywhere.
+   *
+   * Scoped to orders whose PROJECT is not already listed above: when a first
+   * print run flips its project to `baskida`, the order and the project are the
+   * same job, and showing both would have the matbaa printing it twice.
+   */
+  const queuedProjectIds = useMemo(() => new Set(queue.map((p) => p.id)), [queue])
+  const reprints = useMemo(
+    () => orders.filter((o) => o.status === 'baskida' && !queuedProjectIds.has(o.project_id)),
+    [orders, queuedProjectIds],
   )
 
   if (loading) {
@@ -121,7 +152,49 @@ export default function BaskiListesi() {
         </div>
       </header>
 
-      {queue.length === 0 ? (
+      {reprints.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Yeni Baskılar, {reprints.length} sipariş
+            </h2>
+            <p className="mt-0.5 text-xs text-muted-foreground/80">
+              Satıştaki veya baskısı süren kitapların yeni baskı talepleri.
+            </p>
+          </div>
+          <div className="space-y-2.5">
+            {reprints.map((o) => (
+              <Card key={o.id} className="border-violet-200 transition-colors hover:border-primary/30">
+                <CardContent className="flex items-start gap-3 p-4 sm:items-center">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-violet-100 text-violet-700">
+                    <Factory className="h-5 w-5" />
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/projects/${o.project_id}`)}
+                    className="min-w-0 flex-1 rounded text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <p className="text-sm font-semibold leading-snug sm:truncate">
+                      {cleanTitle(o.project_title)}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground sm:truncate">
+                      Yeni baskı · Talep eden: {o.requested_by_name ?? '—'}
+                    </p>
+                  </button>
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 border-violet-200 bg-violet-50 text-[10px] text-violet-700"
+                  >
+                    Sipariş
+                  </Badge>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {queue.length === 0 && reprints.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
             <PackageCheck className="mx-auto mb-2 h-8 w-8 text-muted-foreground/30" />
