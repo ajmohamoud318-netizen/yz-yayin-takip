@@ -536,7 +536,7 @@ export default function ProjectDetail() {
             // `ledgerKind` is already 'demo' | 'ozalit' at the *_teslim stages,
             // which is exactly the parca_state.gate domain.
             gate={ledgerKind}
-            canAct={isLeader || (user?.role === 'designer' && isAssigned)}
+            canAct={isLeader}
             busyParca={parcaRoundBusy}
             onRequestChange={handleRequestParcaChange}
             onEditParca={openParcaFixSheet}

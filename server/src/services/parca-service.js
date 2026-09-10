@@ -686,28 +686,20 @@ export async function requestParcaRound(projectId, parca, actor, { route } = {})
  * -------------------------------------------------------------------------- */
 
 /**
- * POST /api/projects/:id/parca/:parca/change-request — the asker (leader or
- * assigned designer) asks the matbaa to release a parça they have already
- * started.
+ * POST /api/projects/:id/parca/:parca/change-request — the leader asks the
+ * matbaa to release a parça they have already started.
  *
- * Leader OR assigned-designer, mirroring `requestParcaRound` and the project-
- * level request: an ask is idempotent (the second one 400s on the
- * "zaten bekleyen bir talep" check below), so the race that made the
- * edit-notify path leader-only does not apply here. The assigned designer is
- * already the one who hands the round back via `requestParcaRound`, and the
- * matbaa treats both as the same request from the same sheet. Anything
- * stricter than the send-back leg would let a designer hand the matbaa a
- * request that says "give this back" and then deny them the chance to ask
- * "give this back" on the next parça.
+ * Team-leader-only, matching `canEditSentDemoRequest` and the project-level
+ * request: this reopens an edit window, and two people holding it at once is
+ * the race migration 049's follow-up removed rather than narrowed. Keeps the
+ * trio (cancel, edit-notify, change-request) consistently gated to the one
+ * role per pipeline.js's `canRequestDemoChange` note.
  */
 export async function requestParcaChange(projectId, parca, actor, { note } = {}) {
   return withTx(async (client) => {
     const { project, row } = await loadParcaForUpdate(client, projectId, parca)
-    const assignees = await loadProjectAssignees(client, project)
-    const isAssignedDesigner =
-      actor?.role === 'designer' && assignees.some((a) => a.id === actor?.id)
-    if (actor?.role !== 'team_leader' && !isAssignedDesigner) {
-      badRequest('Değişiklik talebini yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
+    if (actor?.role !== 'team_leader') {
+      badRequest('Değişiklik talebini yalnızca ekip lideri yapabilir.')
     }
     if (row.change_requested_at) {
       badRequest('Bu parça için zaten bekleyen bir değişiklik talebi var.')
