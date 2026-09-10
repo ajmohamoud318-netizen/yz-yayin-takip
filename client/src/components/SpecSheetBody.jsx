@@ -10,6 +10,7 @@ import {
 } from '@/components/FormSheet'
 import { missingTemplateLabels, parcaKind } from '@/data/parcaTemplates'
 import { isAdetLabel } from '@/lib/spec-form-adet'
+import { isBasimYeriLabel } from '@/lib/spec-form-basim'
 import { projectHasLivePageCount } from '@/lib/spec-form-resolve'
 
 /**
@@ -131,7 +132,11 @@ export default function SpecSheetBody({
   // ADET is a spec row on the Baskı Onay Formu — one per parça, under its
   // SAYFA SAYISI — and the sheet may not go out with any of them blank. Every
   // other sheet carries no ADET row at all, so nothing to mark there.
-  const isRequiredRow = (label) => !!variant.requiresAdet && isAdetLabel(label)
+  // BASIM YERİ joins it: same kind of row (a fact about this run, not the
+  // product), same block, and the same rule — no parça may go to press with
+  // nobody named to print it. See lib/spec-form-basim.js.
+  const isRequiredRow = (label) => !!variant.requiresAdet
+    && (isAdetLabel(label) || isBasimYeriLabel(label))
 
   /* The fixed rows — the ones the form always carries, whoever filled it in:
      stamps the form writes about itself (who asked, when, who delivered, who
@@ -143,10 +148,20 @@ export default function SpecSheetBody({
       {/* ADET is not here: it belongs to the PARÇA, under its SAYFA SAYISI,
           because a sipariş can order 5.000 books in 2.500 boxes and the künye
           has room for one number. See lib/spec-form-adet.js. */}
-      {/* İSTEM rows are shown to every role — the matbaa needs to know who
-          requested the demo/ozalit and when, not just its own delivery stamp. */}
-      <SheetRow label={variant.dateLabel} name={variant.dateField} value={form[variant.dateField]} onChange={onChange} readOnly={systemRowReadOnly} />
-      {/* BASIM YERİ — right before HAZIRLAYAN, per the feature ask. */}
+      {/* BASIM YERİ — first, ahead of the künye's own rows.
+
+          It is not one of them: the künye records what the form did (asked on,
+          prepared by, delivered, signed), while this says where the sheet is
+          going. It is also the only row here a leader types to steer the
+          BLOCKS above rather than to stamp the document — so it reads as the
+          heading of the foot rather than as another stamp inside it.
+
+          A DEFAULT, not the answer. Each parça carries its
+          own row (parçalar of one product go to different publishers), and
+          typing here fills every block that has not been pointed elsewhere.
+          Not `required`: the blocks are what the send gate checks, and marking
+          a convenience field required would fail a sheet whose blocks are all
+          filled in by hand. */}
       {variant.locationField && (
         <SheetRow
           label={variant.locationLabel}
@@ -154,9 +169,11 @@ export default function SpecSheetBody({
           value={form[variant.locationField] ?? ''}
           onChange={onChange}
           readOnly={readOnly}
-          required
         />
       )}
+      {/* İSTEM rows are shown to every role — the matbaa needs to know who
+          requested the demo/ozalit and when, not just its own delivery stamp. */}
+      <SheetRow label={variant.dateLabel} name={variant.dateField} value={form[variant.dateField]} onChange={onChange} readOnly={systemRowReadOnly} />
       <SheetRow label={variant.personLabel} name={variant.personField} value={form[variant.personField]} onChange={onChange} readOnly />
       {/* Blank until handleAdvance stamps them at the moment of teslimat. */}
       {(user?.role === 'printer' || form.teslimTarihi || form.teslimEdenKisi) && (

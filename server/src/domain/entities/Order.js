@@ -18,6 +18,7 @@
 import { ORDER_STEP_NEXT, ORDER_STEP_OWNER, ORDER_REJECT_TARGETS } from '../orders.js'
 import { badRequest, conflict, forbidden } from '../errors.js'
 import { everyBlockHasAdet } from '../adet.js'
+import { everyBlockHasBasimYeri } from '../basim-yeri.js'
 import { assertParcaSetUnchanged } from '../spec-parca-diff.js'
 
 /**
@@ -714,10 +715,19 @@ export class Order {
    */
   static _assertBaskiOnayFormComplete(form) {
     const { components, adet, tarih, basimYeri, hazirlayan } = form ?? {}
-    if (![tarih, basimYeri, hazirlayan].every((v) => v?.trim())) {
+    if (![tarih, hazirlayan].every((v) => v?.trim())) {
       badRequest('Adet, tarih, basım yeri ve hazırlayan alanları zorunludur.')
     }
     if (!everyBlockHasAdet(components) && !adet?.trim()) {
+      badRequest('Adet, tarih, basım yeri ve hazırlayan alanları zorunludur.')
+    }
+    /* BASIM YERİ is checked per BLOCK now, alongside ADET and for the same
+       reason: parçalar of one product go to different publishers, so the
+       künye's single `basimYeri` could only ever describe some of the sheet.
+       It survives as the default the blocks are filled from — and as the
+       fallback here, so a form approved BEFORE the move still validates off
+       the one value it recorded. */
+    if (!everyBlockHasBasimYeri(components) && !basimYeri?.trim()) {
       badRequest('Adet, tarih, basım yeri ve hazırlayan alanları zorunludur.')
     }
   }

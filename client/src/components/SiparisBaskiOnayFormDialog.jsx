@@ -6,6 +6,9 @@ import api from '@/api'
 import { getComponentsForProject, getComponentRows } from '@/data/productCatalog'
 import { missingTemplateLabels, parcaKind } from '@/data/parcaTemplates'
 import { adetForComponent, isAdetLabel, missingAdetLabel, withAdetRow } from '@/lib/spec-form-adet'
+import {
+  isBasimYeriLabel, missingBasimYeriLabel, withBasimYeriRow, applyBasimYeriToBlocks,
+} from '@/lib/spec-form-basim'
 import { buildFormSheet, printSpecSheets } from '@/lib/specPrint'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
@@ -117,7 +120,18 @@ export default function SiparisBaskiOnayFormDialog({
     // SAYISI and leaves a filled row alone, so a leader's correction survives
     // a reopen; `saved.adet` is what a sheet approved before ADET moved off
     // the künye carries, lifted onto the rows so it still reads back.
-    const withAdet = (c) => ({ ...c, rows: withAdetRow(c.rows, adetForComponent(c.component, order) || (saved?.adet ?? '')) })
+    // BASIM YERİ rides along, per parça and for the same reason: a book and
+    // its box can go to different publishers, so the künye's single box could
+    // only ever describe some of the sheet. `saved.basimYeri` is what a form
+    // approved before the move carries, seeded onto the blocks so it reads
+    // back. See lib/spec-form-basim.js.
+    const withAdet = (c) => ({
+      ...c,
+      rows: withBasimYeriRow(
+        withAdetRow(c.rows, adetForComponent(c.component, order) || (saved?.adet ?? '')),
+        saved?.basimYeri ?? '',
+      ),
+    })
     if (saved?.components?.length) {
       setComponents(deepClone(saved.components).map(withAdet))
     } else {
@@ -215,8 +229,9 @@ export default function SiparisBaskiOnayFormDialog({
   function missingRequired() {
     return [
       missingAdetLabel(components),
+      // Per BLOCK, not the künye box — that box is a default that fills them.
+      missingBasimYeriLabel(components),
       !tarih.trim() && 'TARİH',
-      !basimYeri.trim() && 'BASIM YERİ',
       !hazirlayan.trim() && 'HAZIRLAYAN',
     ].filter(Boolean)
   }
@@ -329,7 +344,7 @@ export default function SiparisBaskiOnayFormDialog({
                   onMoveUp={c.rows.length > 1 && ri > 0 ? () => moveRow(ci, ri, -1) : null}
                   onMoveDown={c.rows.length > 1 && ri < c.rows.length - 1 ? () => moveRow(ci, ri, 1) : null}
                   readOnly={isReadOnly}
-                  required={isAdetLabel(r.label)}
+                  required={isAdetLabel(r.label) || isBasimYeriLabel(r.label)}
                 />
               ))}
               {!isReadOnly && (
@@ -354,8 +369,26 @@ export default function SiparisBaskiOnayFormDialog({
             parça's SAYFA SAYISI, so an order for 5.000 books in 2.500 boxes
             prints the right number on each sheet instead of one string reading
             "Kitap: 5.000, Kutu: 2.500". See lib/spec-form-adet.js. */}
+        {/* BASIM YERİ leads the künye rather than sitting among them — see the
+            same placement on SpecSheetBody. The rows below record what the form
+            did; this says where the sheet is going, and it steers the parça
+            blocks above rather than stamping the document.
+
+            A DEFAULT, not the answer — typing here fills every block that has
+            not been pointed at another publisher. Not `required`: the blocks
+            are what missingRequired() checks. See lib/spec-form-basim.js. */}
+        <SheetRow
+          label="BASIM YERİ"
+          name="basimYeri"
+          value={basimYeri}
+          onChange={(e) => {
+            const next = e.target.value
+            setComponents((cs) => applyBasimYeriToBlocks(cs, basimYeri, next))
+            setBasimYeri(next)
+          }}
+          readOnly={isReadOnly}
+        />
         <SheetRow label="TARİH" name="tarih" value={tarih} onChange={(e) => setTarih(e.target.value)} readOnly={isReadOnly} required />
-        <SheetRow label="BASIM YERİ" name="basimYeri" value={basimYeri} onChange={(e) => setBasimYeri(e.target.value)} readOnly={isReadOnly} required />
         <SheetRow label="HAZIRLAYAN" name="hazirlayan" value={hazirlayan} onChange={(e) => setHazirlayan(e.target.value)} readOnly={isReadOnly} required />
         {/* Only once the approve actually stamped it — an unapproved sheet
             must not read as already signed. */}

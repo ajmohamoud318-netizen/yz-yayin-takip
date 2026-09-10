@@ -136,12 +136,18 @@ describe('missingAdetLabel', () => {
 })
 
 /**
- * The Baskı Onay Formu's gate, as the dialog assembles it: BASIM YERİ is still
- * a künye field, ADET is now read off the sheet's blocks.
+ * The Baskı Onay Formu's gate, as the dialog assembles it. BOTH required
+ * fields are read off the sheet's blocks now: ADET moved there first, and BASIM
+ * YERİ followed it (parçalar of one product go to different publishers, so the
+ * single künye field could only ever describe some of them). The künye still
+ * has a BASIM YERİ box, but it is a default that FILLS the blocks — checking it
+ * instead would pass a sheet whose blocks are blank.
  */
 describe('missingRequiredFields', () => {
-  const filled = (component) => ({ component, rows: [row('ADET', '5.000')] })
-  const blank = (component) => ({ component, rows: [row('ADET', '')] })
+  const filled = (component) => ({
+    component, rows: [row('ADET', '5.000'), row('BASIM YERİ', 'İstanbul')],
+  })
+  const blank = (component) => ({ component, rows: [row('ADET', ''), row('BASIM YERİ', '')] })
 
   it('reports nothing for demo / ozalit — neither declares a required field', async () => {
     const { missingRequiredFields } = await import('@/lib/spec-form-storage')
@@ -157,7 +163,7 @@ describe('missingRequiredFields', () => {
       .toEqual(['ADET', 'BASIM YERİ'])
   })
 
-  it('clears once every block has a quantity and the press is named', async () => {
+  it('clears once every block has a quantity and a press of its own', async () => {
     const { missingRequiredFields } = await import('@/lib/spec-form-storage')
     const { VARIANTS } = await import('@/lib/spec-form-variants')
     expect(missingRequiredFields(
@@ -167,13 +173,13 @@ describe('missingRequiredFields', () => {
     )).toEqual([])
   })
 
-  it('still catches one blank parça among several', async () => {
+  it('names the blank parça for BOTH fields, not just ADET', async () => {
     const { missingRequiredFields } = await import('@/lib/spec-form-storage')
     const { VARIANTS } = await import('@/lib/spec-form-variants')
     expect(missingRequiredFields(
       VARIANTS.baski_onay,
       { basimYeri: 'İstanbul' },
       [filled('Ringoo'), blank('Ringoo KUTU')],
-    )).toEqual(['ADET (Ringoo KUTU)'])
+    )).toEqual(['ADET (Ringoo KUTU)', 'BASIM YERİ (Ringoo KUTU)'])
   })
 })

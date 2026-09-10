@@ -14,6 +14,7 @@
 
 import api from '@/api'
 import { missingAdetLabel } from '@/lib/spec-form-adet'
+import { missingBasimYeriLabel } from '@/lib/spec-form-basim'
 import { VARIANTS } from '@/lib/spec-form-variants'
 
 /* ------------------------------------------------------------------ */
@@ -329,8 +330,14 @@ export function missingRequiredFields(variant, form, blocks = null) {
     const adet = missingAdetLabel(blocks)
     if (adet) missing.push(adet)
   }
-  if (variant.locationField && !String(form?.[variant.locationField] ?? '').trim()) {
-    missing.push(variant.locationLabel)
+  /* BASIM YERİ is checked on the BLOCKS, like ADET — it moved onto the parça
+     rows for the same reason (a book and its box can go to different
+     publishers). The künye field it left behind is a default that fills them,
+     so checking that field instead would pass a sheet whose blocks are blank
+     and fail one whose blocks are all filled in by hand. */
+  if (variant.locationField && blocks) {
+    const basim = missingBasimYeriLabel(blocks)
+    if (basim) missing.push(basim)
   }
   return missing
 }

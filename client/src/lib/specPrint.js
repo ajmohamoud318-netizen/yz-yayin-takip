@@ -39,9 +39,15 @@ export function buildFormKunye({ form, kind }) {
     // No ADET pair: it prints inside each parça's spec table, under that
     // parça's SAYFA SAYISI, so a multi-parça job carries a different quantity
     // on each sheet instead of one number for all of them.
+    //
+    // No BASIM YERİ pair either, and now for a sharper reason than symmetry.
+    // It moved onto the parça rows too (a book and its box can go to different
+    // publishers), so the value in the künye is only the sheet's DEFAULT.
+    // Printing it here would put that default at the top of a sheet whose own
+    // table names a different press two lines down — a document contradicting
+    // itself, handed to the matbaa. The parça's row is the answer.
     pairs.push(
       ['TARİH', form?.baskiOnayTarihi ?? ''],
-      ['BASIM YERİ', form?.basimYeri ?? ''],
       ['HAZIRLAYAN', form?.baskiOnayHazirlayan ?? ''],
     )
   } else if (kind === 'ozalit') {

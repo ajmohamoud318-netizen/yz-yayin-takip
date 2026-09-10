@@ -5,6 +5,9 @@ import { getComponentsForProject, getComponentRows, primeProductInfoCache } from
 import { parcaKind } from '@/data/parcaTemplates'
 import { loadOrderAdet } from '@/data/orderAdet'
 import { adetForComponent, withAdetRow } from '@/lib/spec-form-adet'
+import {
+  withBasimYeriRow, applyBasimYeriToBlocks, applyBasimYeriToRows,
+} from '@/lib/spec-form-basim'
 import { hasSpecContent, specWithDemoFallback } from '@/lib/spec-seed'
 import { resolveSayfaSayisiRows } from '@/lib/spec-form-resolve'
 import { hydrateComponent, inCatalogOrder } from '@/lib/spec-form-selection'
@@ -139,9 +142,22 @@ export function useSpecSheet({
     () => (!isBaskiOnay ? null : (orderScoped ? order : loadOrderAdet(project?.id))),
     [isBaskiOnay, orderScoped, order, project?.id],
   )
-  const withAdet = (comp, legacy = '') => (
+  /* BASIM YERİ rides along with ADET, and for the same reason: both are facts
+     about THIS run rather than about the product, so both live on the parça's
+     own rows and neither reaches the catalog. The künye still carries a BASIM
+     YERİ, but as the default a block adopts while it has none of its own — a
+     book printed in İstanbul and a box made in Ankara are one sheet with two
+     answers, which is what the single field could never say. See
+     lib/spec-form-basim.js. */
+  const withAdet = (comp, legacy = '', legacyBasim = '') => (
     isBaskiOnay
-      ? { ...comp, rows: withAdetRow(comp.rows, adetForComponent(comp.component, orderForAdet) || legacy) }
+      ? {
+          ...comp,
+          rows: withBasimYeriRow(
+            withAdetRow(comp.rows, adetForComponent(comp.component, orderForAdet) || legacy),
+            legacyBasim,
+          ),
+        }
       : comp
   )
 
@@ -280,6 +296,12 @@ export function useSpecSheet({
 
       // What a sheet approved before ADET moved off the künye still carries.
       const legacyAdet = isBaskiOnay ? String(data?.form?.baskiOnayAdet ?? '').trim() : ''
+      /* The künye's BASIM YERİ. It is no longer the sheet's only answer — each
+         parça carries its own row — but it is still where a sheet approved
+         BEFORE the move recorded its press, and it is the default a fresh
+         block adopts. Hoisted out of the branch below so the parça blocks can
+         be seeded with it as well as the catalog-less body. */
+      let legacyBasim = ''
 
       if (isBaskiOnay) {
         let rowsForCustom = savedRows
@@ -299,12 +321,18 @@ export function useSpecSheet({
           }
         }
         if (basimValue) setForm((f) => ({ ...f, [variant.locationField]: basimValue }))
+        legacyBasim = String(basimValue ?? '')
         // A sheet with no catalog has no parça blocks, so its custom rows ARE
         // the spec and the ADET row belongs among them. `legacyAdet` is what a
         // sheet approved before ADET moved off the künye still carries in
         // baskiOnayAdet — lifted onto the rows so an old sheet reopens showing
         // the quantity it was approved with.
-        setCustomRows(withAdetRow(rowsForCustom, adetForComponent(null, orderForAdet) || legacyAdet))
+        setCustomRows(withBasimYeriRow(
+          withAdetRow(rowsForCustom, adetForComponent(null, orderForAdet) || legacyAdet),
+          // The künye's own value seeds the row — see withAdet's note. A
+          // catalog-less sheet has one body, so its press is the sheet's.
+          legacyBasim,
+        ))
       } else {
         // No ADET before Baskı Onayı. On the project pipeline the number
         // doesn't exist yet — nobody has ordered anything — and on a sipariş
@@ -344,7 +372,14 @@ export function useSpecSheet({
         .map((name) => catalogComponents.find((c) => parcaNameKey(c.component) === parcaNameKey(name)))
         .filter((c) => c && !onSheet.has(parcaNameKey(c.component)))
       setSelectedComponents(
-        [...baseComponents, ...added].map((c) => withAdet({ ...c, rows: resolveSayfaSayisiRows(c.rows, project, parcaKind(c)) }, legacyAdet)),
+        [...baseComponents, ...added].map((c) => withAdet(
+          { ...c, rows: resolveSayfaSayisiRows(c.rows, project, parcaKind(c)) },
+          legacyAdet,
+          // Sheets approved BEFORE the move carry their press in the künye
+          // field alone; seeding the blocks with it is what makes one reopen
+          // showing what it was approved with rather than a blank required row.
+          legacyBasim,
+        )),
       )
     }
 
@@ -500,6 +535,23 @@ export function useSpecSheet({
   }
   function handleChange(e) {
     const { name, value } = e.target
+    /* BASIM YERİ in the künye is a DEFAULT, so editing it has to reach the
+       blocks it is the default for. Every block that is blank, or that still
+       says what the künye said a moment ago, follows along; one somebody
+       pointed at another publisher keeps its own answer. That "a moment ago"
+       is why the previous value is read here and handed to the helper — see
+       applyBasimYeriToBlocks.
+
+       Only on the sheet that HAS per-parça rows. A demo or ozalit sheet has no
+       BASIM YERİ row to fill, and this would quietly add one. */
+    if (isBaskiOnay && variant.locationField && name === variant.locationField) {
+      // `form`, not a setForm updater: the fan-out is a side effect and an
+      // updater must stay pure (StrictMode runs it twice). This is an event
+      // handler, so the rendered value IS the value the user just edited from.
+      const was = form?.[name] ?? ''
+      setSelectedComponents((comps) => applyBasimYeriToBlocks(comps, was, value))
+      setCustomRows((rows) => applyBasimYeriToRows(rows, was, value))
+    }
     setForm((prev) => ({ ...prev, [name]: value }))
   }
 

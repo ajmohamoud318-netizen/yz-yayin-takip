@@ -25,6 +25,7 @@
  */
 
 import { isAdetLabel } from '../domain/adet.js'
+import { isBasimYeriLabel } from '../domain/basim-yeri.js'
 
 const up = (s) => String(s ?? '').toLocaleUpperCase('tr-TR')
 
@@ -71,6 +72,9 @@ function fieldsFromRows(rows) {
     const v = String(row?.value ?? '').trim()
     if (!k && !v) continue
     if (isAdetLabel(k)) continue
+    // Where a run was printed is not a property of the product — the next
+    // order would inherit this one's press. Same rule as ADET above.
+    if (isBasimYeriLabel(k)) continue
     // İŞİN ADI is the parça's own name; the caller writes it as the first
     // field, so a second copy would duplicate it on every rendered sheet.
     if (up(k) === 'İŞİN ADI') continue

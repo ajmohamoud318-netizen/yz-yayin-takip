@@ -16,6 +16,7 @@
 import api from '@/api'
 import { inferParcaKind } from '@/data/parcaTemplates'
 import { isAdetLabel } from '@/lib/spec-form-adet'
+import { isBasimYeriLabel } from '@/lib/spec-form-basim'
 
 // Lazy-loaded seed data — starts empty, populated by loadSeed() during
 // hydrateProductInfo(). Replaces the old static import of productInfo.js.
@@ -260,7 +261,7 @@ export async function saveEditedComponents(projectId, edited) {
         // (services/product-info-capture.js#isAdetLabel); this is the edit
         // path saying so too, since a Baskı Onay Formu now carries an ADET row
         // inside every parça block.
-        .filter((r) => !isAdetLabel(r.label))
+        .filter((r) => !isAdetLabel(r.label) && !isBasimYeriLabel(r.label))
         .map((r) => ({ k: r.label ?? '', v: r.value ?? '' })),
     ]
     if (byName.has(name)) {
