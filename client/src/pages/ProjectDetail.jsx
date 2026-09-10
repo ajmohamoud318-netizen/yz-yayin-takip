@@ -306,14 +306,20 @@ export default function ProjectDetail() {
       && project?.demo_received !== true)
   const showParcaGrid = parcaSnapshot.length >= 2 && (
     earlyParcaGate
-      ? isLeader
+      // Leader-only was too narrow, and it contradicted the round-level rule
+      // one branch down. `receiveParca` accepts "ekip lideri veya atanmış
+      // tasarımcı" — the same pair as the whole-round receipt — so an assigned
+      // designer could take delivery of the WHOLE ozalit but not of the parça
+      // that came back first. They get the rows and the per-parça receipt here;
+      // the sign-off stays the leader's (canDecideParca, below).
+      ? isLeader || (user?.role === 'designer' && isAssigned)
       : (parcaRoundDecidable(project) || roundAwaitsReceipt)
         && parcaPanelViewer(user, ledgerKind, { isAssigned })
   )
-  /* …and whether this viewer may act on what they see. Only the demo gate pulls
-     these apart: an assigned designer takes delivery of the round here but the
-     server lets only the leader or the matbaa sign it off, so they get the rows
-     and the receipt and no thumbs. */
+  /* …and whether this viewer may act on what they see. Seeing and deciding come
+     apart wherever the server's two answers differ: an assigned designer takes
+     delivery — of the round at the demo gate, of a single parça at the early
+     gate — and signs nothing in either place. */
   const canDecideParca = parcaPanelDecider(user, ledgerKind, { project })
 
   // ---------------------------------------------------------------------------

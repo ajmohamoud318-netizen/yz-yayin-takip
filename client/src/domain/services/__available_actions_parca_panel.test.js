@@ -285,6 +285,26 @@ describe('parcaPanelDecider — who may act on its rows', () => {
       expect(parcaPanelDecider(designer, 'ozalit', { project: unreceived })).toBe(false)
     })
 
+    it('does not apply the *_onay rules at the EARLY gate', () => {
+      // migration 076: on a round the matbaa is still producing, the server's
+      // rule is one line — "Tamamlanmamış turda parça onayını yalnızca ekip
+      // lideri yapabilir". No receipt gate (the round has not landed, so
+      // `ozalit_received` is false by definition) and no leader-first.
+      //
+      // Asking canApproveOzalitNow here answers false for the LEADER too, on
+      // that `!ozalit_received` check — taking the early sign-off away from the
+      // one person the server grants it to.
+      const early = { ...ozalitOnay(), stage: 'ozalit_teslim', ozalit_received: false }
+      expect(parcaPanelDecider(leader, 'ozalit', { project: early })).toBe(true)
+      expect(parcaPanelDecider(designer, 'ozalit', { project: early })).toBe(false)
+    })
+
+    it('applies the same early rule on the demo leg', () => {
+      const early = { ...demoOnay(), stage: 'demo_teslim', demo_received: false }
+      expect(parcaPanelDecider(leader, 'demo', { project: early })).toBe(true)
+      expect(parcaPanelDecider(designer, 'demo', { project: early })).toBe(false)
+    })
+
     it('falls back to leader-only when the caller supplies no project', () => {
       // The safe half of the rule, not the permissive one.
       expect(parcaPanelDecider(leader, 'ozalit')).toBe(true)

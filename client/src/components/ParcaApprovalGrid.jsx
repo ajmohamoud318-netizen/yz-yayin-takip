@@ -226,6 +226,13 @@ export default function ParcaApprovalGrid({
   // work the server records; the round simply holds at the gate afterwards until
   // the missing parça is sent too, which the `Gönderilmedi` row explains.
   const showBulk = bulkApproveAvailable(project, kind, snapshotParcalar)
+    // A caller who passed no way to approve is not offered a button that
+    // approves. Same rule as "Tümünü Reddedin" and the per-row pair: the
+    // handler is the permission. This one was missing it, so a viewer with no
+    // sign-off rights still got "Tüm parçaları onaylayın (3)" — inert, because
+    // the click landed on `onApproveParcalar?.()`, but there is no such thing
+    // as a button whose only outcome is nothing.
+    && !!(onBulkApprove ?? onApproveParcalar)
     && bulkTarget.length > 0
     && everyPendingDecidable
     // Not before the proof has been taken delivery of. The server refuses every
@@ -435,7 +442,18 @@ export default function ParcaApprovalGrid({
               outLabel={outLabelOf(parca)}
               signers={signersByParca.get(parca) ?? []}
               busy={busy}
-              onApprove={decidable ? () => onApproveParcalar?.([parca]) : undefined}
+              // `onApproveParcalar &&`, not just `decidable` — the handler's
+              // PRESENCE is the permission, exactly as it already was for
+              // reject one line down. Without it the thumbs-up was built from
+              // the row's status alone and drawn for anyone the panel drew for,
+              // with `onApproveParcalar?.()` swallowing the click: an ozalit
+              // designer saw a green button on every row and a red one on none,
+              // which is precisely how the bug showed up.
+              onApprove={
+                decidable && onApproveParcalar
+                  ? () => onApproveParcalar([parca])
+                  : undefined
+              }
               onReject={
                 decidable && onRejectParcalar
                   ? () => onRejectParcalar([parca])

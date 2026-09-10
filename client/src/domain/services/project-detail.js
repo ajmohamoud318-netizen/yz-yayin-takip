@@ -13,6 +13,7 @@ import {
   isLegacyProject,
   canApproveOzalitNow,
   ozalitDecidable,
+  EARLY_PARCA_STAGES,
 } from './pipeline.js'
 
 /**
@@ -88,6 +89,21 @@ export function parcaPanelViewer(user, ledgerKind, { isAssigned = false } = {}) 
  * @param {{ project?: object }} [opts]
  */
 export function parcaPanelDecider(user, ledgerKind, { project = null } = {}) {
+  /* The EARLY gate first, because it asks a different question (migration 076).
+   *
+   * At a *_teslim stage the round is still being produced and the panel is
+   * deciding parçalar that came back ahead of it. `computeEarlyParcaApproval`
+   * gates that on one thing — "Tamamlanmamış turda parça onayını yalnızca ekip
+   * lideri yapabilir" — and none of the *_onay gate's rules are even askable
+   * yet: there is no project-level receipt to have taken (that happens when the
+   * round lands) and no round-level sign-off for a designer to follow.
+   *
+   * Asking `canApproveOzalitNow` here answers false for the leader too, on the
+   * `!ozalit_received` check, and takes the early sign-off away from the one
+   * person the server grants it to. */
+  if (project && EARLY_PARCA_STAGES.has(project.stage)) {
+    return user?.role === 'team_leader'
+  }
   if (ledgerKind === 'demo') return user?.role === 'team_leader'
   if (ledgerKind === 'ozalit') {
     // Both roles answer to the same gate the header's Onayla answers to — no

@@ -487,6 +487,53 @@ describe('ParcaApprovalGrid — bulk reject', () => {
     expect(container.querySelector('button[aria-label*="Tümünü Reddedin"]')).toBeTruthy()
   })
 
+  /**
+   * A button with no handler behind it is not a button.
+   *
+   * Reported live: an assigned designer at `ozalit_onay`, before any team leader
+   * had signed, saw "Tüm parçaları onaylayın (3)" and a green thumb on every
+   * row — with no red one anywhere. The asymmetry was the tell. Reject asked
+   * whether it had a handler; approve built its closure from the row's status
+   * alone and let `onApproveParcalar?.()` swallow the click. So the panel drew
+   * a full set of sign-off buttons for the one person the ozalit's leader-first
+   * rule says must not have them yet.
+   */
+  describe('approve buttons require a handler, as reject always did', () => {
+    const props = {
+      project: { demo_parca_approvals: [], demo_parca_rejections: [] },
+      kind: 'demo',
+      snapshotParcalar: ['KAPAK', 'KİTAP', 'KUTU'],
+    }
+
+    it('draws no per-row thumbs-up without onApproveParcalar', () => {
+      render(<ParcaApprovalGrid {...props} />)
+      expect(container.querySelector('button[aria-label="KAPAK parçasını onayla"]')).toBe(null)
+    })
+
+    it('draws no bulk approve without a handler either', () => {
+      render(<ParcaApprovalGrid {...props} />)
+      expect(container.querySelector('button[aria-label*="Tüm parçaları onaylayın"]')).toBe(null)
+    })
+
+    it('still lists the round — seeing it was never the thing withheld', () => {
+      render(<ParcaApprovalGrid {...props} />)
+      expect(container.textContent).toContain('KAPAK')
+      expect(container.textContent).toContain('KUTU')
+    })
+
+    it('draws both again once a handler is passed', () => {
+      render(<ParcaApprovalGrid {...props} onApproveParcalar={() => {}} />)
+      expect(container.querySelector('button[aria-label="KAPAK parçasını onayla"]')).toBeTruthy()
+      expect(container.querySelector('button[aria-label*="Tüm parçaları onaylayın"]')).toBeTruthy()
+    })
+
+    it('accepts onBulkApprove as the bulk half’s handler', () => {
+      // The baskı/queue callers pass this instead of onApproveParcalar.
+      render(<ParcaApprovalGrid {...props} onBulkApprove={() => {}} />)
+      expect(container.querySelector('button[aria-label*="Tüm parçaları onaylayın"]')).toBeTruthy()
+    })
+  })
+
   it('stays off the unfinished-round surface', () => {
     // With routing rows the grid is showing a round still out at the matbaa.
     // Bouncing the whole round there would discard parçalar still in the press.
