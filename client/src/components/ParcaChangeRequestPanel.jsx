@@ -27,6 +27,16 @@ import { cn } from '@/lib/utils'
  *   asked            → waiting on the matbaa
  *   accepted         → the parça is free again and owes a correction
  *
+ * The whole-sheet ask used to live in the header alongside a one-parça
+ * short-circuit here — the panel bailed out on `held.length === 1 && untouched
+ * === 1` because the header's whole-sheet button was supposed to cover it.
+ * With that button gone (it was unreachable on split rounds anyway), the
+ * panel now renders on every round the matbaa holds, single parça included:
+ * a one-parça round where the matbaa has started that parça shows exactly
+ * one row, and that row carries its own "Değişiklik İste". A one-parça round
+ * the matbaa has NOT started still falls through — `held` would be empty in
+ * practice once the edit button does its job.
+ *
  * The not-started row used to carry no button, on the grounds that the header's
  * whole-sheet edit already covered it. It does cover it — but it opens every
  * parça of the round and names none of them, so the leader who came here to fix
@@ -108,9 +118,11 @@ export default function ParcaChangeRequestPanel({
   onRequestChange, onEditParca, className,
 }) {
   const { held, untouched } = heldParcalar(rows, snapshotParcalar, gate)
-  // Nothing to say on a round the matbaa isn't holding, or a single-parça one
-  // where the header's own buttons already cover the whole sheet.
-  if (held.length === 0 || (held.length === 1 && untouched.length === 1)) return null
+  // Nothing to say on a round the matbaa isn't holding — every other round
+  // draws here, single parça included. The whole-sheet "Değişiklik İste" used
+  // to live in the header and bail this out; with it gone, a one-parça round
+  // the matbaa has started is exactly the one row that needs this panel.
+  if (held.length === 0) return null
 
   const locked = held.filter(parcaEditLocked)
 

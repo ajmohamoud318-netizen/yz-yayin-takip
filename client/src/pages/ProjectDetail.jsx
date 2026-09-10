@@ -11,10 +11,6 @@ import api, {
 } from '@/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog'
 import ApprovalDialog from '@/components/ApprovalDialog'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import NewProjectDialog from '@/components/NewProjectDialog'
@@ -69,11 +65,9 @@ export default function ProjectDetail() {
     signOrder, setSignOrder, siparisBaskiOnayOrder, setSiparisBaskiOnayOrder,
     ozalitRequestOrder, setOzalitRequestOrder,
     teslimConfirm, setTeslimConfirm,
-    changeRequestOpen, setChangeRequestOpen, changeRequestNote, setChangeRequestNote, requestingChange,
     receiving, reportingNotReceived, cancellingRequest, respondingChange, processingEkranDemo,
     historyWithAttempts,
     handleOrderSigned, handleOrderUpdated, handleOrderOzalitRequested, handleSiparisBaskiOnayApproved,
-    handleRequestChange,
     confirmDeleteProject, onActionDone,
   } = d
 
@@ -542,7 +536,7 @@ export default function ProjectDetail() {
             // `ledgerKind` is already 'demo' | 'ozalit' at the *_teslim stages,
             // which is exactly the parca_state.gate domain.
             gate={ledgerKind}
-            canAct={isLeader}
+            canAct={isLeader || (user?.role === 'designer' && isAssigned)}
             busyParca={parcaRoundBusy}
             onRequestChange={handleRequestParcaChange}
             onEditParca={openParcaFixSheet}
@@ -843,37 +837,15 @@ export default function ProjectDetail() {
         onConfirm={() => d.teslimConfirmConfig?.onConfirm?.()}
       />
 
-      {/* Change-request note dialog */}
-      <Dialog open={!!changeRequestOpen} onOpenChange={(v) => !v && !requestingChange && setChangeRequestOpen(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Değişiklik isteyin</DialogTitle>
-            <DialogDescription>
-              Matbaa {changeRequestOpen === 'demo' ? 'demo' : 'ozalit'} çalışmasına başladı. Ne değiştirmek
-              istediğinizi kısaca yazabilirsiniz — matbaa kabul ederse iptal veya düzenleme yapabilirsiniz.
-            </DialogDescription>
-          </DialogHeader>
-          <Textarea
-            value={changeRequestNote}
-            onChange={(e) => setChangeRequestNote(e.target.value)}
-            placeholder="Örn: renk yanlış, iptal etmek istiyorum…"
-            maxLength={500}
-          />
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setChangeRequestOpen(null)} disabled={requestingChange}>
-              Vazgeç
-            </Button>
-            <Button
-              type="button"
-              onClick={() => handleRequestChange(changeRequestOpen)}
-              disabled={requestingChange}
-              loading={requestingChange}
-            >
-              {requestingChange ? 'Gönderiliyor…' : 'Talebi Gönderin'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* The leader-side change-request dialog used to live here: a single
+          note applied to the whole sheet. The whole-sheet ask was unreachable
+          on split rounds (it was gated on `project.demo_started`, which
+          `startParca` deliberately never sets), so on a multi-parça round the
+          free edit stayed open over a parça already on the press and the ask
+          was unreachable. The per-parça panel above is now the only surface:
+          each row names its parça, the note rides with it, and the button is
+          offered only on a parça already on the press. The matbaa's
+          accept/decline side is `teslimConfirm`. */}
     </>
   )
 }

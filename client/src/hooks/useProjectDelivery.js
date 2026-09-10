@@ -9,6 +9,14 @@ import { stampSpecSignature } from '@/components/SpecFormDialog'
  * receive, not-received, start-work, cancel, ekran-demo, change-request
  * accept/decline.  Also owns the related loading flags and the
  * `teslimConfirm` confirmation-dialog state plus its config map.
+ *
+ * The leader's *requesting* side of the change-request handshake moved into
+ * `ParcaChangeRequestPanel` (migration 077): the whole-sheet ask used to be
+ * gated on `project.demo_started` / `project.ozalit_started`, which split
+ * rounds never set — so on a multi-parça round the ask was unreachable while
+ * a free edit stayed open over a parça already on the press. The per-parça
+ * button there is the only correct surface. The matbaa's accept/decline side
+ * is still here, gated by `respondingChange`.
  */
 export function useProjectDelivery(project, refetch, user) {
   // ---------------------------------------------------------------------------
@@ -17,13 +25,11 @@ export function useProjectDelivery(project, refetch, user) {
 
   const [receiving, setReceiving] = useState(false)
   const [reportingNotReceived, setReportingNotReceived] = useState(false)
-  // Matbaa "Başladım" gate + cancel + change-request (migration 048).
+  // Matbaa "Başladım" gate + cancel (migration 048).
   const [startingWork, setStartingWork] = useState(false)
   const [cancellingRequest, setCancellingRequest] = useState(false)
-  // 'demo' | 'ozalit' | null — which change-request note dialog is open.
-  const [changeRequestOpen, setChangeRequestOpen] = useState(null)
-  const [changeRequestNote, setChangeRequestNote] = useState('')
-  const [requestingChange, setRequestingChange] = useState(false)
+  // Matbaa's accept/decline for a change request the leader raised in the
+  // per-parça panel — see the file header for why the request side moved out.
   const [respondingChange, setRespondingChange] = useState(false)
   // Ekran Demo Onayı — lightweight digital alternative to a physical
   // re-demo for a held demo at 100% progress (migration 050). Covers both
@@ -279,23 +285,6 @@ export function useProjectDelivery(project, refetch, user) {
     }
   }
 
-  async function handleRequestChange(kind) {
-    if (!project) return
-    setRequestingChange(true)
-    try {
-      if (kind === 'demo') await api.requestDemoChange(project.id, changeRequestNote.trim() || undefined)
-      else await api.requestOzalitChange(project.id, changeRequestNote.trim() || undefined)
-      await refetch()
-      toast.success('Değişiklik talebiniz matbaaya iletildi.')
-    } catch (err) {
-      toast.error(err.message || 'İşlem tamamlanamadı.')
-    } finally {
-      setRequestingChange(false)
-      setChangeRequestOpen(null)
-      setChangeRequestNote('')
-    }
-  }
-
   async function handleDemoChangeAccept() {
     if (!project) return
     setRespondingChange(true)
@@ -475,8 +464,7 @@ export function useProjectDelivery(project, refetch, user) {
   return {
     // State
     receiving, reportingNotReceived, startingWork, cancellingRequest,
-    respondingChange, requestingChange, processingEkranDemo,
-    changeRequestOpen, setChangeRequestOpen, changeRequestNote, setChangeRequestNote,
+    respondingChange, processingEkranDemo,
     teslimConfirm, setTeslimConfirm, teslimConfirmConfig,
 
     // Handlers
@@ -485,7 +473,6 @@ export function useProjectDelivery(project, refetch, user) {
     handleDemoStart, handleOzalitStart,
     handleEkranDemoRequest,
     handleDemoCancel, handleOzalitCancel,
-    handleRequestChange,
     handleDemoChangeAccept, handleDemoChangeDecline,
     handleOzalitChangeAccept, handleOzalitChangeDecline,
     // Per-parça approval handlers (migrations 068/069/070): the per-parça

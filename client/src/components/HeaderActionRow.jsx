@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   CheckCircle2,
   Clock,
   FileText,
@@ -18,7 +17,6 @@ import {
   canCancelDemoRequest, canCancelOzalitRequest,
   canEditSentDemoRequest, canEditSentOzalitRequest,
   canAddParcalarToRound,
-  canRequestDemoChange, canRequestOzalitChange,
   canRespondDemoChange, canRespondOzalitChange,
   canRequestEkranDemo, canRespondEkranDemo,
   lockedParcaNames,
@@ -45,7 +43,7 @@ export default function HeaderActionRow({ d }) {
     setDemoFormStartWork, setOzalitFormStartWork,
     setOzalitFormMode, setOzalitFormAttempt, setOzalitFormNotify, setOzalitFormOpen,
     setBaskiOnayFormMode, setBaskiOnayFormOpen,
-    setChangeRequestOpen, setEkranDemoRejectOpen,
+    setEkranDemoRejectOpen,
     handleAdvanceAction, printerSplitRound, parcaRows,
     parcaSnapshot, unsentParcalar: unsent, setParcaAddScope,
   } = d
@@ -263,36 +261,15 @@ export default function HeaderActionRow({ d }) {
           {cancellingRequest ? 'İşleniyor…' : 'Ozalit İsteğini İptal Edin'}
         </Button>
       )}
-      {/* Once started, a cancel/edit is a request the matbaa must
-          accept or decline. */}
-      {canRequestDemoChange(user, project) && (
-        <Button size="sm" variant="outline" className="border-amber-400 bg-amber-300 text-amber-950 hover:bg-amber-400 hover:text-amber-950" onClick={() => setChangeRequestOpen('demo')}>
-          <AlertTriangle className="h-4 w-4" />
-          Değişiklik İste
-        </Button>
-      )}
-      {canRequestOzalitChange(user, project) && (
-        <Button size="sm" variant="outline" className="border-amber-400 bg-amber-300 text-amber-950 hover:bg-amber-400 hover:text-amber-950" onClick={() => setChangeRequestOpen('ozalit')}>
-          <AlertTriangle className="h-4 w-4" />
-          Değişiklik İste
-        </Button>
-      )}
-      {!canRequestDemoChange(user, project) && project?.demo_change_requested_at &&
-        (isLeader || (user?.role === 'designer' && isAssigned)) &&
-        project.stage === 'demo_teslim' && (
-        <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700">
-          <Clock className="h-4 w-4" />
-          Değişiklik talebi gönderildi, matbaa yanıtı bekleniyor
-        </span>
-      )}
-      {!canRequestOzalitChange(user, project) && project?.ozalit_change_requested_at &&
-        (isLeader || (user?.role === 'designer' && isAssigned)) &&
-        project.stage === 'ozalit_teslim' && (
-        <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700">
-          <Clock className="h-4 w-4" />
-          Değişiklik talebi gönderildi, matbaa yanıtı bekleniyor
-        </span>
-      )}
+      {/* The "Değişiklik İste" ask used to live here as a whole-sheet button,
+          gated on `project.demo_started` / `project.ozalit_started`. On a split
+          round those flags are deliberately never set — `startParca` only
+          stamps the per-parça row — so the ask was unreachable on exactly the
+          rounds that needed it. The parça panel below is now the only surface
+          for it: each row names its parça, the note rides with it, and the
+          button is offered only on a parça already on the press. The matching
+          "waiting on matbaa" status spans moved with it. */}
+      {/* The matbaa's answer to a pending change-request. */}
       {/* The matbaa's answer to a pending change-request. */}
       {canRespondDemoChange(user, project) && (
         <div className="flex items-center gap-2">

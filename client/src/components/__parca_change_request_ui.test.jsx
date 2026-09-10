@@ -96,13 +96,43 @@ describe('ParcaChangeRequestPanel', () => {
     expect(text()).not.toContain('KİTAP')
   })
 
-  it('stays quiet on a single-parça round the header already covers', () => {
+  // Single-parça round, matbaa has started that parça: with the whole-sheet
+  // "Değişiklik İste" gone from the header, this is now exactly the row that
+  // needs the panel — the per-parça ask is the only ask on offer, and it
+  // names the parça.
+  it('offers the ask on a single-parça round the matbaa has started', () => {
     render(
       <ParcaChangeRequestPanel
-        rows={[]} snapshotParcalar={['KUTU']} canAct onRequestChange={() => {}}
+        rows={[onPress('KUTU')]}
+        snapshotParcalar={['KUTU']}
+        canAct onRequestChange={() => {}}
       />,
     )
-    expect(text()).toBe('')
+    expect(text()).toContain('KUTU')
+    expect(buttonByText(/Değişiklik İste/)).toBeTruthy()
+  })
+
+  // Single-parça round, matbaa is holding it but hasn't started yet: this is
+  // the panel's new ground on one-parça rounds. Before, the panel bailed out
+  // because the header's whole-sheet "Gönderilen Demoyu Düzenleyin" was
+  // supposed to cover it; with that header button gone, the panel draws the
+  // row and offers the edit-and-notify button the round-level one used to.
+  it('offers the edit-and-notify button on a single-parça round nobody has started', () => {
+    const calls = []
+    render(
+      <ParcaChangeRequestPanel
+        rows={[]}
+        snapshotParcalar={['KUTU']}
+        gate="demo"
+        canAct onRequestChange={() => {}}
+        onEditParca={(parca, gate) => calls.push([parca, gate])}
+      />,
+    )
+    expect(text()).toContain('KUTU')
+    expect(text()).toContain('henüz başlanmadı')
+    // The fix that replaces the header's whole-sheet edit. Same scoped sheet.
+    click(buttonByText(/KUTU Formunu Düzenleyin/))
+    expect(calls).toEqual([['KUTU', 'demo']])
   })
 
   it('offers the ask only on the parça that is actually on the press', () => {
