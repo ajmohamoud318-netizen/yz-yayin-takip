@@ -36,10 +36,22 @@ export function TalepOzalitPanel({
   onRequestOzalitChange,
   onCancelOzalit,
   onSaveOzalitEdit,
+  splitRound = false,
 }) {
   return (
     <div className="space-y-2.5">
-      {user?.role === 'printer' && !ozalitChangePending && (ozalitStarted || !ozalitFixPending) && (
+      {/* A split round is worked parça by parça, so the printer is told where
+          rather than being handed a whole-sheet button that would stamp all of
+          them at once. Placed before the ordinary block so the two can never
+          both render. */}
+      {user?.role === 'printer' && splitRound && (
+        <div className="rounded-md border border-violet-200 bg-violet-50 p-3 text-sm text-violet-800">
+          Bu tur parça bazlı yürüyor. Her parçayı Matbaa İşleri sayfasındaki
+          parça kartlarından ayrı ayrı başlatıp teslim edin.
+        </div>
+      )}
+
+      {user?.role === 'printer' && !splitRound && !ozalitChangePending && (ozalitStarted || !ozalitFixPending) && (
         <div className="flex items-center justify-between gap-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
           <span>
             {ozalitStarted

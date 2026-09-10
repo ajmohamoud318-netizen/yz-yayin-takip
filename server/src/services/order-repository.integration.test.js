@@ -22,7 +22,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { ORDER_WRITABLE_COLUMNS, ORDER_JSONB_COLUMNS } from './order-repository.js'
+import { ORDER_WRITABLE_COLUMNS, ORDER_JSONB_COLUMNS, listOrders } from './order-repository.js'
 
 const MIGRATIONS_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)), '../../db/migrations',
@@ -88,4 +88,39 @@ test('the per-parça ledgers from migration 080 are writable and cast', { skip: 
     assert.ok(ORDER_WRITABLE_COLUMNS.has(col), `${col} is not writable — writes would be dropped`)
     assert.ok(ORDER_JSONB_COLUMNS.has(col), `${col} is not cast to jsonb — writes would throw`)
   }
+})
+
+test("listOrders exposes the round's parça list from the sheet", { skip: !PGlite }, async () => {
+  // `ozalit_parcalar` is what every client surface reads to decide whether a
+  // round is split. It comes from the SHEET, not from parca_state, because rows
+  // there are materialised on first action — a split round nobody has touched
+  // yet has none, and that is exactly the round whose whole-order "Teslim Edin"
+  // would advance past proofs that were never printed.
+  //
+  // Driving the real listOrders rather than a copy of its SQL: the point is
+  // that the column reaches the client, and a hand-copied query would keep
+  // passing after the real one was edited.
+  const db = new PGlite()
+  const files = (await fs.readdir(MIGRATIONS_DIR)).filter((f) => /^\d{3}__.+\.sql$/.test(f)).sort()
+  for (const f of files) {
+    await db.exec(`BEGIN; ${await fs.readFile(path.join(MIGRATIONS_DIR, f), 'utf8')} ; COMMIT;`)
+  }
+  await db.exec(`
+    INSERT INTO users (id, name, email, role) VALUES ('u1','Esra','e@e.com','satis');
+    INSERT INTO projects (id, title, type, stage) VALUES ('p1','Kitap','TR','baskida');
+    INSERT INTO order_requests (id, project_id, requested_by, status)
+      VALUES ('split','p1','u1','matbaa_ozalit_yapiyor'),
+             ('single','p1','u1','matbaa_ozalit_yapiyor'),
+             ('nosheet','p1','u1','atama_bekleniyor');
+    INSERT INTO demos (id, project_id, order_id, kind, attempt, payload) VALUES
+      ('d1','p1','split','ozalit',1,'{"_selectedComponents":["KUTU","KITAP","KILAVUZ"]}'),
+      ('d2','p1','single','ozalit',1,'{"_selectedComponents":["KAPAK"]}');
+  `)
+
+  const rows = await listOrders(db)
+  const byId = Object.fromEntries(rows.map((r) => [r.row.id, r.row.ozalit_parcalar]))
+  assert.deepEqual(byId.split, ['KUTU', 'KITAP', 'KILAVUZ'], 'a split round reports its parçalar')
+  assert.deepEqual(byId.single, ['KAPAK'], 'a one-parça round is not split')
+  assert.deepEqual(byId.nosheet, [], 'an order with no sheet yet must not break the list')
+  await db.close()
 })

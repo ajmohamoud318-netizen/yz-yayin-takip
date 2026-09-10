@@ -277,6 +277,27 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   // only, same restriction as the main pipeline (avoids two people racing
   // to edit/notify the same sent request).
   const isTasarimciOnayStep = order.status === 'matbaa_ozalit_yapiyor'
+
+  /**
+   * Is this round split into parçalar (migration 080)?
+   *
+   * `ozalit_parcalar` is the parça list the round's SHEET went out with — what
+   * the designer ticked on the Ozalit Üretim Formu. Two or more means the
+   * matbaa works this round one parça at a time on ParcaJobBoard, and the
+   * whole-order pair below must not be offered: "İşlemi Başlatın" stamps the
+   * entire sheet, which unlocks a "Teslim Edin" that advances the order past
+   * parçalar nobody produced, straight to an approval gate for proofs that
+   * were never printed.
+   *
+   * Read from the sheet rather than from parca_state because rows there are
+   * materialised on first action — a split round nobody has touched yet has
+   * none, and that is precisely the round this needs to catch.
+   *
+   * The server refuses such an advance regardless (Order._authorizeAdvance's
+   * splitRound guard). This is the half that stops the button being there to
+   * press in the first place.
+   */
+  const splitRound = (order.ozalit_parcalar ?? []).length >= 2
   const ozalitStarted = !!order.ozalit_started
   const ozalitChangePending = order.ozalit_change_requested_at != null
   const ozalitFixPending = !!order.ozalit_fix_pending
@@ -591,6 +612,7 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
             <TalepOzalitPanel
               order={order}
               user={user}
+              splitRound={splitRound}
               ozalitBusy={ozalitBusy}
               ozalitStarted={ozalitStarted}
               ozalitChangePending={ozalitChangePending}
@@ -650,7 +672,10 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
                 // printer until İşlemi Başlatın has been pressed, and while a
                 // change request is pending (respond to it above instead).
                 !(user?.role === 'team_leader' && isTasarimciOnayStep) &&
-                !(user?.role === 'printer' && isTasarimciOnayStep && (!ozalitStarted || ozalitChangePending)) && (
+                !(user?.role === 'printer' && isTasarimciOnayStep && (!ozalitStarted || ozalitChangePending)) &&
+                // A split round has no whole-order delivery — the parça cards
+                // own it. See `splitRound` above.
+                !(user?.role === 'printer' && isTasarimciOnayStep && splitRound) && (
                   <Button
                     type="submit"
                     disabled={

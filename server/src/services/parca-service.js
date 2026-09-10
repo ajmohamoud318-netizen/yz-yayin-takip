@@ -45,6 +45,7 @@ import {
 } from './project-repository.js'
 import { advanceProject } from './project-service/transitions.js'
 import { emit, activeUserIdsByRole } from './notifications.js'
+import { listMyOrderParcaQueue } from './order-parca-service.js'
 
 /** GET /api/projects/:id/parca-state — one project's parça rows. */
 export async function listProjectParcaState(projectId) {
@@ -59,6 +60,13 @@ export async function listProjectParcaState(projectId) {
  * designer appears once in each queue, carrying only that party's parça.
  */
 export async function listMyParcaQueue(actor) {
+  // The sipariş half (migration 080). Concatenated rather than merged: a
+  // reprint's parçalar are their own round with their own gate, and the two
+  // halves derive their "still owed" sets from different places — a project's
+  // from its stage, an order's from its status. Rows carry `order_id`, which
+  // is what lets the client tell them apart and call the right endpoint.
+  const orderRows = await listMyOrderParcaQueue(actor)
+
   if (actor?.role === 'printer') {
     const routed = await listParcaStateByOwner(null, 'printer', ['with_matbaa', 'in_round'])
     // One pass over the live rounds serves both halves: which routed rows still
@@ -66,10 +74,11 @@ export async function listMyParcaQueue(actor) {
     const rounds = await loadLiveTeslimRounds()
     const live = dropOrphanedRouted(routed, rounds)
     const fresh = await deriveTeslimParcalar(live, rounds)
-    return [...live, ...fresh]
+    return [...live, ...fresh, ...orderRows]
   }
   if (actor?.role === 'designer') {
-    return listParcaStateByOwner(null, 'designer', ['with_designer'])
+    const projectRows = await listParcaStateByOwner(null, 'designer', ['with_designer'])
+    return [...projectRows, ...orderRows]
   }
   // The leader's queue is the parçalar that came back on a round the matbaa is
   // still producing (migration 076). Their work IS the approval gate — but on a
@@ -82,15 +91,16 @@ export async function listMyParcaQueue(actor) {
   // nothing further from anyone.
   if (actor?.role === 'team_leader') {
     const rows = await listGateParcalarAwaitingLeader(null)
-    return rows.filter((row) => {
+    const gateRows = rows.filter((row) => {
       const signed = row.gate === 'ozalit'
         ? Array.isArray(row.ozalit_parca_approvals?.[row.parca])
           && row.ozalit_parca_approvals[row.parca].length > 0
         : (row.demo_parca_approvals ?? []).some((a) => a?.parca === row.parca)
       return !signed
     }).map(({ demo_parca_approvals, ozalit_parca_approvals, ...row }) => row)
+    return [...gateRows, ...orderRows]
   }
-  return []
+  return orderRows
 }
 
 /** Stages where the matbaa owes a whole round, and the sheet each reads from. */

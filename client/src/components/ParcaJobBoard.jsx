@@ -54,23 +54,54 @@ export default function ParcaJobBoard({ rows = [], onChanged, compact = false })
   // same parça can't be stamped by both a card and the bulk shortcut.
   const [busy, setBusy] = useState(null)
 
-  // Grouped by project so the matbaa can take a whole sheet in one pass or pick
+  // Grouped by ROUND so the matbaa can take a whole sheet in one pass or pick
   // parçalar off it individually — whatever they don't act on stays queued.
+  //
+  // The key is `order_id ?? project_id`, not `project_id` (migration 080). A
+  // sipariş's parçalar are their own round with their own sheet, and two
+  // concurrent reprints of one title are two separate jobs — grouping them
+  // under the project would put six parçalar from three different rounds on one
+  // card and let "Hepsini Başlatın" stamp all of them at once.
   const groups = useMemo(() => {
-    const byProject = new Map()
+    const byRound = new Map()
     for (const row of rows) {
-      const g = byProject.get(row.project_id)
+      const key = row.order_id ?? row.project_id
+      const g = byRound.get(key)
       if (g) g.rows.push(row)
       else {
-        byProject.set(row.project_id, {
+        byRound.set(key, {
+          key,
           projectId: row.project_id,
+          orderId: row.order_id ?? null,
           projectTitle: row.project_title,
           rows: [row],
         })
       }
     }
-    return [...byProject.values()]
+    return [...byRound.values()]
   }, [rows])
+
+  /**
+   * Which pipeline a row belongs to, and therefore which endpoint to call.
+   *
+   * `order_id` is the discriminator the server puts on every queue row. The
+   * two sets of verbs are identical in behaviour — that is the whole point of
+   * migration 080 — but they address different aggregates, and calling the
+   * project one with an order's id would 404 at best.
+   */
+  const parcaApi = (row) => (row.order_id
+    ? {
+      start: () => api.startOrderParca(row.order_id, row.parca),
+      deliver: () => api.deliverOrderParca(row.order_id, row.parca),
+      accept: () => api.acceptOrderParcaChange(row.order_id, row.parca),
+      decline: () => api.declineOrderParcaChange(row.order_id, row.parca),
+    }
+    : {
+      start: () => api.startParca(row.project_id, row.parca),
+      deliver: () => api.deliverParca(row.project_id, row.parca),
+      accept: () => api.acceptParcaChange(row.project_id, row.parca),
+      decline: () => api.declineParcaChange(row.project_id, row.parca),
+    })
 
   /**
    * Open the sheet for one parça or a whole group.
@@ -90,6 +121,10 @@ export default function ParcaJobBoard({ rows = [], onChanged, compact = false })
     if (!first) return
     const form = {
       project: { id: first.project_id, title: first.project_title },
+      // A sipariş round has its own sheet, keyed by the ORDER (migration 053).
+      // Without this the printer would open the PROJECT's latest ozalit — a
+      // different document, possibly from a different round entirely.
+      orderId: first.order_id ?? null,
       mode: 'view',
       parca: list,
       scope: list.map((r) => r.parca),
@@ -110,12 +145,13 @@ export default function ParcaJobBoard({ rows = [], onChanged, compact = false })
   async function commit(list, closeForm) {
     const jobs = Array.isArray(list) ? list : [list]
     if (jobs.length === 0) return
-    setBusy(jobs[0].project_id)
+    setBusy(jobs[0].order_id ?? jobs[0].project_id)
     const done = []
     try {
       for (const row of jobs) {
-        if (row.state === 'in_round') await api.deliverParca(row.project_id, row.parca)
-        else await api.startParca(row.project_id, row.parca)
+        const call = parcaApi(row)
+        if (row.state === 'in_round') await call.deliver()
+        else await call.start()
         done.push(row.parca)
       }
       const verb = jobs[0].state === 'in_round' ? 'teslim edildi' : 'çalışmasına başlandı'
@@ -142,13 +178,14 @@ export default function ParcaJobBoard({ rows = [], onChanged, compact = false })
    * answer it would be ceremony, not care.
    */
   async function respondChange(row, answer) {
-    setBusy(row.project_id)
+    setBusy(row.order_id ?? row.project_id)
+    const call = parcaApi(row)
     try {
       if (answer === 'accept') {
-        await api.acceptParcaChange(row.project_id, row.parca)
+        await call.accept()
         toast.success(`${row.parca} için değişiklik kabul edildi, düzeltilmiş form bekleniyor.`)
       } else {
-        await api.declineParcaChange(row.project_id, row.parca)
+        await call.decline()
         toast.success(`${row.parca} için değişiklik talebi reddedildi, baskıya devam.`)
       }
     } catch (err) {
@@ -181,11 +218,12 @@ export default function ParcaJobBoard({ rows = [], onChanged, compact = false })
       <div className="space-y-2.5">
         {groups.map((g) => (
           <ParcaJobGroup
-            key={g.projectId}
+            key={g.key}
             projectId={g.projectId}
+            orderId={g.orderId}
             projectTitle={g.projectTitle}
             rows={g.rows}
-            busy={busy === g.projectId}
+            busy={busy === g.key}
             compact={compact}
             onAct={openSheet}
             onActAll={openSheet}

@@ -81,10 +81,28 @@ export async function listOrders(db = getPool()) {
             o.ozalit_parca_approvals, o.ozalit_parca_rejections,
             o.baski_parca_preparers, o.baski_parca_approvals,
             o.version, o.created_at, o.updated_at, p.title AS project_title,
-            u.name AS requested_by_name
+            u.name AS requested_by_name,
+            COALESCE(s.parcalar, '[]'::jsonb) AS ozalit_parcalar
        FROM order_requests o
        JOIN projects p ON p.id = o.project_id AND p.deleted_at IS NULL
        LEFT JOIN users u ON u.id = o.requested_by
+       -- The parçalar this order's LATEST ozalit round went out with — what
+       -- the designer ticked on the Ozalit Üretim Formu. Two or more means the
+       -- round is split, which is what tells every client surface to show
+       -- parça cards instead of a whole-order one.
+       --
+       -- It has to come from the SHEET, not from parca_state: rows there are
+       -- materialised on first action, so a split round nobody has touched yet
+       -- has none at all — and that is exactly the round whose whole-order
+       -- "Teslim Edin" would advance past three unprinted proofs.
+       LEFT JOIN LATERAL (
+         SELECT d.payload->'_selectedComponents' AS parcalar
+           FROM demos d
+          WHERE d.order_id = o.id AND d.kind = 'ozalit'
+            AND jsonb_typeof(COALESCE(d.payload->'_selectedComponents', '[]'::jsonb)) = 'array'
+          ORDER BY d.attempt DESC, d.created_at DESC
+          LIMIT 1
+       ) s ON TRUE
        ORDER BY o.created_at DESC`,
   )
   const out = []

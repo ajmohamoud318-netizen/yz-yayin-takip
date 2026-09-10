@@ -226,6 +226,20 @@ export function createApi() {
     acceptParcaChange: (projectId, parca) => projectRepo.acceptParcaChange(projectId, parca),
     declineParcaChange: (projectId, parca) => projectRepo.declineParcaChange(projectId, parca),
 
+    // The sipariş twins (migration 080). Same verbs, different aggregate —
+    // `/parca-queue` returns rows from both pipelines, and a row's `order_id`
+    // is what says which of these pairs to call.
+    listOrderParcaState: (orderId) => orderRepo.listOrderParcaState(orderId),
+    startOrderParca: (orderId, parca) => orderRepo.startOrderParca(orderId, parca),
+    deliverOrderParca: (orderId, parca) => orderRepo.deliverOrderParca(orderId, parca),
+    receiveOrderParca: (orderId, parca) => orderRepo.receiveOrderParca(orderId, parca),
+    requestOrderParcaRound: (orderId, parca, route) =>
+      orderRepo.requestOrderParcaRound(orderId, parca, route),
+    requestOrderParcaChange: (orderId, parca, note) =>
+      orderRepo.requestOrderParcaChange(orderId, parca, note),
+    acceptOrderParcaChange: (orderId, parca) => orderRepo.acceptOrderParcaChange(orderId, parca),
+    declineOrderParcaChange: (orderId, parca) => orderRepo.declineOrderParcaChange(orderId, parca),
+
     // Demos
     listDemos: () => demoRepo.listDemos(),
     createDemo: (payload) => demoRepo.createDemo(payload),

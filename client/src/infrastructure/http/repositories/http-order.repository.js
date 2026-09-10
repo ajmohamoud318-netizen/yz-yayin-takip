@@ -86,5 +86,77 @@ export function createHttpOrderRepository() {
       const { data } = await httpClient.post(`/order-requests/${id}/ozalit-change-decline`, {})
       return data
     },
+
+    /* ------------------------------------------------------------------ */
+    /* Per-parça routing for a sipariş's ozalit round (migration 080).     */
+    /*                                                                     */
+    /* Twins of http-project.repository's parça calls, verb for verb. The  */
+    /* six above act on the WHOLE order — they read order_requests'        */
+    /* `ozalit_started`, which a split round never sets — so on exactly    */
+    /* the rounds where one parça is on the press and the rest are not,    */
+    /* they are unreachable. These carry the same verbs against one        */
+    /* parça's own `started_at`.                                          */
+    /* ------------------------------------------------------------------ */
+
+    async listOrderParcaState(id) {
+      const { data } = await httpClient.get(`/order-requests/${id}/parca-state`)
+      return data
+    },
+
+    /** Matbaa: began work on this one parça of the reprint. */
+    async startOrderParca(id, parca) {
+      const { data } = await httpClient.post(
+        `/order-requests/${id}/parca/${encodeURIComponent(parca)}/start`, {},
+      )
+      return data
+    },
+
+    /** Matbaa: handed this one parça back; it returns to the leader's gate. */
+    async deliverOrderParca(id, parca) {
+      const { data } = await httpClient.post(
+        `/order-requests/${id}/parca/${encodeURIComponent(parca)}/deliver`, {},
+      )
+      return data
+    },
+
+    /** Leader or assigned designer: took delivery of ONE parça. */
+    async receiveOrderParca(id, parca) {
+      const { data } = await httpClient.post(
+        `/order-requests/${id}/parca/${encodeURIComponent(parca)}/receive`, {},
+      )
+      return data
+    },
+
+    /**
+     * Designer: revized this parça and is sending it back round. `route` is
+     * 'physical' (the matbaa produces it again) or 'ekran' (screen check,
+     * straight back to the leader — and on that route the designer's own
+     * approval is not required, their request IS the sign-off).
+     */
+    async requestOrderParcaRound(id, parca, route) {
+      const { data } = await httpClient.post(
+        `/order-requests/${id}/parca/${encodeURIComponent(parca)}/request-round`, { route },
+      )
+      return data
+    },
+
+    async requestOrderParcaChange(id, parca, note) {
+      const { data } = await httpClient.post(
+        `/order-requests/${id}/parca/${encodeURIComponent(parca)}/change-request`, { note },
+      )
+      return data
+    },
+    async acceptOrderParcaChange(id, parca) {
+      const { data } = await httpClient.post(
+        `/order-requests/${id}/parca/${encodeURIComponent(parca)}/change-accept`, {},
+      )
+      return data
+    },
+    async declineOrderParcaChange(id, parca) {
+      const { data } = await httpClient.post(
+        `/order-requests/${id}/parca/${encodeURIComponent(parca)}/change-decline`, {},
+      )
+      return data
+    },
   }
 }

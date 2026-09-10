@@ -1,6 +1,7 @@
 import { attachUser } from '../middleware/auth.js'
 import { schemas } from '../schemas/index.js'
 import * as orders from '../services/orders-service.js'
+import * as orderParca from '../services/order-parca-service.js'
 
 /**
  * Sipariş talep workflow — HTTP adapter.
@@ -109,5 +110,61 @@ export async function orderRoutes(fastify) {
     await attachUser(request)
     const { orderId, id } = request.params
     return orders.patchOrderSubtask(orderId, id, request.user, request.body)
+  })
+
+  /* ------------------------------------------------------------------ */
+  /* Per-parça routing for a sipariş's ozalit round (migration 080).     */
+  /*                                                                     */
+  /* Twins of the /projects/:id/parca/* routes, verb for verb. None of   */
+  /* them move the ORDER — it stays at matbaa_ozalit_yapiyor while the   */
+  /* matbaa works parça by parça, exactly as a project stays at its      */
+  /* teslim stage. The one exception is the last delivery, which         */
+  /* advances the order from inside deliverOrderParca's transaction.     */
+  /* ------------------------------------------------------------------ */
+
+  fastify.get('/order-requests/:id/parca-state', { schema: schemas.ordersIdParams }, async (request) => {
+    await attachUser(request)
+    return orderParca.listOrderParcaState(request.params.id)
+  })
+
+  fastify.post('/order-requests/:id/parca/:parca/start', { schema: schemas.ordersParcaParams }, async (request) => {
+    await attachUser(request)
+    return orderParca.startOrderParca(request.params.id, request.params.parca, request.user)
+  })
+
+  fastify.post('/order-requests/:id/parca/:parca/deliver', { schema: schemas.ordersParcaParams }, async (request) => {
+    await attachUser(request)
+    return orderParca.deliverOrderParca(request.params.id, request.params.parca, request.user)
+  })
+
+  // The per-parça "Teslim Alındı" — what opens the approve/reject decision on
+  // a parça whose round is still incomplete.
+  fastify.post('/order-requests/:id/parca/:parca/receive', { schema: schemas.ordersParcaParams }, async (request) => {
+    await attachUser(request)
+    return orderParca.receiveOrderParca(request.params.id, request.params.parca, request.user)
+  })
+
+  fastify.post('/order-requests/:id/parca/:parca/request-round', { schema: schemas.ordersParcaRequestRound }, async (request) => {
+    await attachUser(request)
+    return orderParca.requestOrderParcaRound(request.params.id, request.params.parca, request.user, {
+      route: request.body.route,
+    })
+  })
+
+  fastify.post('/order-requests/:id/parca/:parca/change-request', { schema: schemas.ordersParcaChangeRequest }, async (request) => {
+    await attachUser(request)
+    return orderParca.requestOrderParcaChange(request.params.id, request.params.parca, request.user, {
+      note: request.body?.note,
+    })
+  })
+
+  fastify.post('/order-requests/:id/parca/:parca/change-accept', { schema: schemas.ordersParcaParams }, async (request) => {
+    await attachUser(request)
+    return orderParca.acceptOrderParcaChange(request.params.id, request.params.parca, request.user)
+  })
+
+  fastify.post('/order-requests/:id/parca/:parca/change-decline', { schema: schemas.ordersParcaParams }, async (request) => {
+    await attachUser(request)
+    return orderParca.declineOrderParcaChange(request.params.id, request.params.parca, request.user)
   })
 }

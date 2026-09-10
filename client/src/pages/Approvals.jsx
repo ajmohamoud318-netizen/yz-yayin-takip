@@ -111,6 +111,20 @@ export default function Approvals({ tab = 'demo' }) {
    * excluded those projects; now this page runs the same rule off the same
    * rows, and renders ParcaJobBoard for them instead. */
   const { rows: myParcaRows, refetch: refetchParcaQueue } = useParcaQueue(isLeader || isPrinter)
+
+  // Orders whose ozalit round is split into parçalar are shown as parça cards
+  // (ParcaJobBoard), not as a whole-order card — the same rule MatbaaIsleri
+  // applies, and for the same reason: the whole-order "Teslim Edin" advances
+  // the order past parçalar nobody produced. Keyed on order_id so two
+  // concurrent reprints of one title are judged separately.
+  const parcaOrderIds = useMemo(
+    () => new Set(myParcaRows.map((r) => r.order_id).filter(Boolean)),
+    [myParcaRows],
+  )
+  const siparisQueue = useMemo(
+    () => orders.filter((o) => !parcaOrderIds.has(o.id)),
+    [orders, parcaOrderIds],
+  )
   const earlyParcaRows = isLeader ? myParcaRows : EMPTY_ROWS
   const earlyParcaGroups = useMemo(() => {
     const byProject = new Map()
@@ -133,15 +147,31 @@ export default function Approvals({ tab = 'demo' }) {
    * Matbaa İşleri and the project page use, so all three offer one set of
    * buttons acting at one scope. */
   const printerParcaRows = isPrinter ? myParcaRows : EMPTY_ROWS
-  const printerParcaFor = (sub) => printerParcaRows.filter(
-    (r) => (r.gate === 'ozalit') === (sub === 'ozalit'),
-  )
+  /**
+   * The printer's parça rows for one tab.
+   *
+   * `gate` alone cannot answer this any more (migration 080). A sipariş's round
+   * IS an ozalit round — its rows carry `gate: 'ozalit'` — so keying on gate
+   * would drop every reprint parça into the PROJECT ozalit tab, next to work
+   * from a different pipeline with a different sheet behind it. `order_id` is
+   * what separates them.
+   */
+  const printerParcaFor = (sub) => printerParcaRows.filter((r) => (
+    sub === 'siparis'
+      ? !!r.order_id
+      : !r.order_id && (r.gate === 'ozalit') === (sub === 'ozalit')
+  ))
+
   // A split round would otherwise be listed twice — once as a whole sheet by
   // the stage filter, once as its parçalar — with two sets of buttons acting on
   // the same work. The parça cards win: they are strictly more precise. Same
   // exclusion MatbaaIsleri.jsx makes.
+  //
+  // Order rows are excluded: a reprint's parçalar carry the project's id (they
+  // reprint it), so counting them here would suppress the PROJECT's own
+  // whole-sheet card because an unrelated sipariş happened to be split.
   const printerParcaProjectIds = useMemo(
-    () => new Set(printerParcaRows.map((r) => r.project_id)),
+    () => new Set(printerParcaRows.filter((r) => !r.order_id).map((r) => r.project_id)),
     [printerParcaRows],
   )
 
@@ -464,11 +494,16 @@ export default function Approvals({ tab = 'demo' }) {
             subtitle="Tasarımcının istediği ozalitleri başlatın ve teslim edin."
           />
 
+          {/* Split rounds first: their whole-order card is suppressed below, so
+              without this the tab would be empty for exactly the orders the
+              printer has the most work on. */}
+          {renderPrinterParcaSection('siparis')}
+
           {ordersLoading ? (
             <div className="space-y-2.5">
               {[0, 1].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
             </div>
-          ) : orders.length === 0 ? (
+          ) : siparisQueue.length === 0 && printerParcaFor('siparis').length === 0 ? (
             <EmptyState
               icon={ShoppingCart}
               title="Onay bekleyen baskı yok."
@@ -476,7 +511,7 @@ export default function Approvals({ tab = 'demo' }) {
             />
           ) : (
             <div className="space-y-2.5">
-              {orders.map((order) => {
+              {siparisQueue.map((order) => {
                 // null = the printer owes nothing on this round right now (an
                 // accepted change request is waiting on the leader's spec fix).
                 // Same contract MatbaaIsleri's pendingAction uses: no action,

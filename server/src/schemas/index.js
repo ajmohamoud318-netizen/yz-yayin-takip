@@ -1178,6 +1178,43 @@ const ordersIdParams = {
   },
 }
 
+/* ------------------------- sipariş per-parça ------------------------- */
+/*
+ * The order twins of projectsParcaParams & co (migration 080). Same shapes,
+ * same constraints — a sipariş's ozalit round IS an ozalit round, so the
+ * route choice and the change-request note are identical to the project's.
+ */
+const ordersParcaParams = {
+  params: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id', 'parca'],
+    properties: {
+      id: { type: 'string', minLength: 1, maxLength: 64 },
+      parca: { type: 'string', minLength: 1, maxLength: 200 },
+    },
+  },
+}
+
+const ordersParcaRequestRound = {
+  ...ordersParcaParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['route'],
+    properties: { route: { type: 'string', enum: ['physical', 'ekran'] } },
+  },
+}
+
+const ordersParcaChangeRequest = {
+  ...ordersParcaParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    properties: { note: { type: 'string', maxLength: 500 } },
+  },
+}
+
 const ordersReject = {
   ...ordersIdParams,
   body: {
@@ -1375,6 +1412,9 @@ export const schemas = {
   ordersAdvance,
   ordersReject,
   ordersIdParams,
+  ordersParcaParams,
+  ordersParcaRequestRound,
+  ordersParcaChangeRequest,
   ordersOzalitChangeRequest,
   ordersOzalitEditNotify,
   ordersBaskiOnayForm,

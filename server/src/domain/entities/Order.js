@@ -225,8 +225,46 @@ export class Order {
       if (this.ozalit_change_requested_at != null) {
         badRequest('Bekleyen bir değişiklik talebi var, önce kabul veya reddedin.')
       }
-      if (!this.ozalit_started) {
+      // `ozalit_started` describes the WHOLE sheet, and a split round never
+      // sets it — `startOrderParca` leaves it alone on purpose, exactly as
+      // `startParca` leaves `projects.ozalit_started` alone, so the matbaa
+      // keeps "İşlemi Başlatın" on the parçalar they still owe.
+      //
+      // So on a per-parça round this flag is permanently false, and requiring
+      // it here would make the final delivery unreachable: the last parça
+      // completes the round, `deliverOrderParca` advances the order, and this
+      // gate refuses a round that was demonstrably started three times over.
+      // `parcaRoundComplete` is that path saying so — it is only ever set
+      // after every parça has been individually started AND delivered, each
+      // through a guard that already refuses an unstarted parça, so the
+      // condition this flag stands in for has been checked more thoroughly
+      // than the whole-sheet flag ever checked it.
+      //
+      // The project pipeline has no equivalent guard at all (its whole-round
+      // advance never consulted `ozalit_started`; the button is simply hidden
+      // until work begins), which is why this asymmetry only surfaced here.
+      if (!this.ozalit_started && !ctx.parcaRoundComplete) {
         badRequest('Teslim etmeden önce İşlemi Başlatın işaretlemelisiniz.')
+      }
+      // A SPLIT round has no whole-order delivery (migration 080).
+      //
+      // This is the server half of a rule the UI already applies: once a round
+      // carries two or more parçalar, the queues drop the whole-order card and
+      // render one card per parça instead, because a whole-sheet "Teslim Edin"
+      // advances the order past parçalar nobody produced — straight to the
+      // leader's approval gate for proofs that were never printed.
+      //
+      // Relying on the UI alone is not enough. The card is hidden, not the
+      // endpoint: a stale tab, a queued request, a deep link or anyone with
+      // curl reaches `advance` exactly as before, and the entity would have
+      // accepted it. `parcaRoundComplete` is the one legitimate way through,
+      // set only by deliverOrderParca after the LAST parça lands — so the
+      // per-parça path still advances the order, and nothing else can.
+      if (ctx.splitRound && !ctx.parcaRoundComplete) {
+        badRequest(
+          'Bu tur parça bazlı yürüyor, tek seferde teslim edilemez. '
+          + 'Parçaları tek tek teslim edin.',
+        )
       }
     }
     return null

@@ -320,6 +320,7 @@ export async function createOrder(actor, { projectId, payload = {}, items = [], 
  */
 export async function advanceOrder(orderId, actor, {
   notes = '', assignees = null, expectedVersion = null, route = null,
+  parcaRoundComplete = false,
 } = {}, client = null) {
   // An empty array is treated as "not supplied", the way the pre-refactor
   // route's `assignees.length > 0` test did — only a non-empty list can
@@ -329,6 +330,17 @@ export async function advanceOrder(orderId, actor, {
   return runOrderCommand(orderId, actor, {
     async prepare({ client, row }) {
       const wasPending = row.status === 'atama_bekleniyor'
+      // Is the printer's round split into parçalar? The entity cannot see
+      // `parca_state` or the round's sheet, so the answer is loaded here and
+      // handed to it — see Order._authorizeAdvance for what it does with it.
+      // Only asked at the step where a whole-order delivery is even possible.
+      if (row.status === 'matbaa_ozalit_yapiyor') {
+        const snapshot = await loadLatestOrderOzalitSnapshot(client, orderId)
+        return {
+          wasPending,
+          splitRound: (snapshot?.selectedComponents ?? []).length >= 2,
+        }
+      }
       // The active leader set is only consulted by a multi-party imza_bekleniyor
       // round, so it stays unqueried for every other step.
       if (row.status !== 'imza_bekleniyor') return { wasPending }
@@ -343,6 +355,11 @@ export async function advanceOrder(orderId, actor, {
       assignees: chosenAssignees,
       expectedVersion,
       route,
+      // Set only by deliverOrderParca, when the last parça of a split round
+      // lands. See Order._authorizeAdvance for why the whole-sheet
+      // `ozalit_started` flag cannot answer for a per-parça round.
+      parcaRoundComplete,
+      splitRound: ctx.splitRound ?? false,
       teamLeaderIds: ctx.teamLeaderIds ?? [],
       designerIds: ctx.designerIds ?? [],
     }),

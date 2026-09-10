@@ -83,6 +83,9 @@ export default function MatbaaIsleri() {
       .then((reqs) => {
         if (cancelled) return
         setOrders(reqs.filter((r) => r.status === 'matbaa_ozalit_yapiyor'))
+        // NOTE the split-round filter is applied at render (siparisQueue below),
+        // not here: `parcaJobs` loads independently and may arrive after this,
+        // so filtering at fetch time would keep whichever answer landed first.
       })
       .catch(() => { /* transient — next tick retries */ })
       .finally(() => { if (!cancelled) setOrdersLoading(false) })
@@ -95,7 +98,20 @@ export default function MatbaaIsleri() {
   // sheet and once as its parçalar, with two different sets of buttons acting
   // on the same work. The parça cards win: they are strictly more precise.
   const parcaProjectIds = useMemo(
-    () => new Set(parcaJobs.map((r) => r.project_id)),
+    () => new Set(parcaJobs.filter((r) => !r.order_id).map((r) => r.project_id)),
+    [parcaJobs],
+  )
+
+  // The sipariş half of the same rule (migration 080). A reprint whose round is
+  // split appears as parça cards above AND as a whole-order card below, since
+  // the order is still at `matbaa_ozalit_yapiyor` either way — two sets of
+  // buttons acting on the same work, and the whole-order pair is the dangerous
+  // one: its "Teslim Edin" advances the order past parçalar nobody produced.
+  //
+  // Keyed on order_id, not project_id: two concurrent reprints of one title are
+  // two separate rounds, and only the split one should lose its card.
+  const parcaOrderIds = useMemo(
+    () => new Set(parcaJobs.map((r) => r.order_id).filter(Boolean)),
     [parcaJobs],
   )
 
@@ -316,7 +332,16 @@ export default function MatbaaIsleri() {
     )
   }
 
-  const pendingCount = demoQueue.length + ozalitQueue.length + orders.length + parcaJobs.length
+  // Orders whose round is NOT split — the ones that still own a whole-order
+  // card. A split round's card lives in ParcaJobBoard instead; see
+  // parcaOrderIds. Derived rather than filtered at fetch so the two async
+  // sources (orders, parcaJobs) can land in either order.
+  const siparisQueue = useMemo(
+    () => orders.filter((o) => !parcaOrderIds.has(o.id)),
+    [orders, parcaOrderIds],
+  )
+
+  const pendingCount = demoQueue.length + ozalitQueue.length + siparisQueue.length + parcaJobs.length
 
   return (
     <>
@@ -351,7 +376,7 @@ export default function MatbaaIsleri() {
               <ParcaJobBoard rows={parcaJobs} onChanged={refetchParca} />
               {demoQueue.map((p) => renderPendingRow(p, 'demo'))}
               {ozalitQueue.map((p) => renderPendingRow(p, 'ozalit'))}
-              {orders.map((o) => renderPendingRow(o, 'siparis'))}
+              {siparisQueue.map((o) => renderPendingRow(o, 'siparis'))}
             </div>
           )}
         </Section>

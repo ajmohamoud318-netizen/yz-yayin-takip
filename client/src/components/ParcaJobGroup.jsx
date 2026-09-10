@@ -42,6 +42,7 @@ import ParcaJobCard from '@/components/ParcaJobCard'
 export default function ParcaJobGroup({
   projectTitle, rows = [], busy = false, compact = false,
   onAct, onActAll, onRespondChange, onNavigate,
+  orderId = null,
 }) {
   if (rows.length === 0) return null
 
@@ -84,6 +85,18 @@ export default function ParcaJobGroup({
                   {rows.length} parça
                 </span>
                 <Badge variant="outline" className="text-[10px]">{gateLabel}</Badge>
+                {/* A sipariş round and the project's own round look identical
+                    otherwise — same book, same parça names, same buttons — and
+                    the printer needs to know which job they are stamping. Two
+                    concurrent reprints of one title are two of these cards. */}
+                {orderId && (
+                  <Badge
+                    variant="outline"
+                    className="border-violet-200 bg-violet-50 text-[10px] text-violet-700"
+                  >
+                    Sipariş
+                  </Badge>
+                )}
               </p>
             </div>
 
