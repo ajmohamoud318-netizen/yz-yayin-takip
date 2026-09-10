@@ -1215,6 +1215,41 @@ const ordersParcaChangeRequest = {
   },
 }
 
+const ordersParcaApprove = {
+  ...ordersIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['parcalar'],
+    properties: {
+      parcalar: {
+        type: 'array', minItems: 1, maxItems: 50,
+        items: { type: 'string', minLength: 1, maxLength: 200 },
+      },
+      notes: { type: 'string', maxLength: 500 },
+    },
+  },
+}
+
+const ordersParcaReject = {
+  ...ordersIdParams,
+  body: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['parcalar', 'target'],
+    properties: {
+      parcalar: {
+        type: 'array', minItems: 1, maxItems: 50,
+        items: { type: 'string', minLength: 1, maxLength: 200 },
+      },
+      // Whose desk it goes to. No default: sending a parça to the wrong party
+      // is a silent week of nobody working on it, so the caller says which.
+      target: { type: 'string', enum: ['designer', 'matbaa'] },
+      reason: { type: 'string', maxLength: 500 },
+    },
+  },
+}
+
 const ordersReject = {
   ...ordersIdParams,
   body: {
@@ -1415,6 +1450,8 @@ export const schemas = {
   ordersParcaParams,
   ordersParcaRequestRound,
   ordersParcaChangeRequest,
+  ordersParcaApprove,
+  ordersParcaReject,
   ordersOzalitChangeRequest,
   ordersOzalitEditNotify,
   ordersBaskiOnayForm,

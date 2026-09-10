@@ -24,11 +24,14 @@ import {
   loadLatestOrderOzalitSnapshot,
 } from './project-repository.js'
 import { parcaSetDelta } from '../domain/spec-parca-diff.js'
+import { parcaRejectPatch } from '../domain/parca-routing.js'
+import { listParcaStateForOrder, upsertOrderParcaState } from './parca-state-repository.js'
 import {
   notifyOrderTransition, notifyOrderRejected, notifyMatbaaReceived, notifyMatbaaApprovalPending,
   notifyOrderOzalitStarted, notifyOrderOzalitCancelled, notifyOrderOzalitEdited,
   notifyOrderOzalitChangeRequested, notifyOrderOzalitChangeAccepted, notifyOrderOzalitChangeDeclined,
   notifyOrderBaskiOnayPrepared, notifyProjectTransition,
+  notifyOrderParcaApproved, notifyOrderParcaRejected,
 } from './notifications.js'
 import * as repo from './order-repository.js'
 import { canonicalise } from './deep-equal.js'
@@ -117,6 +120,20 @@ async function dispatchNotification(client, { notification, order, project, acto
       return notifyOrderTransition(client, {
         ...base, newStatus: notification.destination, requesterId, action: 'reject',
         assigneeIds: Array.isArray(order.assignee_ids) ? order.assignee_ids : [],
+      })
+    case 'parcaApproved':
+      // Named per parça, and only to the parties who still owe something. The
+      // hazard the project pipeline documents at length applies here too: a
+      // message that says "onaylandı" without naming the parça reads, on a
+      // three-parça round, as though the whole reprint cleared.
+      return notifyOrderParcaApproved(client, {
+        ...base, parcalar: notification.parcalar ?? [],
+        stillPending: notification.stillPending ?? [],
+      })
+    case 'parcaRejected':
+      return notifyOrderParcaRejected(client, {
+        ...base, parcalar: notification.parcalar ?? [],
+        reason: notification.reason, target: notification.target,
       })
     case 'baskiOnayPrepared':
       return notifyOrderBaskiOnayPrepared(client, {
@@ -610,3 +627,94 @@ export async function patchOrderSubtask(orderId, subtaskId, actor, body, client 
 // with a custom `run` hook (mirrors `runProjectCommand` in
 // `project-service.js`). The production routes never call it directly.
 export { runOrderCommand }
+
+/* ===========================================================================
+ *  The per-parça approval gate (migration 080)
+ *
+ *  These live here, not in order-parca-service, because unlike the routing
+ *  verbs they DO change order columns — the ledger, and on completion the
+ *  status — so they belong to `runOrderCommand`, which owns the diff, the
+ *  version bump and the timeline row.
+ * ========================================================================= */
+
+/**
+ * What the gate needs that the entity cannot see: who must sign, which
+ * parçalar the round carries, and which of those came back by screen.
+ *
+ * The ekran set comes from `parca_state.route`, and it is what encodes the
+ * rule that a parça the designer sent to screen needs only the leader's
+ * signature — their request was the sign-off.
+ */
+async function loadParcaGateContext(client, orderId, row) {
+  const snapshot = await loadLatestOrderOzalitSnapshot(client, orderId)
+  const parcaRows = await listParcaStateForOrder(client, orderId)
+  return {
+    teamLeaderIds: await repo.activeTeamLeaderIds(client),
+    designerIds: Array.isArray(row.assignee_ids) ? row.assignee_ids : [],
+    roundParcalar: snapshot?.selectedComponents ?? [],
+    ekranParcalar: parcaRows.filter((r) => r.route === 'ekran').map((r) => r.parca),
+    parcaRows,
+  }
+}
+
+/** POST /api/order-requests/:id/parca-approve */
+export async function approveOrderParcalar(orderId, actor, { parcalar = [], notes = '' } = {}, client = null) {
+  return runOrderCommand(orderId, actor, {
+    prepare: ({ client, row }) => loadParcaGateContext(client, orderId, row),
+    run: (order, ctx) => order.approveParcalar(actor, { parcalar, notes }, ctx),
+    async after({ client, event, ctx, updated }) {
+      if (event.type !== 'order.parca_approved' && event.type !== 'order.parca_round_approved') return
+      // Mark the signed parçalar approved in the routing table too, so the
+      // matbaa's and designer's queues stop offering them. The ledger says who
+      // signed; parca_state says whose turn it is, and a parça nobody owes
+      // anything on belongs to no one.
+      //
+      // On the completing click the notification carries no parça list (it is
+      // a plain transition), so the whole round is what got signed.
+      const signed = event.notification?.parcalar ?? ctx.roundParcalar ?? []
+      const byParca = new Map((ctx.parcaRows ?? []).map((r) => [r.parca, r]))
+      for (const parca of signed) {
+        await upsertOrderParcaState(client, updated.project_id, orderId, parca, {
+          state: 'approved',
+          owner_role: null,
+          // The route is CARRIED, not cleared. `upsertParcaState` writes this
+          // column verbatim, so omitting it nulls it — and the route is what
+          // says an Ekran parça needs the leader alone. Wiping it on the
+          // approving click made the very next click read that parça as
+          // physical again and demand the designer's counter-signature, which
+          // by rule never comes: the round could never close.
+          route: byParca.get(parca)?.route ?? null,
+        })
+      }
+    },
+  }, client)
+}
+
+/** POST /api/order-requests/:id/parca-reject */
+export async function rejectOrderParcalar(
+  orderId, actor, { parcalar = [], reason = '', target = 'designer' } = {}, client = null,
+) {
+  return runOrderCommand(orderId, actor, {
+    prepare: ({ client, row }) => loadParcaGateContext(client, orderId, row),
+    run: (order, ctx) => order.rejectParcalar(actor, { parcalar, reason, target }, ctx),
+    async after({ client, event, ctx, updated }) {
+      if (event.type !== 'order.parca_rejected') return
+      const hit = event.notification?.parcalar ?? []
+      const byParca = new Map((ctx.parcaRows ?? []).map((r) => [r.parca, r]))
+      for (const parca of hit) {
+        // The route is deliberately NOT presumed here — not even for a reject
+        // to the matbaa. It is the designer's choice when they send the parça
+        // back round, and `parcaRejectPatch` leaves it null for that reason.
+        await upsertOrderParcaState(client, updated.project_id, orderId, parca, parcaRejectPatch({
+          target,
+          reason,
+          actor,
+          actorName: actor?.name ?? 'Bilinmeyen',
+          now: new Date().toISOString(),
+          gate: 'ozalit',
+          currentAttempt: byParca.get(parca)?.attempt ?? 1,
+        }))
+      }
+    },
+  }, client)
+}

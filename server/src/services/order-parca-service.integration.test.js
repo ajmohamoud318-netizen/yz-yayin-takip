@@ -20,7 +20,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import * as svc from './order-parca-service.js'
-import { advanceOrder } from './orders-service.js'
+import { advanceOrder, approveOrderParcalar, rejectOrderParcalar } from './orders-service.js'
 import { listParcaStateForOrder } from './parca-state-repository.js'
 
 const MIGRATIONS_DIR = path.resolve(
@@ -59,6 +59,15 @@ async function seeded({ parcalar = PARCALAR, status = 'matbaa_ozalit_yapiyor' } 
        ($1,'Oktay','o@e.com','printer'), ($2,'Ayşenur','a@e.com','team_leader'),
        ($3,'Aylin','ay@e.com','designer'), ('u-esra','Esra','e@e.com','satis')`,
     [PRINTER.id, LEADER.id, DESIGNER.id],
+  )
+  // The migrations seed a default team leader account. Every ACTIVE leader is
+  // a required signature on the per-parça gate — correctly so — which means an
+  // unattended seed user would hold every round open forever and every
+  // completion assertion below would fail for a reason that has nothing to do
+  // with the code under test. Retire everyone this fixture did not create.
+  await db.query(
+    'UPDATE users SET is_active = FALSE WHERE id <> ALL($1::text[])',
+    [[PRINTER.id, LEADER.id, DESIGNER.id, 'u-esra']],
   )
   await db.exec(`
     INSERT INTO projects (id, title, type, stage) VALUES ('p1','KEÇEMİNO ÇİFTLİK','TR','baskida');
@@ -371,5 +380,159 @@ test('the per-parça path is the one way a split round advances', { skip: !PGlit
     await statusOf(db), 'imza_bekleniyor',
     'deliverOrderParca sets parcaRoundComplete, which is the only legitimate way past the guard',
   )
+  await db.close()
+})
+
+/* ==========================================================================
+ *  The leader's and designer's gate — per-parça approve / reject
+ *
+ *  The half the matbaa never sees. Until migration 080 this was all-or-
+ *  nothing: one flat approval list, so "the KUTU proof has a kerning bug"
+ *  could only be said as "the whole reprint has issues", and saying it sent
+ *  back the two parçalar nobody had complained about.
+ * ======================================================================== */
+
+/** A round delivered and acknowledged — the state the gate actually sees. */
+async function atGate(over = {}) {
+  const db = await seeded({ status: 'matbaa_ozalit_yapiyor', ...over })
+  for (const parca of over.parcalar ?? PARCALAR) {
+    await svc.startOrderParca('o1', parca, PRINTER, db)
+    await svc.deliverOrderParca('o1', parca, PRINTER, db)
+  }
+  await db.exec("UPDATE order_requests SET matbaa_received = TRUE WHERE id = 'o1'")
+  return db
+}
+
+const ledgerOf = async (db) => (
+  await db.query("SELECT ozalit_parca_approvals FROM order_requests WHERE id = 'o1'")
+).rows[0].ozalit_parca_approvals
+
+test('the order waits until every parça has every required signature', { skip: !PGlite }, async () => {
+  const db = await atGate()
+
+  await approveOrderParcalar('o1', LEADER, { parcalar: ['KUTU'] }, db)
+  assert.equal(await statusOf(db), 'imza_bekleniyor', 'one parça, one signature — nothing moves')
+
+  await approveOrderParcalar('o1', DESIGNER, { parcalar: ['KUTU'] }, db)
+  assert.equal(await statusOf(db), 'imza_bekleniyor', 'KUTU is done, its siblings are not')
+
+  for (const parca of ['KİTAP', 'KILAVUZ']) {
+    await approveOrderParcalar('o1', LEADER, { parcalar: [parca] }, db)
+    await approveOrderParcalar('o1', DESIGNER, { parcalar: [parca] }, db)
+  }
+  assert.equal(await statusOf(db), 'baski_onayi_bekleniyor', 'the last signature moves it to baskı onayı')
+  await db.close()
+})
+
+test('leader-first: a designer cannot sign before any leader has', { skip: !PGlite }, async () => {
+  const db = await atGate()
+  await assert.rejects(
+    () => approveOrderParcalar('o1', DESIGNER, { parcalar: ['KUTU'] }, db),
+    /Önce ekip lideri onaylamalıdır/,
+  )
+  await db.close()
+})
+
+test('nobody signs a physical proof before Teslim Alındı', { skip: !PGlite }, async () => {
+  const db = await seeded()
+  for (const parca of PARCALAR) {
+    await svc.startOrderParca('o1', parca, PRINTER, db)
+    await svc.deliverOrderParca('o1', parca, PRINTER, db)
+  }
+  // Deliberately NOT acknowledged.
+  await assert.rejects(
+    () => approveOrderParcalar('o1', LEADER, { parcalar: ['KUTU'] }, db),
+    /Teslim Alındı/,
+  )
+  await db.close()
+})
+
+test('rejecting one parça leaves its siblings signed off', { skip: !PGlite }, async () => {
+  const db = await atGate()
+  await approveOrderParcalar('o1', LEADER, { parcalar: ['KİTAP'] }, db)
+
+  await rejectOrderParcalar('o1', LEADER, {
+    parcalar: ['KUTU'], reason: 'kerning', target: 'designer',
+  }, db)
+
+  const ledger = await ledgerOf(db)
+  assert.ok(!ledger.KUTU, 'the rejected parça loses its rows')
+  assert.equal(ledger["KİTAP"].length, 1, 'an already-approved sibling stays locked — the whole point')
+  assert.equal(await statusOf(db), 'imza_bekleniyor', 'a per-parça reject does not move the order')
+
+  const kutu = (await listParcaStateForOrder(db, 'o1')).find((r) => r.parca === 'KUTU')
+  assert.equal(kutu.state, 'with_designer')
+  assert.equal(kutu.owner_role, 'designer')
+  assert.equal(kutu.attempt, 2, 'the round number goes up')
+  assert.equal(kutu.route, null, "the route is the designer's choice, never presumed by a reject")
+  await db.close()
+})
+
+test("a parça sent to the matbaa lands on their desk, not the designer's", { skip: !PGlite }, async () => {
+  const db = await atGate()
+  await rejectOrderParcalar('o1', LEADER, {
+    parcalar: ['KUTU'], reason: 'baskı hatası', target: 'matbaa',
+  }, db)
+  const kutu = (await listParcaStateForOrder(db, 'o1')).find((r) => r.parca === 'KUTU')
+  assert.equal(kutu.state, 'with_matbaa')
+  assert.equal(kutu.owner_role, 'printer')
+  await db.close()
+})
+
+test('only a team leader rejects', { skip: !PGlite }, async () => {
+  const db = await atGate()
+  await assert.rejects(
+    () => rejectOrderParcalar('o1', DESIGNER, { parcalar: ['KUTU'], target: 'designer' }, db),
+    /yalnızca ekip lideri/,
+  )
+  await db.close()
+})
+
+/* ---- the Ekran rule ---------------------------------------------------- */
+
+test('an Ekran parça needs the leader ALONE — the designer does not counter-sign', { skip: !PGlite }, async () => {
+  const db = await atGate()
+  // KUTU goes back, and the designer chooses a screen check.
+  await rejectOrderParcalar('o1', LEADER, { parcalar: ['KUTU'], target: 'designer' }, db)
+  await svc.requestOrderParcaRound('o1', 'KUTU', DESIGNER, { route: 'ekran' }, db)
+
+  // One leader signature closes it. If the designer were still required, the
+  // other two parçalar below would not be enough to move the order.
+  await approveOrderParcalar('o1', LEADER, { parcalar: ['KUTU'] }, db)
+  const ledger = await ledgerOf(db)
+  assert.equal(ledger.KUTU[0].via, 'ekran', 'the row is marked as a screen sign-off')
+
+  for (const parca of ['KİTAP', 'KILAVUZ']) {
+    await approveOrderParcalar('o1', LEADER, { parcalar: [parca] }, db)
+    await approveOrderParcalar('o1', DESIGNER, { parcalar: [parca] }, db)
+  }
+  assert.equal(
+    await statusOf(db), 'baski_onayi_bekleniyor',
+    'the round completed without the designer ever signing the parça they sent to screen',
+  )
+  await db.close()
+})
+
+test('a designer cannot approve an Ekran parça even after a leader has signed', { skip: !PGlite }, async () => {
+  const db = await atGate()
+  await rejectOrderParcalar('o1', LEADER, { parcalar: ['KUTU'], target: 'designer' }, db)
+  await svc.requestOrderParcaRound('o1', 'KUTU', DESIGNER, { route: 'ekran' }, db)
+  await approveOrderParcalar('o1', LEADER, { parcalar: ['KİTAP'] }, db)
+
+  await assert.rejects(
+    () => approveOrderParcalar('o1', DESIGNER, { parcalar: ['KUTU'] }, db),
+    /Ekran onayını yalnızca ekip lideri/,
+  )
+  await db.close()
+})
+
+test('an Ekran parça needs no Teslim Alındı — there is nothing to receive', { skip: !PGlite }, async () => {
+  const db = await atGate()
+  await rejectOrderParcalar('o1', LEADER, { parcalar: ['KUTU'], target: 'designer' }, db)
+  await svc.requestOrderParcaRound('o1', 'KUTU', DESIGNER, { route: 'ekran' }, db)
+  // The reject cleared the receipt; a screen parça must still be signable.
+  await db.exec("UPDATE order_requests SET matbaa_received = FALSE WHERE id = 'o1'")
+  await approveOrderParcalar('o1', LEADER, { parcalar: ['KUTU'] }, db)
+  assert.ok((await ledgerOf(db)).KUTU)
   await db.close()
 })

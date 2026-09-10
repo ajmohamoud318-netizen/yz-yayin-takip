@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Check, X } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -12,6 +12,11 @@ import { useAuth } from '@/hooks/useAuth'
 import { useNotifications } from '@/hooks/useNotifications'
 import { useOrderOzalitRound } from '@/hooks/useOrderOzalitRound'
 import { isSubtaskDone } from '@/domain/services/progress'
+// The same helper the project pipeline's grid uses. It reads
+// `ozalit_parca_approvals` / `_rejections`, which the ORDER carries under the
+// identical names (migration 080) — so the sipariş gate is answered by the
+// same code rather than by a lookalike.
+import { pendingParcalar } from '@/domain'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -29,6 +34,8 @@ import MiniPipeline from '@/components/TalepMiniPipeline'
 import TalepRejectForm from '@/components/TalepRejectForm'
 import { TalepAssignDesigners, TalepOrderSummary } from '@/components/TalepOrderSummary'
 import { TalepMatbaaReceiptBanner, TalepOzalitPanel } from '@/components/TalepOzalitPanel'
+import ParcaApprovalGrid from '@/components/ParcaApprovalGrid'
+import ParcaReturnedPanel from '@/components/ParcaReturnedPanel'
 import { ProductInfoPanel, SubtaskPanel } from '@/components/TalepSpecEditors'
 
 /* ------------------------------------------------------------------ */
@@ -262,6 +269,23 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
   // ("Son Onay") — the client can't see the full required-approver set, only
   // whether ITS OWN vote clears; the server decides when the round is done.
   const isMatbaaOnayStep = order.status === 'imza_bekleniyor'
+
+  /* The order's per-parça routing rows — where each parça physically is.
+     Loaded only when the round is actually split; a one-parça reprint has no
+     parça surface and this would be a request per dialog open for nothing. */
+  const [parcaRows, setParcaRows] = useState([])
+  const [parcaBusy, setParcaBusy] = useState(false)
+  // The single parça a routing action is in flight for — ParcaReturnedPanel
+  // disables just that row rather than the whole panel.
+  const [busyParca, setBusyParca] = useState(null)
+  const refetchParcaRows = useCallback(() => {
+    if (!order?.id) return
+    api.listOrderParcaState(order.id)
+      .then((rows) => setParcaRows(Array.isArray(rows) ? rows : []))
+      // Transient: the grid falls back to the ledger alone, which still renders
+      // every parça — it just cannot say which desk each one is on.
+      .catch(() => setParcaRows([]))
+  }, [order?.id])
   const isAssignedMatbaaDesigner =
     user?.role === 'designer' && (order.assignee_ids ?? []).includes(user?.id)
   const canActOnMatbaaOnay = isMatbaaOnayStep && (user?.role === 'team_leader' || isAssignedMatbaaDesigner)
@@ -298,6 +322,92 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
    * press in the first place.
    */
   const splitRound = (order.ozalit_parcalar ?? []).length >= 2
+  const roundParcalar = order.ozalit_parcalar ?? []
+
+  useEffect(() => {
+    if (!open || !splitRound) { setParcaRows([]); return }
+    refetchParcaRows()
+  }, [open, splitRound, refetchParcaRows])
+
+  /* Which parçalar THIS viewer still owes a signature on. Ozalit is
+     multi-party, so "pending" is a question about a person, not the parça —
+     passing `user` is what stops the leader's own sign-off from closing the
+     row for the designer too. */
+  const parcaPending = pendingParcalar(order, 'ozalit', roundParcalar, user)
+
+  /**
+   * Approve or reject parçalar of this round.
+   *
+   * Both re-read the routing rows afterwards and hand the fresh order up: an
+   * approval can be the one that completes the round and moves the order, and
+   * a reject changes whose desk a parça is on — neither is visible from the
+   * ledger this dialog was rendered with.
+   */
+  async function handleApproveParcalar(parcalar) {
+    const target = parcalar ?? parcaPending
+    if (!target || target.length === 0) return
+    setParcaBusy(true)
+    try {
+      const updated = await api.approveOrderParcalar(order.id, target)
+      toast.success(`${target.join(', ')} onaylandı.`)
+      refetchParcaRows()
+      if (updated.status !== order.status) { onSigned?.(updated); return }
+      onUpdated?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setParcaBusy(false)
+    }
+  }
+
+  async function handleRejectParcalar(parcalar, { reason = '', target = 'designer' } = {}) {
+    if (!parcalar || parcalar.length === 0) return
+    setParcaBusy(true)
+    try {
+      const updated = await api.rejectOrderParcalar(order.id, parcalar, { reason, target })
+      toast.success(`${parcalar.join(', ')} geri gönderildi.`)
+      refetchParcaRows()
+      onUpdated?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setParcaBusy(false)
+    }
+  }
+
+  /** Per-parça receipt, for a proof that came back before its siblings. */
+  async function handleReceiveParca(_orderLike, parca) {
+    setParcaBusy(true)
+    try {
+      await api.receiveOrderParca(order.id, parca)
+      toast.success(`${parca} teslim alındı.`)
+      refetchParcaRows()
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setParcaBusy(false)
+    }
+  }
+
+  /** The designer sends a revized parça back round. */
+  async function handleRequestParcaRound(parca, route) {
+    setParcaBusy(true)
+    setBusyParca(parca)
+    try {
+      const updated = await api.requestOrderParcaRound(order.id, parca, route)
+      toast.success(route === 'ekran'
+        ? `${parca} ekran onayına gönderildi.`
+        : `${parca} matbaaya gönderildi.`)
+      refetchParcaRows()
+      onUpdated?.(updated)
+    } catch (err) {
+      toast.error(err.message || 'İşlem tamamlanamadı.')
+    } finally {
+      setParcaBusy(false)
+      setBusyParca(null)
+    }
+  }
+
   const ozalitStarted = !!order.ozalit_started
   const ozalitChangePending = order.ozalit_change_requested_at != null
   const ozalitFixPending = !!order.ozalit_fix_pending
@@ -632,6 +742,55 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
             />
           )}
 
+          {/* The per-parça gate. Replaces the whole-order approve for a split
+              round, exactly as ParcaJobBoard replaces the whole-sheet buttons
+              on the matbaa's side — a single "Onaylayın" on a three-parça
+              round signs off proofs the viewer may never have looked at, and
+              gives them no way to bounce just the one that is wrong.
+
+              `project={order}`: the order carries `ozalit_parca_approvals` and
+              `ozalit_parca_rejections` under the same names the project does
+              (migration 080), so the grid and every domain helper behind it
+              read a sipariş without knowing it is one. */}
+          {isMatbaaOnayStep && splitRound && canActOnMatbaaOnay && !showReject && (
+            <ParcaApprovalGrid
+              project={order}
+              kind="ozalit"
+              user={user}
+              snapshotParcalar={roundParcalar}
+              parcaRows={parcaRows}
+              roundAwaitsReceipt={false}
+              busy={parcaBusy}
+              onApproveParcalar={handleApproveParcalar}
+              onReceiveParca={handleReceiveParca}
+              // Reject is the leader's alone, matching the server.
+              //
+              // The grid calls this POSITIONALLY — (parcalar, reason, target)
+              // — so the adapter has to spell that out. Passing an options
+              // object through instead would have handed `reason` in where
+              // `{ reason, target }` was expected: every matbaa reject would
+              // have gone silently to the designer, and the reason lost.
+              onRejectParcalar={user?.role === 'team_leader'
+                ? (parcalar, reason, target) =>
+                  handleRejectParcalar(parcalar, { reason, target: target ?? 'designer' })
+                : undefined}
+              bulkApproveLabel="Tüm parçaları onaylayın"
+            />
+          )}
+
+          {/* The designer's half: parçalar that came back to them, and the
+              physical/ekran choice for sending each one round again. */}
+          {isMatbaaOnayStep && splitRound && !showReject && (
+            <ParcaReturnedPanel
+              rows={parcaRows}
+              canAct={isAssignedMatbaaDesigner || user?.role === 'team_leader'}
+              // A parça name, not a flag: the panel compares it row by row so
+              // only the parça being acted on shows as busy.
+              busyParca={busyParca}
+              onRequestRound={handleRequestParcaRound}
+            />
+          )}
+
           {canActOnMatbaaOnay && !showReject && matbaaReceived && (
             <TalepMatbaaReceiptBanner
               order={order}
@@ -675,7 +834,10 @@ export default function TalepSignDialog({ order, open, onOpenChange, onSigned, o
                 !(user?.role === 'printer' && isTasarimciOnayStep && (!ozalitStarted || ozalitChangePending)) &&
                 // A split round has no whole-order delivery — the parça cards
                 // own it. See `splitRound` above.
-                !(user?.role === 'printer' && isTasarimciOnayStep && splitRound) && (
+                !(user?.role === 'printer' && isTasarimciOnayStep && splitRound) &&
+                // Nor a whole-order approve on a split round — the grid above
+                // owns that decision, one parça at a time.
+                !(isMatbaaOnayStep && splitRound) && (
                   <Button
                     type="submit"
                     disabled={

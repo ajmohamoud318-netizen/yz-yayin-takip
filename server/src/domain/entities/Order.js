@@ -20,6 +20,15 @@ import { badRequest, conflict, forbidden } from '../errors.js'
 import { everyBlockHasAdet } from '../adet.js'
 import { everyBlockHasBasimYeri } from '../basim-yeri.js'
 import { assertParcaSetUnchanged } from '../spec-parca-diff.js'
+// The per-parça ledger engine, shared with the project pipeline. Calling the
+// same functions is what makes "the sipariş behaves exactly like the project"
+// a property of the code rather than a promise in a comment.
+import {
+  appendOzalitParcaApprovals,
+  appendParcaRejections,
+  pendingParcalar,
+  ekranPendingParcalar,
+} from '../parca-ledger.js'
 
 /**
  * Multi-party imza_bekleniyor approval. Every active team leader AND every
@@ -794,6 +803,204 @@ export class Order {
       orderHistory: null,
       projectHistories: [],
       notification: null,
+    })
+  }
+
+  /* ------------------------------------------------------------------------
+   * The per-parça approval gate (migration 080)
+   *
+   * The sipariş twin of the project's ozalit_onay gate. `imza_bekleniyor` is
+   * where a delivered round waits, and until now it was all-or-nothing: one
+   * flat `matbaa_approvals` list, so "the KUTU proof has a kerning bug" could
+   * only be said as "the whole reprint has issues", and rejecting it sent
+   * every parça back including the two nobody complained about.
+   *
+   * These two methods own the LEDGER only. Where each parça then goes —
+   * whose desk, which round number — is `parca_state`, a different aggregate,
+   * so the service does that half (see order-parca-service).
+   * --------------------------------------------------------------------- */
+
+  /**
+   * Approve one or more parçalar of the delivered round.
+   *
+   * @param {object} actor
+   * @param {object} input
+   * @param {string[]} input.parcalar — which parçalar this click signs off
+   * @param {object} ctx
+   * @param {string[]} ctx.teamLeaderIds — every ACTIVE team leader
+   * @param {string[]} ctx.designerIds   — designers assigned to THIS order
+   * @param {string[]} ctx.roundParcalar — the parçalar the round's sheet carries
+   * @param {string[]} ctx.ekranParcalar — of those, the ones on an Ekran route
+   */
+  approveParcalar(actor, { parcalar = [], notes = '' } = {}, ctx = {}) {
+    if (this.status !== 'imza_bekleniyor') {
+      badRequest('Bu işlem yalnızca imza aşamasında yapılabilir.')
+    }
+    const teamLeaderIds = ctx.teamLeaderIds ?? []
+    const designerIds = ctx.designerIds ?? []
+    const roundParcalar = ctx.roundParcalar ?? []
+    const ekran = new Set(ctx.ekranParcalar ?? [])
+    const now = new Date().toISOString()
+    const actorName = actor?.name ?? 'Bilinmeyen'
+
+    const isLeader = actor?.role === 'team_leader'
+    const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
+    if (!isLeader && !isAssignedDesigner) {
+      badRequest('Ozalit onayını yalnızca ekip lideri veya atanmış tasarımcı yapabilir.')
+    }
+
+    const target = parcalar.filter((p) => roundParcalar.includes(p))
+    if (target.length === 0) {
+      badRequest('Onaylanacak parça bulunamadı.')
+    }
+
+    // An EKRAN parça is the leader's alone. The designer asked for the screen
+    // check, and their request IS the sign-off — asking them to counter-sign
+    // their own screen check would be ceremony. Same rule as the project's
+    // ekranOzalitApprove, which is team-leader-only for exactly this reason.
+    const ekranTargets = target.filter((p) => ekran.has(p))
+    if (ekranTargets.length > 0 && !isLeader) {
+      badRequest('Ekran onayını yalnızca ekip lideri verebilir.')
+    }
+
+    // The receipt gate, and it only covers PHYSICAL parçalar: an ekran round
+    // has no proof to take delivery of. Mirrors receiveOrderParca's refusal
+    // and the project gate's `ozalit_received` check.
+    const physicalTargets = target.filter((p) => !ekran.has(p))
+    if (physicalTargets.length > 0 && !this.matbaa_received) {
+      badRequest('Önce matbaa teslimi "Teslim Alındı" olarak işaretlenmelidir.')
+    }
+
+    // Leader-first, scoped to the round rather than to one parça: this is what
+    // lets a leader work down a multi-parça sheet with the designer following
+    // behind, instead of blocking on a strict per-parça order.
+    const ledger = this.ozalit_parca_approvals ?? {}
+    if (isAssignedDesigner && teamLeaderIds.length > 0) {
+      const anySigned = roundParcalar.some((p) => (
+        (ledger[p] ?? []).some((a) => a?.role === 'team_leader' || teamLeaderIds.includes(a?.id))
+      ))
+      if (!anySigned) {
+        badRequest('Önce ekip lideri onaylamalıdır, tasarımcı onayı ondan sonra verilebilir.')
+      }
+    }
+
+    // Two appends, because `via` is part of a row's identity: a leader who
+    // signed a parça on screen and later signs its physical reprint has done
+    // two genuinely different things.
+    let next = ledger
+    if (ekranTargets.length > 0) {
+      next = appendOzalitParcaApprovals(next, ekranTargets, actor, actorName, now, 'ekran')
+    }
+    if (physicalTargets.length > 0) {
+      next = appendOzalitParcaApprovals(next, physicalTargets, actor, actorName, now, null)
+    }
+
+    const required = [...new Set([...teamLeaderIds, ...designerIds])]
+    const stillPending = roundParcalar.filter((p) => (
+      ekran.has(p)
+        // Leader-only: one `via: 'ekran'` row closes it.
+        ? ekranPendingParcalar(next, [p]).length > 0
+        : pendingParcalar(next, [p], required).length > 0
+    ))
+
+    if (stillPending.length > 0) {
+      this.ozalit_parca_approvals = next
+      this.version = (this.version ?? 0) + 1
+      return this._record({
+        type: 'order.parca_approved',
+        orderHistory: {
+          step: 'matbaa_approve',
+          note: notes
+            ? `${notes} · Onaylanan: ${target.join(', ')} — bekleyen: ${stillPending.join(', ')}`
+            : `Onaylanan: ${target.join(', ')} — bekleyen: ${stillPending.join(', ')}`,
+        },
+        projectHistories: [{
+          event: 'order_parca_approved', action: 'approve',
+          note: `Sipariş ozalit parçaları onaylandı: ${target.join(', ')}`,
+          parca: target.join(', '),
+        }],
+        notification: { kind: 'parcaApproved', parcalar: target, stillPending },
+      })
+    }
+
+    // Every parça on the round has every required signature — the order moves,
+    // and the ledger is cleared so a future round starts fresh (same shape as
+    // the whole-order completion path above).
+    this.ozalit_parca_approvals = {}
+    this.ozalit_parca_rejections = []
+    this.matbaa_approvals = []
+    this.status = 'baski_onayi_bekleniyor'
+    this.version = (this.version ?? 0) + 1
+    return this._record({
+      type: 'order.parca_round_approved',
+      orderHistory: {
+        step: 'baski_onayi_bekleniyor',
+        note: 'Tüm parçalar onaylandı, baskı onayına gönderildi',
+      },
+      projectHistories: [{
+        event: 'order_parca_approved', action: 'approve',
+        note: 'Sipariş ozaliti tüm parçalarıyla onaylandı',
+      }],
+      notification: { kind: 'transition', destination: 'baski_onayi_bekleniyor' },
+    })
+  }
+
+  /**
+   * Reject one or more parçalar of the delivered round.
+   *
+   * The parçalar NOT named here keep their sign-offs — that is the whole
+   * point, and the difference from the whole-order reject, which wipes the
+   * ledger and bounces everything. The order does not move: it stays at
+   * `imza_bekleniyor` while the rejected parçalar cycle, exactly as the
+   * project stays at `ozalit_onay`.
+   *
+   * @param {string} input.target — 'designer' | 'matbaa', whose desk it goes to
+   */
+  rejectParcalar(actor, { parcalar = [], reason = '', target = 'designer' } = {}, ctx = {}) {
+    if (this.status !== 'imza_bekleniyor') {
+      badRequest('Bu işlem yalnızca imza aşamasında yapılabilir.')
+    }
+    if (actor?.role !== 'team_leader') {
+      badRequest('Parça reddini yalnızca ekip lideri yapabilir.')
+    }
+    if (target !== 'designer' && target !== 'matbaa') {
+      badRequest('Geçersiz red hedefi.')
+    }
+    const roundParcalar = ctx.roundParcalar ?? []
+    const hit = parcalar.filter((p) => roundParcalar.includes(p))
+    if (hit.length === 0) {
+      badRequest('Reddedilecek parça bulunamadı.')
+    }
+    const now = new Date().toISOString()
+    const actorName = actor?.name ?? 'Bilinmeyen'
+
+    // The rejected parçalar lose their sign-offs; everything else keeps them.
+    // Dropping only the named keys is what makes "already-approved parçalar
+    // stay locked" true — the whole-order reject empties the lot.
+    const ledger = { ...(this.ozalit_parca_approvals ?? {}) }
+    for (const p of hit) delete ledger[p]
+    this.ozalit_parca_approvals = ledger
+    this.ozalit_parca_rejections = appendParcaRejections(
+      this.ozalit_parca_rejections, hit, actor, actorName, now, reason, target,
+    )
+    this.version = (this.version ?? 0) + 1
+
+    return this._record({
+      type: 'order.parca_rejected',
+      orderHistory: {
+        step: 'matbaa_not_received',
+        note: reason
+          ? `Reddedilen: ${hit.join(', ')} — ${reason}`
+          : `Reddedilen: ${hit.join(', ')}`,
+      },
+      projectHistories: [{
+        event: 'order_parca_rejected', action: 'reject',
+        reason: reason || null,
+        rejectTarget: target,
+        note: `Sipariş ozalit parçası reddedildi: ${hit.join(', ')}`,
+        parca: hit.join(', '),
+      }],
+      notification: { kind: 'parcaRejected', parcalar: hit, reason, target },
     })
   }
 

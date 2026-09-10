@@ -158,5 +158,31 @@ export function createHttpOrderRepository() {
       )
       return data
     },
+
+    /**
+     * The per-parça approval gate at imza_bekleniyor.
+     *
+     * `parcalar` is explicit rather than "everything pending": the grid decides
+     * what this click covers (one row, or the bulk shortcut), and a server that
+     * inferred it would approve parçalar that arrived between render and click.
+     */
+    async approveOrderParcalar(id, parcalar, notes = '') {
+      const { data } = await httpClient.post(
+        `/order-requests/${id}/parca-approve`, { parcalar, notes },
+      )
+      return data
+    },
+
+    /**
+     * `target` says whose desk the parça goes to — 'designer' or 'matbaa'.
+     * Required, with no default: sending it to the wrong party is a silent week
+     * of nobody working on it.
+     */
+    async rejectOrderParcalar(id, parcalar, { reason = '', target } = {}) {
+      const { data } = await httpClient.post(
+        `/order-requests/${id}/parca-reject`, { parcalar, reason, target },
+      )
+      return data
+    },
   }
 }

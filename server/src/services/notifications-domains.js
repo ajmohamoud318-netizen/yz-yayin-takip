@@ -420,3 +420,71 @@ export async function notifyHandoverConfirmed(client, { project, actor, raisedBy
     event: { type: 'handover.confirmed', aggregateId: project.id },
   })
 }
+
+/**
+ * A sipariş's ozalit parçalar were signed off (migration 080).
+ *
+ * Named per parça, always. On a three-parça round a bare "onaylandı" reads as
+ * though the whole reprint cleared — the same hazard the project pipeline's
+ * per-parça branch exists to avoid, and the reason its messages carry the
+ * parça name rather than the project's alone.
+ *
+ * Audience is whoever still owes a signature. A completing click sends no
+ * notification from here at all: the order transitions, and
+ * notifyOrderTransition announces that instead.
+ */
+export async function notifyOrderParcaApproved(client, {
+  order, project, actor, parcalar = [], stillPending = [],
+}) {
+  if (stillPending.length === 0) return 0
+  const leaders = await activeUserIdsByRole(client, 'team_leader')
+  const designers = Array.isArray(order?.assignee_ids) ? order.assignee_ids : []
+  return emit(client, {
+    actorId: actor?.id,
+    recipientIds: [...leaders, ...designers],
+    type: 'order_parca_approved',
+    title: project?.title ?? order?.project_title ?? 'Baskı',
+    body: `${parcalar.join(', ')} onaylandı, bekleyen: ${stillPending.join(', ')}`,
+    tone: 'green',
+    projectId: order?.project_id ?? project?.id,
+    orderId: order?.id,
+    link: '/siparis-talepleri',
+    event: { type: 'order.parca_approved', aggregateId: order?.id },
+  })
+}
+
+/**
+ * A sipariş's ozalit parça was sent back.
+ *
+ * One desk, one message: the parça goes to the designer OR the matbaa, and
+ * telling both would put work in a queue that isn't theirs. Mirrors the
+ * project pipeline's per-parça reject branch, which is keyed on the reject
+ * target for exactly this reason.
+ *
+ * The parçalar NOT named here keep their sign-offs, so the message names the
+ * ones that came back rather than implying the round did.
+ */
+export async function notifyOrderParcaRejected(client, {
+  order, project, actor, parcalar = [], reason, target,
+}) {
+  const toMatbaa = target === 'matbaa'
+  const recipientIds = toMatbaa
+    ? await activeUserIdsByRole(client, 'printer')
+    : (Array.isArray(order?.assignee_ids) ? order.assignee_ids : [])
+  const names = parcalar.join(', ')
+  return emit(client, {
+    actorId: actor?.id,
+    recipientIds,
+    type: 'order_parca_rejected',
+    title: project?.title ?? order?.project_title ?? 'Baskı',
+    body: toMatbaa
+      ? `${names} yeniden basılacak${reason ? `: ${reason}` : ''}`
+      : `${names} reddedildi, revizyon gerekiyor${reason ? `: ${reason}` : ''}`,
+    tone: 'rose',
+    projectId: order?.project_id ?? project?.id,
+    orderId: order?.id,
+    // The matbaa works parça cards, the designer works the order page.
+    link: toMatbaa ? '/matbaa-isleri' : '/siparis-onay',
+    event: { type: 'order.parca_rejected', aggregateId: order?.id },
+  })
+}

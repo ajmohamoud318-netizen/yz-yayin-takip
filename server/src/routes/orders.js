@@ -167,4 +167,19 @@ export async function orderRoutes(fastify) {
     await attachUser(request)
     return orderParca.declineOrderParcaChange(request.params.id, request.params.parca, request.user)
   })
+
+  /* The per-parça approval gate at imza_bekleniyor. Unlike the routing verbs
+     above these DO move the order — once every parça on the round carries
+     every required signature — so they live in orders-service with the rest of
+     the order commands. */
+
+  fastify.post('/order-requests/:id/parca-approve', { schema: schemas.ordersParcaApprove }, async (request) => {
+    await attachUser(request)
+    return orders.approveOrderParcalar(request.params.id, request.user, request.body)
+  })
+
+  fastify.post('/order-requests/:id/parca-reject', { schema: schemas.ordersParcaReject }, async (request) => {
+    await attachUser(request)
+    return orders.rejectOrderParcalar(request.params.id, request.user, request.body)
+  })
 }

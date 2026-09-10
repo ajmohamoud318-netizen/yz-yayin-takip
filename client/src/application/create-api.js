@@ -239,6 +239,10 @@ export function createApi() {
       orderRepo.requestOrderParcaChange(orderId, parca, note),
     acceptOrderParcaChange: (orderId, parca) => orderRepo.acceptOrderParcaChange(orderId, parca),
     declineOrderParcaChange: (orderId, parca) => orderRepo.declineOrderParcaChange(orderId, parca),
+    approveOrderParcalar: (orderId, parcalar, notes) =>
+      orderRepo.approveOrderParcalar(orderId, parcalar, notes),
+    rejectOrderParcalar: (orderId, parcalar, opts) =>
+      orderRepo.rejectOrderParcalar(orderId, parcalar, opts),
 
     // Demos
     listDemos: () => demoRepo.listDemos(),
