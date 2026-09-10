@@ -25,6 +25,21 @@ import { randomUUID } from 'node:crypto'
 import { STAGE_PIPELINE, STAGES_REQUIRING_FULL_PROGRESS } from './stages.js'
 import { subtaskProgress } from './progress.js'
 import { HttpError } from './errors.js'
+// The per-parça ledger engine, shared with the sipariş pipeline (migration
+// 080). These were private to this file until the order side needed the exact
+// same rules; they are pure ledger operations with nothing project-specific in
+// them, so both pipelines call one copy rather than each keeping their own.
+// `baskiPendingParcalar` is aliased because this file wraps it twice — once
+// for TR, once for ÇİN — around the same shared body.
+import {
+  pendingParcalar,
+  ekranPendingParcalar,
+  baskiPendingParcalar as sharedBaskiPending,
+  appendParcaApprovals,
+  appendOzalitParcaApprovals,
+  appendBaskiParcaRow,
+  appendParcaRejections,
+} from './parca-ledger.js'
 import {
   parcaRejectPatch, parcaGateForStage, parcaDecidable,
   parcaEditLocked, parcaFixSettledPatch, parcaReceivePatch, parcaAwaitsReceipt,
@@ -135,39 +150,28 @@ function ozalitParcaApprovedBy(project, parca) {
 }
 
 function ozalitPendingParcalar(project, ctx) {
-  const parcalar = snapshotParcalar(ctx, 'ozalit')
   const required = ctx?.required ?? { leaderIds: [], designerIds: [] }
-  const requiredIds = new Set([...(required.leaderIds ?? []), ...(required.designerIds ?? [])])
-  return parcalar.filter((parca) => {
-    if (requiredIds.size === 0) return true
-    const got = new Set(ozalitParcaApprovedBy(project, parca).map((a) => a?.id))
-    for (const id of requiredIds) if (!got.has(id)) return true
-    return false
-  })
+  return pendingParcalar(
+    project.ozalit_parca_approvals ?? {},
+    snapshotParcalar(ctx, 'ozalit'),
+    [...(required.leaderIds ?? []), ...(required.designerIds ?? [])],
+  )
 }
 
 /** Baski: which parçalar are missing the approver (preparer-only is OK). */
 function baskiPendingParcalar(project, ctx) {
-  const parcalar = snapshotParcalar(ctx, 'baski_onay')
-  const preparers = project.baski_parca_preparers ?? {}
-  const approvals = project.baski_parca_approvals ?? {}
-  return parcalar.filter((parca) => {
-    if (!preparers[parca]) return true // preparer missing → not ready
-    if (!approvals[parca]) return true // approver missing → not ready
-    return approvals[parca].by === preparers[parca].by // same leader → not ready
-  })
+  return sharedBaskiPending(
+    project.baski_parca_preparers, project.baski_parca_approvals,
+    snapshotParcalar(ctx, 'baski_onay'),
+  )
 }
 
-/** Cin mirror of baski — same dual-leader rule. */
+/** Cin mirror of baski — same dual-leader rule, different pair of columns. */
 function cinBaskiPendingParcalar(project, ctx) {
-  const parcalar = snapshotParcalar(ctx, 'baski_onay')
-  const preparers = project.cin_baski_parca_preparers ?? {}
-  const approvals = project.cin_baski_parca_approvals ?? {}
-  return parcalar.filter((parca) => {
-    if (!preparers[parca]) return true
-    if (!approvals[parca]) return true
-    return approvals[parca].by === preparers[parca].by
-  })
+  return sharedBaskiPending(
+    project.cin_baski_parca_preparers, project.cin_baski_parca_approvals,
+    snapshotParcalar(ctx, 'baski_onay'),
+  )
 }
 
 /** Ekran demo: which parçalar haven't been approved yet (leader only). */
@@ -184,14 +188,10 @@ function ekranDemoPendingParcalar(project, ctx) {
 
 /** Ekran ozalit: which parçalar haven't been ekran-approved yet. */
 function ekranOzalitPendingParcalar(project, ctx) {
-  const set = new Set(snapshotParcalar(ctx, 'ozalit'))
-  const ledger = project.ozalit_parca_approvals ?? {}
-  const approved = new Set(
-    Object.entries(ledger)
-      .filter(([, row]) => Array.isArray(row) && row.some((a) => a?.via === 'ekran'))
-      .map(([parca]) => parca),
+  return ekranPendingParcalar(
+    project.ozalit_parca_approvals ?? {},
+    [...new Set(snapshotParcalar(ctx, 'ozalit'))],
   )
-  return [...set].filter((p) => !approved.has(p))
 }
 
 /** Every `parca_state.state` that means "not at the gate — somebody is working on it". */
@@ -277,60 +277,6 @@ function sanitiseParcalar(parcalar, fallback = []) {
     out.push(p.trim())
   }
   return [...new Set(out)]
-}
-
-/** Approve a set of parçalar in a demo-shaped ledger (list of { parca, by, by_name, at, via? }). */
-function appendParcaApprovals(ledger, parcalar, actor, actorName, now, via = null) {
-  const list = Array.isArray(ledger) ? [...ledger] : []
-  for (const parca of parcalar) {
-    // Skip if this exact approver already signed this parça (no double-stamping).
-    if (list.some((a) => a?.parca === parca && a?.by === actor?.id && a?.via === via)) continue
-    list.push({
-      parca,
-      by: actor?.id ?? null,
-      by_name: actorName,
-      at: now,
-      via,
-    })
-  }
-  return list
-}
-
-/** Approve a per-parça row in an ozalit-shaped ledger (`{ '<parca>': [{id, role, name, at}] }`). */
-function appendOzalitParcaApprovals(ledger, parcalar, actor, actorName, now, via = null) {
-  const next = ledger && typeof ledger === 'object' ? { ...ledger } : {}
-  for (const parca of parcalar) {
-    const list = Array.isArray(next[parca]) ? [...next[parca]] : []
-    if (list.some((a) => a?.id === actor?.id && a?.via === via)) continue
-    list.push({ id: actor?.id ?? null, role: actor?.role ?? null, name: actorName, at: now, via })
-    next[parca] = list
-  }
-  return next
-}
-
-/** Record a single leader-side per-parça row (preparer OR approver). */
-function appendBaskiParcaRow(ledger, parcalar, actor, actorName, now) {
-  const next = ledger && typeof ledger === 'object' ? { ...ledger } : {}
-  for (const parca of parcalar) {
-    next[parca] = { by: actor?.id ?? null, by_name: actorName, at: now }
-  }
-  return next
-}
-
-/** Record per-parça rejections (list of { parca, by, by_name, at, reason, target }). */
-function appendParcaRejections(ledger, parcalar, actor, actorName, now, reason, target) {
-  const list = Array.isArray(ledger) ? [...ledger] : []
-  for (const parca of parcalar) {
-    list.push({
-      parca,
-      by: actor?.id ?? null,
-      by_name: actorName,
-      at: now,
-      reason: reason ?? null,
-      target: target ?? null,
-    })
-  }
-  return list
 }
 
 /**

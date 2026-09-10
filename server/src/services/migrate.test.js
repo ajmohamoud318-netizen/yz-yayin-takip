@@ -25,6 +25,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 import { hashSql, _assertAppliedChecksums } from './migrate.js'
 
@@ -103,8 +104,13 @@ test('_assertAppliedChecksums refuses to start when the recorded checksum is sta
 test('_assertAppliedChecksums passes when the recorded checksum matches the live file', async () => {
   // Read the file ourselves, compute the hash, hand it back as if the DB
   // had stored it. The guard then re-derives the same value and accepts.
+  // fileURLToPath, NOT new URL(...).pathname: on Windows the latter yields
+  // '/C:/Users/...' — a leading slash before the drive letter — and path.join
+  // then builds 'C:\C:\Users\...', which never resolves. This test failed on
+  // every Windows checkout for that reason alone. migrate.js itself has always
+  // used the helper; the test did not.
   const filePath = path.join(
-    path.dirname(new URL(import.meta.url).pathname),
+    path.dirname(fileURLToPath(import.meta.url)),
     '..',
     '..',
     'db',

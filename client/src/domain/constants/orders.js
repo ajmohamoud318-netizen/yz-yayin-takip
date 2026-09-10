@@ -258,6 +258,69 @@ export function canActOnOrder(user, order, fallbackProjectIds) {
 }
 
 /**
+ * What the MATBAA actually owes on a sipariş's ozalit round, as a label.
+ *
+ * The sipariş's `matbaa_ozalit_yapiyor` is the direct twin of the main
+ * pipeline's `ozalit_teslim`, and the printer's turn there is the same two
+ * beats it has always been on the project side: read the sheet and press
+ * "İşlemi Başlatın", produce the proof, then "Ozaliti Teslim Edin". The order
+ * carries the same three flags the project does — ozalit_started,
+ * ozalit_change_requested_at, ozalit_fix_pending (migration 051 mirrors
+ * 048/049) — and TalepSignDialog already gates on all three: it hides the
+ * delivery submit for the printer until `ozalit_started`, and shows the
+ * start/change-request panel instead.
+ *
+ * The QUEUE ENTRY POINTS did not. Both of them hard-coded one flat label
+ * regardless of state — MatbaaIsleri's siparisAction() said "İmzala ve
+ * Onayla" and Approvals' SiparisOrderCard said "Teslim Edin" — so a printer
+ * whose round had not been started was invited to sign off on a proof that
+ * did not exist yet, in wording ("İmzala") this pipeline deliberately does
+ * not use for the matbaa anywhere else. Pressing it opened a dialog whose
+ * submit button was hidden, which is the only reason it wasn't worse.
+ *
+ * This is the sipariş twin of MatbaaIsleri's own `pendingAction`, and the two
+ * are deliberately step-for-step identical. Returns null when the printer owes
+ * nothing right now — same contract, so the caller drops the row.
+ *
+ * @param {{ role: string }} user
+ * @param {object} order
+ * @returns {{ kind: 'respondChange'|'start'|'deliver', label: string }|null}
+ */
+export function orderMatbaaAction(user, order) {
+  if (user?.role !== 'printer' || !order) return null
+  if (order.status !== 'matbaa_ozalit_yapiyor') return null
+
+  // A pending change request outranks the round itself: the leader has asked
+  // for a cancel/edit and the printer's answer is what unblocks either side.
+  // Same precedence as canRespondOzalitChange on the project side.
+  if (order.ozalit_change_requested_at != null) {
+    return { kind: 'respondChange', label: 'Değişikliği Yanıtlayın' }
+  }
+  if (!order.ozalit_started) {
+    // An ACCEPTED change request owes a spec fix from the leader before work
+    // can (re)start — Order.startOzalit refuses outright while this is set,
+    // so offering "İşlemi Başlatın" here would only produce an error toast.
+    // Mirrors canMarkOzalitStarted's ozalit_fix_pending guard.
+    if (order.ozalit_fix_pending) return null
+    return { kind: 'start', label: 'İşlemi Başlatın' }
+  }
+  return { kind: 'deliver', label: 'Ozaliti Teslim Edin' }
+}
+
+/**
+ * The queue badge that goes with `orderMatbaaAction` — what state the round is
+ * in, phrased from the matbaa's side. Kept next to the action so a new state
+ * can't get a button without getting a status, the way the old flat
+ * "Baskı Ozalit İsteniyor" badge sat over every one of them.
+ */
+export function orderMatbaaStatusLabel(order) {
+  if (order?.ozalit_change_requested_at != null) return 'Değişiklik talebi bekliyor'
+  if (order?.ozalit_fix_pending) return 'Düzeltme bekleniyor'
+  if (order?.ozalit_started) return 'Ozalit çalışması sürüyor'
+  return 'Ozalit isteniyor'
+}
+
+/**
  * Which mode the sipariş's Ozalit Üretim Formu opens in for `user`.
  *
  * The sheet is the same component the main pipeline uses (SpecFormDialog's

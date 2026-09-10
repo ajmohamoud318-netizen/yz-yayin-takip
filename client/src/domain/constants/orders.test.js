@@ -12,6 +12,8 @@ import {
   canApproveMatbaaOnayNow,
   canActOnOrder,
   orderOzalitFormMode,
+  orderMatbaaAction,
+  orderMatbaaStatusLabel,
 } from './orders.js'
 
 describe('order workflow step graph', () => {
@@ -233,5 +235,70 @@ describe('canActOnOrder (ProjectDetail — any role viewing any order)', () => {
     expect(canActOnOrder(undefined, { id: 'o-1', status: 'atama_bekleniyor' })).toBe(false)
     expect(canActOnOrder(AYSE, undefined)).toBe(false)
     expect(canActOnOrder(ESRA, { id: 'o-1', status: 'atama_bekleniyor' })).toBe(false)
+  })
+})
+
+/**
+ * The matbaa's turn on a sipariş ozalit round.
+ *
+ * The rule these pin: the printer's queue must name the beat they are actually
+ * on. Both entry points used to hard-code a single label over every state —
+ * MatbaaIsleri said "İmzala ve Onayla", Approvals said "Teslim Edin" — so a
+ * printer whose round had not been started was asked to sign off on, or hand
+ * over, a proof that did not exist yet. "İmzala" is wording this pipeline does
+ * not give the matbaa anywhere else; their two beats are İşlemi Başlatın and
+ * Teslim, exactly as on the project side.
+ */
+describe('orderMatbaaAction — the printer\'s beat on a sipariş ozalit round', () => {
+  const OKTAY = { id: 'u-oktay', role: 'printer' }
+  const round = (over = {}) => ({
+    id: 'o-1', status: 'matbaa_ozalit_yapiyor',
+    ozalit_started: false, ozalit_change_requested_at: null, ozalit_fix_pending: false,
+    ...over,
+  })
+
+  it('asks the printer to START before anything has been produced', () => {
+    const action = orderMatbaaAction(OKTAY, round())
+    expect(action).toEqual({ kind: 'start', label: 'İşlemi Başlatın' })
+  })
+
+  it('asks for DELIVERY once the round is started', () => {
+    const action = orderMatbaaAction(OKTAY, round({ ozalit_started: true }))
+    expect(action).toEqual({ kind: 'deliver', label: 'Ozaliti Teslim Edin' })
+  })
+
+  it('never says "İmzala" — that is not the matbaa\'s verb in this pipeline', () => {
+    for (const order of [round(), round({ ozalit_started: true }), round({ ozalit_change_requested_at: 'now' })]) {
+      expect(orderMatbaaAction(OKTAY, order).label).not.toMatch(/İmzala/i)
+    }
+  })
+
+  // A pending change request outranks the round: the leader asked for a
+  // cancel/edit and the printer's answer is what unblocks either side.
+  it('a pending change request outranks both, started or not', () => {
+    for (const started of [false, true]) {
+      const action = orderMatbaaAction(OKTAY, round({ ozalit_started: started, ozalit_change_requested_at: '2026-09-01' }))
+      expect(action).toEqual({ kind: 'respondChange', label: 'Değişikliği Yanıtlayın' })
+    }
+  })
+
+  // Order.startOzalit refuses outright while a fix is owed, so offering the
+  // start button here would only produce an error toast.
+  it('offers nothing while an accepted change request owes the leader a fix', () => {
+    expect(orderMatbaaAction(OKTAY, round({ ozalit_fix_pending: true }))).toBeNull()
+  })
+
+  it('is printer-only, this-step-only, and safe with nothing passed', () => {
+    expect(orderMatbaaAction({ id: 'u-ayse', role: 'team_leader' }, round())).toBeNull()
+    expect(orderMatbaaAction(OKTAY, round({ status: 'imza_bekleniyor' }))).toBeNull()
+    expect(orderMatbaaAction(OKTAY, undefined)).toBeNull()
+    expect(orderMatbaaAction(undefined, round())).toBeNull()
+  })
+
+  it('the badge tracks the same four states', () => {
+    expect(orderMatbaaStatusLabel(round())).toBe('Ozalit isteniyor')
+    expect(orderMatbaaStatusLabel(round({ ozalit_started: true }))).toBe('Ozalit çalışması sürüyor')
+    expect(orderMatbaaStatusLabel(round({ ozalit_fix_pending: true }))).toBe('Düzeltme bekleniyor')
+    expect(orderMatbaaStatusLabel(round({ ozalit_change_requested_at: 'now' }))).toBe('Değişiklik talebi bekliyor')
   })
 })

@@ -33,6 +33,7 @@ import {
   canRequestEkranDemo, canRespondEkranDemo, canRespondDemoChange, canRespondOzalitChange,
   canMarkDemoStarted, canMarkOzalitStarted,
   bulkApproveAvailable, parcaNames,
+  orderMatbaaAction, orderMatbaaStatusLabel,
 } from '@/domain'
 import { cn, formatTargetDate, formatNumber } from '@/lib/utils'
 
@@ -460,7 +461,7 @@ export default function Approvals({ tab = 'demo' }) {
           <PageHeader
             icon={ClipboardCheck}
             title="Baskı Teslimi"
-            subtitle="Tasarımcının onayladığı siparişleri matbaa olarak imzalayın."
+            subtitle="Tasarımcının istediği ozalitleri başlatın ve teslim edin."
           />
 
           {ordersLoading ? (
@@ -475,13 +476,22 @@ export default function Approvals({ tab = 'demo' }) {
             />
           ) : (
             <div className="space-y-2.5">
-              {orders.map((order) => (
-                <SiparisOrderCard
-                  key={order.id}
-                  order={order}
-                  onSign={() => setSignOrder(order)}
-                />
-              ))}
+              {orders.map((order) => {
+                // null = the printer owes nothing on this round right now (an
+                // accepted change request is waiting on the leader's spec fix).
+                // Same contract MatbaaIsleri's pendingAction uses: no action,
+                // no row.
+                const action = orderMatbaaAction(user, order)
+                if (!action) return null
+                return (
+                  <SiparisOrderCard
+                    key={order.id}
+                    order={order}
+                    action={action}
+                    onSign={() => setSignOrder(order)}
+                  />
+                )
+              })}
             </div>
           )}
         </div>
@@ -1345,7 +1355,15 @@ function normalizeItems(items, quantity) {
   return items
 }
 
-function SiparisOrderCard({ order, onSign }) {
+/**
+ * `action` is orderMatbaaAction's result — the printer's real next beat on this
+ * round ("İşlemi Başlatın" → "Ozaliti Teslim Edin", or answering a change
+ * request). The card used to hard-code "Teslim Edin" over every state, which
+ * offered delivery of a proof whose production had not been started; its twin
+ * in MatbaaIsleri hard-coded "İmzala ve Onayla" over the same states. Both now
+ * read the one shared rule.
+ */
+function SiparisOrderCard({ order, action, onSign }) {
   const items = normalizeItems(order.items, order.quantity)
   const date = order.created_at
     ? new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(order.created_at))
@@ -1364,7 +1382,7 @@ function SiparisOrderCard({ order, onSign }) {
             </p>
           </div>
           <Badge variant="outline" className="shrink-0 bg-indigo-50 text-indigo-700 border-indigo-200 text-[10px]">
-            Baskı Ozalit İsteniyor
+            {orderMatbaaStatusLabel(order)}
           </Badge>
         </div>
 
@@ -1387,7 +1405,7 @@ function SiparisOrderCard({ order, onSign }) {
 
         <div className="flex items-center gap-2">
           <Button size="sm" className="flex-1" onClick={onSign}>
-            Teslim Edin
+            {action.label}
           </Button>
         </div>
       </CardContent>

@@ -27,8 +27,10 @@ WORKDIR /app
 # `package-lock.json*` tolerates a missing lockfile (falls back to npm install).
 COPY package.json package-lock.json* ./
 
-# --omit=dev is explicit even though this package currently has no devDeps;
-# keeps the image lean if any dev-only tooling slips into package.json later.
+# --omit=dev is load-bearing now: the only devDependency is @electric-sql/pglite
+# (Postgres compiled to WASM), which db/migrations.test.js and the repository
+# integration tests run migrations against. It is ~25MB and has no business in
+# a runtime image.
 # The `||` fallback only kicks in if the lockfile is genuinely absent — the
 # server folder ships a committed server/package-lock.json.
 RUN npm ci --omit=dev --no-audit --no-fund || \

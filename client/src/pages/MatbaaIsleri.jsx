@@ -21,7 +21,7 @@ import TalepSignDialog from '@/components/TalepSignDialog'
 import {
   canRespondDemoChange, canRespondOzalitChange,
   canMarkDemoStarted, canMarkOzalitStarted,
-  canRequestHandover,
+  canRequestHandover, orderMatbaaAction, orderMatbaaStatusLabel,
 } from '@/domain'
 import { cn, formatTargetDate } from '@/lib/utils'
 
@@ -187,13 +187,36 @@ export default function MatbaaIsleri() {
     return null
   }
 
-  // Sipariş rows always have one action: open the sign dialog.
-  function siparisAction() {
-    return { kind: 'sign', label: 'İmzala ve Onayla', Icon: ClipboardCheck }
+  // Sipariş rows run the SAME three states as the demo/ozalit rows above —
+  // the order's matbaa_ozalit_yapiyor is the twin of the project's
+  // ozalit_teslim, and it carries the same started / change-requested /
+  // fix-pending flags (migration 051 mirrors 048/049).
+  //
+  // This used to be a flat `{ kind: 'sign', label: 'İmzala ve Onayla' }` for
+  // every one of them, which told the printer to sign off on a proof they had
+  // not started producing — in wording the matbaa is never given anywhere else
+  // in this app. `orderMatbaaAction` is the shared rule; Approvals' sipariş tab
+  // reads the same one so the two queues can't drift.
+  const SIPARIS_ICONS = { respondChange: Send, start: CheckCircle2, deliver: Send }
+  function siparisAction(order) {
+    const action = orderMatbaaAction(user, order)
+    return action ? { ...action, Icon: SIPARIS_ICONS[action.kind] ?? ClipboardCheck } : null
   }
 
   function handleAction(item, action) {
     if (!action) return
+    // Sipariş rows are routed BEFORE the kind switch, not inside it. Every one
+    // of their states opens the same dialog — TalepSignDialog reads the round's
+    // flags itself and renders the start panel, the change-request answer or
+    // the delivery submit — and their kinds ('start', 'deliver') deliberately
+    // share names with the demo/ozalit rows below, whose handlers take a
+    // PROJECT. Adding sipariş cases to that switch would be a silent no-op at
+    // best: duplicate `case` labels are legal JS, the first one wins, and an
+    // order would have been handed to setOzalitForm as though it were a project.
+    if (item.__sub === 'siparis') {
+      setSignOrder(item)
+      return
+    }
     switch (action.kind) {
       case 'navigate':
         navigate(action.to)
@@ -208,9 +231,6 @@ export default function MatbaaIsleri() {
         if (item.__sub === 'demo') setDemoForm({ project: item, mode: 'advance' })
         else setOzalitForm({ project: item, mode: 'advance' })
         return
-      case 'sign':
-        setSignOrder(item)
-        return
       default:
         return
     }
@@ -220,12 +240,12 @@ export default function MatbaaIsleri() {
 
   function renderPendingRow(item, sub) {
     const decorated = { ...item, __sub: sub }
-    const action = sub === 'siparis' ? siparisAction() : pendingAction(sub, item)
+    const action = sub === 'siparis' ? siparisAction(item) : pendingAction(sub, item)
     if (!action) return null
 
     const status = (() => {
       if (sub === 'siparis') {
-        return { tone: 'bg-violet-50 text-violet-700 ring-violet-200', label: 'Baskı onayı bekliyor' }
+        return { tone: 'bg-violet-50 text-violet-700 ring-violet-200', label: orderMatbaaStatusLabel(item) }
       }
       if (sub === 'demo' ? canRespondDemoChange(user, item) : canRespondOzalitChange(user, item)) {
         return { tone: 'bg-rose-50 text-rose-700 ring-rose-200', label: 'Değişiklik talebi yanıtlanmadı' }
