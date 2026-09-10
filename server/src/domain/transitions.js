@@ -1249,6 +1249,35 @@ export function computeApproval(project, actor, ctx = {}) {
         // own approval never counted.
         return teamLeaderIds.filter((id) => id !== p.by).length > 0
       })
+      /* A click that signed nothing, on a round that is not finished.
+       *
+       * `targetParcalar` is narrowed to parçalar that have a preparer and no
+       * approval, so anything else the leader asked for is silently dropped —
+       * and the round then answers "Onayınız kaydedildi, diğer onaylar
+       * bekleniyor" for an approval it never recorded. The leader presses
+       * again, gets the same sentence, and has nothing on screen naming what
+       * is actually holding the gate.
+       *
+       * Two things can be holding it, and they need different words:
+       *   • a parça nobody has PREPARED — the maker half is missing, so there
+       *     is no approval to give yet ("Baskı Onayı Hazırlayın" is the move)
+       *   • a parça this leader has already signed, waiting on the checker
+       *
+       * Only when the click was a no-op AND the round is unfinished: a
+       * re-click on a fully-signed round still falls through to the advance
+       * below, which is what recovers a round whose advance failed the first
+       * time (progress, say). */
+      if (targetParcalar.length === 0 && stillPending.length > 0) {
+        const unprepared = snapshotParcalar.filter((parca) => !preparers[parca])
+        if (unprepared.length > 0) {
+          badRequest(
+            `Önce baskı onay formu hazırlanmalıdır: ${unprepared.join(', ')}.`,
+          )
+        }
+        badRequest(
+          `Bu parçaları zaten onayladınız; başka bir ekip liderinin onayı bekleniyor: ${stillPending.join(', ')}.`,
+        )
+      }
       if (stillPending.length === 0) {
         const nextStage = isCin ? 'baskida' : pipelineFor(project)[pipelineFor(project).indexOf(project.stage) + 1]
         assertCanEnterProductionLocal(nextStage, project.progress)
