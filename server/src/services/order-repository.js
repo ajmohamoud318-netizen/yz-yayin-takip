@@ -33,7 +33,13 @@ export const ORDER_COLUMNS = `id, project_id, status, requested_by, payload, ass
  * client gets back always reflects the database's own counter, never an
  * in-memory guess.
  */
-const ORDER_WRITABLE_COLUMNS = new Set([
+// An allowlist, and a SILENT one: `updateOrder` filters `fields` through it and
+// simply drops anything absent. A column missing here does not raise — the
+// write just never happens, and the caller sees a successful update that
+// changed nothing. Add a column to the schema and to this set together.
+// `orderColumnAllowlist` in order-repository.integration.test.js checks the two
+// against the live schema so they cannot drift apart unnoticed.
+export const ORDER_WRITABLE_COLUMNS = new Set([
   'status', 'assignee_ids',
   'matbaa_received', 'matbaa_received_by', 'matbaa_received_at', 'matbaa_approvals',
   'ozalit_started', 'ozalit_started_by', 'ozalit_started_by_name', 'ozalit_started_at',
@@ -42,12 +48,20 @@ const ORDER_WRITABLE_COLUMNS = new Set([
   'last_reject_type', 'baski_onay_form', 'ozalit_attempt',
   'baski_onay_prepared', 'baski_onay_prepared_by', 'baski_onay_prepared_by_name',
   'baski_onay_prepared_at',
+  // Per-parça ledgers (migration 080) — the sipariş's own copies of the
+  // project's 069/070 columns.
+  'ozalit_parca_approvals', 'ozalit_parca_rejections',
+  'baski_parca_preparers', 'baski_parca_approvals',
 ])
 
 // JSONB columns must be stringified and cast explicitly: node-pg renders a
 // bare JS array as a Postgres array literal (`{a,b}`), which a jsonb column
 // rejects.
-const ORDER_JSONB_COLUMNS = new Set(['assignee_ids', 'matbaa_approvals', 'baski_onay_form'])
+export const ORDER_JSONB_COLUMNS = new Set([
+  'assignee_ids', 'matbaa_approvals', 'baski_onay_form',
+  'ozalit_parca_approvals', 'ozalit_parca_rejections',
+  'baski_parca_preparers', 'baski_parca_approvals',
+])
 
 /**
  * The full order list, hydrated with each order's history and its own
@@ -64,6 +78,8 @@ export async function listOrders(db = getPool()) {
             o.last_reject_type, o.baski_onay_form, o.ozalit_attempt,
             o.baski_onay_prepared, o.baski_onay_prepared_by,
             o.baski_onay_prepared_by_name, o.baski_onay_prepared_at,
+            o.ozalit_parca_approvals, o.ozalit_parca_rejections,
+            o.baski_parca_preparers, o.baski_parca_approvals,
             o.version, o.created_at, o.updated_at, p.title AS project_title,
             u.name AS requested_by_name
        FROM order_requests o
