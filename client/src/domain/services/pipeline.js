@@ -972,6 +972,16 @@ export function unpreparedParcalar(project, kind, snapshotParcalar = []) {
   const preparers = kind === 'cin_baski_onay'
     ? (project.cin_baski_parca_preparers ?? {})
     : (project.baski_parca_preparers ?? {})
+  /* The project-level scalar carries the same fact for a parça the per-parça
+     ledger has no row for — a legacy single-parça project, or one whose
+     prepare ran before its snapshot existed. Reading only the ledger made this
+     panel say "Baskı Onayı Hazırlayın (3)" on a form a leader HAD prepared,
+     while the dialog it opens reads the scalar and offered "Baskı Onayı
+     Verin". The leader pressed what the panel promised and got the other
+     thing, which then failed asking them to prepare. Same fallback the server's
+     gate applies (preparerFor in computeApproval) and the edit gate already
+     applied (canEditPreparedBaskiOnay). */
+  if (project.baski_onay_prepared && project.baski_onay_prepared_by) return []
   return set.filter((parca) => !preparers[parca])
 }
 

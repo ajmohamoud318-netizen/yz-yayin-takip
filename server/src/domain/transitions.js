@@ -1193,13 +1193,39 @@ export function computeApproval(project, actor, ctx = {}) {
       : []
     const teamLeaderIds = ctx.teamLeaderIds ?? []
 
+    /* The preparer of a parça the per-parça ledger has no row for.
+     *
+     * `baski_onay_prepared_by` is the same fact in a scalar, and there are two
+     * ways a project ends up carrying only that. Legacy single-parça projects
+     * never had a per-parça ledger at all. And a prepare that ran BEFORE the
+     * sheet's snapshot existed set the scalar while stamping nobody — the
+     * dialog used to call prepare ahead of the save that writes the snapshot,
+     * so `snapshotParcalar` came out empty and `appendBaskiParcaRow` had
+     * nothing to key on (fixed in SpecFormDialog#handlePrepareBaskiOnay).
+     *
+     * Both leave a project whose form WAS prepared, by a named leader, sitting
+     * at a gate that insists it was not — with no way through, because
+     * re-preparing is exactly what the stale scalar makes the dialog stop
+     * offering. Reading the scalar as that parça's preparer is what the edit
+     * gate already does (canEditPreparedBaskiOnay in the client's
+     * spec-form-variants.js); the maker-checker is unaffected, because the
+     * approver still has to differ from whoever the scalar names. */
+    const legacyPreparer = project.baski_onay_prepared && project.baski_onay_prepared_by
+      ? {
+          by: project.baski_onay_prepared_by,
+          by_name: project.baski_onay_prepared_by_name ?? null,
+          at: project.baski_onay_prepared_at ?? null,
+        }
+      : null
+    const preparerFor = (parca) => preparers[parca] ?? legacyPreparer
+
     // Dual-leader per parça: for each parça the approving leader must differ
     // from the preparer. Default `parcalar` is "all parçalar missing an
     // approver (with preparer)" — the bulk-approve shortcut.
     const requestedParcalar = sanitiseParcalar(ctx?.parcalar, snapshotParcalar)
     const targetParcalar = requestedParcalar.length === 0
-      ? snapshotParcalar.filter((p) => preparers[p] && !approvals[p])
-      : requestedParcalar.filter((p) => preparers[p] && !approvals[p])
+      ? snapshotParcalar.filter((p) => preparerFor(p) && !approvals[p])
+      : requestedParcalar.filter((p) => preparerFor(p) && !approvals[p])
     // Same actor on both sides — the maker-checker rule, scoped to a single
     // parça. Per parça: refuse when the approver IS the preparer; refuse the
     // WHOLE call when ANY targeted parça would violate it. The "no other
@@ -1224,7 +1250,7 @@ export function computeApproval(project, actor, ctx = {}) {
       // Filtering against the parça's OWN preparer answers the question the
       // rule is actually asking.
       for (const parca of targetParcalar) {
-        const preparerId = preparers[parca]?.by
+        const preparerId = preparerFor(parca)?.by
         if (!preparerId || actor?.id !== preparerId) continue
         const othersForThisParca = teamLeaderIds.filter((id) => id !== preparerId)
         if (othersForThisParca.length > 0) {
@@ -1237,7 +1263,7 @@ export function computeApproval(project, actor, ctx = {}) {
       const nextApprovals = appendBaskiParcaRow(approvals, targetParcalar, actor, actorName, now)
       // Per-parça pending set after this click.
       const stillPending = snapshotParcalar.filter((parca) => {
-        const p = preparers[parca]
+        const p = preparerFor(parca)
         const a = nextApprovals[parca]
         if (!p || !a) return true
         if (a.by !== p.by) return false
@@ -1268,7 +1294,7 @@ export function computeApproval(project, actor, ctx = {}) {
        * below, which is what recovers a round whose advance failed the first
        * time (progress, say). */
       if (targetParcalar.length === 0 && stillPending.length > 0) {
-        const unprepared = snapshotParcalar.filter((parca) => !preparers[parca])
+        const unprepared = snapshotParcalar.filter((parca) => !preparerFor(parca))
         if (unprepared.length > 0) {
           badRequest(
             `Önce baskı onay formu hazırlanmalıdır: ${unprepared.join(', ')}.`,
