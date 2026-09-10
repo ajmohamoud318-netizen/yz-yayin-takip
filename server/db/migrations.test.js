@@ -341,3 +341,95 @@ test('081: the backfill closes runs that finished before the teslim leg existed'
   assert.equal(ho.rows[0].n, 0)
   await db.close()
 })
+
+/* ==========================================================================
+ *  082 — Sticker is logged the way İç Sayfalar is
+ * ======================================================================== */
+
+const M082 = '082__sticker_designer_batches.sql'
+
+test('082: a sticker batch counts stickers, a page batch still counts pages', { skip: !PGlite }, async () => {
+  const db = await freshDb()
+  await db.exec(`
+    INSERT INTO users (id, name, email, role) VALUES ('d1','Ayşe','a@e.com','designer');
+    INSERT INTO projects (id, title, type, stage) VALUES ('p1','Kitap','TR','tasarim');
+    INSERT INTO subtasks (id, project_id, title, kind, total_pages, total_stickers) VALUES
+      ('st','p1','Sticker','sticker-count',NULL,24),
+      ('pg','p1','İç Sayfalar','pages',20,NULL);
+    INSERT INTO subtask_designer_batches (subtask_id, designer_id, pages, start_page) VALUES
+      ('st','d1',10,1), ('pg','d1',20,1);
+  `)
+  const { rows } = await db.query(
+    'SELECT id, is_done, stickers_done, pages_done FROM subtasks ORDER BY id',
+  )
+  const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
+  // Before 082 the trigger wrote every batch into pages_done, so a sticker row
+  // read 0 stickers done — and closed against total_pages, which it has none of.
+  assert.equal(byId.st.stickers_done, 10)
+  assert.equal(byId.st.pages_done, 0, 'a sticker batch leaked into pages_done')
+  assert.equal(byId.st.is_done, false)
+  assert.equal(byId.pg.pages_done, 20)
+  assert.equal(byId.pg.is_done, true)
+
+  // The last sticker closes the row, the same way the last page does.
+  await db.exec("INSERT INTO subtask_designer_batches (subtask_id, designer_id, pages, start_page) VALUES ('st','d1',14,11)")
+  const after = await db.query("SELECT is_done, stickers_done FROM subtasks WHERE id = 'st'")
+  assert.deepEqual(after.rows[0], { is_done: true, stickers_done: 24 })
+  await db.close()
+})
+
+test('082: the backfill keeps ticked stickers done and refreshes stuck progress', { skip: !PGlite }, async () => {
+  const db = await freshDb({ upToExclusive: M082 })
+  await db.exec(`
+    INSERT INTO users (id, name, email, role) VALUES
+      ('d1','Ayşe','a@e.com','designer'), ('d2','Mehmet','m@e.com','designer');
+    INSERT INTO projects (id, title, type, stage, assigned_to, progress) VALUES
+      ('ticked','A','TR','tasarim','d1',50),
+      ('partial','B','TR','tasarim','d1',0),
+      ('open','C','TR','tasarim','d1',0),
+      ('printing','D','TR','baskida','d1',100);
+    INSERT INTO subtasks (id, project_id, title, kind, total_stickers, stickers_done, is_done, done_at, assigned_to) VALUES
+      ('t-st','ticked','Sticker','sticker-count',24,0,true,'2026-09-01T10:00:00Z','d2'),
+      ('t-k','ticked','Kapak','check',NULL,0,true,NULL,'d1'),
+      ('t-y','ticked','Yazılım','check',NULL,0,false,NULL,'d1'),
+      ('p-st','partial','Sticker','sticker-count',10,4,false,NULL,NULL),
+      ('o-st','open','Sticker','sticker-count',24,0,false,NULL,'d1'),
+      ('b-st','printing','Sticker','sticker-count',24,0,true,NULL,'d1');
+  `)
+  await applyMigration(db, M082)
+
+  const batches = await db.query(
+    'SELECT subtask_id, designer_id, pages, start_page FROM subtask_designer_batches ORDER BY subtask_id',
+  )
+  assert.deepEqual(batches.rows, [
+    // Ticked stays ticked: 1..24, credited to the subtask's own designer.
+    { subtask_id: 'b-st', designer_id: 'd1', pages: 24, start_page: 1 },
+    // A pre-checkbox counter keeps its count, credited to the project owner
+    // because the subtask has none.
+    { subtask_id: 'p-st', designer_id: 'd1', pages: 4, start_page: 1 },
+    { subtask_id: 't-st', designer_id: 'd2', pages: 24, start_page: 1 },
+  ], 'an untouched Sticker must get no batch — nobody did that work')
+
+  const subs = await db.query(
+    "SELECT id, is_done, stickers_done FROM subtasks WHERE kind = 'sticker-count' ORDER BY id",
+  )
+  assert.deepEqual(
+    Object.fromEntries(subs.rows.map((r) => [r.id, [r.is_done, r.stickers_done]])),
+    { 'b-st': [true, 24], 'o-st': [false, 0], 'p-st': [false, 4], 't-st': [true, 24] },
+  )
+
+  // The ticked Sticker used to count 0%, holding its project below the gate.
+  // Kapak + Sticker, Yazılım excluded: 100. Partial: 4/10 of its one subtask.
+  // A project in print is pinned at 100 by progressFor and is left alone.
+  const projects = await db.query('SELECT id, progress FROM projects ORDER BY id')
+  assert.deepEqual(
+    Object.fromEntries(projects.rows.map((r) => [r.id, r.progress])),
+    { open: 0, partial: 40, printing: 100, ticked: 100 },
+  )
+
+  // A re-run credits nobody twice.
+  await applyMigration(db, M082)
+  const again = await db.query('SELECT count(*)::int AS n FROM subtask_designer_batches')
+  assert.equal(again.rows[0].n, 3)
+  await db.close()
+})

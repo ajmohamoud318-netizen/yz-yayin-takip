@@ -14,6 +14,7 @@ import assert from 'node:assert/strict'
 
 import {
   MAX_BATCH_SEGMENTS,
+  batchCounter,
   formatSegments,
   readBatchSegments,
 } from './page-segments.js'
@@ -133,5 +134,29 @@ describe('formatSegments', () => {
   it('is empty for nothing', () => {
     assert.equal(formatSegments([]), '')
     assert.equal(formatSegments(null), '')
+  })
+})
+
+describe('batchCounter', () => {
+  // The route reads and reports these columns, and migration 082's trigger
+  // writes the same pair — a sticker batch reported against pages_done would
+  // show "0 / 24" while the row itself says 24.
+  it('counts İç Sayfalar in pages', () => {
+    const c = batchCounter('pages')
+    assert.equal(c.total, 'total_pages')
+    assert.equal(c.done, 'pages_done')
+    assert.equal(c.unit, 'sayfa')
+  })
+
+  it('counts Sticker in stickers', () => {
+    const c = batchCounter('sticker-count')
+    assert.equal(c.total, 'total_stickers')
+    assert.equal(c.done, 'stickers_done')
+    assert.equal(c.unit, 'sticker')
+  })
+
+  it('refuses every kind that is still a checkbox', () => {
+    assert.equal(batchCounter('check'), null)
+    assert.equal(batchCounter(undefined), null)
   })
 })

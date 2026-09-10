@@ -39,6 +39,8 @@
  * start_page values; see migration 068.
  */
 
+import { batchCounter } from '../domain/page-segments.js'
+
 const DESIGNER_BATCH_LIMIT = 256
 
 /**
@@ -198,7 +200,8 @@ export async function getSubtaskDesignerBatches(client, subtaskId) {
  * List a project's subtasks with their per-designer batch log spliced
  * on.
  *
- * Returns an array of subtask rows; rows with `kind='pages'` carry a
+ * Returns an array of subtask rows; rows with `kind='pages'` or
+ * `kind='sticker-count'` carry a
  * `designer_batches: [{ id, designer_id, … }, …]` array. The chip
  * grid's `pages: [{ i, status, … }]` shape is gone;
  * `designer_batches` is the per-session equivalent and drives the
@@ -230,15 +233,16 @@ export async function listProjectSubtasks(client, projectId) {
     [projectId],
   )
   // migration 067 — splice the per-designer batch log onto every
-  // kind='pages' subtask so the new list-renders-from-the-same-
-  // payload pattern the chip-grid had (no follow-up GET for the
-  // batches, no follow-up GET for designer names).
+  // kind='pages' subtask (and, since migration 082, every Sticker) so the
+  // new list-renders-from-the-same-payload pattern the chip-grid had
+  // (no follow-up GET for the batches, no follow-up GET for designer
+  // names).
   const batchesBySubtask = await loadSubtaskDesignerBatches(
     client,
-    rows.filter((s) => s.kind === 'pages').map((s) => s.id),
+    rows.filter((s) => batchCounter(s.kind)).map((s) => s.id),
   )
   return rows.map((s) => (
-    s.kind === 'pages'
+    batchCounter(s.kind)
       ? { ...s, designer_batches: batchesBySubtask.get(s.id) ?? [] }
       : s
   ))

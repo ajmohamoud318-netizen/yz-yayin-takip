@@ -5,9 +5,12 @@ import { Button } from '@/components/ui/button'
 import UserAvatar from '@/components/UserAvatar.jsx'
 import { cn, formatDateTr } from '@/lib/utils'
 import { countPageListPages, formatPageList, parsePageList } from '@/lib/page-range'
+import { batchCounter } from '@/domain/constants/subtasks'
 
 /**
  * migration 067/068 — the "İç Sayfalar" subtask renders as a session log.
+ * Since migration 082 so does "Sticker": same log and input, counted in
+ * stickers against total_stickers (see batchCounter).
  *
  * Top of the card: each prior batch (id + designer + pages + when),
  * each with its own "Yeniden Çalıştım" affordance when `redone_at` is
@@ -53,9 +56,13 @@ export default function DesignerPagesInput({
   onAddBatch,
   onRedoneBatch,
 }) {
-  const total = Number(subtask.total_pages ?? 0)
+  // İç Sayfalar counts pages, Sticker counts stickers (migration 082); the
+  // log, the input and the range rules are otherwise the same.
+  const { total: totalField, done: doneField, unit, unitTitle } =
+    batchCounter(subtask.kind) ?? batchCounter('pages')
+  const total = Number(subtask[totalField] ?? 0)
   const batches = Array.isArray(subtask.designer_batches) ? subtask.designer_batches : []
-  const pagesDone = Number(subtask.pages_done ?? 0)
+  const pagesDone = Number(subtask[doneField] ?? 0)
   const isDone = !!subtask.is_done
 
   // Map designer_id → { name, id } for fast lookup when rendering batch
@@ -107,7 +114,7 @@ export default function DesignerPagesInput({
   // plain "1-5" already reads as itself.
   const draftSegments = draftPage ? parsePageList(draftPage) : null
   const draftPreview = draftSegments && draftSegments.length > 1
-    ? `${formatPageList(draftSegments)} · ${countPageListPages(draftSegments)} sayfa`
+    ? `${formatPageList(draftSegments)} · ${countPageListPages(draftSegments)} ${unit}`
     : null
 
   async function commitAdd(e) {
@@ -115,7 +122,7 @@ export default function DesignerPagesInput({
     if (!canEdit || saving) return
     const segments = parsePageList(draftPage)
     if (!segments) {
-      setError('Sayfa numarası, aralığı veya listesi girin (örn. 5, 1-5 veya 1,3,5).')
+      setError(`${unitTitle} numarası, aralığı veya listesi girin (örn. 5, 1-5 veya 1,3,5).`)
       return
     }
     // Migration 068 — the route checks both the range bounds (start + pages
@@ -129,7 +136,7 @@ export default function DesignerPagesInput({
     const highest = last.start + last.pages - 1
     if (total > 0 && highest > total) {
       setError(
-        `Sayfa ${highest} toplam sayfa sayısını (${total}) aşamaz.`,
+        `${unitTitle} ${highest} toplam ${unit} sayısını (${total}) aşamaz.`,
       )
       return
     }
@@ -143,7 +150,7 @@ export default function DesignerPagesInput({
       await onAddBatch(draftDesignerId, segments)
       setDraftPage('')
     } catch (e2) {
-      setError(e2?.message || 'Sayfa eklenemedi.')
+      setError(e2?.message || `${unitTitle} eklenemedi.`)
     } finally {
       setSaving(false)
     }
@@ -196,7 +203,7 @@ export default function DesignerPagesInput({
             isDone && 'text-muted-foreground line-through',
           )}
         >
-          İç Sayfalar
+          {subtask.title || 'İç Sayfalar'}
         </span>
         <span className="text-xs font-medium tabular-nums text-muted-foreground">
           {pagesDone} / {total || '—'} tamamlandı
@@ -209,7 +216,7 @@ export default function DesignerPagesInput({
       <ul className="mt-2 space-y-1">
         {batches.length === 0 ? (
           <li className="rounded-md border border-dashed bg-muted/30 px-3 py-2 text-center text-xs text-muted-foreground">
-            Henüz sayfa eklenmedi.
+            Henüz {unit} eklenmedi.
           </li>
         ) : (
           batches.map((b) => {
@@ -233,10 +240,10 @@ export default function DesignerPagesInput({
             // backfilled rows); fall back to "+N sayfa" only for legacy
             // rows where start_page is null.
             const rangeLabel = (() => {
-              if (b.start_page == null) return `+${b.pages} sayfa`
+              if (b.start_page == null) return `+${b.pages} ${unit}`
               const start = Number(b.start_page)
               const end = start + Number(b.pages ?? 0) - 1
-              return start === end ? `${start} sayfa` : `${start}-${end} sayfa`
+              return start === end ? `${start} ${unit}` : `${start}-${end} ${unit}`
             })()
             return (
               <li

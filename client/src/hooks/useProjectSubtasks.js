@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 
 import api from '@/api'
 import { isSubtaskDone, countsTowardProgress, subtaskProgress } from '@/domain/services/progress'
+import { batchCounter } from '@/domain/constants/subtasks'
 
 /**
  * Owns every subtask mutation for the project detail page. The
@@ -59,10 +60,11 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
   // `if (sub.kind !== 'pages' && sub.assigned_to && ...)` is what made
   // a multi-designer pages subtask readable for everyone; we keep that
   // behaviour because each designer's input only writes their own slot,
-  // and the server gates that ownership too.
+  // and the server gates that ownership too. Sticker logs the same way
+  // (migration 082), so it gets the same rule.
   const canEditSubtask = useCallback((sub) => {
     if (!canEditBase) return false
-    if (sub.kind !== 'pages' && sub.assigned_to && sub.assigned_to !== user?.id) return false
+    if (!batchCounter(sub.kind) && sub.assigned_to && sub.assigned_to !== user?.id) return false
     if (inRevision && !sub.needs_revize && sub.is_done) return false
     return true
   }, [canEditBase, inRevision, user?.id])
@@ -111,6 +113,9 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
     if (!canEditSubtask(sub)) return
     const list = Array.isArray(segments) ? segments : []
     if (list.length === 0) return
+    // pages_done / total_pages for İç Sayfalar, stickers_done /
+    // total_stickers for Sticker — the pair the server's trigger writes.
+    const counter = batchCounter(sub.kind) ?? batchCounter('pages')
     // Optimistic pre-state for revert.
     const before = project?.subtasks?.find((s) => s.id === sub.id) ?? null
     const stamp = new Date().toISOString()
@@ -129,7 +134,7 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
       if (!prev) return prev
       const subs = (prev.subtasks ?? []).map((s) => {
         if (s.id !== sub.id) return s
-        const total = Number(s.total_pages ?? 0)
+        const total = Number(s[counter.total] ?? 0)
         // Newest first, and within one save the highest page first so
         // the log reads the same way the server will return it.
         const nextBatches = [
@@ -141,7 +146,7 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
         return {
           ...s,
           designer_batches: nextBatches,
-          pages_done: pagesDoneClamped,
+          [counter.done]: pagesDoneClamped,
           is_done: total > 0 && sum >= total,
         }
       })
@@ -166,7 +171,7 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
             s.id === res.subtask_id
               ? {
                   ...s,
-                  pages_done: Number(res.pages_done ?? s.pages_done ?? 0),
+                  [counter.done]: Number(res[counter.done] ?? s[counter.done] ?? 0),
                   is_done: !!res.is_done,
                 }
               : s
@@ -193,7 +198,7 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
           return { ...prev, subtasks: subs, progress: subtaskProgress(subs) }
         })
       }
-      toast.error(err?.message || 'Sayfa eklenemedi.')
+      toast.error(err?.message || `${counter.unitTitle} eklenemedi.`)
       throw err
     }
   }

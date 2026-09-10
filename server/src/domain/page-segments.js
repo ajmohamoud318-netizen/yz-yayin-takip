@@ -1,7 +1,8 @@
 import { badRequest } from './errors.js'
 
 /**
- * Page-list handling for the "İç Sayfalar" designer-batch write.
+ * Page-list handling for the designer-batch write ("İç Sayfalar" and,
+ * since migration 082, "Sticker").
  *
  * `subtask_designer_batches` stores ONE contiguous range per row
  * ([start_page, start_page + pages - 1]); migration 068's overlap guard
@@ -22,6 +23,30 @@ import { badRequest } from './errors.js'
  * is the authoritative one.
  */
 export const MAX_BATCH_SEGMENTS = 64
+
+/**
+ * The subtask kinds logged as numbered designer batches, and what each one
+ * counts. İç Sayfalar counts pages; Sticker counts stickers (migration 082 —
+ * it used to be a bare checkbox). The batch table's `pages` / `start_page`
+ * hold either: for a sticker row they are items, not pages. `total` / `done`
+ * are the subtask columns the counter trigger closes against, so the route
+ * reads and reports the same pair the trigger writes.
+ */
+const BATCH_COUNTERS = {
+  pages: {
+    total: 'total_pages', done: 'pages_done',
+    unit: 'sayfa', unitTitle: 'Sayfa', sized: 'sayfalık',
+  },
+  'sticker-count': {
+    total: 'total_stickers', done: 'stickers_done',
+    unit: 'sticker', unitTitle: 'Sticker', sized: 'adetlik',
+  },
+}
+
+/** The counter a subtask kind logs batches against, or null if it doesn't. */
+export function batchCounter(kind) {
+  return BATCH_COUNTERS[kind] ?? null
+}
 
 /**
  * Normalise a designer-batch body into a sorted, non-overlapping list of

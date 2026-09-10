@@ -11,7 +11,7 @@ import {
   findOverlappingBatches,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
-import { formatSegments, readBatchSegments } from '../domain/page-segments.js'
+import { batchCounter, formatSegments, readBatchSegments } from '../domain/page-segments.js'
 import { subtaskProgress } from '../domain/progress.js'
 import { progressFor } from '../domain/progress.js'
 
@@ -159,14 +159,14 @@ export async function subtaskRoutes(fastify) {
         allowed.needs_revize = request.body.needs_revize
       }
       if (Object.keys(allowed).length === 0) badRequest('Geçerli alan yok.')
-      // kind='pages' subtasks are driven exclusively by
-      // POST /subtasks/:id/designer-batches; the per-chip PATCH is gone.
-      // Refuse a direct pages_done write on a pages subtask here so a stale
-      // SPA that still uses the old toggle can't desync the trigger-derived
-      // pages_done from the underlying counts.
-      if (sub.kind === 'pages'
+      // kind='pages' and (migration 082) kind='sticker-count' subtasks are
+      // driven exclusively by POST /subtasks/:id/designer-batches; the
+      // per-chip PATCH is gone. Refuse a direct counter write on either here
+      // so a stale SPA that still uses the old toggle can't desync the
+      // trigger-derived counter from the underlying batches.
+      if (batchCounter(sub.kind)
         && (pagesChanged || stickersChanged)) {
-        badRequest('İç sayfalar için tasarımcı sayısı kullanılır.')
+        badRequest(`${sub.kind === 'pages' ? 'İç sayfalar' : 'Sticker'} için tasarımcı sayısı kullanılır.`)
       }
       const cols = Object.keys(allowed)
       const setSql = cols.map((c, i) => `${c} = $${i + 2}`).join(', ')
@@ -683,24 +683,29 @@ export async function subtaskRoutes(fastify) {
 
     const result = await withTx(async (client) => {
       const { rows: subRows } = await client.query(
-        'SELECT id, project_id, title, kind, total_pages, pages_done FROM subtasks WHERE id = $1 FOR UPDATE',
+        `SELECT id, project_id, title, kind, total_pages, pages_done, total_stickers, stickers_done
+           FROM subtasks WHERE id = $1 FOR UPDATE`,
         [subtaskId],
       )
       const sub = subRows[0]
       if (!sub) notFound('Alt görev bulunamadı.')
-      if (sub.kind !== 'pages') {
-        badRequest('Bu alt görev "İç Sayfalar" türünde değil.')
+      // İç Sayfalar counts pages, Sticker counts stickers (migration 082);
+      // everything below reads the counter so the two share one path.
+      const counter = batchCounter(sub.kind)
+      if (!counter) {
+        badRequest('Bu alt görev "İç Sayfalar" veya "Sticker" türünde değil.')
       }
-      const total = Number(sub.total_pages ?? 0)
+      const { unit, unitTitle } = counter
+      const total = Number(sub[counter.total] ?? 0)
       const project = await getProjectForUpdate(client, sub.project_id)
       if (!project) notFound('Proje bulunamadı.')
 
       const isLeader = request.user.role === 'team_leader'
       if (!isLeader && request.user.role !== 'designer') {
-        badRequest('Yalnızca ekip lideri veya tasarımcı sayfa ekleyebilir.')
+        badRequest(`Yalnızca ekip lideri veya tasarımcı ${unit} ekleyebilir.`)
       }
       if (!isLeader && designerId !== request.user.id) {
-        badRequest('Yalnızca kendi adınıza sayfa ekleyebilirsiniz.')
+        badRequest(`Yalnızca kendi adınıza ${unit} ekleyebilirsiniz.`)
       }
       // Migration 068 — each batch covers [start_page, start_page + pages - 1].
       // Every range must fit inside the book. The "remaining pages" cap
@@ -715,7 +720,7 @@ export async function subtaskRoutes(fastify) {
       const highestPage = lastSeg.startPage + lastSeg.pages - 1
       if (total > 0 && highestPage > total) {
         badRequest(
-          `Sayfa ${highestPage} toplam sayfa sayısını (${total}) aşamaz.`,
+          `${unitTitle} ${highestPage} toplam ${unit} sayısını (${total}) aşamaz.`,
         )
       }
       // Migration 068 — refuse any save whose range overlaps an existing
@@ -738,7 +743,7 @@ export async function subtaskRoutes(fastify) {
           const cStart = conflict.start_page
           const cEnd = conflict.start_page + conflict.pages - 1
           badRequest(
-            `Sayfa aralığı (${segLabel}) zaten `
+            `${unitTitle} aralığı (${segLabel}) zaten `
             + `${conflict.designer_name ?? conflict.designer_id} tarafından `
             + `(${cStart}-${cEnd}) tamamlandı.`,
           )
@@ -779,15 +784,16 @@ export async function subtaskRoutes(fastify) {
           pages: seg.pages,
           startPage: seg.startPage,
         })
-        if (!row) badRequest('Sayfa eklenemedi.')
+        if (!row) badRequest(`${unitTitle} eklenemedi.`)
         insertedRows.push(row)
       }
       const totalPagesAdded = segments.reduce((acc, seg) => acc + seg.pages, 0)
+      // `counter.done` is a fixed column name from batchCounter, never input.
       const { rows: refreshedSub } = await client.query(
-        `SELECT id, pages_done, is_done FROM subtasks WHERE id = $1`,
+        `SELECT id, ${counter.done} AS done, is_done FROM subtasks WHERE id = $1`,
         [subtaskId],
       )
-      const refreshed = refreshedSub[0] ?? { pages_done: totalPagesAdded, is_done: false }
+      const refreshed = refreshedSub[0] ?? { done: totalPagesAdded, is_done: false }
 
       const { rows: projectSubs } = await client.query(
         'SELECT * FROM subtasks WHERE project_id = $1', [project.id],
@@ -811,7 +817,7 @@ export async function subtaskRoutes(fastify) {
           // "sayfa 1, 5, 7-9 ekledi" — the list reads the way the designer
           // typed it, so the timeline stays legible whether the save was
           // one clean range or a scattered handful.
-          note: `${sub.title}: ${designerName ?? designerId} sayfa ${formatSegments(segments)} ekledi`,
+          note: `${sub.title}: ${designerName ?? designerId} ${unit} ${formatSegments(segments)} ekledi`,
         },
         request.user,
       )
@@ -836,8 +842,10 @@ export async function subtaskRoutes(fastify) {
       return {
         subtask_id: subtaskId,
         project_id: project.id,
-        total_pages: total,
-        pages_done: Number(refreshed.pages_done ?? 0),
+        // total_pages / pages_done for İç Sayfalar, total_stickers /
+        // stickers_done for Sticker — the same columns the row carries.
+        [counter.total]: total,
+        [counter.done]: Number(refreshed.done ?? 0),
         is_done: !!refreshed.is_done,
         batches: batchPayload,
         // Kept alongside `batches` for callers written against the
@@ -897,20 +905,21 @@ export async function subtaskRoutes(fastify) {
       }
       // Lock the parent subtask + project for the projected progress.
       const { rows: subRows } = await client.query(
-        'SELECT id, project_id, title FROM subtasks WHERE id = $1 FOR UPDATE',
+        'SELECT id, project_id, title, kind FROM subtasks WHERE id = $1 FOR UPDATE',
         [subtaskId],
       )
       const sub = subRows[0]
       if (!sub) notFound('Alt görev bulunamadı.')
       const project = await getProjectForUpdate(client, sub.project_id)
       if (!project) notFound('Proje bulunamadı.')
+      const counter = batchCounter(sub.kind) ?? batchCounter('pages')
 
       const isLeader = request.user.role === 'team_leader'
       if (!isLeader && request.user.role !== 'designer') {
         badRequest('Yalnızca ekip lideri veya tasarımcı yeniden çalıştım işaretleyebilir.')
       }
       if (!isLeader && batch.designer_id !== request.user.id) {
-        badRequest('Yalnızca kendi sayfanızı yeniden çalıştım işaretleyebilirsiniz.')
+        badRequest(`Yalnızca kendi ${counter.unit} eklemenizi yeniden çalıştım işaretleyebilirsiniz.`)
       }
 
       const updated = await markSubtaskDesignerBatchRedone(client, {
@@ -943,7 +952,7 @@ export async function subtaskRoutes(fastify) {
           to_stage: project.stage,
           action: 'system',
           event: 'subtask_progress',
-          note: `${sub.title}: ${updated.pages} sayfalık ekleme yeniden çalışıldı`,
+          note: `${sub.title}: ${updated.pages} ${counter.sized} ekleme yeniden çalışıldı`,
         },
         request.user,
       )

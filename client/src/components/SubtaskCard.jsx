@@ -4,6 +4,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Save, User as UserIcon } from 'lucide-react'
 import { cn, formatDateTr, initials } from '@/lib/utils'
 import DesignerPagesInput from '@/components/DesignerPagesInput'
+import { batchCounter } from '@/domain/constants/subtasks'
 
 /**
  * Subtask list card — renders each subtask as a checkbox row, with the
@@ -75,8 +76,9 @@ export default function SubtaskCard({
                 // per-designer number input instead of a single
                 // checkbox. Designers (and the leader) type the page
                 // count they shipped into one input per assigned
-                // designer; one save per blur/Enter.
-                if (s.kind === 'pages') {
+                // designer; one save per blur/Enter. Sticker logs the
+                // same way (migration 082).
+                if (batchCounter(s.kind)) {
                   return (
                     <div key={s.id} className="space-y-1.5">
                       <DesignerPagesInput
