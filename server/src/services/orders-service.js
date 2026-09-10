@@ -28,7 +28,7 @@ import {
   notifyOrderTransition, notifyOrderRejected, notifyMatbaaReceived, notifyMatbaaApprovalPending,
   notifyOrderOzalitStarted, notifyOrderOzalitCancelled, notifyOrderOzalitEdited,
   notifyOrderOzalitChangeRequested, notifyOrderOzalitChangeAccepted, notifyOrderOzalitChangeDeclined,
-  notifyOrderBaskiOnayPrepared,
+  notifyOrderBaskiOnayPrepared, notifyProjectTransition,
 } from './notifications.js'
 import * as repo from './order-repository.js'
 import { canonicalise } from './deep-equal.js'
@@ -109,18 +109,52 @@ async function dispatchNotification(client, { notification, order, project, acto
       return notifyOrderOzalitChangeDeclined(client, base)
     case 'rejected':
       // Two pings: the sales requester learns it bounced, and whoever owns
-      // the step it was sent back to learns they have work.
+      // the step it was sent back to learns they have work. `action: 'reject'`
+      // makes that second ping say the work came BACK — without it the
+      // designer's card reads "Baskı kontrolünüzü bekliyor", identical to a
+      // fresh assignment, and the bounce is invisible on the lock screen.
       await notifyOrderRejected(client, { ...base, requesterId, reason: notification.reason })
       return notifyOrderTransition(client, {
-        ...base, newStatus: notification.destination, requesterId,
+        ...base, newStatus: notification.destination, requesterId, action: 'reject',
         assigneeIds: Array.isArray(order.assignee_ids) ? order.assignee_ids : [],
       })
     case 'baskiOnayPrepared':
       return notifyOrderBaskiOnayPrepared(client, {
         ...base, teamLeaderIds: notification.teamLeaderIds ?? [],
       })
-    case 'finalApproved':
-      return notifyOrderTransition(client, { ...base, newStatus: 'baskida', requesterId })
+    case 'finalApproved': {
+      // The final approve changes TWO aggregates, so two audiences hear it.
+      //
+      // The order ping below tells the sales requester their talep cleared.
+      // It does NOT reach the matbaa: notifyOrderTransition's `baskida`
+      // branch emits to `[requesterId]` alone, because on the order side
+      // baskida is terminal — there is no next owner to hand work to.
+      //
+      // The work is real all the same. approveBaskiOnayForm's `after` hook
+      // flips the PROJECT to `baskida`, and that stage is what puts the book
+      // on the printer's /baski-listesi queue (the page filters projects by
+      // stage, not orders). The main pipeline's own baski_onay → baskida
+      // advance announces that flip via notifyProjectTransition's `baskida`
+      // case — 'Proje baskıda alındı' to the printers. The order path made
+      // the identical stage change and announced nothing, so a project that
+      // reached print through a sipariş sat there with the matbaa never told
+      // to print it, and nobody able to move it on to satista.
+      //
+      // `projectEnteredProduction` is set by that hook and ONLY when the flip
+      // actually happened — the forward-only guard skips a project already at
+      // or past baskida, and re-announcing would put a duplicate row-arrival
+      // in the printers' bell for a queue entry that has been there all along.
+      const n = await notifyOrderTransition(client, { ...base, newStatus: 'baskida', requesterId })
+      if (!notification.projectEnteredProduction || !project) return n
+      return n + await notifyProjectTransition(client, {
+        project,
+        fromStage: notification.projectFromStage ?? null,
+        toStage: 'baskida',
+        action: 'advance',
+        actor,
+        assignees: project.assignees ?? null,
+      })
+    }
     default:
       return undefined
   }
@@ -517,6 +551,16 @@ export async function approveBaskiOnayForm(orderId, actor, {
           event: 'order_final', action: 'system',
           to_stage: 'baskida', note: 'Baskı onaylandı, baskıya alındı',
         }]
+        // Tells dispatchNotification the project really entered production on
+        // THIS approve, so the matbaa gets the same 'Proje baskıda alındı'
+        // ping the main pipeline's baski_onay → baskida advance sends. Set
+        // here rather than in the entity because the flip is cross-aggregate
+        // work the entity deliberately doesn't do (see approveBaskiOnayForm's
+        // doc comment), and only this branch knows the guard let it through.
+        if (event.notification) {
+          event.notification.projectEnteredProduction = true
+          event.notification.projectFromStage = project.stage
+        }
       } else {
         event.projectHistories = [{
           event: 'order_final', action: 'system',

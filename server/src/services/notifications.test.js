@@ -8,8 +8,9 @@ import {
   notifyDemoChangeRequested, notifyOzalitChangeRequested,
   notifyDemoChangeAccepted, notifyDemoChangeDeclined,
   notifyOzalitChangeAccepted, notifyOzalitChangeDeclined,
-  notifyOrderTransition,
+  notifyOrderTransition, orderStepCopyKeys,
 } from './notifications.js'
+import { ORDER_STEPS, ORDER_STEP_OWNER } from '../domain/orders.js'
 
 /**
  * Assignment greeting copy tests.
@@ -485,6 +486,77 @@ test('every order step emits a tone the notifications CHECK accepts', async () =
       )
     }
   }
+})
+
+/* ==========================================================================
+ *  Order-step copy tables — key drift
+ *
+ *  The tone test above is not a drift guard: it asserts only that whatever
+ *  tone comes out satisfies migration 022's CHECK, and the fallback ('blue')
+ *  satisfies it. So it sailed straight through migration 066's rename —
+ *  `pending` → `atama_bekleniyor`, `ekran_onay` → `ekran_onayinda` — while
+ *  ORDER_STEP_BODY kept the old spelling and both of the team leader's steps
+ *  silently degraded to the bare 'Baskı güncellendi' fallback. Every new
+ *  baskı talebi reached her as a project title and a sentence that named no
+ *  action. These pin the keys, not just the values.
+ * ======================================================================== */
+
+test('every owned order step has copy of its own, and no table holds a stale key', () => {
+  const keys = orderStepCopyKeys()
+  for (const status of Object.keys(ORDER_STEP_OWNER)) {
+    // imza_bekleniyor takes its own branch in notifyOrderTransition (two
+    // emits, two audiences) and never reads these tables.
+    if (status === 'imza_bekleniyor') continue
+    assert.ok(keys.body.includes(status), `${status}: no body — degrades to 'Baskı güncellendi'`)
+    assert.ok(keys.link.includes(status), `${status}: no link — degrades to /siparis-talepleri`)
+    assert.ok(keys.tone.includes(status), `${status}: no tone — degrades to blue`)
+  }
+  for (const table of ['body', 'link', 'tone', 'rejected']) {
+    for (const status of keys[table]) {
+      assert.ok(ORDER_STEPS.includes(status), `ORDER_STEP_${table} holds stale key "${status}"`)
+    }
+  }
+})
+
+test('a new baskı talebi tells the leader what she owes, not that something changed', async () => {
+  const client = fakeClient()
+  await notifyOrderTransition(client, {
+    order: { id: 'o-1', project_id: 'p-1' }, project, newStatus: 'atama_bekleniyor',
+    actor: { id: 'u-esra', name: 'Esra' }, requesterId: 'u-esra',
+  })
+  assert.deepEqual(client.rows.map((r) => r.userId), ['u-ayse'])
+  assert.notEqual(client.rows[0].body, 'Baskı güncellendi')
+  assert.match(client.rows[0].body, /atama/i, 'must name the assignment she owes')
+})
+
+test("the leader's ekran onay step names the approval, not a generic update", async () => {
+  const client = fakeClient()
+  await notifyOrderTransition(client, {
+    order: { id: 'o-1', project_id: 'p-1' }, project, newStatus: 'ekran_onayinda',
+    actor: { id: 'u-aylin', name: 'Aylin' }, requesterId: 'u-esra',
+  })
+  assert.deepEqual(client.rows.map((r) => r.userId), ['u-ayse'])
+  assert.match(client.rows[0].body, /[Ee]kran onayı/)
+})
+
+test('an order sent back reads as a bounce, not as a fresh assignment', async () => {
+  const advanced = fakeClient()
+  await notifyOrderTransition(advanced, {
+    order: { id: 'o-1', project_id: 'p-1' }, project, newStatus: 'tasarimciya_atandi',
+    actor: { id: 'u-ayse', name: 'Ayşenur' }, requesterId: 'u-esra', assigneeIds: ['u-aylin'],
+  })
+  const rejected = fakeClient()
+  await notifyOrderTransition(rejected, {
+    order: { id: 'o-1', project_id: 'p-1' }, project, newStatus: 'tasarimciya_atandi',
+    actor: { id: 'u-ayse', name: 'Ayşenur' }, requesterId: 'u-esra', assigneeIds: ['u-aylin'],
+    action: 'reject',
+  })
+  assert.deepEqual(rejected.rows.map((r) => r.userId), ['u-aylin'])
+  assert.notEqual(
+    rejected.rows[0].body, advanced.rows[0].body,
+    'a rejected order must not reuse the advance copy — the bounce would be invisible',
+  )
+  assert.match(rejected.rows[0].body, /geri gönderildi/)
 })
 
 /**

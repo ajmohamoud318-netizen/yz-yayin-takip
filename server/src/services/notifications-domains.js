@@ -67,20 +67,49 @@ export async function notifyMeetingCreated(client, { meeting, actor }) {
 
 /* ------------------------------- orders ---------------------------------- */
 
+// Keys are order STATUS values (domain/orders.js ORDER_STEPS), and every step
+// in ORDER_STEP_OWNER must appear in all three maps below — a missing key
+// doesn't throw, it silently falls through to the `??` defaults at the bottom
+// of notifyOrderTransition and ships a notification that says nothing.
+//
+// That is exactly what migration 066's rename did: `pending` →
+// `atama_bekleniyor` and `ekran_onay` → `ekran_onayinda` landed in
+// domain/orders.js and on the client, but these maps kept the old spelling.
+// Both steps are the team leader's, so every new baskı talebi reached her as
+// the bare project title + 'Baskı güncellendi' instead of naming the action
+// she actually owed — the notification's whole job. The client had the same
+// drift and was fixed in project-detail.js's ORDER_ACTION_LABELS; this side
+// was missed. The 'every owned order step has copy of its own' test in
+// notifications.test.js reads these keys back through orderStepCopyKeys() and
+// fails the build if a future rename reopens the gap.
 const ORDER_STEP_BODY = {
-  pending: 'Yeni baskı talebi, onayınızı bekliyor',
+  atama_bekleniyor: 'Yeni baskı talebi, tasarımcıya atamanızı bekliyor',
   tasarimciya_atandi: 'Baskı kontrolünüzü bekliyor',
   kontroller_tamam: 'Baskı kontrolleri tamam, ozalit formunu gönderin',
   matbaa_ozalit_yapiyor: 'Baskı ozalit isteniyor',
-  ekran_onay: 'Ekran onayı bekleniyor',
+  ekran_onayinda: 'Ekran onayı bekleniyor',
   baski_onayi_bekleniyor: 'Baskı onay formu bekleniyor',
 }
+
+// A step reached by a REJECTION owes its owner different copy than the same
+// step reached by an advance: the work already exists and has been sent back,
+// so "Baskı kontrolünüzü bekliyor" reads as a fresh assignment and hides the
+// bounce. Same hazard the pipeline's demo-rejected-to-designer branch was
+// fixed for (see notifications.test.js's rejection block). Only the three
+// steps ORDER_REJECT_TARGETS can actually land on need an entry; anything
+// else falls back to the advance copy above.
+const ORDER_STEP_BODY_REJECTED = {
+  atama_bekleniyor: 'Baskı geri gönderildi, yeniden tasarımcı atayın',
+  tasarimciya_atandi: 'Baskı revizyon için size geri gönderildi',
+  matbaa_ozalit_yapiyor: 'Ozalit revizyon istendi, yeniden hazırlayın',
+}
+
 const ORDER_STEP_LINK = {
-  pending: '/siparis-talepleri',
+  atama_bekleniyor: '/siparis-talepleri',
   tasarimciya_atandi: '/siparis-onay',
   kontroller_tamam: '/siparis-onay',
   matbaa_ozalit_yapiyor: '/approvals/siparis',
-  ekran_onay: '/siparis-talepleri',
+  ekran_onayinda: '/siparis-talepleri',
   baski_onayi_bekleniyor: '/siparis-talepleri',
 }
 // Every value here MUST be one of notifications.tone's five allowed values
@@ -95,9 +124,13 @@ const ORDER_STEP_LINK = {
 //
 // baski_onayi_bekleniyor is amber for the same reason its project-pipeline twin
 // `baski_onay_pending` is: it's a step that owes someone an action.
+//
+// The tone fallback ('blue') is a legal tone, which is why the tone test below
+// kept passing straight through the migration-066 key drift described above —
+// it only ever asserted the CHECK constraint, never that the key was found.
 const ORDER_STEP_TONE = {
-  pending: 'amber', tasarimciya_atandi: 'green', kontroller_tamam: 'green',
-  matbaa_ozalit_yapiyor: 'blue', ekran_onay: 'blue', baski_onayi_bekleniyor: 'amber',
+  atama_bekleniyor: 'amber', tasarimciya_atandi: 'green', kontroller_tamam: 'green',
+  matbaa_ozalit_yapiyor: 'blue', ekran_onayinda: 'blue', baski_onayi_bekleniyor: 'amber',
 }
 
 /**
@@ -105,9 +138,13 @@ const ORDER_STEP_TONE = {
  * step. `onaylandi` is terminal → the sales requester is told it's approved.
  * `assigneeIds` are the designers assigned to THIS order (so the 'tasarimciya_atandi'
  * step pings the right designers, not every designer).
+ *
+ * `action` mirrors notifyProjectTransition's: 'advance' (the default) or
+ * 'reject', which swaps in ORDER_STEP_BODY_REJECTED so the step's owner is
+ * told the work came back rather than that it just arrived.
  */
 export async function notifyOrderTransition(client, {
-  order, project, newStatus, actor, requesterId, assigneeIds = [],
+  order, project, newStatus, actor, requesterId, assigneeIds = [], action = 'advance',
 }) {
   const title = project?.title ?? order?.project_title ?? 'Baskı'
   const base = { actorId: actor?.id, title, projectId: order?.project_id ?? project?.id, orderId: order?.id,
@@ -158,10 +195,28 @@ export async function notifyOrderTransition(client, {
     ? `/approvals/siparis?order=${order.id}`
     : (ORDER_STEP_LINK[newStatus] ?? '/siparis-talepleri')
 
+  const body = (action === 'reject' ? ORDER_STEP_BODY_REJECTED[newStatus] : null)
+    ?? ORDER_STEP_BODY[newStatus]
+    ?? 'Baskı güncellendi'
+
   return emit(client, {
     ...base, recipientIds, type: 'order_step', tone: ORDER_STEP_TONE[newStatus] ?? 'blue',
-    body: ORDER_STEP_BODY[newStatus] ?? 'Baskı güncellendi', link,
+    body, link,
   })
+}
+
+/**
+ * Test seam: the copy tables above are module-private so nothing outside can
+ * emit an unreviewed body, but the drift guard in notifications.test.js has to
+ * see which keys exist. Exported read-only rather than exporting the tables.
+ */
+export function orderStepCopyKeys() {
+  return {
+    body: Object.keys(ORDER_STEP_BODY),
+    link: Object.keys(ORDER_STEP_LINK),
+    tone: Object.keys(ORDER_STEP_TONE),
+    rejected: Object.keys(ORDER_STEP_BODY_REJECTED),
+  }
 }
 
 /** Order rejected → tell the sales requester it bounced. */

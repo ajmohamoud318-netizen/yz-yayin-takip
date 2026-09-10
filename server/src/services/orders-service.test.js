@@ -74,7 +74,7 @@ function orderRow(overrides = {}) {
  * the recipient set is empty).
  */
 function makeClient({ order, project = { id: 'p-1', stage: 'satista', type: 'TR', title: 'Kitap' },
-  subtask = null, leaders = [], users = {}, revizeTitles = [] } = {}) {
+  subtask = null, leaders = [], users = {}, revizeTitles = [], roleUsers = null } = {}) {
   const calls = []
   const client = {
     calls,
@@ -121,6 +121,15 @@ function makeClient({ order, project = { id: 'p-1', stage: 'satista', type: 'TR'
       if (/role = 'team_leader' AND is_active = TRUE/.test(sql)) {
         return { rows: leaders.map((id) => ({ id })) }
       }
+      // notifications.js's activeUserIdsByRole — `role = ANY($1)`, distinct
+      // from repo.activeTeamLeaderIds's literal-role query above. Left
+      // unanswered (roleUsers omitted) it returns no rows, which is what makes
+      // the notification fan-out a harmless no-op for tests that don't care.
+      // Pass `roleUsers` to give emit() a real audience and assert on it.
+      if (roleUsers && /FROM users WHERE role = ANY\(\$1\) AND is_active = TRUE/.test(sql)) {
+        const ids = (params[0] ?? []).flatMap((role) => roleUsers[role] ?? [])
+        return { rows: ids.map((id) => ({ id })) }
+      }
       if (/SELECT id, role, is_active FROM users WHERE id = \$1/.test(sql)) {
         const u = users[params[0]]
         return { rows: u ? [u] : [] }
@@ -151,6 +160,27 @@ function updatePatch(client) {
     patch[col] = call.params[Number(idx) - 1]
   }
   return { patch, sql: call.sql }
+}
+
+/**
+ * Every notification row a command emitted, one entry per RECIPIENT.
+ *
+ * emit() writes a single multi-row INSERT with 10 bound params per recipient,
+ * in the column order it declares — so the params are walked in strides of 10
+ * rather than read positionally off one row.
+ */
+function notifications(client) {
+  return client.matching(/INTO notifications/).flatMap((c) => {
+    const out = []
+    for (let i = 0; i < c.params.length; i += 10) {
+      out.push({
+        userId: c.params[i], type: c.params[i + 1], title: c.params[i + 2],
+        body: c.params[i + 3], tone: c.params[i + 4], projectId: c.params[i + 5],
+        orderId: c.params[i + 6], link: c.params[i + 7], actorId: c.params[i + 8],
+      })
+    }
+    return out
+  })
 }
 
 /** Every stage_history row a command wrote, as {event, note, to_stage}. */
@@ -588,6 +618,61 @@ describe('orders-service — baskı onay', () => {
     assert.equal(rows.length, 1)
     assert.equal(rows[0].to_stage, 'satista', 'timeline records the stage it stayed at')
     assert.equal(rows[0].note, 'Baskı onaylandı (proje zaten baskıda veya sonrasında)')
+  })
+
+  /* ------------------------------------------------------------------
+   * The matbaa's ping.
+   *
+   * /baski-listesi filters PROJECTS by stage (BaskiListesi.jsx), so the stage
+   * flip asserted two tests up is the only thing that puts the book in front
+   * of the printers — and a flip nobody is told about is a queue entry nobody
+   * looks at. notifyOrderTransition's `baskida` branch can't cover this: on
+   * the order side baskida is terminal, so it emits to the sales requester
+   * alone. The main pipeline's own baski_onay → baskida advance announces the
+   * same flip to the printers via notifyProjectTransition; the order path made
+   * the identical stage change and announced nothing, so a project that
+   * reached print through a sipariş stalled there with the matbaa never told
+   * to print it.
+   * ------------------------------------------------------------------ */
+
+  it('tells the matbaa the project entered production, and sales that the talep cleared', async () => {
+    const client = makeClient({
+      order: preparedRow(), leaders: bothLeaders,
+      project: { id: 'p-1', stage: 'baski_onay', type: 'TR', title: 'Kitap' },
+      roleUsers: { team_leader: bothLeaders, printer: ['P1'], satis: ['S1'] },
+    })
+
+    await service.approveBaskiOnayForm('o-1', L1, approvedForm, client)
+
+    const rows = notifications(client)
+    const toPrinter = rows.filter((n) => n.userId === 'P1')
+    assert.equal(toPrinter.length, 1, 'the matbaa hears exactly once')
+    assert.equal(toPrinter[0].type, 'production_ready')
+    assert.equal(toPrinter[0].link, '/baski-listesi', 'the queue they can actually open')
+
+    const toSales = rows.filter((n) => n.userId === 'S1')
+    assert.equal(toSales.length, 1, 'the requester still hears their talep cleared')
+    assert.equal(toSales[0].type, 'order_approved')
+  })
+
+  // The forward-only guard skipped the flip, so the project has been on the
+  // printers' queue since whatever put it there. Re-announcing would ring the
+  // bell for an arrival that already happened.
+  it('does not re-announce production when the project was already past baskida', async () => {
+    const client = makeClient({
+      order: preparedRow(), leaders: bothLeaders,
+      project: { id: 'p-1', stage: 'satista', type: 'TR', title: 'Kitap' },
+      roleUsers: { team_leader: bothLeaders, printer: ['P1'], satis: ['S1'] },
+    })
+
+    await service.approveBaskiOnayForm('o-1', L1, approvedForm, client)
+
+    const rows = notifications(client)
+    assert.equal(rows.filter((n) => n.type === 'production_ready').length, 0, 'no duplicate arrival')
+    assert.ok(
+      rows.some((n) => n.userId === 'S1' && n.type === 'order_approved'),
+      'the requester is told either way — their talep did just clear',
+    )
   })
 
   it('requires the mandatory fields', async () => {
