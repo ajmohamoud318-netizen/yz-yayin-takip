@@ -159,3 +159,117 @@ describe('the early signature is the same signature the gate reads', () => {
     assert.deepEqual(next.demo_parca_approvals.map((a) => a.parca).sort(), PARCALAR.slice().sort())
   })
 })
+
+/**
+ * The ozalit's multi-party rule does not pause because the round is unfinished.
+ *
+ * Reported live: on a partially-delivered ozalit the leader signed a received
+ * parça, and the assigned designer's approve button never appeared. The early
+ * gate was leader-only on both legs — which did not remove the designer's
+ * signature from the requirement, it just deferred it until the whole round
+ * landed. That is exactly the wait migration 076 exists to remove, and to the
+ * designer it read as the leader-first rule being broken in their favour and
+ * then ignored.
+ */
+describe('early per-parça sign-off — the ozalit leg is multi-party', () => {
+  const ozalitLeader = { id: 'u-l', role: 'team_leader', name: 'Ayşenur' }
+  const ozalitDesigner = { id: 'u-d', role: 'designer', name: 'Aylin' }
+
+  const ozalitRow = (parca, extra = {}) => ({
+    parca, gate: 'ozalit', state: 'pending', owner_role: null, attempt: 1,
+    delivered_at: '2026-09-09T09:00:00.000Z',
+    received_at: '2026-09-09T10:00:00.000Z',
+    ...extra,
+  })
+
+  function partialOzalit(overrides = {}) {
+    return {
+      id: 'p-9', type: 'TR', stage: 'ozalit_teslim', progress: 100,
+      ozalit_requested: true, ozalit_received: false,
+      ozalit_parca_approvals: {}, ozalit_parca_rejections: [],
+      demo_parca_approvals: [], demo_parca_rejections: [],
+      assignees: [{ id: 'u-d', name: 'Aylin' }],
+      subtasks: [{ id: 's1', kind: 'check', is_done: true }],
+      parca_state: [ozalitRow('KUTU')],
+      ...overrides,
+    }
+  }
+
+  const ozalitCtx = (extra = {}) => ({
+    actorName: 'Ayşenur',
+    snapshot: { selectedComponents: ['KAPAK', 'KUTU'] },
+    designerIds: ['u-d'],
+    teamLeaderIds: ['u-l'],
+    ...extra,
+  })
+
+  it('lets the assigned designer counter-sign a parça the leader signed', () => {
+    const project = partialOzalit({
+      ozalit_parca_approvals: { KUTU: [{ id: 'u-l', role: 'team_leader', name: 'Ayşenur' }] },
+    })
+    const result = computeApproval(project, ozalitDesigner, ozalitCtx({ actorName: ozalitDesigner.name, parcalar: ['KUTU'] }),
+    )
+    // Still an early sign-off: recorded, stage unmoved.
+    assert.equal(result.project.stage, 'ozalit_teslim')
+    const signers = result.project.ozalit_parca_approvals.KUTU.map((a) => a.id)
+    assert.deepEqual(signers, ['u-l', 'u-d'])
+  })
+
+  it('refuses the designer before any leader has signed that parça', () => {
+    assert.throws(
+      () => computeApproval(
+        partialOzalit(), ozalitDesigner,
+        ozalitCtx({ actorName: ozalitDesigner.name, parcalar: ['KUTU'] }),
+      ),
+      /Önce ekip lideri onaylamalıdır/,
+    )
+  })
+
+  it('is per PARÇA, not per round — another parça’s leader row is not enough', () => {
+    const project = partialOzalit({
+      parca_state: [ozalitRow('KUTU'), ozalitRow('KAPAK')],
+      ozalit_parca_approvals: { KAPAK: [{ id: 'u-l', role: 'team_leader' }] },
+    })
+    assert.throws(
+      () => computeApproval(project, ozalitDesigner, ozalitCtx({ actorName: ozalitDesigner.name, parcalar: ['KUTU'] }),
+      ),
+      /Önce ekip lideri onaylamalıdır/,
+    )
+  })
+
+  it('refuses a designer who is not assigned to the project', () => {
+    const project = partialOzalit({
+      ozalit_parca_approvals: { KUTU: [{ id: 'u-l', role: 'team_leader' }] },
+    })
+    assert.throws(
+      () => computeApproval(
+        project, { id: 'u-d2', role: 'designer', name: 'Başkası' },
+        ozalitCtx({ actorName: 'Başkası', parcalar: ['KUTU'] }),
+      ),
+      /yalnızca ekip lideri yapabilir/,
+    )
+  })
+
+  it('leaves the DEMO leg leader-only — a designer never signs a demo', () => {
+    const demoRound = {
+      ...partialOzalit(),
+      stage: 'demo_teslim',
+      parca_state: [ozalitRow('KUTU', { gate: 'demo' })],
+      demo_parca_approvals: [{ parca: 'KUTU', by: 'u-l', by_name: 'Ayşenur' }],
+    }
+    assert.throws(
+      () => computeApproval(demoRound, ozalitDesigner, ozalitCtx({ actorName: ozalitDesigner.name, parcalar: ['KUTU'] }),
+      ),
+      /yalnızca ekip lideri yapabilir/,
+    )
+  })
+
+  it('still lets the leader sign first, as it always did', () => {
+    const result = computeApproval(
+      partialOzalit(), ozalitLeader,
+      ozalitCtx({ parcalar: ['KUTU'] }),
+    )
+    assert.equal(result.project.stage, 'ozalit_teslim')
+    assert.equal(result.project.ozalit_parca_approvals.KUTU.length, 1)
+  })
+})

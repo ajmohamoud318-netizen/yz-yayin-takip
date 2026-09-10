@@ -159,10 +159,21 @@ export default function ProjectDetail() {
     add: d.parcaAddScope,
     edit: editParcaScope,
   })
-  // A designer may send back only a parça on a project they are assigned to;
-  // a leader may do it on the designer's behalf, matching the latitude
-  // canRequestOzalit gives them on the project-level round.
-  const canSendParcaBack = isLeader || (user?.role === 'designer' && isAssigned)
+  /* Only the assigned designer declares their own revize finished.
+   *
+   * This used to include the leader, on the reasoning that they may act on the
+   * designer's behalf the way `canRequestOzalit` lets them at the project level.
+   * That analogy does not hold: requesting a round is a scheduling decision, but
+   * "Revize Bitti, Gönderin" asserts that work somebody ELSE is doing is done —
+   * and it then picks the road (matbaa or ekran) on their behalf. A leader
+   * pressing it sends a parça back round on a revize the designer may still be
+   * halfway through, and the rejection note ("dfgfgd" in the report) is the
+   * designer's brief, not theirs.
+   *
+   * The server still accepts it from a leader — "Bu parçayı yalnızca atanmış
+   * tasarımcı veya ekip lideri gönderebilir" — so the escape hatch for an absent
+   * designer survives; it is simply not a button on the leader's screen. */
+  const canSendParcaBack = user?.role === 'designer' && isAssigned
 
   /**
    * "Teslim Alın" on ONE parça (migration 076).
@@ -389,6 +400,9 @@ export default function ProjectDetail() {
             <ParcaApprovalGrid
               project={project}
               kind={ledgerKind}
+              // Who is looking. The ozalit ledger is multi-party, so "still
+              // pending" is a question about this viewer — see pendingParcalar.
+              user={user}
               snapshotParcalar={parcaSnapshot}
               // Parçalar the project has that no round ever carried. Not on the
               // snapshot, so the grid cannot derive them — and the gate will not

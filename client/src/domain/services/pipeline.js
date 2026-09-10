@@ -884,7 +884,7 @@ const ROUND_GATE_BY_STAGE = {
  * @param {Array<string | { component?: string }>} [snapshotParcalar]
  * @returns {string[]}
  */
-export function pendingParcalar(project, kind, snapshotParcalar = []) {
+export function pendingParcalar(project, kind, snapshotParcalar = [], user = null) {
   const set = parcaNames(snapshotParcalar)
   if (!project || set.length === 0) return []
   // A rejected parça has no approval row — which is what holds the project at
@@ -911,8 +911,21 @@ export function pendingParcalar(project, kind, snapshotParcalar = []) {
     const out = new Set(rejectedParcalar(project, 'ozalit'))
     return set.filter((p) => {
       if (out.has(p)) return false
-      const row = ledger[p]
-      return !Array.isArray(row) || row.length === 0
+      const row = Array.isArray(ledger[p]) ? ledger[p] : []
+      /* Ozalit is MULTI-PARTY, so "pending" is a question about a person, not
+       * about the parça. Every active leader and every assigned designer has to
+       * sign each parça (`computeOzalitOnayApproval`'s `remaining` measures
+       * exactly that), and answering it round-level — "does this parça have any
+       * signature at all" — meant the leader's own sign-off closed the row for
+       * everybody. The designer then saw `Onaylandı` and no thumb on a parça
+       * they had never signed and the gate was still waiting on them for.
+       *
+       * With a viewer, the question becomes "have YOU signed this yet", which is
+       * what the multi-party ledger is actually recording. Without one the
+       * round-level reading stands: callers that have no user (the queue's
+       * counts, tests) are asking about the round, not about a person. */
+      if (!user?.id) return row.length === 0
+      return !row.some((a) => a?.id === user.id)
     })
   }
   if (kind === 'baski_onay' || kind === 'cin_baski_onay') {

@@ -1094,6 +1094,8 @@ function ApprovalRow({
               // (`baski_parca_*` vs `cin_baski_parca_*`), so a ÇİN project read
               // through the TR key showed every parça unsigned.
               kind={ledgerKindForStage(p.stage)}
+              // See ProjectDetail's note: the ozalit ledger is per-party.
+              user={user}
               snapshotParcalar={snapshotParcalar}
               // Deliberately no `neverSentParcalar` here, unlike ProjectDetail.
               // Answering "never sent" needs the project's routing rows as well

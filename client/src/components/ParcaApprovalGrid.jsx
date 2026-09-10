@@ -93,6 +93,7 @@ import {
 export default function ParcaApprovalGrid({
   project,
   kind,
+  user = null,
   snapshotParcalar = [],
   neverSentParcalar = [],
   roundAwaitsReceipt = false,
@@ -110,9 +111,12 @@ export default function ParcaApprovalGrid({
   showHeader = true,
   className,
 }) {
+  /* `user` matters on the ozalit leg and nowhere else: it is the one gate where
+     two different people each owe a signature on the same parça, so "still
+     pending" is a question about the viewer. See pendingParcalar. */
   const pending = useMemo(
-    () => pendingParcalar(project, kind, snapshotParcalar),
-    [project, kind, snapshotParcalar],
+    () => pendingParcalar(project, kind, snapshotParcalar, user),
+    [project, kind, snapshotParcalar, user],
   )
   const approved = useMemo(() => approvedParcalar(project, kind), [project, kind])
   const rejected = useMemo(() => rejectedParcalar(project, kind), [project, kind])
@@ -199,12 +203,14 @@ export default function ParcaApprovalGrid({
   // What the bulk button may actually sign off. At the gate that is everything
   // pending; on an unfinished round only what is in the leader's hands — the
   // server refuses the rest, so offering them would build a button that fails.
-  const bulkTarget = routingAware
+  const bulkTarget = (routingAware
     ? pending.filter((p) => statusOf(p) === 'pending')
     // An unprepared baskı parça cannot be approved — the server filters it out
     // of the target set — so a bulk that counted it would promise more than it
     // signs. Same rule as never-sent: the button covers what it can, honestly.
-    : pending.filter((p) => !unprepared.has(p))
+    : pending.filter((p) => !unprepared.has(p)))
+    // …and never a parça this viewer is not yet the one to sign.
+    .filter(signableByViewer)
 
   // …and the button only appears when that set is ALL of them.
   //
@@ -299,6 +305,21 @@ export default function ParcaApprovalGrid({
   // every parça on it becomes hazırlandı together. Only the onay that follows is
   // per parça.
   const showPrepare = !!onPrepareSheet && unprepared.size > 0 && !roundAwaitsReceipt
+
+  /**
+   * Leader-first, per parça — the designer's half of the ozalit rule.
+   *
+   * `pending` now answers "has THIS viewer signed", which correctly gives a
+   * designer a row back once the leader has signed it. On its own that also
+   * gives them rows nobody has signed yet, and the server refuses those:
+   * "Önce ekip lideri onaylamalıdır, tasarımcı onayı ondan sonra verilebilir."
+   * Scoped to the parça, because that is how the server scopes it.
+   */
+  function signableByViewer(parca) {
+    if (kind !== 'ozalit' || user?.role !== 'designer') return true
+    const rows = project?.ozalit_parca_approvals?.[parca]
+    return Array.isArray(rows) && rows.some((a) => a?.role === 'team_leader')
+  }
 
   const orderedParcalar = useMemo(() => {
     // Pending first (so the to-do list reads top-down), then approved, then
@@ -433,7 +454,7 @@ export default function ParcaApprovalGrid({
       <div className="space-y-1.5">
         {orderedParcalar.map((parca) => {
           const status = statusOf(parca)
-          const decidable = status === 'pending'
+          const decidable = status === 'pending' && signableByViewer(parca)
           return (
             <ParcaApprovalRow
               key={parca}

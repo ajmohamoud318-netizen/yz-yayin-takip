@@ -13,6 +13,7 @@ import {
   isLegacyProject,
   canApproveOzalitNow,
   ozalitDecidable,
+  ozalitLeaderApproved,
   EARLY_PARCA_STAGES,
 } from './pipeline.js'
 
@@ -102,7 +103,17 @@ export function parcaPanelDecider(user, ledgerKind, { project = null } = {}) {
    * `!ozalit_received` check, and takes the early sign-off away from the one
    * person the server grants it to. */
   if (project && EARLY_PARCA_STAGES.has(project.stage)) {
-    return user?.role === 'team_leader'
+    if (user?.role === 'team_leader') return true
+    // …but the OZALIT leg is multi-party even while the round is unfinished: an
+    // assigned designer counter-signs a parça a leader has already signed. The
+    // demo leg has no designer sign-off at any point, early or at the gate.
+    if (ledgerKind !== 'ozalit') return false
+    const assigned = user?.role === 'designer'
+      && (project.assignees ?? []).some((a) => a.id === user.id)
+    // Panel-level: is there anything here for them yet. Which PARÇA they may
+    // sign is the grid's own leader-first check, scoped the way the server
+    // scopes it — see signableByViewer.
+    return assigned && ozalitLeaderApproved(project)
   }
   if (ledgerKind === 'demo') return user?.role === 'team_leader'
   if (ledgerKind === 'ozalit') {

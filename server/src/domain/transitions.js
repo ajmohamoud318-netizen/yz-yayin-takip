@@ -1080,13 +1080,47 @@ function narrowEarlyParcalar(project, gate, actor, rawParcalar) {
  */
 function computeEarlyParcaApproval(project, actor, now, actorName, ctx) {
   const gate = EARLY_PARCA_GATES[project.stage]
-  // Deliberately narrower than `canApproveAt`, which lets the matbaa approve at
-  // demo_onay: this decision happens on a round the matbaa is still producing,
-  // so it is the leader's alone.
-  if (actor?.role !== 'team_leader') {
+  const isLeader = actor?.role === 'team_leader'
+  const designerIds = ctx?.designerIds ?? []
+  const teamLeaderIds = ctx?.teamLeaderIds ?? []
+  const isAssignedDesigner = actor?.role === 'designer' && designerIds.includes(actor?.id)
+
+  /* Who signs early, and it is not the same answer on both legs.
+   *
+   * DEMO is the leader's alone — deliberately narrower than `canApproveAt`,
+   * which lets the matbaa approve at demo_onay. The designer signs nothing on a
+   * demo at any point in its life, early or at the gate.
+   *
+   * OZALIT is multi-party, and that does not stop being true because the round
+   * is unfinished. Every active leader AND every assigned designer must sign
+   * each parça before it counts as done — `computeOzalitOnayApproval`'s
+   * `remaining` measures against exactly that set — so a parça the leader signs
+   * early is still owed the designer's counter-sign. Refusing it here did not
+   * remove the requirement, it just deferred it: the designer could sign only
+   * once the whole round had landed, which is precisely the wait the early gate
+   * exists to remove. And to the designer it read as the rule being broken —
+   * the leader had approved, and their own button never appeared.
+   */
+  if (!isLeader && !(gate === 'ozalit' && isAssignedDesigner)) {
     badRequest('Tamamlanmamış turda parça onayını yalnızca ekip lideri yapabilir.')
   }
   const target = narrowEarlyParcalar(project, gate, actor, ctx?.parcalar)
+
+  /* Leader-first, per parça — the same order the gate enforces, applied to the
+   * one parça in hand rather than to the round. A designer counter-signs a proof
+   * a team leader has already accepted; on an unfinished round "already
+   * accepted" can only mean this parça's own row, since the rest of the round is
+   * still in the press. */
+  if (isAssignedDesigner) {
+    const unsigned = target.filter((parca) => !ozalitParcaApprovedBy(project, parca).some(
+      (a) => a?.role === 'team_leader' || teamLeaderIds.includes(a?.id),
+    ))
+    if (unsigned.length > 0) {
+      badRequest(
+        `Önce ekip lideri onaylamalıdır, tasarımcı onayı ondan sonra verilebilir: ${unsigned.join(', ')}`,
+      )
+    }
+  }
   const ledger = gate === 'ozalit'
     ? {
         ozalit_parca_approvals: appendOzalitParcaApprovals(

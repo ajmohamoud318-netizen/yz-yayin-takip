@@ -849,3 +849,92 @@ describe('ParcaApprovalGrid — partial arrival at the gate', () => {
   })
 })
 
+
+/**
+ * Ozalit is multi-party, so "still pending" is a question about the VIEWER.
+ *
+ * Reported live: the leader signed a parça on a partially-delivered ozalit and
+ * the assigned designer's approve button never appeared. `pendingParcalar` read
+ * the ozalit ledger round-level — "does this parça have any signature at all" —
+ * so the leader's own sign-off closed the row for everybody. The designer saw
+ * `Onaylandı` on a parça they had never signed and the gate was still waiting on
+ * them for.
+ */
+describe('ParcaApprovalGrid — the ozalit ledger is per-party', () => {
+  const leader = { id: 'u-l', role: 'team_leader' }
+  const designer = { id: 'u-d', role: 'designer' }
+  const leaderSigned = {
+    ozalit_parca_approvals: { KUTU: [{ id: 'u-l', role: 'team_leader', name: 'Ayşenur' }] },
+    ozalit_parca_rejections: [],
+  }
+  const props = { kind: 'ozalit', snapshotParcalar: ['KUTU', 'KAPAK'] }
+
+  it('gives the designer a thumb on a parça the leader has signed', () => {
+    render(
+      <ParcaApprovalGrid
+        {...props}
+        project={leaderSigned}
+        user={designer}
+        onApproveParcalar={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label="KUTU parçasını onayla"]')).toBeTruthy()
+  })
+
+  it('withholds it on a parça no leader has signed — leader-first, per parça', () => {
+    render(
+      <ParcaApprovalGrid
+        {...props}
+        project={leaderSigned}
+        user={designer}
+        onApproveParcalar={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label="KAPAK parçasını onayla"]')).toBe(null)
+  })
+
+  it('shows the leader their own sign-off as done', () => {
+    render(
+      <ParcaApprovalGrid
+        {...props}
+        project={leaderSigned}
+        user={leader}
+        onApproveParcalar={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label="KUTU parçasını onayla"]')).toBe(null)
+    expect(container.querySelector('button[aria-label="KAPAK parçasını onayla"]')).toBeTruthy()
+  })
+
+  it('drops the designer’s bulk button to what they may actually sign', () => {
+    render(
+      <ParcaApprovalGrid
+        {...props}
+        project={leaderSigned}
+        user={designer}
+        onApproveParcalar={() => {}}
+        bulkApproveLabel="Tüm parçaları onaylayın"
+      />,
+    )
+    // Only KUTU is theirs to sign; KAPAK has no leader row yet.
+    const bulk = container.querySelector('button[aria-label*="Tüm parçaları onaylayın"]')
+    expect(bulk).toBe(null)
+  })
+
+  it('leaves the demo leg round-level — nobody counter-signs a demo', () => {
+    render(
+      <ParcaApprovalGrid
+        kind="demo"
+        snapshotParcalar={['KUTU', 'KAPAK']}
+        project={{
+          demo_parca_approvals: [{ parca: 'KUTU', by: 'u-l', by_name: 'Ayşenur' }],
+          demo_parca_rejections: [],
+        }}
+        user={leader}
+        onApproveParcalar={() => {}}
+      />,
+    )
+    expect(container.querySelector('button[aria-label="KUTU parçasını onayla"]')).toBe(null)
+    expect(container.textContent).toContain('Onaylandı')
+  })
+})
