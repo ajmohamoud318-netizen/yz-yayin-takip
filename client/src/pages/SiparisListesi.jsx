@@ -23,9 +23,15 @@ const STATUS_BADGE = {
   imza_bekleniyor:        'bg-violet-50 text-violet-700 border-violet-200',
   baski_onayi_bekleniyor: 'bg-purple-50 text-purple-700 border-purple-200',
   baskida:                'bg-emerald-50 text-emerald-700 border-emerald-200',
+  // The order's real terminal state (migration 081) — satış has taken
+  // delivery of the run. Without a key here it would paint no class at all.
+  teslim_edildi:          'bg-teal-50 text-teal-700 border-teal-200',
 }
 
-const STEP_ORDER = ['atama_bekleniyor', 'tasarimciya_atandi', 'kontroller_tamam', 'matbaa_ozalit_yapiyor', 'imza_bekleniyor', 'baskida']
+// Ends on `teslim_edildi`, not `baskida` (migration 081): satış is the role
+// reading this page AND the one who confirms the teslim, so stopping the
+// strip at `baskida` hid the one remaining step that is theirs.
+const STEP_ORDER = ['atama_bekleniyor', 'tasarimciya_atandi', 'kontroller_tamam', 'matbaa_ozalit_yapiyor', 'imza_bekleniyor', 'baskida', 'teslim_edildi']
 
 export default function SiparisListesi() {
   const { user } = useAuth()

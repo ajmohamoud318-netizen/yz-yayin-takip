@@ -62,9 +62,10 @@ async function migrationFiles() {
  * fidelity is the point: a file that only works when split statement-by-
  * statement would pass a laxer harness and fail at boot.
  */
-async function freshDb() {
+async function freshDb({ upToExclusive = null } = {}) {
   const db = new PGlite()
   for (const f of await migrationFiles()) {
+    if (upToExclusive && f >= upToExclusive) break
     const sql = await fs.readFile(path.join(MIGRATIONS_DIR, f), 'utf8')
     try {
       await db.exec(`BEGIN; ${sql} ; COMMIT;`)
@@ -209,5 +210,134 @@ test('080: deleting an order cascades its parçalar and spares the project\'s', 
   assert.equal(orphans.rows[0].n, 0, 'the order\'s parçalar did not cascade')
   const kept = await db.query('SELECT count(*)::int AS n FROM parca_state WHERE order_id IS NULL')
   assert.equal(kept.rows[0].n, 1, 'the project\'s own parça was collateral damage')
+  await db.close()
+})
+
+/* ==========================================================================
+ *  081 — the sipariş print run gains its own teslim
+ * ======================================================================== */
+
+const M081 = '081__order_handovers.sql'
+
+async function applyMigration(db, file) {
+  const sql = await fs.readFile(path.join(MIGRATIONS_DIR, file), 'utf8')
+  await db.exec(`BEGIN; ${sql} ; COMMIT;`)
+}
+
+test('081: handovers carries a nullable order_id that cascades', { skip: !PGlite }, async () => {
+  const db = await freshDb()
+  const col = await db.query(
+    `SELECT is_nullable FROM information_schema.columns
+      WHERE table_name = 'handovers' AND column_name = 'order_id'`,
+  )
+  assert.equal(col.rows.length, 1, 'handovers.order_id is missing')
+  assert.equal(
+    col.rows[0].is_nullable, 'YES',
+    'order_id must be nullable — NULL is the project\'s own teslim, i.e. every row that already existed',
+  )
+  await db.close()
+})
+
+test('081: a project teslim and a reprint teslim can both be pending', { skip: !PGlite }, async () => {
+  // The reason the old single guard had to be split. These are two different
+  // physical deliveries of two different sets of copies; either blocking the
+  // other strands a real one.
+  const db = await freshDb()
+  await db.exec(`
+    INSERT INTO users (id, name, email, role) VALUES ('u1','Oktay','o@e.com','printer');
+    INSERT INTO projects (id, title, type, stage) VALUES ('p1','Kitap','TR','baskida');
+    INSERT INTO order_requests (id, project_id, requested_by, status)
+      VALUES ('o1','p1','u1','baskida'), ('o2','p1','u1','baskida');
+  `)
+  const insert = (id, orderId) => db.query(
+    `INSERT INTO handovers (id, project_id, order_id, status, from_stage)
+     VALUES ($1,'p1',$2,'pending','baskida')`,
+    [id, orderId],
+  )
+  await insert('h1', null)   // the project's own
+  await insert('h2', 'o1')   // one reprint
+  await insert('h3', 'o2')   // a second, concurrent reprint — also allowed
+
+  await assert.rejects(
+    () => insert('h4', null),
+    'a second pending PROJECT teslim was accepted — uq_handovers_pending_per_project is not constraining',
+  )
+  await assert.rejects(
+    () => insert('h5', 'o1'),
+    'a second pending ORDER teslim was accepted — uq_handovers_pending_per_order is not constraining',
+  )
+
+  // Settling one frees the slot: a later run of the same order gets its own.
+  await db.query("UPDATE handovers SET status = 'received' WHERE id = 'h2'")
+  await insert('h6', 'o1')
+  await db.close()
+})
+
+test('081: deleting an order cascades its teslim rows and spares the project\'s', { skip: !PGlite }, async () => {
+  const db = await freshDb()
+  await db.exec(`
+    INSERT INTO users (id, name, email, role) VALUES ('u1','Oktay','o@e.com','printer');
+    INSERT INTO projects (id, title, type, stage) VALUES ('p1','Kitap','TR','baskida');
+    INSERT INTO order_requests (id, project_id, requested_by, status) VALUES ('o1','p1','u1','baskida');
+    INSERT INTO handovers (id, project_id, order_id, status, from_stage)
+      VALUES ('h1','p1',NULL,'pending','baskida'), ('h2','p1','o1','pending','baskida');
+    DELETE FROM order_requests WHERE id = 'o1';
+  `)
+  const rows = await db.query('SELECT id FROM handovers ORDER BY id')
+  assert.deepEqual(
+    rows.rows.map((r) => r.id), ['h1'],
+    "the order's teslim must cascade and the project's must survive",
+  )
+  await db.close()
+})
+
+test('081: the status CHECK accepts teslim_edildi and still refuses nonsense', { skip: !PGlite }, async () => {
+  const db = await freshDb()
+  await db.exec(`
+    INSERT INTO users (id, name, email, role) VALUES ('u1','Oktay','o@e.com','printer');
+    INSERT INTO projects (id, title, type, stage) VALUES ('p1','Kitap','TR','baskida');
+    INSERT INTO order_requests (id, project_id, requested_by, status) VALUES ('o1','p1','u1','baskida');
+  `)
+  await db.query("UPDATE order_requests SET status = 'teslim_edildi' WHERE id = 'o1'")
+  await assert.rejects(
+    () => db.query("UPDATE order_requests SET status = 'onaylandi' WHERE id = 'o1'"),
+    'the CHECK let a retired status name through — migration 066 renamed it away',
+  )
+  await db.close()
+})
+
+test('081: the backfill closes runs that finished before the teslim leg existed', { skip: !PGlite }, async () => {
+  // The migration draws a cut-off. Every order already at `baskida` was
+  // physically handed over off-system, because there was no system to hand it
+  // over in — without this they would all appear in the matbaa's teslim queue
+  // on the morning of the deploy, asking to re-deliver history.
+  const db = await freshDb({ upToExclusive: M081 })
+  await db.exec(`
+    INSERT INTO users (id, name, email, role) VALUES ('u1','Oktay','o@e.com','printer');
+    INSERT INTO projects (id, title, type, stage) VALUES ('p1','Kitap','TR','satista');
+    INSERT INTO order_requests (id, project_id, requested_by, status)
+      VALUES ('done','p1','u1','baskida'), ('mid','p1','u1','imza_bekleniyor');
+  `)
+  await applyMigration(db, M081)
+
+  const after = await db.query('SELECT id, status FROM order_requests ORDER BY id')
+  assert.deepEqual(
+    Object.fromEntries(after.rows.map((r) => [r.id, r.status])),
+    { done: 'teslim_edildi', mid: 'imza_bekleniyor' },
+    'only finished runs are closed; anything mid-pipeline must be left alone',
+  )
+
+  // It says so on the timeline rather than changing state silently, and signs
+  // the row to nobody — no person confirmed these.
+  const hist = await db.query(
+    "SELECT order_id, signed_by_id FROM order_history WHERE step = 'teslim_edildi'",
+  )
+  assert.deepEqual(hist.rows.map((r) => r.order_id), ['done'])
+  assert.equal(hist.rows[0].signed_by_id, null, 'a backfill must not sign as a real user')
+
+  // And invents no receipts: a handover row means somebody actually raised and
+  // confirmed one.
+  const ho = await db.query('SELECT count(*)::int AS n FROM handovers')
+  assert.equal(ho.rows[0].n, 0)
   await db.close()
 })

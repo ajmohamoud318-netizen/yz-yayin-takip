@@ -111,6 +111,26 @@ export function assertHandoverEligible(project) {
   }
 }
 
+/**
+ * Client mirror of the server's `canRequestOrderHandover` (domain/pipeline.js,
+ * migration 081) — may the matbaa raise a teslim for THIS sipariş's run?
+ *
+ * A reprint of a title already at or past baskıda never moves the project's
+ * stage (the order's final approve is forward-only, deliberately), so the
+ * project-scoped teslim can never be raised for it and its copies had no way
+ * to reach satış at all. This is that path.
+ *
+ * Note what it does NOT look at: the project. An order is always an additional
+ * print run, so its copies are never the ones the project's own teslim
+ * delivers — and a rule keyed on the project's stage would change its answer
+ * the moment that teslim confirmed. See the server twin for the full note.
+ *
+ * @param {{ status: string }} order
+ */
+export function canRequestOrderHandover(order) {
+  return order?.status === 'baskida'
+}
+
 /** @param {{ type: string, stage: string }} project */
 export function getNextStage(project) {
   const pipeline = getPipeline(project.type)

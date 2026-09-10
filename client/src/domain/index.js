@@ -19,6 +19,7 @@ export {
   handoverStageFor,
   canRequestHandover,
   assertHandoverEligible,
+  canRequestOrderHandover,
   isOzalitApprover,
   ozalitLeaderApproved,
   canApproveOzalitNow,

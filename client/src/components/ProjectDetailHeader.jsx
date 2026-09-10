@@ -28,21 +28,29 @@ import HeaderBanners from '@/components/HeaderBanners'
 // ---------------------------------------------------------------------------
 
 /**
- * Compact stepper for a single sipariş order's own steps (Talep →
- * Satışta) — separate from the project's main design/production pipeline
- * (StageBar), which doesn't move while an order is in flight and says
- * nothing about it. `sold` (project.stage === 'satista') and
- * `handoverPending` (Matbaa raised a teslim request Satış hasn't confirmed
- * yet) advance the two derived final steps as those real events actually
- * happen.
+ * Compact stepper for a single sipariş order's own steps (Talep → Teslim
+ * Edildi) — separate from the project's main design/production pipeline
+ * (StageBar), which doesn't move while an order is in flight and says nothing
+ * about it.
+ *
+ * Every step drawn here is now a real `order.status` (migration 081). It used
+ * to append two DERIVED steps — 'teslim_bekleniyor' and 'satista' — driven off
+ * the project, because the order's own FSM stopped dead at `baskida` and the
+ * tracker would otherwise have frozen there forever. The teslim leg exists as
+ * order state now, so the tracker reads it directly and the project's stage
+ * stops standing in for a run it never described. That matters most in the
+ * case this feature was written for: a reprint of a book already `satista`
+ * lit the final step the moment it was approved, announcing a delivery that
+ * had not happened.
+ *
+ * `handoverPending` (Matbaa raised a teslim Satış hasn't confirmed yet) is
+ * what marks the last step in-progress rather than merely next.
  */
-function OrderProgressStepper({ order, sold, handoverPending, canAct, onAct }) {
-  const displaySteps = [...orderStepPath(order), 'teslim_bekleniyor', 'satista']
-  const currentIndex = sold
-    ? displaySteps.length - 1
-    : handoverPending
-      ? displaySteps.length - 2
-      : Math.max(0, displaySteps.indexOf(order.status))
+function OrderProgressStepper({ order, handoverPending, canAct, onAct }) {
+  const displaySteps = orderStepPath(order)
+  const currentIndex = handoverPending && order.status === 'baskida'
+    ? displaySteps.indexOf('teslim_edildi')
+    : Math.max(0, displaySteps.indexOf(order.status))
   return (
     <div
       className={cn(
@@ -130,7 +138,7 @@ export default function ProjectDetailHeader({ d }) {
 
   const {
     project, user, isLeader, isDeleted,
-    trackedOrders, sold, handoverPending, fallbackProjectIds,
+    trackedOrders, handoverPendingFor, fallbackProjectIds,
     openOrderAction,
     restoring, setEditOpen, handleRestore,
   } = d
@@ -238,8 +246,7 @@ export default function ProjectDetailHeader({ d }) {
             <OrderProgressStepper
               key={o.id}
               order={o}
-              sold={sold && o.status === 'baskida'}
-              handoverPending={handoverPending && o.status === 'baskida'}
+              handoverPending={handoverPendingFor(o)}
               canAct={canActOnOrder(user, o, fallbackProjectIds)}
               onAct={() => openOrderAction(o)}
             />

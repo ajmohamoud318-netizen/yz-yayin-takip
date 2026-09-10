@@ -1328,12 +1328,22 @@ const ordersBaskiOnayForm = {
 
 // ─── handovers ─────────────────────────────────────────────────────────
 
+// One teslim, two kinds (migration 081): a project's own, or one sipariş's
+// print run. `oneOf` is what makes "exactly one of them" a 400 from the
+// validator rather than a branch the route has to defend — a body carrying
+// both would otherwise silently take whichever the route checked first.
 const handoversCreate = {
   body: {
     type: 'object',
     additionalProperties: false,
-    required: ['projectId'],
-    properties: { projectId: projectId },
+    oneOf: [
+      { required: ['projectId'], not: { required: ['orderId'] } },
+      { required: ['orderId'], not: { required: ['projectId'] } },
+    ],
+    properties: {
+      projectId: projectId,
+      orderId: { type: 'string', minLength: 1, maxLength: 64 },
+    },
   },
 }
 

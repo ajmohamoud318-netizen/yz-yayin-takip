@@ -1,4 +1,5 @@
 import { httpClient } from '../client.js'
+import { isOrderOpen } from '../../../domain/constants/orders.js'
 
 export function createHttpOrderRepository() {
   return {
@@ -13,7 +14,7 @@ export function createHttpOrderRepository() {
     async findOpenByProject(projectId) {
       const all = await httpClient.get('/order-requests')
       return (all.data ?? []).find(
-        (o) => o.project_id === projectId && o.status !== 'baskida' && o.status !== 'rejected',
+        (o) => o.project_id === projectId && isOrderOpen(o),
       ) ?? null
     },
     // Mark a delivered matbaa ozalit "Teslim Alındı" — the gate before the

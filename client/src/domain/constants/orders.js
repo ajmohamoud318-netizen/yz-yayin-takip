@@ -3,7 +3,10 @@
 export const ORDER_STEPS = [
   'atama_bekleniyor', 'tasarimciya_atandi', 'kontroller_tamam',
   'matbaa_ozalit_yapiyor', 'ekran_onayinda', 'imza_bekleniyor',
-  'baski_onayi_bekleniyor', 'baskida',
+  // `baskida` is the paper being at the matbaa, not the end of the story:
+  // migration 081 gave the run its own teslim leg, and satış confirming it is
+  // what finally closes the order.
+  'baski_onayi_bekleniyor', 'baskida', 'teslim_edildi',
 ]
 
 export const ORDER_STEP_LABELS = {
@@ -15,6 +18,7 @@ export const ORDER_STEP_LABELS = {
   imza_bekleniyor: 'İmza Bekleniyor',
   baski_onayi_bekleniyor: 'Baskı Onayı Bekleniyor',
   baskida: 'Baskıda',
+  teslim_edildi: 'Teslim Edildi',
   // Sub-events logged inside order_history while status stays at imza_bekleniyor
   // (never an order.status value themselves) — without these, ProjectDetail's
   // order_step_label lookup falls back to the raw step key.
@@ -34,6 +38,9 @@ export const ORDER_STEP_LABELS = {
   ozalit_change_requested: 'Değişiklik İstendi',
   ozalit_change_accepted: 'Değişiklik Kabul Edildi',
   ozalit_change_declined: 'Değişiklik Reddedildi',
+  // The teslim leg (migration 081): the matbaa raising the handover is logged
+  // against the order while its status stays at `baskida`.
+  handover_request: 'Teslim Talebi Oluşturuldu',
 }
 
 // Which order_history steps belong to the ozalit/proof round — i.e. should
@@ -138,15 +145,32 @@ export const ORDER_REJECT_TO = {
 // These two constants are the two possible full linear paths an order can
 // take, for anything that needs to render a step sequence (pipeline
 // visualizers, "future steps" lists).
+// Both end on `teslim_edildi`, not `baskida` (migration 081): the run is only
+// finished once satış has taken delivery of it, and a visualizer that stopped
+// at `baskida` would show an order as complete while its copies were still on
+// a truck.
 export const ORDER_STEP_PATH_DEFAULT = [
   'atama_bekleniyor', 'tasarimciya_atandi', 'kontroller_tamam',
   'matbaa_ozalit_yapiyor', 'imza_bekleniyor',
-  'baski_onayi_bekleniyor', 'baskida',
+  'baski_onayi_bekleniyor', 'baskida', 'teslim_edildi',
 ]
 export const ORDER_STEP_PATH_EKRAN_ONAY = [
   'atama_bekleniyor', 'tasarimciya_atandi', 'kontroller_tamam',
-  'ekran_onayinda', 'baski_onayi_bekleniyor', 'baskida',
+  'ekran_onayinda', 'baski_onayi_bekleniyor', 'baskida', 'teslim_edildi',
 ]
+
+/**
+ * The steps an order never leaves. `baskida` is NOT one of them any more
+ * (migration 081): the run still owes a teslim, and treating it as finished is
+ * exactly what left reprints undelivered. Everything that asks "is this order
+ * still in flight" reads this, so the answer cannot differ per page.
+ */
+export const ORDER_TERMINAL_STEPS = new Set(['teslim_edildi', 'rejected'])
+
+/** Is this order still in flight? */
+export function isOrderOpen(order) {
+  return !!order && !ORDER_TERMINAL_STEPS.has(order.status)
+}
 
 /**
  * Which of the two linear paths this order actually took. Checked against
@@ -252,6 +276,9 @@ export function canActOnOrder(user, order, fallbackProjectIds) {
       if (!order.matbaa_received) return true
       return canApproveMatbaaOnayNow(user, order)
     }
+    // `baskida` and `teslim_edildi` fall through: the teslim leg between them
+    // belongs to the matbaa and satış, and it is driven from Teslim Talepleri /
+    // Teslim Onayları rather than from an order card (migration 081).
     default:
       return false
   }

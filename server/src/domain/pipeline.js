@@ -105,3 +105,41 @@ export function assertHandoverEligible(project) {
     throw err
   }
 }
+
+/**
+ * May the matbaa raise a teslim for THIS sipariş's print run (migration 081)?
+ *
+ * One condition, and the simplicity is the point: the run cleared baskı onayı,
+ * so there are copies to hand over. `teslim_edildi` is terminal, so an order
+ * that has already been delivered answers false without a second lookup.
+ *
+ * Deliberately NOT conditioned on the project's stage. An order is always an
+ * ADDITIONAL print run — `assertOrderable` only lets one be raised against a
+ * title that already reached baskıda — so a sipariş's copies are never the
+ * same copies the project's own teslim delivers, and one teslim can never
+ * stand in for the other.
+ *
+ * Making it stage-dependent was the tempting mistake: "hide the reprint while
+ * the project's own teslim is available" reads as de-duplication, but the
+ * project's stage moves underneath it. Confirming the project's teslim pushes
+ * it to `satista`, and at that instant every order still at `baskida` — the
+ * ones physically handed over in that very delivery included — would start
+ * demanding a teslim of their own. A rule that changes its answer because a
+ * different aggregate moved is not a rule about this order.
+ */
+export function canRequestOrderHandover(order) {
+  return order?.status === 'baskida'
+}
+
+export function assertOrderHandoverEligible(order) {
+  if (order?.status === 'teslim_edildi') {
+    const err = new Error('Bu baskı zaten teslim edildi.')
+    err.status = 400
+    throw err
+  }
+  if (!canRequestOrderHandover(order)) {
+    const err = new Error('Teslim talebi yalnızca baskısı onaylanmış siparişler için oluşturulabilir.')
+    err.status = 400
+    throw err
+  }
+}

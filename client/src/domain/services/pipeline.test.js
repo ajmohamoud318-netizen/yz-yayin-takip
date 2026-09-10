@@ -18,6 +18,7 @@ import {
   isCatalogListed,
   handoverStageFor,
   canRequestHandover,
+  canRequestOrderHandover,
   assertHandoverEligible,
   isOzalitApprover,
   ozalitLeaderApproved,
@@ -199,6 +200,32 @@ describe('handoverStageFor / canRequestHandover / assertHandoverEligible', () =>
     expect(canRequestHandover({ type: 'TR', stage: 'tasarim' })).toBe(false)
     expect(canRequestHandover({ type: 'CIN', stage: 'baskida' })).toBe(false)
     expect(canRequestHandover({ type: 'TR', stage: 'satista' })).toBe(false)
+  })
+  // Migration 081. This is the case that had no path at all: a reprint of a
+  // book already selling. Its project stays at `satista` (the order's final
+  // approve is forward-only), so the assertion directly above says the
+  // PROJECT cannot be handed over — and the copies still have to reach satış.
+  it('a sipariş at baskida can be handed over on its own', () => {
+    expect(canRequestOrderHandover({ status: 'baskida' })).toBe(true)
+  })
+  it('a sipariş that has not finished printing cannot', () => {
+    expect(canRequestOrderHandover({ status: 'imza_bekleniyor' })).toBe(false)
+    expect(canRequestOrderHandover({ status: 'baski_onayi_bekleniyor' })).toBe(false)
+    expect(canRequestOrderHandover({ status: 'rejected' })).toBe(false)
+    expect(canRequestOrderHandover(null)).toBe(false)
+  })
+  it('a sipariş already delivered cannot be handed over twice', () => {
+    expect(canRequestOrderHandover({ status: 'teslim_edildi' })).toBe(false)
+  })
+  it("does not depend on the project's stage", () => {
+    // The rule that tempted us and would have been wrong: hiding a reprint
+    // while the project's own teslim is available. Confirming that teslim
+    // pushes the project to `satista`, and every order still at `baskida` —
+    // the ones handed over in that very delivery included — would flip from
+    // "covered" to "needs a teslim" without anything about the order changing.
+    const order = { status: 'baskida' }
+    expect(canRequestOrderHandover(order, { type: 'TR', stage: 'baskida' }))
+      .toBe(canRequestOrderHandover(order, { type: 'TR', stage: 'satista' }))
   })
   it('assertHandoverEligible throws 400 with status on wrong stage', () => {
     try {

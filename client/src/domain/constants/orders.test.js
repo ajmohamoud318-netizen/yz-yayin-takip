@@ -1,6 +1,9 @@
 import {
   ORDER_STEPS,
+  ORDER_STEP_LABELS,
   ORDER_STEP_NEXT,
+  ORDER_TERMINAL_STEPS,
+  isOrderOpen,
   ORDER_STEP_OWNER,
   ORDER_REJECT_TARGETS,
   ORDER_REJECT_TO,
@@ -17,10 +20,17 @@ import {
 } from './orders.js'
 
 describe('order workflow step graph', () => {
-  it('the default path forms a valid linear chain', () => {
-    for (let i = 0; i < ORDER_STEP_PATH_DEFAULT.length - 1; i++) {
-      expect(ORDER_STEP_NEXT[ORDER_STEP_PATH_DEFAULT[i]]).toBe(ORDER_STEP_PATH_DEFAULT[i + 1])
+  it('the default path forms a valid linear chain up to baskida', () => {
+    // Stops before the last hop on purpose. `baskida → teslim_edildi` is real
+    // (migration 081) but deliberately absent from ORDER_STEP_NEXT: only satış
+    // confirming the teslim may make it, never /advance. The path renders it,
+    // the FSM map refuses to offer it, and that gap is the guarantee.
+    const advanceable = ORDER_STEP_PATH_DEFAULT.slice(0, -1)
+    for (let i = 0; i < advanceable.length - 1; i++) {
+      expect(ORDER_STEP_NEXT[advanceable[i]]).toBe(advanceable[i + 1])
     }
+    expect(ORDER_STEP_PATH_DEFAULT.at(-1)).toBe('teslim_edildi')
+    expect(ORDER_STEP_PATH_EKRAN_ONAY.at(-1)).toBe('teslim_edildi')
   })
   it('the ekran_onay branch is valid from ekran_onayinda onward', () => {
     // kontroller_tamam's default ORDER_STEP_NEXT is matbaa_ozalit_yapiyor; the
@@ -36,12 +46,29 @@ describe('order workflow step graph', () => {
     expect(ORDER_STEP_NEXT.kontroller_tamam).toBe('matbaa_ozalit_yapiyor')
     expect(ORDER_STEP_OWNER.kontroller_tamam).toBe(ORDER_STEP_OWNER.tasarimciya_atandi)
   })
-  it('the final step (baskida) has no next', () => {
+  it('baskida has no next — the teslim leg is not an advance', () => {
+    // The order really does move on from baskida, to teslim_edildi. It must
+    // not do so through /advance: adding an entry here would hand the printer
+    // (or anyone) a button that marks a delivery satış never confirmed.
     expect(ORDER_STEP_NEXT.baskida).toBeUndefined()
+    expect(ORDER_STEP_NEXT.teslim_edildi).toBeUndefined()
   })
-  it('every actionable step has a labelled owner (baskida is terminal — no owner needed)', () => {
+  it('teslim_edildi is the terminal step, and it is labelled', () => {
+    expect(ORDER_STEPS.at(-1)).toBe('teslim_edildi')
+    expect(ORDER_STEP_LABELS.teslim_edildi).toBeTruthy()
+    expect(ORDER_TERMINAL_STEPS.has('teslim_edildi')).toBe(true)
+    // The one that matters: `baskida` stopped being terminal, which is what
+    // keeps a finished-but-undelivered run visible everywhere that asks.
+    expect(ORDER_TERMINAL_STEPS.has('baskida')).toBe(false)
+    expect(isOrderOpen({ status: 'baskida' })).toBe(true)
+    expect(isOrderOpen({ status: 'teslim_edildi' })).toBe(false)
+    expect(isOrderOpen({ status: 'rejected' })).toBe(false)
+  })
+  it('every actionable step has a labelled owner (the terminal pair need none)', () => {
     for (const step of ORDER_STEPS) {
-      if (step === 'baskida') continue
+      // baskida is the matbaa printing and teslim_edildi is done: the teslim
+      // leg between them belongs to routes/handovers.js, not to this map.
+      if (step === 'baskida' || step === 'teslim_edildi') continue
       expect(ORDER_STEP_OWNER[step]).toBeTruthy()
     }
   })

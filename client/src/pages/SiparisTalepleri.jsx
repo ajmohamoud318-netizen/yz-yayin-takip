@@ -37,6 +37,9 @@ const STATUS_BADGE = {
   imza_bekleniyor:        'bg-violet-50 text-violet-700 border-violet-200',
   baski_onayi_bekleniyor: 'bg-purple-50 text-purple-700 border-purple-200',
   baskida:                'bg-emerald-50 text-emerald-700 border-emerald-200',
+  // The order's real terminal state (migration 081) — satış has taken
+  // delivery of the run. Without a key here it would paint no class at all.
+  teslim_edildi:          'bg-teal-50 text-teal-700 border-teal-200',
 }
 
 export default function SiparisTalepleri() {

@@ -11,6 +11,7 @@ import {
   getPipeline, getNextStage, assertCanEnterProduction,
   canRequestOrder, assertOrderable, isCatalogListed,
   canRequestHandover, assertHandoverEligible,
+  canRequestOrderHandover, assertOrderHandoverEligible,
   isLegacyProject, assertNotLegacy,
   isAtOrPastStage,
 } from './pipeline.js'
@@ -150,5 +151,56 @@ describe('legacy (kayıtlı ürün) products', () => {
     // orderable stage is in STAGES_REQUIRING_FULL_PROGRESS.
     assert.doesNotThrow(() => assertCanEnterProduction('satista', 100))
     assert.throws(() => assertCanEnterProduction('satista', 0), /%100/)
+  })
+})
+
+describe('sipariş teslim leg (migration 081)', () => {
+  it('a printed run can be handed over on its own', () => {
+    assert.equal(canRequestOrderHandover({ status: 'baskida' }), true)
+  })
+
+  it('nothing earlier in the pipeline can', () => {
+    for (const status of [
+      'atama_bekleniyor', 'tasarimciya_atandi', 'kontroller_tamam',
+      'matbaa_ozalit_yapiyor', 'ekran_onayinda', 'imza_bekleniyor',
+      'baski_onayi_bekleniyor', 'rejected',
+    ]) {
+      assert.equal(canRequestOrderHandover({ status }), false, status)
+    }
+    assert.equal(canRequestOrderHandover(null), false)
+  })
+
+  it('a delivered run cannot be handed over twice, and says why', () => {
+    assert.equal(canRequestOrderHandover({ status: 'teslim_edildi' }), false)
+    assert.throws(
+      () => assertOrderHandoverEligible({ status: 'teslim_edildi' }),
+      (e) => e.status === 400 && /zaten teslim edildi/.test(e.message),
+    )
+  })
+
+  it('assertOrderHandoverEligible throws 400 on an unprinted run', () => {
+    assert.throws(
+      () => assertOrderHandoverEligible({ status: 'imza_bekleniyor' }),
+      (e) => e.status === 400 && /baskısı onaylanmış/.test(e.message),
+    )
+  })
+
+  it('answers the same however the project moves', () => {
+    // The rule is about the ORDER. Keyed on the project's stage instead, it
+    // would flip the moment the project's own teslim confirmed — turning every
+    // order handed over in that delivery into one still owing a teslim.
+    const order = { status: 'baskida' }
+    for (const stage of ['baskida', 'gumruk', 'satista']) {
+      assert.equal(canRequestOrderHandover(order, { type: 'TR', stage }), true, stage)
+    }
+  })
+
+  it("is exactly the gap the project's own rule leaves", () => {
+    // A reprint of a selling book: the project cannot be handed over, the
+    // order can. Before this pair, neither could, and the copies shipped with
+    // nothing recording it.
+    const project = { type: 'TR', stage: 'satista' }
+    assert.equal(canRequestHandover(project), false)
+    assert.equal(canRequestOrderHandover({ status: 'baskida' }), true)
   })
 })

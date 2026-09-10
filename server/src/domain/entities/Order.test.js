@@ -638,6 +638,63 @@ describe('Order.advance — matbaa_onay multi-party', () => {
   })
 })
 
+describe('Order.confirmHandover (migration 081)', () => {
+  it('satış closes a printed run: baskida → teslim_edildi', () => {
+    const order = new Order(baseOrder({ status: 'baskida' }))
+    const ev = order.confirmHandover(satis)
+
+    assert.equal(order.status, 'teslim_edildi')
+    assert.equal(order.version, 2)
+    assert.equal(ev.type, 'order.handover_confirmed')
+    assert.equal(ev.orderHistory.step, 'teslim_edildi')
+    // The order moved; the PROJECT's stage is not this entity's to touch, and
+    // the note must not imply it did. A reprint's teslim is confirmed against
+    // a book that has been selling for months.
+    assert.equal(ev.projectHistories[0].event, 'order_handover_confirmed')
+    assert.ok(!/satış/i.test(ev.projectHistories[0].note))
+    assert.equal(ev.projectHistories[0].to_stage, undefined)
+    // The route announces it — it holds the handover row and knows who raised it.
+    assert.equal(ev.notification, null)
+  })
+
+  it('is idempotent — a second confirm is a no-op, not a 400', () => {
+    const order = new Order(baseOrder({ status: 'teslim_edildi', version: 7 }))
+    assert.equal(order.confirmHandover(satis), null)
+    assert.equal(order.version, 7)
+  })
+
+  it('refuses a run that has not been printed yet', () => {
+    for (const status of ['imza_bekleniyor', 'baski_onayi_bekleniyor', 'matbaa_ozalit_yapiyor']) {
+      const order = new Order(baseOrder({ status }))
+      assert.throws(() => order.confirmHandover(satis), /baskısı tamamlanmış/)
+      assert.equal(order.status, status)
+    }
+  })
+
+  it('only satış may confirm — not the leader, designer or matbaa', () => {
+    for (const actor of [L1, D1, printer]) {
+      const order = new Order(baseOrder({ status: 'baskida' }))
+      assert.throws(() => order.confirmHandover(actor), /yalnızca satış/)
+      assert.equal(order.status, 'baskida')
+    }
+  })
+})
+
+describe('Order.advance — the teslim leg is not an advance (migration 081)', () => {
+  it('refuses to advance a printed run: only the teslim confirm may close it', () => {
+    // The gap that makes "delivered" mean something. If /advance could make
+    // this hop, the printer could mark their own delivery received.
+    const order = new Order(baseOrder({ status: 'baskida' }))
+    assert.throws(() => order.advance(satis, {}), /zaten tamamlandı/)
+    assert.equal(order.status, 'baskida')
+  })
+
+  it('refuses to advance a delivered run', () => {
+    const order = new Order(baseOrder({ status: 'teslim_edildi' }))
+    assert.throws(() => order.advance(L1, {}), /zaten tamamlandı/)
+  })
+})
+
 describe('Order.validateSubtaskUpdate', () => {
   const subtask = {
     id: 'sub-1', order_id: 'o-1', title: 'Kapak', kind: 'pages',

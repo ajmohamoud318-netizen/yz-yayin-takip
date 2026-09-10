@@ -7,6 +7,7 @@
  */
 import {
   ORDER_STEP_LABELS,
+  isOrderOpen,
   orderStepPath,
 } from '../constants/orders.js'
 import {
@@ -135,21 +136,23 @@ export function parcaPanelDecider(user, ledgerKind, { project = null } = {}) {
 // once (concurrent sipariş orders on the same product are allowed), so this
 // page shows one stepper per active order rather than assuming there's only
 // ever one.
-export const isActiveOrder = (o) => o.status !== 'baskida' && o.status !== 'rejected'
+//
+// `baskida` counts as ACTIVE since migration 081: the run still owes its
+// teslim, and the tracker's last two steps are exactly the ones that happen
+// after it.
+export const isActiveOrder = (o) => isOrderOpen(o)
 
-// The order's own status only ever reaches 'baskida' (Üretimde) — what
-// happens after that (Matbaa requesting handover, Satış confirming it) is
-// real project/handover state, not a status this order will ever carry.
-// Appending it here as two derived steps is what lets the tracker keep
-// filling in for real after approval instead of freezing dead on Üretimde
-// forever.
+// The order's status used to stop at 'baskida', so the tracker faked the rest
+// with two derived steps ('teslim_bekleniyor', 'satista') read off the PROJECT.
+// Migration 081 made the teslim leg real order state, so the tracker draws
+// actual statuses and those two are gone — see OrderProgressStepper for why
+// borrowing the project's stage was wrong for a reprint.
 export const DISPLAY_ORDER_STEP_LABELS = {
   ...ORDER_STEP_LABELS,
-  // Short form: the stepper gives each step ~40px at 390px, and "Kontrol
-  // Edildi" is only ever read next to the steps around it.
+  // Short forms: the stepper gives each step ~40px at 390px, and these are
+  // only ever read next to the steps around them.
   kontroller_tamam: 'Kontrol',
-  teslim_bekleniyor: 'Teslim Bekleniyor',
-  satista: 'Satışta',
+  teslim_edildi: 'Teslim',
 }
 
 // Mirrors the per-page action labels in MyProjects/SiparisOnay/SiparisTalepleri

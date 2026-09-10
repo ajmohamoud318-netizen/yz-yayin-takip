@@ -16,8 +16,16 @@ const fmtDate = (iso) =>
   iso ? new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(iso)) : '—'
 
 /**
- * Sales page: confirm receipt ("Alındı") of Matbaa's handover requests. Each
- * confirmation moves the linked project to Satışta.
+ * Sales page: confirm receipt ("Alındı") of Matbaa's handover requests.
+ *
+ * Two kinds land here (migration 081), and confirming them means different
+ * things — the card and the dialog have to say which:
+ *
+ *   • a PROJECT's teslim (`order_id` null) moves the book to Satışta. Still
+ *     the only path to that stage.
+ *   • a SİPARİŞ's teslim (`order_id` set) takes delivery of a reprint of a
+ *     book already on sale. It closes the ORDER and deliberately leaves the
+ *     project's stage exactly where it is.
  */
 export default function TeslimOnaylari() {
   const [handovers, setHandovers] = useState([])
@@ -47,7 +55,14 @@ export default function TeslimOnaylari() {
       const { handover: updated } = await api.confirmHandover(h.id)
       setHandovers((prev) => prev.map((x) => (x.id === updated.id ? { ...x, ...updated } : x)))
       setConfirmH(null)
-      toast.success(`${cleanTitle(h.project_title)} teslim alındı, satışa çıktı.`)
+      toast.success(
+        h.order_id
+          // Not "satışa çıktı": the book has been on sale all along and this
+          // path never touched its stage. Claiming otherwise would be the one
+          // sentence on the page that is false.
+          ? `${cleanTitle(h.project_title)} yeni baskısı teslim alındı.`
+          : `${cleanTitle(h.project_title)} teslim alındı, satışa çıktı.`,
+      )
     } catch (err) {
       toast.error(err?.message || 'Teslim onaylanamadı.')
     } finally {
@@ -112,7 +127,9 @@ export default function TeslimOnaylari() {
         title="Teslim alındı olarak işaretlensin mi?"
         description={
           confirmH
-            ? `"${cleanTitle(confirmH.project_title)}" teslim alındı olarak işaretlenecek ve ürün satışa çıkacak (Satışta). Bu işlem geri alınamaz. Devam edilsin mi?`
+            ? confirmH.order_id
+              ? `"${cleanTitle(confirmH.project_title)}" yeni baskısı teslim alındı olarak işaretlenecek ve baskı talebi kapanacak. Ürünün satış durumu değişmez. Bu işlem geri alınamaz. Devam edilsin mi?`
+              : `"${cleanTitle(confirmH.project_title)}" teslim alındı olarak işaretlenecek ve ürün satışa çıkacak (Satışta). Bu işlem geri alınamaz. Devam edilsin mi?`
             : undefined
         }
         confirmLabel="Alındı"
@@ -127,6 +144,7 @@ export default function TeslimOnaylari() {
 
 function ApprovalRow({ handover: h, saving, onConfirm }) {
   const received = h.status === 'received'
+  const isReprint = !!h.order_id
   return (
     <Card className={cn(!received && 'border-amber-200')}>
       {/* Phones: full title + full-width action stacked; ≥sm one line. */}
@@ -140,15 +158,22 @@ function ApprovalRow({ handover: h, saving, onConfirm }) {
           {received ? <CheckCircle2 className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
         </span>
         <div className="min-w-0 flex-1">
+          {/* Never truncate the title to make room for the badge — it wraps
+              underneath on a phone instead. */}
           <p className="text-sm font-semibold leading-snug sm:truncate">{cleanTitle(h.project_title)}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Matbaa: {h.raised_by_name ?? '—'} · {fmtDate(h.created_at)}
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+            {isReprint && (
+              <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
+                Yeni Baskı
+              </span>
+            )}
+            <span>Matbaa: {h.raised_by_name ?? '—'} · {fmtDate(h.created_at)}</span>
           </p>
         </div>
         {received ? (
           <span className="inline-flex shrink-0 items-center gap-1 self-start rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 sm:self-auto">
             <CheckCircle2 className="h-3.5 w-3.5" />
-            Satışa çıktı
+            {isReprint ? 'Teslim alındı' : 'Satışa çıktı'}
           </span>
         ) : (
           <Button size="sm" className="w-full sm:w-auto" onClick={onConfirm} disabled={saving}>

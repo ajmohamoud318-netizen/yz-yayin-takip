@@ -150,18 +150,33 @@ export function useProjectDetail(id) {
   // ---------------------------------------------------------------------------
 
   // Orders worth showing their own tracker for: any still-active one, plus
-  // (until the project actually sells) the single most recently approved
-  // order — otherwise its tracker would vanish the instant it hits
-  // 'baskida', even though it hasn't reached 'Satışta' yet.
+  // (until the project actually sells) the single most recently CLOSED order,
+  // so a run that just finished doesn't blink out of the page the moment it
+  // completes. `baskida` no longer needs that grace — it is an active status
+  // now (migration 081), with the teslim still owed — so the keep-alive moved
+  // to `teslim_edildi`, which is where an order genuinely ends.
   const sold = project?.stage === 'satista'
-  const handoverPending = data.projectHandover?.status === 'atama_bekleniyor'
+  // 'pending' — `handovers.status` is ('pending','received') and never shared
+  // the order FSM's vocabulary. Migration 066's rename was applied here by
+  // mistake, so this matched nothing and the tracker's teslim step never lit.
+  const handoverPending = data.projectHandover?.status === 'pending'
+  // Per-order (migration 081): a reprint's teslim is its own row, so "is a
+  // teslim out on THIS run" cannot be read off the project's.
+  const handoverPendingFor = useMemo(() => {
+    const pendingOrderIds = new Set(
+      (data.projectHandovers ?? [])
+        .filter((h) => h.status === 'pending' && h.order_id)
+        .map((h) => h.order_id),
+    )
+    return (order) => pendingOrderIds.has(order?.id)
+  }, [data.projectHandovers])
   const trackedOrders = useMemo(() => {
     const active = data.projectOrders.filter(isActiveOrder)
     if (sold) return active
-    const lastApproved = data.projectOrders
-      .filter((o) => o.status === 'baskida')
+    const lastDelivered = data.projectOrders
+      .filter((o) => o.status === 'teslim_edildi')
       .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0]
-    return lastApproved ? [...active, lastApproved] : active
+    return lastDelivered ? [...active, lastDelivered] : active
   }, [data.projectOrders, sold])
 
   // isOrderAssignedToDesigner's fallback for legacy orders with no
@@ -473,7 +488,7 @@ export function useProjectDetail(id) {
     ...subtasks,
 
     // Computed
-    sold, handoverPending, trackedOrders, fallbackProjectIds,
+    sold, handoverPending, handoverPendingFor, trackedOrders, fallbackProjectIds,
     allDesigners,
     isDemoOnayStage, isOzalitOnayStage, canReceiveDemo, canReceiveOzalit,
     receiptInPanel,

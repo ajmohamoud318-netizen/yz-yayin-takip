@@ -626,6 +626,23 @@ export async function approveBaskiOnayForm(orderId, actor, {
 }
 
 /**
+ * Satış confirmed the teslim of this print run (migration 081).
+ *
+ * Not an HTTP route of its own: `PATCH /api/handovers/:id/confirm` owns the
+ * handover row and calls this INSIDE its transaction, passing its client, so
+ * the receipt and the order's closure commit together — the same seam
+ * `deliverOrderParca` uses when the last parça advances the order.
+ *
+ * Notification is the route's, not ours: it holds the handover row and knows
+ * who raised it.
+ */
+export async function confirmOrderHandover(orderId, actor, client = null) {
+  return runOrderCommand(orderId, actor, {
+    run: (order) => order.confirmHandover(actor),
+  }, client)
+}
+
+/**
  * PATCH /api/order-requests/:orderId/subtasks/:id — toggle one row of this
  * order's own alt görev snapshot. Gated on `order.assignee_ids` (an order can
  * have several designers) rather than a per-row `assigned_to`.

@@ -20,6 +20,11 @@ export function useProjectDetailData(id) {
 
   const [projectOrders, setProjectOrders] = useState([])
   const [projectHandover, setProjectHandover] = useState(null)
+  // Every teslim row for this project, both kinds (migration 081): the
+  // project's own (`order_id` null) and one per reprint. `projectHandover`
+  // above stays the latest PROJECT-scoped one — a reprint's teslim must not
+  // masquerade as the project's, since only the project's puts a book on sale.
+  const [projectHandovers, setProjectHandovers] = useState([])
   // Full active designer roster — the leader's assign popover on every chip
   // needs every assignable face, not just the ones already on this project
   // (the leader may be onboarding a designer mid-revision). Pulled once on
@@ -52,7 +57,8 @@ export function useProjectDetailData(id) {
         const mine = rows
           .filter((h) => h.project_id === id)
           .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
-        setProjectHandover(mine[0] ?? null)
+        setProjectHandovers(mine)
+        setProjectHandover(mine.find((h) => !h.order_id) ?? null)
       })
       .catch(() => {})
     // Designer roster for the chip-grid assign popover. `listUsers()` is
@@ -105,6 +111,7 @@ export function useProjectDetailData(id) {
     // Data
     projectOrders, setProjectOrders,
     projectHandover,
+    projectHandovers,
     allUsers,
 
     // Order dialog state

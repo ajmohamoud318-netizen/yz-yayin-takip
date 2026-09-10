@@ -1,7 +1,10 @@
 export const ORDER_STEPS = [
   'atama_bekleniyor', 'tasarimciya_atandi', 'kontroller_tamam',
   'matbaa_ozalit_yapiyor', 'ekran_onayinda', 'imza_bekleniyor',
-  'baski_onayi_bekleniyor', 'baskida',
+  // `baskida` is the paper being at the matbaa, not the end of the story:
+  // migration 081 gave the run its own teslim leg, and satış confirming it is
+  // what finally closes the order.
+  'baski_onayi_bekleniyor', 'baskida', 'teslim_edildi',
 ]
 
 export const ORDER_STEP_LABELS = {
@@ -13,6 +16,7 @@ export const ORDER_STEP_LABELS = {
   imza_bekleniyor: 'İmza Bekleniyor',
   baski_onayi_bekleniyor: 'Baskı Onayı Bekleniyor',
   baskida: 'Baskıda',
+  teslim_edildi: 'Teslim Edildi',
   // Sub-events logged inside order_history while status stays at imza_bekleniyor
   // (never an order.status value themselves) — without these, ProjectDetail's
   // order_step_label lookup falls back to the raw step key.
@@ -32,6 +36,10 @@ export const ORDER_STEP_LABELS = {
   ozalit_change_requested: 'Değişiklik İstendi',
   ozalit_change_accepted: 'Değişiklik Kabul Edildi',
   ozalit_change_declined: 'Değişiklik Reddedildi',
+  // The teslim leg (migration 081), logged against the order when the matbaa
+  // raises the handover and when satış confirms it. Only the second is also an
+  // order.status value.
+  handover_request: 'Teslim Talebi Oluşturuldu',
 }
 
 // imza_bekleniyor is multi-party, leader-first (every active team leader AND
@@ -53,6 +61,11 @@ export const ORDER_STEP_LABELS = {
 // (migration 054): the checks, then the ozalit request. Splitting them gave
 // the sipariş an ozalit sheet of its own — the request is now made by
 // submitting the Ozalit Üretim Formu, not by a bare advance click.
+//
+// `baskida` and `teslim_edildi` are deliberately absent: neither owes anybody
+// an action inside this FSM. The teslim leg that runs between them is the
+// matbaa's and satış's, and it lives in routes/handovers.js — it is not a step
+// this map can hand out, which is exactly why it does not appear here.
 export const ORDER_STEP_OWNER = {
   atama_bekleniyor: 'team_leader',
   tasarimciya_atandi: 'designer',
@@ -74,6 +87,11 @@ export const ORDER_STEP_OWNER = {
 // new print-spec gate sits between the physical proof round and production.
 // baski_onayi_bekleniyor's entry is documentary only (see ORDER_STEP_OWNER
 // comment above — it's never reached via the generic advance path).
+//
+// `baskida` still has NO entry, on purpose. `teslim_edildi` follows it, but the
+// only thing that may write it is satış confirming the teslim (migration 081) —
+// so /advance keeps answering "Bu talep zaten tamamlandı." and the transition
+// stays reachable through `Order.confirmHandover` alone.
 export const ORDER_STEP_NEXT = {
   atama_bekleniyor: 'tasarimciya_atandi',
   tasarimciya_atandi: 'kontroller_tamam',

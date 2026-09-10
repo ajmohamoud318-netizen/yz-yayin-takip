@@ -14,7 +14,7 @@ import UserMenu from '@/components/UserMenu'
 import Breadcrumb from '@/components/Breadcrumb'
 import { navGroups } from '@/components/navGroups'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
-import api, { canRequestHandover, ozalitLeaderApproved } from '@/api'
+import api, { canRequestHandover, canRequestOrderHandover, ozalitLeaderApproved } from '@/api'
 import { cn } from '@/lib/utils'
 import NewProjectDialog from '@/components/NewProjectDialog'
 import SetupSheet from '@/components/SetupSheet.jsx'
@@ -70,6 +70,10 @@ export default function AppShell() {
   const [printerOrders, setPrinterOrders] = useState(0)   // printer: matbaa_ozalit_yapiyor
   const [designerOrders, setDesignerOrders] = useState(0) // designer: tasarimciya_atandi + kontroller_tamam (for their projects)
   const [pendingHandovers, setPendingHandovers] = useState(0) // satis: teslim onay bekleyen
+  // printer: reprints whose teslim can be raised (migration 081). Counted off
+  // orders, not projects — their project is already past its handover stage,
+  // which is the whole reason they need a teslim of their own.
+  const [reprintHandovers, setReprintHandovers] = useState(0)
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(COLLAPSE_KEY) === '1'
@@ -133,8 +137,15 @@ export default function AppShell() {
       }
       if ((p.demo_attempt ?? 0) >= 2 || (p.ozalit_attempt ?? 0) >= 2) urgent++
     }
-    return { active, demoApprovals, ozalitApprovals, baskiOnayApprovals, production, satista, total: projects.length, myProjects, urgent, handoverEligible, designerOzalitApprovals }
-  }, [projects, user?.role, user?.id])
+    return {
+      active, demoApprovals, ozalitApprovals, baskiOnayApprovals, production, satista,
+      total: projects.length, myProjects, urgent,
+      // Both kinds of teslim the matbaa can raise land on the same page, so
+      // they land in the same badge.
+      handoverEligible: handoverEligible + reprintHandovers,
+      designerOzalitApprovals,
+    }
+  }, [projects, user?.role, user?.id, reprintHandovers])
 
   const pinned = useMemo(
     () =>
@@ -175,7 +186,11 @@ export default function AppShell() {
 
     if (role === 'satis') {
       api.listHandovers()
-        .then((hs) => setPendingHandovers(hs.filter((h) => h.status === 'atama_bekleniyor').length))
+        // 'pending' — handovers.status is ('pending','received'), it has never
+        // shared the order FSM's vocabulary. Migration 066's rename was applied
+        // here by mistake, so this filter matched nothing and satış's Teslim
+        // Onayları badge sat at 0 with a queue waiting behind it.
+        .then((hs) => setPendingHandovers(hs.filter((h) => h.status === 'pending').length))
         .catch(() => {})
     }
   }, [user?.role, user?.id, projects])

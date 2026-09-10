@@ -1130,6 +1130,59 @@ export class Order {
   }
 
   /**
+   * Satış confirmed receipt of this print run — the order's real end
+   * (migration 081).
+   *
+   * `baskida` was never "finished", it was "the paper is at the matbaa". For a
+   * reprint of a title already at or past baskıda the project's stage cannot
+   * say the run happened (approveBaskiOnayForm's flip is forward-only and
+   * correctly skips it), so without this the order had no terminal state at
+   * all: it sat at `baskida` for the life of the product while the copies
+   * shipped unrecorded.
+   *
+   * Only the teslim confirm may call this. There is no `ORDER_STEP_NEXT`
+   * entry for `baskida`, so `/advance` still refuses to touch a finished
+   * order — which is what keeps "delivered" a statement satış made rather
+   * than a button anyone can press.
+   *
+   * The handover row itself belongs to a different aggregate, so the route
+   * owns it; this only moves the order and says so on both timelines.
+   *
+   * @param {object} actor — must be satış, the same role that owns the
+   *   confirm endpoint. Checked here too so the rule survives a second caller.
+   */
+  confirmHandover(actor) {
+    if (actor?.role !== 'satis') {
+      forbidden('Teslim alındı onayını yalnızca satış verebilir.')
+    }
+    if (this.status === 'teslim_edildi') return null // idempotent
+    if (this.status !== 'baskida') {
+      badRequest('Teslim onayı yalnızca baskısı tamamlanmış siparişler için verilebilir.')
+    }
+
+    this.status = 'teslim_edildi'
+    this.version = (this.version ?? 0) + 1
+    this.updated_at = new Date().toISOString()
+
+    return this._record({
+      type: 'order.handover_confirmed',
+      orderHistory: { step: 'teslim_edildi', note: 'Teslim alındı, baskı tamamlandı' },
+      projectHistories: [{
+        event: 'order_handover_confirmed', action: 'system',
+        // Deliberately NOT 'satışa çıktı': the project's own stage is what
+        // says a book is on sale, and this path never touches it. Claiming it
+        // here would put a false stage change in the timeline of a title that
+        // has been selling for months.
+        note: 'Baskı teslim alındı',
+      }],
+      // The route announces this one: notifyHandoverConfirmed already has the
+      // audience (the matbaa who raised it, leaders, designers) and the row id
+      // this entity cannot see.
+      notification: null,
+    })
+  }
+
+  /**
    * Validate a subtask patch for this order's own order_subtasks snapshot.
    * Pure validation — does NOT mutate the entity (the subtask is a
    * separate aggregate persisted via the repo). Returns the whitelisted

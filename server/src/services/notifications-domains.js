@@ -398,26 +398,48 @@ export async function notifyOrderBaskiOnayPrepared(client, { order, project, act
 /* ------------------------------ handovers -------------------------------- */
 
 /** Matbaa raised a teslim → tell sales to confirm receipt. */
-export async function notifyHandoverRequested(client, { project, actor }) {
+export async function notifyHandoverRequested(client, { project, actor, order = null }) {
   const sales = await activeUserIdsByRole(client, 'satis')
   return emit(client, {
     recipientIds: sales, actorId: actor?.id, type: 'handover_request', tone: 'amber',
-    title: project.title, body: 'Teslim talebi, onayınızı bekliyor',
-    projectId: project.id, link: '/teslim-onaylari',
-    event: { type: 'handover.requested', aggregateId: project.id },
+    title: project.title,
+    // A reprint says so (migration 081). Satış sees the same title either way,
+    // and confirming the two means different things — one puts a new book on
+    // sale, the other takes delivery of more copies of a book already selling.
+    body: order
+      ? 'Yeni baskı teslim talebi, onayınızı bekliyor'
+      : 'Teslim talebi, onayınızı bekliyor',
+    projectId: project.id, orderId: order?.id ?? null, link: '/teslim-onaylari',
+    event: {
+      type: order ? 'order.handover_requested' : 'handover.requested',
+      aggregateId: order?.id ?? project.id,
+    },
   })
 }
 
-/** Sales confirmed receipt → tell the matbaa who raised it + leaders + designers. */
-export async function notifyHandoverConfirmed(client, { project, actor, raisedBy, assignees }) {
+/**
+ * Sales confirmed receipt → tell the matbaa who raised it + leaders + designers.
+ *
+ * `order` set means a reprint's teslim (migration 081), and the copy changes
+ * with it: that path deliberately does NOT move the project's stage, so
+ * "satışa çıktı" would announce a transition that did not happen on a book
+ * that has been on sale for months.
+ */
+export async function notifyHandoverConfirmed(client, {
+  project, actor, raisedBy, assignees, order = null,
+}) {
   const leaders = await activeUserIdsByRole(client, 'team_leader')
   const designers = (assignees ?? (await loadProjectAssignees(client, project))).map((a) => a.id)
   return emit(client, {
     recipientIds: [raisedBy, ...leaders, ...designers], actorId: actor?.id,
     type: 'handover_confirmed', tone: 'pink',
-    title: project.title, body: 'Teslim onaylandı, satışa çıktı 🎉',
-    projectId: project.id, link: `/projects/${project.id}`,
-    event: { type: 'handover.confirmed', aggregateId: project.id },
+    title: project.title,
+    body: order ? 'Yeni baskı teslim alındı 🎉' : 'Teslim onaylandı, satışa çıktı 🎉',
+    projectId: project.id, orderId: order?.id ?? null, link: `/projects/${project.id}`,
+    event: {
+      type: order ? 'order.handover_confirmed' : 'handover.confirmed',
+      aggregateId: order?.id ?? project.id,
+    },
   })
 }
 
