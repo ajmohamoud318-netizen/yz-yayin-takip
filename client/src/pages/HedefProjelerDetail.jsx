@@ -398,7 +398,7 @@ export default function HedefProjelerDetail() {
   )
 }
 
-function CoverSection({ idea, canModify, coverBusy, onPick, coverInputRef }) {
+function CoverSection({ idea, canModify, coverBusy, onPick, onRemove, coverInputRef }) {
   const coverSrc = ideaImageSrc(idea)
   return (
     <div className="group/cover relative">
