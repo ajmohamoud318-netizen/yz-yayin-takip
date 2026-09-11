@@ -28,11 +28,12 @@ export default function PushToggle() {
   } = usePushNotifications()
   const [showSteps, setShowSteps] = useState(false)
 
-  // Nothing actionable — don't advertise a feature this device can't have,
-  // or ('desktop') one we've decided not to offer here. A desktop that is
-  // already subscribed reports 'subscribed', not 'desktop', so it still gets
-  // the row and can switch itself off.
-  if (status === 'unsupported' || status === 'disabled' || status === 'desktop') return null
+  // Nothing actionable — don't advertise a feature this device can't have.
+  // The desktop case used to live here too: setup was deliberately not
+  // offered on desktop because the original product rationale was "the bell
+  // covers it". That rationale was relaxed so users could opt in to
+  // notifications outside Chrome; the row is now rendered for desktop too.
+  if (status === 'unsupported' || status === 'disabled') return null
 
   // iOS, not yet installed. Show the 4-step fix instead of a dead toggle.
   if (status === 'needs-install') {
@@ -110,7 +111,7 @@ export default function PushToggle() {
             ? <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
             : <BellRing className="h-3.5 w-3.5 shrink-0" />}
         <span className={cn('flex-1', subscribed ? 'text-muted-foreground' : 'font-medium text-foreground')}>
-          {subscribed ? 'Bu cihazda bildirimler açık' : 'Telefona bildirim gönderin'}
+          {subscribed ? 'Bu cihazda bildirimler açık' : 'Bildirimleri açın'}
         </span>
         <span className="text-[10px] text-muted-foreground">
           {subscribed ? 'Kapatın' : 'Açın'}

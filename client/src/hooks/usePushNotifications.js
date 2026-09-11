@@ -13,7 +13,6 @@ import { useAuth } from '@/hooks/useAuth.js'
  *
  *   'unsupported'    → browser has no Push API at all (desktop Safari < 16,
  *                      Firefox with push disabled, embedded webviews)
- *   'desktop'        → works, but deliberately not offered here — see below
  *   'needs-install'  → iOS Safari in a normal tab. Push exists on iOS 16.4+
  *                      but ONLY inside a Home Screen app, so the fix is an
  *                      install, not a permission prompt.
@@ -22,16 +21,17 @@ import { useAuth } from '@/hooks/useAuth.js'
  *   'default'        → supported and available, not yet subscribed
  *   'subscribed'     → active subscription stored on the server
  *
- * `'desktop'` is a product decision, not a capability one: desktop Chrome and
- * Edge support push perfectly well. But push exists here to reach people AWAY
- * from a screen — the matbaa team on the print floor — and at a desk the app is
- * already open and polling every 15s, so the bell and the toasts cover it. All
- * a desktop permission prompt buys is one more thing to dismiss, plus OS
- * banners duplicating a toast the user is already looking at.
+ * Desktop is opt-in: the first-run setup sheet still suppresses itself off
+ * desktop (it exists to reach people AWAY from a screen, and pushing it on a
+ * desk user on day one was the original product decision), but the toggle in
+ * the notification bell and a row in Settings are both available, so a user
+ * who actually wants notifications outside Chrome can turn them on. The
+ * permission prompt is gated behind a click in both places, so it never fires
+ * uninvited.
  *
  * A desktop that is ALREADY subscribed keeps working and keeps its toggle (so
- * it can be turned off). Only new setup is suppressed — silently tearing down
- * something a user explicitly enabled is worse than the banner it prevents.
+ * it can be turned off). Only new setup was suppressed in the past; the gate
+ * has moved.
  *
  * The iOS distinction matters more than it looks: prompting for notification
  * permission in an iOS tab throws rather than showing a dialog, and a denied
@@ -172,13 +172,15 @@ export function usePushNotifications() {
         return
       }
 
-      // Desktop: don't offer setup — but check for an existing subscription
-      // first, so a machine that opted in before this rule (or deliberately,
-      // via a device that reports as desktop) keeps working and keeps a way to
-      // turn it off. Only the offer is suppressed, never a live subscription.
+      // Desktop with an existing subscription: report 'subscribed' so the
+      // toggle row stays available to turn it off. Without this check a desktop
+      // that subscribed before the policy changed would silently drop to
+      // 'default' and the toggle would re-offer setup it already has.
       if (!isMobileDevice()) {
-        if (!cancelled) commit(await hasLiveSubscription() ? 'subscribed' : 'desktop')
-        return
+        const live = await hasLiveSubscription()
+        if (cancelled) return
+        if (live) { commit('subscribed'); return }
+        // Fall through: opt-in is available via Settings / the bell toggle.
       }
 
       try {
@@ -224,9 +226,6 @@ export function usePushNotifications() {
     setBusy(true)
     try {
       if (isIOS() && !isStandalone()) { commit('needs-install'); return false }
-      // Belt and braces: no UI should reach here on desktop, but a stray call
-      // must not be what fires a permission prompt we decided not to ask for.
-      if (!isMobileDevice()) { commit('desktop'); return false }
 
       const permission = await Notification.requestPermission()
       if (permission !== 'granted') {
@@ -317,8 +316,8 @@ export function usePushNotifications() {
     sendTest,
     iosInstallSteps: IOS_INSTALL_STEPS,
     isSubscribed: status === 'subscribed',
-    // Only these two states are actionable by a button. 'desktop' is not:
-    // that's the whole point of it.
+    // 'default' (and 'denied', so the row still lets the user retry via
+    // system settings) is the only state a subscribe button can act on.
     canSubscribe: status === 'default' || status === 'denied',
   }
 }

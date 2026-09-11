@@ -14,6 +14,7 @@ import { schemas } from '../schemas/index.js'
 import { batchCounter, formatSegments, readBatchSegments } from '../domain/page-segments.js'
 import { subtaskProgress } from '../domain/progress.js'
 import { progressFor } from '../domain/progress.js'
+import { ALL_DESIGNERS_SENTINEL } from '../domain/subtask-assignee.js'
 
 // How many names to spell out before switching to "+N". Three fits the
 // timeline's single line at the widths the /projects/:id page actually uses.
@@ -370,10 +371,19 @@ export async function subtaskRoutes(fastify) {
       ? request.body.assignees
       : null
     if (declaredAssignees) {
+      // A subtask with the ALL_DESIGNERS sentinel covers every project
+      // designer for orphan-check purposes: "Tüm Tasarımcılar" IS the
+      // assignment for all of them (İç Sayfalar's batch log then lets any
+      // of them log pages against the ownerless row). Without this, a
+      // leader who assigns Ayşe to İç Sayfalar via "Tüm Tasarımcılar" and
+      // to no other subtask would trip the orphan guard.
+      const hasSharedSubtask = subtasks.some(
+        (s) => s.assigned_to === ALL_DESIGNERS_SENTINEL,
+      )
       const subAssigneeIds = new Set(
         subtasks
           .map((s) => s.assigned_to)
-          .filter(Boolean),
+          .filter((v) => v && v !== ALL_DESIGNERS_SENTINEL),
       )
       // The first id in `assignees` is the project primary (the PATCH
       // route's behaviour, mirrored here for the validation's sake so
@@ -381,6 +391,7 @@ export async function subtaskRoutes(fastify) {
       const primaryAssignee = declaredAssignees[0] ?? null
       for (const id of declaredAssignees) {
         if (id === primaryAssignee) continue
+        if (hasSharedSubtask) continue
         if (subAssigneeIds.has(id)) continue
         badRequest(
           `Tasarımcı atanmamış: ${id}. Listeye eklediğiniz her tasarımcı en az bir alt göreve atanmalı.`,
@@ -448,8 +459,19 @@ export async function subtaskRoutes(fastify) {
 
       for (const [index, s] of subtasks.entries()) {
         // Per-subtask designer override from the editor. Falls back to the
-        // project's primary `assigned_to` so a subtask is never ownerless.
-        const subAssignee = s.assigned_to ?? project.assigned_to ?? null
+        // project's primary `assigned_to` so a subtask is never ownerless
+        // when the leader leaves the picker empty.
+        //
+        // The SPA sends ALL_DESIGNERS_SENTINEL for İç Sayfalar when the
+        // leader picks "Tüm Tasarımcılar". That's a deliberate "no primary
+        // owner" signal, so it MUST bypass the null→primary fallback (and
+        // MUST NOT reach the FK-constrained assigned_to column as a
+        // literal string). null / undefined without the sentinel still
+        // means "no picker choice" and keeps the existing primary
+        // fallback, so non-İç-Sayfalar subtasks are unaffected.
+        const subAssignee = s.assigned_to === ALL_DESIGNERS_SENTINEL
+          ? null
+          : (s.assigned_to ?? project.assigned_to ?? null)
         const existing = claim(s)
         // NOTE: `is_done` is intentionally absent from this param list. The
         // designer's work state is owned by the toggle and the

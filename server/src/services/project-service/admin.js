@@ -17,6 +17,7 @@ import { withTx, getPool } from '../../db/pool.js'
 import { badRequest, conflict, notFound } from '../../domain/errors.js'
 import { ORDERABLE_STAGES, STAGE_LABELS } from '../../domain/stages.js'
 import { subtaskProgress } from '../../domain/progress.js'
+import { unwrapAssignee } from '../../domain/subtask-assignee.js'
 import { inferComponentKind } from '../product-info-capture.js'
 import {
   normaliseProjectTitle,
@@ -88,10 +89,18 @@ export async function createProject(actor, body) {
       // (e.g. "kapak") or — for custom ad-hoc subtasks — by the title the
       // team leader just typed. Falls back to the project primary so the
       // assignment is never silently empty.
-      const subAssignee =
+      //
+      // The SPA sends the ALL_DESIGNERS_SENTINEL string for İç Sayfalar
+      // when the leader picks "Tüm Tasarımcılar" — unwrap that BEFORE the
+      // ?? chain, so the sentinel takes precedence over the primary
+      // fallback (leaving `assigned_to` genuinely null) instead of being
+      // inserted as a literal string that would fail the users(id) FK.
+      const rawOverride =
         subtaskAssignees?.[s.title] ??
-        subtaskAssignees?.[s.key] ??
-        primaryAssignee
+        subtaskAssignees?.[s.key]
+      const subAssignee = rawOverride === undefined
+        ? primaryAssignee
+        : unwrapAssignee(rawOverride)
       // `position` stamps the order the leader chose at creation time
       // (migration 027) rather than leaving it to created_at ties.
       const { rows } = await client.query(

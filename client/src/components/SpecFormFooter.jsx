@@ -20,6 +20,11 @@ export default function SpecFormFooter({
   mode,
   busy,
   readOnly,
+  // True when the plain viewer (mode='view', !notifyOnSave) opens over a
+  // round that has already started on the server. The Taslağı Kaydedin
+  // button is dropped under it (see isViewerLockedByExistingRound for the
+  // reason); every other read-only viewer keeps its save button.
+  viewerLockedByExistingRound = false,
   printable,
   missingRequired,
   incompleteSpec,
@@ -73,7 +78,7 @@ export default function SpecFormFooter({
           Yazdırın
         </Button>
       )}
-      {mode === 'view' && user?.role !== 'printer' && !decisionReview && (!variant.saveRequiresEditable || !readOnly) && (
+      {mode === 'view' && user?.role !== 'printer' && !decisionReview && (!variant.saveRequiresEditable || !readOnly) && !viewerLockedByExistingRound && (
         <Button
           disabled={
             busy

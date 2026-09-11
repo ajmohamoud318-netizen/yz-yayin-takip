@@ -37,6 +37,7 @@ import {
   canEditPreparedBaskiOnay,
   isDemoAlreadyApproved,
   isRejectToMatbaaReview,
+  isViewerLockedByExistingRound,
 } from '@/components/SpecFormDialog'
 
 const leader = { id: 'u-lead', role: 'team_leader' }
@@ -283,5 +284,53 @@ describe('isRejectToMatbaaReview — locks the form on a reject-to-matbaa handof
     const variantLocked = VARIANTS.ozalit.isReadOnly({ mode: 'advance', user: leader })
     expect(variantLocked).toBe(false)
     expect(isRejectToMatbaaReview(ctx)).toBe(true)
+  })
+})
+
+describe('isViewerLockedByExistingRound — locks the plain viewer over an existing round', () => {
+  // The viewer (mode='view') reads the round's snapshot back. Once a snapshot
+  // exists, "Taslağı Kaydedin" would silently rewrite it under a half-typed
+  // form. Lock the form; the editor path stays open via notifyOnSave.
+  const view = { mode: 'view', notifyOnSave: false }
+
+  it('locks the moment the server has a snapshot for the round', () => {
+    expect(isViewerLockedByExistingRound(view, { hasServerSnapshot: true, attempt: 0 })).toBe(true)
+  })
+
+  it('also locks when the round counter has been bumped past zero (covers the load race)', () => {
+    expect(isViewerLockedByExistingRound(view, { hasServerSnapshot: false, attempt: 1 })).toBe(true)
+  })
+
+  it('stays open on the very first round — no snapshot, attempt is zero', () => {
+    expect(isViewerLockedByExistingRound(view, { hasServerSnapshot: false, attempt: 0 })).toBe(false)
+  })
+
+  it('never locks the editor path (notifyOnSave is the editor)', () => {
+    expect(isViewerLockedByExistingRound(
+      { mode: 'view', notifyOnSave: true },
+      { hasServerSnapshot: true, attempt: 1 },
+    )).toBe(false)
+  })
+
+  it('never locks the compose path (mode=advance)', () => {
+    expect(isViewerLockedByExistingRound(
+      { mode: 'advance', notifyOnSave: false },
+      { hasServerSnapshot: true, attempt: 1 },
+    )).toBe(false)
+  })
+
+  it('never locks history snapshots — they are read-only by definition', () => {
+    expect(isViewerLockedByExistingRound(
+      { mode: 'history', notifyOnSave: false },
+      { hasServerSnapshot: true, attempt: 1 },
+    )).toBe(false)
+  })
+
+  it('coerces missing flags and round to false rather than crashing', () => {
+    expect(isViewerLockedByExistingRound(null, null)).toBe(false)
+    expect(isViewerLockedByExistingRound(undefined, undefined)).toBe(false)
+    expect(isViewerLockedByExistingRound({}, {})).toBe(false)
+    expect(isViewerLockedByExistingRound({ mode: 'view' }, null)).toBe(false)
+    expect(isViewerLockedByExistingRound(view, null)).toBe(false)
   })
 })

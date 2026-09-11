@@ -2,12 +2,18 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { isMobileDevice } from './usePushNotifications.js'
 
 /**
- * Which devices are offered push setup.
+ * Which devices count as "mobile" for first-run setup.
  *
- * Push exists to reach people away from a screen; at a desk the app is open
- * and polling. The classification is deliberately generous towards "mobile" —
- * a misclassified phone hides the feature from someone on the print floor,
- * a misclassified desktop shows one dismissible row.
+ * Push exists to reach people away from a screen; the first-run setup sheet
+ * suppresses itself on desktop on that rationale, and only offers itself to
+ * mobile-classified devices. The classification is deliberately generous
+ * towards "mobile" — a misclassified phone hides the setup sheet from
+ * someone on the print floor, a misclassified desktop shows one sheet
+ * they'll dismiss.
+ *
+ * Note this is no longer the gate for SUBSCRIBING to push. Desktop users can
+ * opt in from the bell dropdown or Settings; the hook lets them through.
+ * Setup sheet gating and the hook are now two separate decisions.
  */
 
 function stubDevice({ ua, touchPoints = 0, coarse = false, platform = 'Win32' }) {

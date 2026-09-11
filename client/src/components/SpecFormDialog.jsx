@@ -20,13 +20,13 @@ import { useDesignerCelebration } from '@/hooks/useCelebration'
 import { incompleteSpecBlocks } from '@/lib/spec-form-completeness'
 import { useSpecSheet } from '@/hooks/useSpecSheet'
 import { saveEditedComponents } from '@/data/productCatalog'
-import { ozalitLeaderApproved, needsOzalitRouteChoice, lockedParcaNames } from '@/domain'
+import { ozalitLeaderApproved, needsOzalitRouteChoice, lockedParcaNames, approvedParcalar } from '@/domain'
 import { buildChangeSummary } from '@/lib/spec-form-diff'
 import { openMultiPrint } from '@/lib/spec-form-print'
 import {
   decisionScopeCopy, parcaAddFlag, scopeComponents,
 } from '@/lib/spec-form-scope'
-import { VARIANTS, computeBaskiOnayLocked, canEditPreparedBaskiOnay, isCinDemoForward, isDecisionReview, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
+import { VARIANTS, computeBaskiOnayLocked, canEditPreparedBaskiOnay, isCinDemoForward, isDecisionReview, isDemoAlreadyApproved, isRejectToMatbaaReview, isViewerLockedByExistingRound } from '@/lib/spec-form-variants'
 import {
   fetchServerSnapshot,
   loadSaved,
@@ -61,7 +61,7 @@ import {
  * specVariantForStage, stampSpecSignature — are re-exported below, so every
  * existing `from '@/components/SpecFormDialog'` keeps working unchanged.
  */
-export { VARIANTS, specVariantForStage, computeBaskiOnayLocked, canEditPreparedBaskiOnay, isDecisionReview, isDemoAlreadyApproved, isRejectToMatbaaReview } from '@/lib/spec-form-variants'
+export { VARIANTS, specVariantForStage, computeBaskiOnayLocked, canEditPreparedBaskiOnay, isDecisionReview, isDemoAlreadyApproved, isRejectToMatbaaReview, isViewerLockedByExistingRound } from '@/lib/spec-form-variants'
 export { stampSpecSignature } from '@/lib/spec-form-storage'
 
 /* ------------------------------------------------------------------ */
@@ -319,6 +319,14 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // computed here so the footer can drop its "Taslağı Kaydedin" alongside the
   // lock (a save button on a form nobody may edit is a button that lies).
   const decisionReview = isDecisionReview(decisionContext)
+  // The plain "Ozalit Formu" viewer (mode='view', !notifyOnSave) becomes
+  // read-only the moment the server has any snapshot for the round, OR the
+  // round counter has been bumped past zero. See
+  // isViewerLockedByExistingRound for the full rationale.
+  const viewerLockedByExistingRound = isViewerLockedByExistingRound(
+    { mode, notifyOnSave },
+    { hasServerSnapshot, attempt: round.attempt },
+  )
   const readOnly =
     (variant.isReadOnly({ mode, user }) && !authoringOrderOzalit)
     || baskiOnayLocked
@@ -339,6 +347,9 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     || decisionReview
     // The ÇİN forward sends the sheet on exactly as it is — see forwardsCinDemo.
     || forwardsCinDemo
+    // "Ozalit Formu" viewer over a round that has already started: the
+    // snapshot on the server is the truth, the form is for reading.
+    || viewerLockedByExistingRound
   const printable = variant.canPrint({ user, project, readOnly })
   // The plain "Demo Formu" button (mode='view', no notify) always opens a
   // round that has ALREADY been sent: at demo_onay it's the sheet sitting with
@@ -425,7 +436,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
      answers to "which round is this, and who may touch it", which is all that
      loader needs from this file. */
   const {
-    form, setForm, customRows, selectedComponents, liveAttemptNo, catalogComponents,
+    form, setForm, customRows, selectedComponents, liveAttemptNo, hasServerSnapshot, catalogComponents,
     handleChange,
     toggleComponent, selectAllComponents, clearComponents,
     addCustomRow, updateCustomRow, removeCustomRow, moveCustomRow,
@@ -436,6 +447,15 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     viewAttempt, viewDemoId, notifyOnSave, rejectContext,
     readOnly, viewingSentSheet, showsLiveTeslimat,
     attemptNo, liveAttempts, preselectParcalar,
+    // A demo re-send (held demo re-requested at demo_onay / cin_demo_onay)
+    // should default-tick only the parçalar the prior round APPROVED, not
+    // every parça the matbaa was sent. Re-sending a rejected parça would
+    // silently undo the gate's decision. The hook consumes this as a
+    // default selection — the picker stays open, so the leader can add
+    // any parça back if they actually want it sent. Out of scope on the
+    // first send from tasarim (no prior approvals to filter on) and on
+    // every non-demo leg.
+    resendApprovedParcalar: willResendBump ? approvedParcalar(project, 'demo') : null,
   })
 
   /* ── The parça this sheet was opened FOR (migration 074) ────────────────
@@ -470,7 +490,16 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
      that sheet or is not the leader's edit, so the blocks stay live there. */
   const lockedParcalar = notifyOnSave ? lockedParcaNames(parcaRows) : []
 
-  const parcaNarrowed = scopedComponents.length < selectedComponents.length
+  // The scope named a parça but it isn't on this round's sheet — e.g. a
+  // routing row from a previous round, a rename in Ürün Bilgileri since the
+  // round went out, or the panel synthesising a row the round never actually
+  // carried. `scopeComponents` used to widen silently to every block; the
+  // picker then re-appeared and the leader who came for "M" landed on a
+  // three-parça form. Surface the mismatch inline instead — the sheet stays
+  // empty, the picker stays hidden, and the footer knows to refuse the save.
+  const scopeHadItems = (parcaScope ?? []).filter(Boolean).length > 0
+  const scopeMissedAll = scopeHadItems && scopedComponents.length === 0
+  const parcaNarrowed = scopeMissedAll || scopedComponents.length < selectedComponents.length
   const sheetComponents = parcaNarrowed && !showAllParca ? scopedComponents : selectedComponents
   const scopedParcaNames = scopedComponents.map((c) => c.component).join(', ')
   /* What a widened DECISION sheet has to keep saying. A decision sheet opens
@@ -1126,6 +1155,23 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           </div>
         )}
 
+        {/* The panel asked for one parça; the round's sheet doesn't carry it.
+            Used to widen silently to every block — the picker then re-appeared
+            and the leader who clicked "M Formunu Düzenleyin" landed on a
+            three-parça form. Surfacing the mismatch here leaves no ambiguity
+            about why the body below is empty, and the footer already refuses
+            the save (noParcaSelected gates it). */}
+        {scopeMissedAll && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 print:hidden">
+            <p>
+              <strong className="font-semibold">{(parcaScope ?? []).filter(Boolean).join(', ')}</strong>{' '}
+              bu turun formunda yok. Muhtemelen Ürün Bilgileri'nde sonradan
+              adı değişti ya da önceki bir turdan kalan bir satır. Düzenlemek
+              için önce turun formuna ekleyin.
+            </p>
+          </div>
+        )}
+
         <SpecSheetBody
           variant={variant}
           project={project}
@@ -1187,6 +1233,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           mode={mode}
           busy={busy}
           readOnly={readOnly}
+          viewerLockedByExistingRound={viewerLockedByExistingRound}
           printable={printable}
           missingRequired={missingRequired}
           incompleteSpec={incompleteSpec}

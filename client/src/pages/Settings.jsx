@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/useAuth'
 import UserAvatar, { avatarSrc } from '@/components/UserAvatar.jsx'
+import NotificationSettings from '@/components/NotificationSettings.jsx'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -364,6 +365,9 @@ export default function Settings() {
           )}
         </CardContent>
       </Card>
+
+      {/* Notifications */}
+      <NotificationSettings />
 
       {/* Account */}
       <Card>

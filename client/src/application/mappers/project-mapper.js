@@ -43,6 +43,15 @@ function normalizeProjectPayload(payload, existing = null) {
     }
     if (subtasks.includes('sayfalar') && pageCount) {
       const old = prev.find((s) => s.kind === 'pages')
+      // Preserve the İç Sayfalar picker's assignment across the PATCH path.
+      // The value can be a designer id, an empty string (server treats as
+      // "inherit primary" via its ?? fallback), or the "__all__" sentinel
+      // that means "Tüm Tasarımcılar" (server unwraps to a real null so
+      // any project designer can log pages via subtask_designer_batches).
+      // Without this line the mapper dropped `assigned_to` from the İç
+      // Sayfalar row entirely, so every PATCH silently reattached it to
+      // the project primary.
+      const sayfaAssignee = subtaskAssignees.sayfalar || null
       subs.push({
         id: old?.id ?? `st-${Date.now()}-sayfalar`,
         title: 'İç Sayfalar',
@@ -50,6 +59,7 @@ function normalizeProjectPayload(payload, existing = null) {
         total_pages: Number(pageCount),
         pages_done: old?.pages_done ?? 0,
         is_done: (old?.pages_done ?? 0) >= Number(pageCount),
+        assigned_to: sayfaAssignee,
       })
     }
     if (subtasks.includes('sticker') && stickerCount) {

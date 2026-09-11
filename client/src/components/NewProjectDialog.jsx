@@ -120,6 +120,14 @@ function deriveInitialProductInfo(title, subtasks) {
 const emptySubtasks = () => SUBTASK_LIBRARY.reduce((acc, s) => ({ ...acc, [s.key]: false }), {})
 const emptySubtaskAssignees = () => SUBTASK_LIBRARY.reduce((acc, s) => ({ ...acc, [s.key]: '' }), {})
 
+// Sentinel value for "Tüm Tasarımcılar" in the İç Sayfalar picker. Stays
+// client-side only — stripped back to null in handleSubmit so the API
+// receives assigned_to: null (which the batch log + DesignerPagesInput
+// already handle: any project designer can log pages when the subtask has
+// no primary owner). Only offered on the sayfalar key, so custom subtasks
+// and other library items never see the sentinel.
+const ALL_DESIGNERS = '__all__'
+
 // Build a stable, collision-free key for a custom (ad-hoc) subtask label.
 // We never put customs into SUBTASK_LIBRARY, so a synthetic key keeps them
 // out of the library's namespace while still being unique per dialog session.
@@ -199,7 +207,16 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         const libMatch = SUBTASK_LIBRARY.find((l) => l.label === s.title)
         if (libMatch) {
           map[libMatch.key] = true
-          if (s.assigned_to) assigneeMap[libMatch.key] = s.assigned_to
+          if (s.assigned_to) {
+            assigneeMap[libMatch.key] = s.assigned_to
+          } else if (libMatch.key === 'sayfalar') {
+            // İç Sayfalar is the only subtask whose null `assigned_to` has
+            // an explicit meaning ("Tüm Tasarımcılar") — preserve it in the
+            // picker so a re-save doesn't silently reattach the row to the
+            // project primary. Other subtasks keep the empty-string default,
+            // which the server treats as "inherit from primary" on submit.
+            assigneeMap[libMatch.key] = ALL_DESIGNERS
+          }
         } else if (s.kind !== 'pages' && s.kind !== 'sticker-count' && s.title) {
           // Anything in the project's saved subtasks that isn't a library
           // item or a numeric counter is a custom one — rehydrate it so the
@@ -340,6 +357,15 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         if (v) acc[c.label] = v
         return acc
       }, {})
+      // ALL_DESIGNERS is a shared sentinel: the SPA sends it across the wire
+      // as a plain string ("__all__"), and both server paths (createProject
+      // and PUT /projects/:id/subtasks) recognise it and store `assigned_to`
+      // as null. We can't just send `null` from the client because the
+      // repository filter strips nullish/empty values and the server falls
+      // back to the project primary when no entry is present — which would
+      // silently attach every "Tüm Tasarımcılar" subtask to the primary
+      // designer instead. Only İç Sayfalar exposes this option in the
+      // picker, so custom subtasks and other library items never carry it.
       const payload = {
         title: title.trim(),
         type,
@@ -527,9 +553,30 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                             )}
                             aria-disabled={!isChecked}
                           >
-                            <SelectValue placeholder={isChecked ? 'Tasarımcı seç…' : '—'} />
+                            {/* When the sayfalar picker holds the sentinel we
+                                render "Tüm Tasarımcılar" via placeholder — the
+                                SelectItem for ALL_DESIGNERS renders inside the
+                                dropdown, but its `value` isn't in the user list
+                                so SelectValue's built-in match won't find it. */}
+                            <SelectValue
+                              placeholder={
+                                subtaskAssignees[s.key] === ALL_DESIGNERS
+                                  ? 'Tüm Tasarımcılar'
+                                  : (isChecked ? 'Tasarımcı seç…' : '—')
+                              }
+                            />
                           </SelectTrigger>
                           <SelectContent>
+                            {/* İç Sayfalar is the only subtask that supports
+                                a shared assignment: multiple designers can log
+                                pages via subtask_designer_batches without a
+                                primary owner. Kapak / Kutu / Kılavuz / Sticker
+                                / customs stay single-owner (atomic deliverables
+                                or single-counter subtasks), so they don't get
+                                this option. */}
+                            {s.key === 'sayfalar' && (
+                              <SelectItem value={ALL_DESIGNERS}>Tüm Tasarımcılar</SelectItem>
+                            )}
                             {designers
                               .filter((d) => assignedIds.includes(d.id))
                               .map((d) => (

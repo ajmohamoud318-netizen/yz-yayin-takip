@@ -347,3 +347,36 @@ export function isRejectToMatbaaReview(rejectContext) {
 export function isDecisionReview(decisionContext) {
   return !!decisionContext?.action
 }
+
+/**
+ * Plain "Demo Formu" / "Ozalit Formu" viewer over a round that has already
+ * started — the snapshot on the server is the truth, the form is for reading.
+ *
+ * The viewer's "Taslağı Kaydedin" button is otherwise a personal draft that
+ * localStorage will rewrite on close and a fresh re-open will silently pick
+ * up — which is fine on top of nothing and a lie on top of a snapshot the
+ * matbaa is already working from. Lock the form the moment either of:
+ *
+ *   • the server already has a snapshot for the round (someone hit
+ *     "Ozalit İsteyin" before); or
+ *   • the round counter has been bumped past zero (`round.attempt > 0`),
+ *     which catches the same case before the load effect has resolved.
+ *
+ * The "Gönderilen Demoyu/Ozaliti Düzenleyin" path (`notifyOnSave`) is
+ * deliberately exempt: its whole purpose is to edit an existing snapshot, so
+ * the lock would defeat it.
+ *
+ * Empty-server cases are caught by `noParcaSelected` at submit time, so this
+ * gate is harmless on the very first open.
+ *
+ * Pure helper — testable without mounting the dialog.
+ *
+ * @param {{ mode?: string, notifyOnSave?: boolean } | null | undefined} flags
+ * @param {{ hasServerSnapshot?: boolean, attempt?: number } | null | undefined} round
+ * @returns {boolean}
+ */
+export function isViewerLockedByExistingRound(flags, round) {
+  if (!flags || flags.mode !== 'view' || flags.notifyOnSave) return false
+  if (!round) return false
+  return !!round.hasServerSnapshot || (round.attempt ?? 0) > 0
+}

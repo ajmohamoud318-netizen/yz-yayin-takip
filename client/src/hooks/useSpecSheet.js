@@ -48,6 +48,29 @@ import {
  */
 const parcaNameKey = (name) => String(name ?? '').trim().toLocaleUpperCase('tr')
 
+/**
+ * Keep only the components whose names are on `approved` (the parçalar the
+ * prior round approved). Order, rows and metadata pass through verbatim.
+ *
+ * Empty input (`approved` with no items) returns an empty list — that is
+ * "nothing was approved, so the new round starts empty". The catalog-default
+ * path above does not pass through here, so an empty approval set simply
+ * means the leader will see an empty sheet on re-open, with the picker
+ * available to tick whatever they actually want to send.
+ *
+ * Exported for its own tests — the function is small but it gates the whole
+ * demo-re-send default, and the integration cost (api mocks, snapshot fetch)
+ * is too high to exercise the rule end-to-end from a unit test.
+ *
+ * @param {Array<object>} components
+ * @param {string[]} approved
+ */
+export function narrowToApproved(components, approved) {
+  const allowed = new Set(approved.map(parcaNameKey).filter(Boolean))
+  if (allowed.size === 0) return []
+  return (components ?? []).filter((c) => allowed.has(parcaNameKey(c?.component)))
+}
+
 export function useSpecSheet({
   open,
   variant,
@@ -68,6 +91,7 @@ export function useSpecSheet({
   attemptNo,
   liveAttempts,
   preselectParcalar,
+  resendApprovedParcalar = null,
 }) {
   const [form, setForm] = useState(() => emptyForm(variant, project, user))
   const [customRows, setCustomRows] = useState([])
@@ -75,6 +99,13 @@ export function useSpecSheet({
   // Slot the sheet on screen was actually loaded from — null until the load
   // effect resolves it. See liveAttempts / writeAttempt in the dialog.
   const [liveAttemptNo, setLiveAttemptNo] = useState(null)
+  // True when the server actually has a snapshot for THIS round's slot. The
+  // viewer (mode='view' + !notifyOnSave) reads "Taslağı Kaydedin" as a personal
+  // draft and otherwise leaves the on-disk copy alone; once a snapshot
+  // exists, the same viewer becomes read-only so the snapshot can't be
+  // silently rewritten from a half-finished form. Computed inside the load
+  // effect, where the server snapshot is already being fetched.
+  const [hasServerSnapshot, setHasServerSnapshot] = useState(false)
   // Bumped once the server spec has been fetched for this project, so the
   // catalog memo below recomputes with fresh data even on a cold cache.
   const [catalogVersion, setCatalogVersion] = useState(0)
@@ -191,6 +222,8 @@ export function useSpecSheet({
         // snapshot carried, and no others. Never the catalog's default.
         selectionExplicit.current = true
         setSelectedComponents(snap?.selectedComponents ?? [])
+        // History snapshots are server-sourced by definition.
+        setHasServerSnapshot(!!snap)
         return
       }
 
@@ -207,6 +240,9 @@ export function useSpecSheet({
       // localStorage snapshots are keyed by attemptNo already, so only a
       // server hit can report a different slot.
       setLiveAttemptNo(current?.attempt ?? null)
+      // The viewer becomes read-only when the server already carries this
+      // round's snapshot — see hasServerSnapshot in the return block.
+      setHasServerSnapshot(!!current)
       const carried =
         loadSaved(variant, scopeId) ??
         (await fetchServerSnapshot(variant, project.id, null, orderId))
@@ -345,7 +381,21 @@ export function useSpecSheet({
       // [] means the user intentionally cleared them — respect that.
       const savedComponents = spec?.selectedComponents ?? null
       selectionExplicit.current = savedComponents !== null
-      const baseComponents = savedComponents ?? catalogComponents
+      // Re-send at demo_onay: the leader/designer's "Demo İsteyin" should
+      // default-tick only the parçalar the prior round APPROVED, not every
+      // parça the matbaa was sent. Parçalar that were rejected (or never
+      // signed off) stay where they are — out for rework, or with the
+      // designer — and re-sending them would silently undo the gate's
+      // decision. The caller computes the approved list via
+      // `approvedParcalar(project, 'demo')`; we narrow `baseComponents` here
+      // so the picker is free to ADD more parçalar if the leader wants them
+      // sent too. The list is consumed as a default, not a constraint:
+      // unticking every box is still honoured, ticking one not on the list
+      // works as before.
+      const narrowedBase = mode === 'advance' && resendApprovedParcalar
+        ? narrowToApproved(baseComponents, resendApprovedParcalar)
+        : baseComponents
+      const baseComponents = narrowedBase
       // Each parça carries its own rows; resolve SAYFA SAYISI placeholders on
       // those too (same 'auto' shell, same substitution rule). Editing a
       // resolved row back to 'auto' would round-trip through the snapshot —
@@ -561,6 +611,7 @@ export function useSpecSheet({
     customRows,
     selectedComponents,
     liveAttemptNo,
+    hasServerSnapshot,
     catalogComponents,
     handleChange,
     toggleComponent,

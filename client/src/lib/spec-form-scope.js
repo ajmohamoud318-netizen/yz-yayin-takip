@@ -33,11 +33,15 @@ const key = (name) => String(name ?? '').trim().toLocaleUpperCase('tr')
  * No scope (null, empty, all-blank) means the whole sheet — that is every
  * caller that isn't opening the form for a particular parça.
  *
- * A scope that matches nothing also means the whole sheet, deliberately: the
- * queue row and the sheet can legitimately disagree (a parça renamed in Ürün
- * Bilgileri since the round went out, a routing row from a previous round), and
- * an empty document tells the matbaa nothing at all. Showing everything is the
- * behaviour they had before, which is the right thing to fall back to.
+ * A scope with items that matches nothing returns an EMPTY list, deliberately.
+ * The previous fallback (silently widen to the whole sheet) made a leader who
+ * clicked "M Formunu Düzenleyin" land on a multi-parça form with a picker,
+ * when the only thing the panel named was M — and the same panel that asked
+ * for the block is the one that should be telling the reader "M is not on
+ * this round". Queue-row mismatches (a routing row from a previous round, a
+ * rename in Ürün Bilgileri since the round went out) used to lean on the
+ * fallback too; the dialog now surfaces those instead, with the scope the
+ * caller actually asked for in hand.
  *
  * @param {{ id?: string, component?: string }[]} selectedComponents
  * @param {string[] | null | undefined} parcaScope
@@ -46,8 +50,7 @@ export function scopeComponents(selectedComponents, parcaScope) {
   const all = (selectedComponents ?? []).filter(Boolean)
   const wanted = new Set((parcaScope ?? []).map(key).filter(Boolean))
   if (wanted.size === 0) return all
-  const kept = all.filter((c) => wanted.has(key(c?.component)))
-  return kept.length > 0 ? kept : all
+  return all.filter((c) => wanted.has(key(c?.component)))
 }
 
 /**

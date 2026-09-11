@@ -139,11 +139,16 @@ describe('scopeComponents', () => {
       .toEqual(['Kılavuz'])
   })
 
-  it('falls back to the whole sheet when the scope matches nothing', () => {
-    // A routing row from a previous round, or a parça since renamed. Showing
-    // everything is what the printer had before per-parça routing; showing an
-    // empty sheet tells them nothing and hides the job.
-    expect(scopeComponents(sheet, ['POSTER'])).toHaveLength(3)
+  it('returns an empty list when the scope has items but matches nothing', () => {
+    // The panel's "M Formunu Düzenleyin" button names the parça; if M is not
+    // on the round's `_selectedComponents` (a routing row from a previous
+    // round, a rename in Ürün Bilgileri since the round went out, or the
+    // panel synthesising a row the round never actually carried) the sheet
+    // should say so rather than widen to every block. The dialog renders a
+    // notice from the empty result; the picker used to surface here is gone.
+    expect(scopeComponents(sheet, ['POSTER'])).toEqual([])
+    // Whitespace and case don't accidentally widen it either.
+    expect(scopeComponents(sheet, ['  poster  '])).toEqual([])
   })
 
   it('survives a sheet with no parçalar at all', () => {
