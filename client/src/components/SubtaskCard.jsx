@@ -71,6 +71,11 @@ export default function SubtaskCard({
                 const canEdit = canEditSubtask(s)
                 const flagged = inRevision && s.needs_revize
                 const lockedDone = inRevision && !s.needs_revize && s.is_done
+                // migration 085 — leader-triggered handover redo. Lighter
+                // visual than the amber revize pill because it isn't a
+                // pipeline-stage gate; the row stays is_done=true and the
+                // new owner just owes an acknowledgment click.
+                const redoFlagged = s.needs_redo === true
 
                 // migration 067 — the "İç Sayfalar" subtask renders its
                 // per-designer number input instead of a single
@@ -194,6 +199,21 @@ export default function SubtaskCard({
                       {flagged && !canEdit && (
                         <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
                           Revize bekliyor
+                        </span>
+                      )}
+                      {/* migration 085 — handover redo. The read-only pill
+                          shows for anyone who isn't the assigned designer
+                          (team leader, other designers) so they can see at
+                          a glance which rows are awaiting an ack without
+                          having to scan the timeline. The assigned
+                          designer doesn't get a separate ack button —
+                          clicking the existing "Yeniden Çalıştım" button
+                          (just below) now does double duty: it drops the
+                          timeline note AND clears the flag in one shot
+                          server-side, so there's only one button per row. */}
+                      {redoFlagged && !canEdit && !flagged && (
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
+                          Yeniden çalışılacak
                         </span>
                       )}
                       {lockedDone && (

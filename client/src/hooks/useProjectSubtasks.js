@@ -55,6 +55,15 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
     (project?.stage === 'tasarim' || isOzalitRedoLeg) &&
     (project?.subtasks ?? []).some((s) => s.needs_revize)
 
+  // migration 085 — handover redo flag. Like `needs_revize` this can
+  // appear at any pipeline stage because a leader-triggered reassignment
+  // is stage-agnostic. The pill on each redo-flagged row reads
+  // "yeniden çalışılacak" for non-owners and the existing
+  // "Yeniden Çalıştım" button on the row doubles as the ack action
+  // (handleRedo → POST /subtasks/:id/updates → server clears the flag
+  // when the caller is the assigned designer). No project-level
+  // aggregate flag is needed — every row carries its own state.
+
   // Per-subtask editability. The İç Sayfalar subtask stays editable for
   // its assigned designer(s) too — the page-grid done-state gate in
   // `if (sub.kind !== 'pages' && sub.assigned_to && ...)` is what made
@@ -373,14 +382,28 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
   // formal rejection/revize flag involved) — this just logs a timeline
   // entry via the same "subtask note" endpoint the designer's notes use,
   // it doesn't touch is_done.
+  //
+  // migration 085 — the same button now ALSO doubles as the handover-redo
+  // acknowledgment. The shared `/subtasks/:id/updates` route checks the
+  // row's `needs_redo` flag and, if the caller is the assigned designer,
+  // clears it in the same transaction. The server surfaces `redoCleared`
+  // on the response so the toast can branch between "yeniden çalışıldı
+  // kaydedildi" (plain note) and "yeniden çalışıldı olarak işaretlendi"
+  // (flag also cleared). One button on the row, two outcomes — the
+  // leader's reassignment intent collapses into the designer's existing
+  // informal-redo affordance instead of spawning a second button.
   async function handleRedo(sub) {
     setToggling(sub.id)
     try {
-      const { project: updated } = await api.addSubtaskUpdate(sub.id, {
+      const { project: updated, redoCleared } = await api.addSubtaskUpdate(sub.id, {
         note: 'Yeniden çalışıldı.',
       })
       setProject((prev) => ({ ...prev, subtasks: updated.subtasks, history: updated.history }))
-      toast.success(`${sub.title}, yeniden çalışıldı olarak kaydedildi.`)
+      toast.success(
+        redoCleared
+          ? `${sub.title}, yeniden çalışıldı olarak işaretlendi.`
+          : `${sub.title}, yeniden çalışıldı olarak kaydedildi.`,
+      )
     } catch (err) {
       toast.error(err.message || 'Kaydedilemedi.')
     } finally {

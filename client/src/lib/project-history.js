@@ -128,6 +128,11 @@ const EVENTS = {
   subtask_done: { icon: CheckCircle2, tone: 'positive', weight: 'minor', group: 'subtask', label: 'Alt Görev Tamamlandı', noteMode: 'detail' },
   subtask_undone: { icon: RotateCcw, tone: 'pending', weight: 'minor', group: 'subtask', label: 'Alt Görev Geri Alındı', noteMode: 'detail' },
   subtask_revize: { icon: RotateCcw, tone: 'pending', weight: 'minor', group: 'subtask', label: 'Alt Görev Revize Edildi', noteMode: 'detail' },
+  // migration 085 — leader-triggered handover redo cleared by the new owner.
+  // Sits next to revize in the timeline so a project's "redo story" reads
+  // as a coherent sequence: reassign → redo-ack (instead of the old
+  // is_done=false flip, which had no positive counterpart event).
+  subtask_redo_acked: { icon: RotateCcw, tone: 'positive', weight: 'minor', group: 'subtask', label: 'Alt Görev Redo Onaylandı', noteMode: 'detail' },
   subtask_progress: { icon: ClipboardList, tone: 'neutral', weight: 'minor', group: 'subtask', label: 'Alt Görev İlerlemesi', noteMode: 'detail' },
   subtask_note: { icon: MessageSquarePlus, tone: 'neutral', weight: 'minor', group: 'subtask', label: 'Alt Görev Notu', noteMode: 'detail' },
   subtask_list_update: { icon: ClipboardList, tone: 'neutral', weight: 'minor', group: 'subtask', label: 'Alt Görev Listesi Güncellendi', noteMode: 'detail' },
@@ -485,7 +490,7 @@ export function filterCounts(entries) {
  * same), so no suffix dance is needed.
  */
 const FOLD_BUCKETS = [
-  { events: ['subtask_done', 'subtask_undone', 'subtask_revize', 'subtask_progress', 'subtask_note', 'subtask_list_update'], label: 'alt görev' },
+  { events: ['subtask_done', 'subtask_undone', 'subtask_revize', 'subtask_redo_acked', 'subtask_progress', 'subtask_note', 'subtask_list_update'], label: 'alt görev' },
   { events: ['demo_form_edited', 'ozalit_form_edited'], label: 'form düzenleme' },
   { events: ['demo_change_accepted', 'ozalit_change_accepted'], label: 'kabul' },
   { events: ['product_info_auto'], label: 'ürün bilgisi' },

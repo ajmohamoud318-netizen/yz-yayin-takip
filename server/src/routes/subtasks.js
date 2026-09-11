@@ -41,9 +41,10 @@ function listNames(names) {
  * rename therefore reads as one addition plus one removal, which is honest —
  * without stable ids we genuinely cannot distinguish a rename from a swap.
  */
-export function describeSubtaskListChange(before, after) {
+export function describeSubtaskListChange(before, after, { redoFlaggedIds } = {}) {
   const beforeByTitle = new Map(before.map((s) => [s.title, s]))
   const afterTitles = new Set(after.map((s) => s.title))
+  const flagged = redoFlaggedIds instanceof Set ? redoFlaggedIds : new Set()
 
   const added = after.filter((s) => !beforeByTitle.has(s.title)).map((s) => s.title)
   const removed = before.filter((s) => !afterTitles.has(s.title)).map((s) => s.title)
@@ -63,15 +64,22 @@ export function describeSubtaskListChange(before, after) {
       bits.push(`etiket ${old.total_stickers ?? '—'} → ${s.total_stickers ?? '—'}`)
     }
     if ((old.assigned_to ?? null) !== (s.assigned_to ?? null)) {
-      // Reopen-on-reassign: if the previous row was is_done=true and the
-      // new row is is_done=false, the leader's reassignment of a
-      // completed alt görev is what triggered the reopen. The
-      // timeline bit is the only place this intent is recorded —
-      // a plain "atama değişti" would leave the team wondering why
-      // a previously-finished alt görev is suddenly back in the
-      // queue, so the bit names the cause explicitly.
+      // Reopen-on-reassign: if this save flipped the row's `needs_redo`
+      // flag from false to true, the leader's reassignment of a
+      // completed check subtask is what triggered the redo (migration
+      // 085). The timeline bit is the only place this intent is
+      // recorded — a plain "atama değişti" would leave the team
+      // wondering why the row is suddenly wearing a redo pill, so the
+      // bit names the cause explicitly.
+      //
+      // Also emits when `old.is_done && !s.is_done` for defence in depth:
+      // any future path that unchecks a subtask during the bulk reconcile
+      // (a pages reopen, an admin correction) should still surface that
+      // as a redo-worthy change rather than a plain rename. The redo
+      // flag is the primary trigger; the is_done delta is the safety
+      // net for behaviours the flag doesn't yet cover.
       bits.push(
-        old.is_done && !s.is_done
+        flagged.has(s.id) || (old.is_done && !s.is_done)
           ? 'atama değişti, yeniden yapılacak'
           : 'atama değişti',
       )
@@ -95,7 +103,9 @@ export function describeSubtaskListChange(before, after) {
  * Subtask API.
  *
  * PATCH  /api/subtasks/:id                                    — toggle or update fields
- * POST   /api/subtasks/:id/updates                            — append a designer note
+ * POST   /api/subtasks/:id/updates                            — append a designer note (also acks
+ *                                                              `needs_redo` when caller is the
+ *                                                              assigned designer — migration 085)
  * POST   /api/subtasks/:id/revize                             — designer clears `needs_revize`
  * PUT    /api/projects/:id/subtasks                           — team_leader bulk replaces the list
  * POST   /api/subtasks/:id/designer-batches                   — append one +N batch row (migration 067)
@@ -116,6 +126,7 @@ export function describeSubtaskListChange(before, after) {
  * `projects` are recomputed in the same transaction so the project
  * progress bar reflects the change without a follow-up GET.
  */
+
 export async function subtaskRoutes(fastify) {
   fastify.patch('/subtasks/:id', { schema: schemas.subtasksPatch }, async (request) => {
     await attachUser(request)
@@ -310,8 +321,13 @@ export async function subtaskRoutes(fastify) {
     await attachUser(request)
     const { note } = request.body
     const result = await withTx(async (client) => {
+      // migration 085: also pull `needs_redo` and `assigned_to` so the
+      // shared note endpoint can double as the new owner's redo
+      // acknowledgment. The flag-clear branch is gated on the caller
+      // being the assigned designer — anyone else can still drop a
+      // timeline note, but only the row's owner gets to flip the flag.
       const { rows: subRows } = await client.query(
-        'SELECT id, project_id, title FROM subtasks WHERE id = $1', [request.params.id],
+        'SELECT id, project_id, title, kind, needs_redo, assigned_to FROM subtasks WHERE id = $1', [request.params.id],
       )
       const sub = subRows[0]
       if (!sub) notFound('Alt görev bulunamadı.')
@@ -336,6 +352,49 @@ export async function subtaskRoutes(fastify) {
         },
         request.user,
       )
+      // migration 085 — handover redo acknowledgment piggybacks on the
+      // shared "Yeniden Çalıştım" note button. When the row carries a
+      // `needs_redo` flag AND the caller is the assigned designer, the
+      // single click both stamps the timeline note (above) AND clears
+      // the flag. Two birds, one button — the leader's reassignment
+      // intent ("the new owner owes an ack pass") collapses into the
+      // designer's existing informal-redo affordance instead of
+      // spawning a second button on the row.
+      //
+      // Owner gate mirrors `/subtasks/:id/revize`: the leader who set
+      // the flag can't clear it themselves, and a non-owner designer
+      // can't ack a row that wasn't reassigned to them. A note-only
+      // drop from a non-owner still works — they just don't move the
+      // flag.
+      let redoCleared = false
+      if (
+        sub.needs_redo
+        && sub.assigned_to
+        && sub.assigned_to === request.user.id
+      ) {
+        await client.query(
+          'UPDATE subtasks SET needs_redo = FALSE, updated_at = NOW() WHERE id = $1',
+          [sub.id],
+        )
+        // Distinct history row for the fold bucket — same note copy the
+        // dedicated /redo-ack endpoint wrote, but with the caller's
+        // note appended so the timeline reads "KAPAK, yeniden
+        // çalışıldı olarak işaretlendi · Yeniden çalışıldı." instead
+        // of dropping the original button's intent on the floor.
+        await logHistory(
+          client,
+          {
+            project_id: project.id,
+            from_stage: project.stage,
+            to_stage: project.stage,
+            action: 'system',
+            event: 'subtask_redo_acked',
+            note: `${sub.title}, yeniden çalışıldı olarak işaretlendi${note ? ` · ${note}` : ''}`,
+          },
+          request.user,
+        )
+        redoCleared = true
+      }
       // Same shape requirement as PATCH /subtasks/:id above — saveUpdateSub
       // merges `project.subtasks` straight into client state.
       const subtasksList = await listProjectSubtasks(client, project.id)
@@ -350,6 +409,10 @@ export async function subtaskRoutes(fastify) {
           history,
         },
         entry: rows[0],
+        // Surfaced on the response so the client can show a "redoesi
+        // onaylandı" toast distinct from a plain note save without
+        // having to diff the project state.
+        redoCleared,
       }
     })
     return result
@@ -432,7 +495,7 @@ export async function subtaskRoutes(fastify) {
       // chip-grid's "reset everything on rename" hazard is gone with the
       // chip grid.
       const { rows: previous } = await client.query(
-        `SELECT id, title, kind, total_pages, total_stickers, assigned_to, is_done
+        `SELECT id, title, kind, total_pages, total_stickers, assigned_to, is_done, needs_redo
            FROM subtasks WHERE project_id = $1 ORDER BY position, created_at`,
         [project.id],
       )
@@ -549,23 +612,40 @@ export async function subtaskRoutes(fastify) {
       // ── Reopen done work when the leader reassigns the owner ───────────────
       //
       // The leader's reassignment of a completed alt görev implies "the
-      // new owner has to redo this." For kind='check' we flip is_done
-      // straight back to false. For kind='pages' the new owner
-      // starts clean on their first /designer-batches POST — every
-      // batch row that already exists stays attributed to its
-      // original designer (audit trail), and the new designer's
-      // contribution is a fresh batch, not a re-stamp of the old
-      // total. The trigger on subtask_designer_batches recomputes
-      // subtasks.pages_done / is_done from the live row set, which
-      // already excludes the previous owner's contribution once
-      // their rows are migrated away — except that, in this
-      // implementation, we LEAVE the previous owner's rows in
-      // place (they did the work, the audit trail says so). The
-      // net effect: a leader handover of a previously-completed
-      // pages subtask spawns a fresh contribution for the new owner
-      // without disturbing the previous owner's record, and the
-      // sum drives pages_done / is_done exactly the same way.
+      // new owner has to redo this." For kind='check' we now stamp the
+      // `needs_redo` flag (migration 085) instead of flipping is_done
+      // back to false: the previous designer's completion credit is
+      // preserved on the row and the new owner sees a pill telling them
+      // the redo is owed. Clearing the flag is what
+      // POST /subtasks/:id/redo-ack does, which is the check twin of
+      // the /revize action.
+      //
+      // Why the flag and not an uncheck: a check subtask has one boolean
+      // column that historically doubled as "finished this round" AND
+      // "who owes work right now". Handing it off to a new designer
+      // meant those two collapsed into one wrong answer either way —
+      // uncheck and the timeline reads "back to zero"; leave it checked
+      // and the new owner has no visible signal to act on. The flag
+      // splits them: `is_done` stays as "the work reached done at some
+      // point", `needs_redo` carries the "still owed for the current
+      // owner" bit until they acknowledge.
+      //
+      // For kind='pages' the reopen stays a no-op: the new designer's
+      // first /designer-batches POST will create their first batch from
+      // a clean slate, every batch row that already exists stays
+      // attributed to its original designer (audit trail), and the
+      // trigger on subtask_designer_batches sums whatever is left. The
+      // net effect on a pages subtask is that a handover spawns a fresh
+      // contribution for the new owner without disturbing the previous
+      // owner's record.
       const previousById = new Map(previous.map((p) => [p.id, p]))
+      // Ids whose `needs_redo` was flipped from false to true in this
+      // save. Passed into describeSubtaskListChange below so the timeline
+      // bit for a redo-flagged reassign reads "atama değişti, yeniden
+      // yapılacak" instead of the plain "atama değişti" — same wording
+      // the pre-flag behaviour emitted when the reassign unchecked the
+      // row, so the timeline reads the same for the team either way.
+      const redoFlaggedIds = new Set()
       for (const row of finalRows) {
         if (row.kind !== 'check' && row.kind !== 'pages') continue
         const prev = previousById.get(row.id)
@@ -573,14 +653,19 @@ export async function subtaskRoutes(fastify) {
         if (prev.assigned_to === row.assigned_to) continue  // assignee didn't move
         if (!prev.is_done) continue        // wasn't done, no work to reopen
         if (row.kind === 'check') {
+          // Only stamp when the flag isn't already carried — a repeat
+          // reassignment while a redo is still pending shouldn't rewrite
+          // the timeline entry or the updated_at, since nothing new is
+          // being asked of the new owner.
+          if (prev.needs_redo) continue
           await client.query(
             `UPDATE subtasks
-                SET is_done = false,
-                    done_at = NULL,
+                SET needs_redo = TRUE,
                     updated_at = NOW()
               WHERE id = $1`,
             [row.id],
           )
+          redoFlaggedIds.add(row.id)
         }
         // kind='pages' is a no-op here: the new designer's first
         // /designer-batches POST will create their first batch from
@@ -594,7 +679,7 @@ export async function subtaskRoutes(fastify) {
       const { rows: refreshedRows } = await client.query(
         `SELECT id, title, kind, is_done, total_pages, pages_done,
                 total_stickers, stickers_done, assigned_to, done_at,
-                needs_revize, position, created_at, updated_at
+                needs_revize, needs_redo, position, created_at, updated_at
            FROM subtasks
           WHERE project_id = $1
           ORDER BY position, created_at`,
@@ -616,7 +701,7 @@ export async function subtaskRoutes(fastify) {
       // Only log when something actually moved. Opening the editor and
       // hitting save is not an event, and the old unconditional write is
       // exactly how a project ends up with eight identical timeline rows.
-      const summary = describeSubtaskListChange(previous, inserted)
+      const summary = describeSubtaskListChange(previous, inserted, { redoFlaggedIds })
       if (summary) {
         await logHistory(
           client,

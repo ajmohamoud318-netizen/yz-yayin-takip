@@ -213,7 +213,7 @@ export async function listProjectSubtasks(client, projectId) {
   const { rows } = await client.query(
     `SELECT s.id, s.project_id, s.title, s.kind, s.is_done, s.total_pages, s.pages_done,
             s.total_stickers, s.stickers_done, s.assigned_to, s.done_at,
-            s.needs_revize, s.position, s.parca, s.created_at, s.updated_at,
+            s.needs_revize, s.needs_redo, s.position, s.parca, s.created_at, s.updated_at,
             u.name AS assigned_name
        FROM subtasks s
        LEFT JOIN users u ON u.id = s.assigned_to

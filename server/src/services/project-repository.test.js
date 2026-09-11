@@ -442,8 +442,10 @@ describe('PUT /projects/:id/subtasks — designer work state is preserved', () =
 //
 // Locked-in contracts (all on the route source, because the reopen
 // logic is route-internal and the SQL is best read directly):
-//   • kind='check' reopen — `is_done = false, done_at = NULL` on the
-//     subtask row.
+//   • kind='check' reopen — stamps `needs_redo = TRUE` on the subtask
+//     row (migration 085). `is_done` is left alone so the previous
+//     designer's completion credit survives; the new owner clears
+//     the flag via `POST /subtasks/:id/redo-ack`.
 //   • kind='pages' reopen — `status = 'rework'` on every done page
 //     with `rework_count` incremented, AND `is_done` recomputed
 //     (otherwise the parent flag would lie and progressFor would
@@ -456,16 +458,41 @@ describe('PUT /projects/:id/subtasks — designer work state is preserved', () =
 //     team can see why a finished alt görev is back in the queue.
 
 describe('PUT /projects/:id/subtasks — reopen on reassign of done work', () => {
-  it('reopens a kind=check alt görev that was is_done=true', () => {
-    // Pull the check-kind reopen block. Anchored on the unique UPDATE
-    // that writes is_done = false, done_at = NULL with no $params in
-    // sight (the values are literals, not bound parameters) — the
-    // kind='check' branch never needs to know which row, just that the
-    // SET clause flips both columns.
-    const re = /UPDATE subtasks\s+SET is_done = false,\s*done_at = NULL/
+  it('reopens a kind=check alt görev by stamping needs_redo (migration 085)', () => {
+    // The kind=check reopen path no longer flips is_done back to false
+    // (migration 085). It instead stamps the `needs_redo` flag so the
+    // previous owner's completion credit survives and the new owner
+    // sees a redo pill to acknowledge. The anchor is the literal
+    // UPDATE statement inside the `if (row.kind === 'check')` branch
+    // — the SET clause must write needs_redo, NOT is_done/done_at.
+    const re = /UPDATE subtasks\s+SET needs_redo = TRUE/
     assert.ok(
       re.test(subtasksRouteSrc),
-      'expected a kind=check reopen UPDATE in the bulk-reconcile route',
+      'expected a kind=check reopen UPDATE that sets needs_redo = TRUE (migration 085)',
+    )
+  })
+
+  it('the kind=check reopen branch does NOT flip is_done/done_at', () => {
+    // Defensive assertion: the previous (pre-085) reopen literal
+    // `SET is_done = false, done_at = NULL` must be gone from the
+    // route. There's still an UPDATE that touches is_done elsewhere
+    // (the per-subtask PATCH route for normal toggle), so the test
+    // scopes by the reopen-loop comment header above the loop —
+    // anything inside that block must not write is_done/done_at.
+    const block = subtasksRouteSrc.match(
+      /\/\/ ── Reopen done work when the leader reassigns the owner[\s\S]*?Re-SELECT the rows so `inserted` carries/,
+    )
+    assert.ok(block, 'could not locate the reopen-on-reassign block')
+    const body = block[0]
+    assert.doesNotMatch(
+      body,
+      /SET is_done\s*=\s*false/,
+      'kind=check reopen branch must not flip is_done back to false anymore',
+    )
+    assert.doesNotMatch(
+      body,
+      /done_at\s*=\s*NULL/,
+      'kind=check reopen branch must not clear done_at anymore',
     )
   })
 
@@ -505,6 +532,141 @@ describe('PUT /projects/:id/subtasks — reopen on reassign of done work', () =>
       body,
       /atama değişti, yeniden yapılacak/,
       'describeSubtaskListChange must emit a dedicated "yeniden yapılacak" bit on reopen',
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// POST /subtasks/:id/updates — designer's "Yeniden Çalıştım" note
+// piggybacks the handover-redo ack (migration 085).
+//
+// The original design had a dedicated POST /subtasks/:id/redo-ack
+// route + sky-500 ack button. That gave the row two "Yeniden
+// Çalıştım" buttons sitting next to each other — confusing. The
+// simpler shape is for the designer's existing note endpoint to
+// check `needs_redo` and clear it in the same transaction when the
+// caller is the assigned designer. One button per row, two outcomes
+// surfaced via the `redoCleared` response flag.
+//
+// All assertions here are on the route source because the handler
+// is a closure inside `subtaskRoutes`. The companion PGlite
+// integration test in routes/__tests__/subtasks-redo-on-note.js
+// exercises the happy path against a real DB.
+describe('POST /subtasks/:id/updates — handover redo piggyback (migration 085)', () => {
+  it('reads needs_redo + assigned_to off the SELECT so it can branch on the flag', () => {
+    // The piggyback branch needs the flag AND the assignee to make
+    // its gating decision. If the SELECT ever shrinks back to just
+    // (id, project_id, title), the owner gate loses its input and
+    // either becomes a no-op or starts misfiring on the wrong rows.
+    // Scoped to the /updates handler block to avoid matching other
+    // SELECTs earlier in the file (PATCH /subtasks/:id uses SELECT *).
+    const updatesBlock = subtasksRouteSrc.match(
+      /fastify\.post\(\s*'\/subtasks\/:id\/updates'[\s\S]*?redoCleared:\s*redoCleared|fastify\.post\(\s*'\/subtasks\/:id\/updates'[\s\S]*?redoCleared,?\s*\n/,
+    )
+    assert.ok(updatesBlock, 'could not locate the /updates handler block')
+    assert.match(
+      updatesBlock[0],
+      /SELECT id, project_id, title, kind, needs_redo, assigned_to FROM subtasks WHERE id = \$1/,
+      'subtask note SELECT must include needs_redo and assigned_to for the piggyback branch',
+    )
+  })
+
+  it('gates the flag-clear on the caller being the assigned designer', () => {
+    // The leader is the one who STAMPED the flag — letting the same
+    // leader clear it via a note click would strip the new owner of
+    // the explicit ack step the flag exists to enforce. A
+    // non-assigned designer must also not be able to flip the flag
+    // for a row that wasn't handed to them. The gate is: caller.id
+    // === row.assigned_to (and assigned_to must be set; the flag is
+    // only meaningful when the row has an owner).
+    assert.match(
+      subtasksRouteSrc,
+      /if \(\s*sub\.needs_redo\s*\n?\s*&&\s*sub\.assigned_to\s*\n?\s*&&\s*sub\.assigned_to\s*===\s*request\.user\.id\s*\)/,
+      'flag-clear must be gated on needs_redo AND assigned_to === caller',
+    )
+  })
+
+  it('clears needs_redo with a single-column UPDATE (is_done survives)', () => {
+    // The point of the flag is that is_done stays as-is. If this
+    // UPDATE ever flipped is_done/done_at, the previous owner's
+    // credit would vanish — the very bug migration 085 was designed
+    // to retire. The single-column UPDATE inside the piggyback
+    // branch must only touch needs_redo.
+    const piggybackBlock = subtasksRouteSrc.match(
+      /sub\.needs_redo[\s\S]*?sub\.assigned_to\s*===\s*request\.user\.id[\s\S]*?redoCleared\s*=\s*true/,
+    )
+    assert.ok(piggybackBlock, 'could not locate the piggyback flag-clear branch')
+    assert.match(
+      piggybackBlock[0],
+      /UPDATE subtasks SET needs_redo = FALSE, updated_at = NOW\(\) WHERE id = \$1/,
+      'piggyback branch must clear needs_redo with a single-column UPDATE',
+    )
+    assert.doesNotMatch(
+      piggybackBlock[0],
+      /SET\s+is_done\s*=\s*false/,
+      'piggyback branch must not flip is_done back to false',
+    )
+    assert.doesNotMatch(
+      piggybackBlock[0],
+      /done_at\s*=\s*NULL/,
+      'piggyback branch must not clear done_at',
+    )
+  })
+
+  it('writes the subtask_redo_acked history row inside the piggyback branch', () => {
+    // The timeline is the only audit trail the team has for "the redo
+    // was explicitly acked" — without the separate history row the
+    // fold bucket in project-history.js would have nothing to
+    // distinguish a redo-ack from a plain note drop. The note copy
+    // appends the caller's own note after the friendly prefix so the
+    // timeline reads "KAPAK, yeniden çalışıldı olarak işaretlendi ·
+    // Yeniden çalışıldı." instead of dropping the button's intent.
+    const piggybackBlock = subtasksRouteSrc.match(
+      /sub\.needs_redo[\s\S]*?sub\.assigned_to\s*===\s*request\.user\.id[\s\S]*?redoCleared\s*=\s*true/,
+    )
+    assert.ok(piggybackBlock, 'could not locate the piggyback flag-clear branch')
+    assert.match(
+      piggybackBlock[0],
+      /event:\s*['"]subtask_redo_acked['"]/,
+      'piggyback branch must log a history row tagged subtask_redo_acked',
+    )
+    assert.match(
+      piggybackBlock[0],
+      /yeniden çalışıldı olarak işaretlendi/,
+      'piggyback branch must include the friendly "yeniden çalışıldı olarak işaretlendi" note',
+    )
+  })
+
+  it('surfaces redoCleared on the response so the client toast can branch', () => {
+    // The client toasts off `redoCleared` — `true` shows "yeniden
+    // çalışıldı olarak işaretlendi", `false` shows "yeniden çalışıldı
+    // olarak kaydedildi". If the response field ever disappears, the
+    // toast reverts to the plain-note copy and the user gets no
+    // feedback that the flag also flipped. Accepts both the explicit
+    // `redoCleared: redoCleared` form and the modern shorthand
+    // `redoCleared,` shape — what's locked in is the wire field name.
+    assert.match(
+      subtasksRouteSrc,
+      /redoCleared(:\s*redoCleared)?,?\s*\n\s*\}/,
+      'response payload must surface redoCleared so the client can branch the toast',
+    )
+  })
+
+  it('route-table comment documents the piggyback under /updates, not a separate /redo-ack route', () => {
+    // The dedicated /subtasks/:id/redo-ack route was deliberately
+    // collapsed into /updates — the table-of-contents comment must
+    // not advertise a removed endpoint, and must mention migration
+    // 085 under the /updates line so future readers know where the
+    // ack lives.
+    assert.doesNotMatch(
+      subtasksRouteSrc,
+      /fastify\.post\(\s*'\/subtasks\/:id\/redo-ack'/,
+      'the dedicated /redo-ack route must be gone (collapsed into /updates)',
+    )
+    assert.match(
+      subtasksRouteSrc,
+      /POST\s+\/api\/subtasks\/:id\/updates[\s\S]*?migration 085[\s\S]*?POST\s+\/api\/subtasks\/:id\/revize/,
+      'route-table comment must mention migration 085 inside the /updates entry',
     )
   })
 })

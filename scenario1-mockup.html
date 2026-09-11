@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <title>Scenario 1 — Handover redo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            border: 'hsl(214 32% 91%)',
+            background: 'hsl(0 0% 100%)',
+            foreground: 'hsl(222 47% 11%)',
+            muted: 'hsl(210 40% 96%)',
+            'muted-foreground': 'hsl(215 16% 47%)',
+            primary: 'hsl(221 83% 53%)',
+            secondary: 'hsl(210 40% 96%)',
+            'secondary-foreground': 'hsl(222 47% 11%)',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    body { font-family: Inter, system-ui, sans-serif; }
+    .checker-bg { background-image: linear-gradient(45deg, #f3f4f6 25%, transparent 25%), linear-gradient(-45deg, #f3f4f6 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f3f4f6 75%), linear-gradient(-45deg, transparent 75%, #f3f4f6 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; }
+  </style>
+</head>
+<body class="bg-slate-50 text-foreground">
+
+  <!-- Header strip -->
+  <header class="border-b border-border bg-white px-6 py-3">
+    <div class="mx-auto flex max-w-6xl items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="h-6 w-6 rounded bg-primary"></div>
+        <span class="text-sm font-semibold tracking-tight">YZ Yayın Takip</span>
+      </div>
+      <div class="flex items-center gap-3 text-xs text-muted-foreground">
+        <span class="rounded-full bg-muted px-2 py-1 font-medium">migration 085</span>
+        <span>Scenario 1 — Leader reassigns a done <code class="rounded bg-muted px-1 py-0.5">check</code> alt görev</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-6 py-8">
+
+    <!-- Setup story -->
+    <section class="mb-8 rounded-xl border border-border bg-white p-5">
+      <h1 class="mb-2 text-base font-semibold">Setup</h1>
+      <ol class="space-y-1.5 text-sm text-muted-foreground">
+        <li><span class="font-medium text-foreground">1.</span> Designer A finished <strong class="text-foreground">KAPAK</strong> earlier today — <code class="rounded bg-muted px-1 py-0.5 text-foreground">is_done = TRUE</code>, <code class="rounded bg-muted px-1 py-0.5 text-foreground">needs_redo = FALSE</code>.</li>
+        <li><span class="font-medium text-foreground">2.</span> Leader opens the project dialog and reassigns KAPAK from A → Designer B (Neva).</li>
+        <li><span class="font-medium text-foreground">3.</span> Save triggers <code class="rounded bg-muted px-1 py-0.5 text-foreground">PUT /api/projects/:id/subtasks</code>. The kind=check branch now stamps <code class="rounded bg-muted px-1 py-0.5 text-foreground">needs_redo = TRUE</code> instead of unchecking. Previous designer's <code class="rounded bg-muted px-1 py-0.5 text-foreground">is_done</code> credit is preserved.</li>
+      </ol>
+    </section>
+
+    <div class="grid gap-6 lg:grid-cols-2">
+
+      <!-- ───────────────── NEW DESIGNER (Neva) ───────────────── -->
+      <section class="rounded-xl border border-sky-200 bg-white">
+        <div class="flex items-center justify-between border-b border-sky-200 bg-sky-50/60 px-5 py-3">
+          <div>
+            <h2 class="text-sm font-semibold">What Designer B sees</h2>
+            <p class="text-xs text-muted-foreground">Logged in as <strong class="text-foreground">Neva</strong> — assigned to KAPAK</p>
+          </div>
+          <span class="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
+            assigned designer
+          </span>
+        </div>
+
+        <div class="space-y-3 p-5">
+          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Alt Görevler</p>
+
+          <!-- The actual SubtaskCard row for KAPAK, redoFlagged=true, canEdit=true -->
+          <div class="space-y-1.5">
+            <label class="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-emerald-200 bg-emerald-50/40 px-3 py-2.5 text-sm transition">
+              <div class="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-primary bg-primary text-[10px] text-white">✓</div>
+              <span class="min-w-0 flex-1 basis-40 text-muted-foreground line-through">KAPAK</span>
+              <div class="flex flex-wrap items-center justify-end gap-1.5 pl-7 sm:pl-0">
+
+                <!-- migration 085 — the single "Yeniden Çalıştım" button
+                     now does double duty: drops a timeline note AND clears
+                     the needs_redo flag when the caller is the assigned
+                     designer. One click, two outcomes — the sky-500 ack
+                     button that used to sit next to this one is gone. -->
+                <button
+                  type="button"
+                  title="Bu görev üzerinde tekrar çalıştığınızı kaydedin"
+                  class="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition hover:border-primary/40 hover:text-primary"
+                >
+                  Yeniden Çalıştım
+                </button>
+
+                <!-- Done date — still showing because is_done is true and the
+                     flag is separate from completion -->
+                <span class="whitespace-nowrap text-[11px] text-muted-foreground">10 Eylül 14:32</span>
+
+                <!-- Assignee chip -->
+                <span title="Bu alt görevin tasarımcısı: Neva" class="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
+                  <svg class="h-2.5 w-2.5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                  Neva
+                </span>
+              </div>
+            </label>
+          </div>
+
+          <!-- A neighbouring sub-task row, untouched, for context -->
+          <div class="space-y-1.5">
+            <label class="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-border bg-background px-3 py-2.5 text-sm transition hover:border-primary/30">
+              <div class="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-border"></div>
+              <span class="min-w-0 flex-1 basis-40">İÇ SAYFALAR</span>
+              <div class="flex flex-wrap items-center justify-end gap-1.5 pl-7 sm:pl-0">
+                <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
+                  <svg class="h-2.5 w-2.5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                  Polat
+                </span>
+              </div>
+            </label>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ───────────────── LEADER / OTHER VIEWER ───────────────── -->
+      <section class="rounded-xl border border-border bg-white">
+        <div class="flex items-center justify-between border-b border-border bg-slate-50 px-5 py-3">
+          <div>
+            <h2 class="text-sm font-semibold">What the leader & other designers see</h2>
+            <p class="text-xs text-muted-foreground">Same row, read-only view</p>
+          </div>
+          <span class="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+            read-only viewer
+          </span>
+        </div>
+
+        <div class="space-y-3 p-5">
+          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Alt Görevler</p>
+
+          <!-- Same KAPAK row from a non-owner perspective: redoFlagged=true, canEdit=false -->
+          <div class="space-y-1.5">
+            <label class="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-emerald-200 bg-emerald-50/40 px-3 py-2.5 text-sm transition cursor-default">
+              <div class="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-primary bg-primary text-[10px] text-white">✓</div>
+              <span class="min-w-0 flex-1 basis-40 text-muted-foreground line-through">KAPAK</span>
+              <div class="flex flex-wrap items-center justify-end gap-1.5 pl-7 sm:pl-0">
+
+                <!-- Migration 085 — the read-only sky-100 pill that replaces
+                     what used to be the auto-uncheck (so the team can see at
+                     a glance which rows are awaiting an ack). -->
+                <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
+                  Yeniden çalışılacak
+                </span>
+
+                <span class="whitespace-nowrap text-[11px] text-muted-foreground">10 Eylül 14:32</span>
+
+                <span title="Bu alt görevin tasarımcısı: Neva" class="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
+                  <svg class="h-2.5 w-2.5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                  Neva
+                </span>
+              </div>
+            </label>
+          </div>
+
+          <!-- Neighbouring row, same -->
+          <div class="space-y-1.5">
+            <label class="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-border bg-background px-3 py-2.5 text-sm transition cursor-default">
+              <div class="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-border"></div>
+              <span class="min-w-0 flex-1 basis-40">İÇ SAYFALAR</span>
+              <div class="flex flex-wrap items-center justify-end gap-1.5 pl-7 sm:pl-0">
+                <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">
+                  <svg class="h-2.5 w-2.5 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                  Polat
+                </span>
+              </div>
+            </label>
+          </div>
+
+        </div>
+      </section>
+    </div>
+
+    <!-- Timeline excerpt -->
+    <section class="mt-8 rounded-xl border border-border bg-white">
+      <div class="border-b border-border bg-slate-50 px-5 py-3">
+        <h2 class="text-sm font-semibold">Geçmiş — what the team sees</h2>
+        <p class="text-xs text-muted-foreground">The reassignment event writes one row tagged <code class="rounded bg-muted px-1 py-0.5 text-foreground">subtask_list_update</code> with a dedicated "yeniden yapılacak" bit on the changed subtask.</p>
+      </div>
+      <ol class="divide-y divide-border">
+        <li class="flex items-start gap-3 px-5 py-3">
+          <div class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          </div>
+          <div class="flex-1 text-sm">
+            <div class="flex items-baseline gap-2">
+              <span class="font-medium">Alt Görev Listesi Güncellendi</span>
+              <span class="text-[11px] text-muted-foreground">· 11 Eyl 13:42 · Ayşenur (team_leader)</span>
+            </div>
+            <p class="mt-0.5 text-muted-foreground">KAPAK (atama değişti, <strong class="text-sky-700">yeniden yapılacak</strong>)</p>
+          </div>
+        </li>
+        <li class="flex items-start gap-3 px-5 py-3 opacity-60">
+          <div class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          </div>
+          <div class="flex-1 text-sm">
+            <div class="flex items-baseline gap-2">
+              <span class="font-medium">Alt Görev Tamamlandı</span>
+              <span class="text-[11px] text-muted-foreground">· 10 Eyl 14:32 · Polat (designer)</span>
+            </div>
+            <p class="mt-0.5 text-muted-foreground">KAPAK</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- DB row state -->
+    <section class="mt-8 rounded-xl border border-border bg-white">
+      <div class="border-b border-border bg-slate-50 px-5 py-3">
+        <h2 class="text-sm font-semibold">Underlying row state</h2>
+        <p class="text-xs text-muted-foreground">Two flags, two responsibilities — the previous owner's credit survives, the new owner has a clear queue.</p>
+      </div>
+      <div class="overflow-x-auto p-5">
+        <table class="w-full text-sm">
+          <thead class="text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <tr>
+              <th class="pb-2 pr-6">Column</th>
+              <th class="pb-2 pr-6">Before</th>
+              <th class="pb-2 pr-6">After</th>
+              <th class="pb-2">Why</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border font-mono text-[13px]">
+            <tr>
+              <td class="py-2 pr-6">is_done</td>
+              <td class="py-2 pr-6"><span class="rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700">TRUE</span></td>
+              <td class="py-2 pr-6"><span class="rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700">TRUE</span></td>
+              <td class="py-2 font-sans text-muted-foreground">Preserved — Polat's completion credit survives the handover.</td>
+            </tr>
+            <tr>
+              <td class="py-2 pr-6">done_at</td>
+              <td class="py-2 pr-6">10 Eyl 14:32</td>
+              <td class="py-2 pr-6">10 Eyl 14:32</td>
+              <td class="py-2 font-sans text-muted-foreground">Preserved — the original completion timestamp stays put.</td>
+            </tr>
+            <tr>
+              <td class="py-2 pr-6">assigned_to</td>
+              <td class="py-2 pr-6">u-polat</td>
+              <td class="py-2 pr-6">u-neva</td>
+              <td class="py-2 font-sans text-muted-foreground">Reassigned to Neva. The handover itself.</td>
+            </tr>
+            <tr>
+              <td class="py-2 pr-6">needs_redo</td>
+              <td class="py-2 pr-6"><span class="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">FALSE</span></td>
+              <td class="py-2 pr-6"><span class="rounded bg-sky-100 px-1.5 py-0.5 text-sky-700">TRUE</span></td>
+              <td class="py-2 font-sans text-muted-foreground">New — flags "Neva owes an ack pass" without touching is_done.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="mt-6 text-center text-xs text-muted-foreground">
+      Clicking the sky-500 "Yeniden Çalıştım" button calls <code class="rounded bg-muted px-1 py-0.5">POST /api/subtasks/:id/redo-ack</code>, which clears <code class="rounded bg-muted px-1 py-0.5">needs_redo</code> and writes a <code class="rounded bg-muted px-1 py-0.5">subtask_redo_acked</code> history row.
+    </p>
+  </main>
+</body>
+</html>
