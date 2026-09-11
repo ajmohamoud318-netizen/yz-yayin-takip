@@ -313,10 +313,13 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
       toast.error('Lütfen proje başlığı girin.')
       return
     }
-    if (assignedIds.length === 0) {
-      toast.error('Lütfen en az bir tasarımcı seçin.')
-      return
-    }
+    // Tasarımcı seçimi artık isteğe bağlı: takım lideri projeyi tasarımcısız
+    // kaydedebilir ve sonra Ürün Bilgileri'nden veya proje düzenleme
+    // diyaloğundan atama yapabilir. Backend tarafı `assignees` array'ini
+    // zorunlu tutmuyor (sadece `title` ve `type` zorunlu), bu yüzden
+    // frontend'in tek taraflı zorlaması kaldırıldı. Mapper `objs[0]?.id
+    // ?? null` ile boş array'i null primary'ye çeviriyor, server da bu
+    // durumu sorunsuz kabul ediyor.
     if (subtasks.sayfalar && (pageCount === '' || pageCount === null || Number(pageCount) < 1)) {
       toast.error('İç sayfalar en az 1 olmalıdır (0 girilemez).')
       return
@@ -473,7 +476,17 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
           </div>
 
           <div className="space-y-2">
-            <Label>Atanan Tasarımcılar</Label>
+            <div className="flex items-center justify-between">
+              <Label>Atanan Tasarımcılar</Label>
+              {assignedIds.length === 0 && (
+                // Tasarımcı seçimi isteğe bağlı — lider isterse boş
+                // bırakıp projeyi oluşturabilir, sonra Ürün Bilgileri'nden
+                // veya proje düzenlemeden atama yapabilir. Backend `assignees`
+                // array'ini zorunlu tutmadığı için buradaki sessiz geçiş
+                // gerçek bir "kayıt sonrası atama" iş akışına dönüşüyor.
+                <span className="text-[11px] text-muted-foreground">İsteğe bağlı — sonra seçebilirsiniz</span>
+              )}
+            </div>
             <div className="grid grid-cols-1 gap-1.5 rounded-lg border bg-muted/30 p-2 sm:grid-cols-2">
               {designers.map((d) => {
                 const checked = assignedIds.includes(d.id)
@@ -529,7 +542,24 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                         checked={isChecked}
                         onCheckedChange={(v) => {
                           setSubtasks((prev) => ({ ...prev, [s.key]: !!v }))
-                          if (!v) setSubtaskAssignees((prev) => ({ ...prev, [s.key]: '' }))
+                          if (!v) {
+                            setSubtaskAssignees((prev) => ({ ...prev, [s.key]: '' }))
+                          } else if (s.key === 'sayfalar' && assignedIds.length >= 2) {
+                            // Per project rule: when 2+ designers are on a
+                            // project, İç Sayfalar defaults to "Tüm
+                            // Tasarımcılar" so any of them can log pages
+                            // (the batch log shares a single counter across
+                            // everyone assigned to this subtask). With 1
+                            // designer there's no picker to show, so the
+                            // single designer owns it implicitly. The
+                            // leader can still override by picking a
+                            // specific designer in the dropdown — only an
+                            // empty/primary default needs to be auto-flipped
+                            // here, and a leader who already chose someone
+                            // keeps that choice on re-check (the picker
+                            // doesn't fire onCheckedChange on its own).
+                            setSubtaskAssignees((prev) => ({ ...prev, [s.key]: ALL_DESIGNERS }))
+                          }
                         }}
                       />
                       <label

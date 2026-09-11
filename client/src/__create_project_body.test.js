@@ -160,4 +160,30 @@ describe('createProject HTTP body shape', () => {
 
     expect('subtaskAssignees' in captured.body).toBe(false)
   })
+
+  it('forwards an empty assignees array (leader defers designer choice)', async () => {
+    // Yeni davranış: takım lideri projeyi tasarımcı seçmeden
+    // oluşturabilir, sonra Ürün Bilgileri'nden veya proje düzenleme
+    // diyaloğundan atama yapabilir. NewProjectDialog "Lütfen en az bir
+    // tasarımcı seçin" kontrolünü kaldırdı; bu test, http repository'nin
+    // boş array'i gerçekten gönderdiğini ve primary assignee'nin null
+    // olarak işaretlendiğini sabitleyerek gerileme riskini kapatır.
+    const { createHttpProjectRepository } = await import(
+      '@/infrastructure/http/repositories/http-project.repository.js'
+    )
+    const repo = createHttpProjectRepository(stubUserRepo)
+
+    await repo.createProject({
+      title: 'Tasarımcı sonra',
+      type: 'TR',
+      assignees: [],
+      subtasks: ['kapak'],
+      subtaskAssignees: {},
+    })
+
+    expect(captured.body.assignees).toEqual([])
+    // assigned_to null: server, primary atamayı array'in ilk elemanından
+    // alıyor; boş array ile null primary doğru davranış.
+    expect(captured.body.assigned_to).toBeNull()
+  })
 })

@@ -17,7 +17,11 @@ import { withTx, getPool } from '../../db/pool.js'
 import { badRequest, conflict, notFound } from '../../domain/errors.js'
 import { ORDERABLE_STAGES, STAGE_LABELS } from '../../domain/stages.js'
 import { subtaskProgress } from '../../domain/progress.js'
-import { unwrapAssignee } from '../../domain/subtask-assignee.js'
+import {
+  unwrapAssignee,
+  assertNoOrphanDesigners,
+  OrphanDesignerError,
+} from '../../domain/subtask-assignee.js'
 import { inferComponentKind } from '../product-info-capture.js'
 import {
   normaliseProjectTitle,
@@ -71,6 +75,21 @@ export async function createProject(actor, body) {
     productInfo = null,
   } = body
   const primaryAssignee = assigned_to ?? (Array.isArray(assignees) && assignees[0]) ?? null
+
+  // Orphan-designer guard (mirrors the same check on PUT
+  // /projects/:id/subtasks). A leader picking 2+ designers and dropping
+  // only one onto a subtask leaves the second one with no work — invisible
+  // to the chip grid, no notifications, no work-queue row. Catch it here
+  // so the project lands with every declared designer on at least one
+  // subtask (or with a "Tüm Tasarımcılar" İç Sayfalar that grants
+  // shared access to all of them). The helper shares its source with
+  // the edit path so the two cannot drift apart.
+  try {
+    assertNoOrphanDesigners(assignees, subtasks, subtaskAssignees)
+  } catch (err) {
+    if (err instanceof OrphanDesignerError) badRequest(err.message)
+    throw err
+  }
 
   return withTx(async (client) => {
     // Titles are the team's only handle on a project (domain/project-title.js),

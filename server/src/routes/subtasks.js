@@ -14,7 +14,11 @@ import { schemas } from '../schemas/index.js'
 import { batchCounter } from '../domain/page-segments.js'
 import { subtaskProgress } from '../domain/progress.js'
 import { progressFor } from '../domain/progress.js'
-import { ALL_DESIGNERS_SENTINEL } from '../domain/subtask-assignee.js'
+import {
+  ALL_DESIGNERS_SENTINEL,
+  assertNoOrphanDesigners,
+  OrphanDesignerError,
+} from '../domain/subtask-assignee.js'
 
 // How many names to spell out before switching to "+N". Three fits the
 // timeline's single line at the widths the /projects/:id page actually uses.
@@ -424,45 +428,20 @@ export async function subtaskRoutes(fastify) {
     const project = await getProject(request.params.id)
     if (!project) notFound('Proje bulunamadı.')
     const subtasks = request.body.subtasks
-    // Orphan-designer check: when the leader's full assignee list is in
-    // the body, every designer except the first (which becomes the
-    // project primary) must be on at least one subtask in this same
-    // payload. Without this guard a leader could add a designer via the
-    // chip-grid picker in the dialog, forget to drop them onto a
-    // subtask, and end up with someone in the project's `assignees`
-    // list who is on no work — invisible to the chip grid, unreachable
-    // for the work queue, no notifications fired for them. The check
-    // runs BEFORE the writes so the transaction is aborted on failure.
-    const declaredAssignees = Array.isArray(request.body.assignees)
-      ? request.body.assignees
-      : null
-    if (declaredAssignees) {
-      // A subtask with the ALL_DESIGNERS sentinel covers every project
-      // designer for orphan-check purposes: "Tüm Tasarımcılar" IS the
-      // assignment for all of them (İç Sayfalar's batch log then lets any
-      // of them log pages against the ownerless row). Without this, a
-      // leader who assigns Ayşe to İç Sayfalar via "Tüm Tasarımcılar" and
-      // to no other subtask would trip the orphan guard.
-      const hasSharedSubtask = subtasks.some(
-        (s) => s.assigned_to === ALL_DESIGNERS_SENTINEL,
-      )
-      const subAssigneeIds = new Set(
-        subtasks
-          .map((s) => s.assigned_to)
-          .filter((v) => v && v !== ALL_DESIGNERS_SENTINEL),
-      )
-      // The first id in `assignees` is the project primary (the PATCH
-      // route's behaviour, mirrored here for the validation's sake so
-      // we don't flag the primary as orphan).
-      const primaryAssignee = declaredAssignees[0] ?? null
-      for (const id of declaredAssignees) {
-        if (id === primaryAssignee) continue
-        if (hasSharedSubtask) continue
-        if (subAssigneeIds.has(id)) continue
-        badRequest(
-          `Tasarımcı atanmamış: ${id}. Listeye eklediğiniz her tasarımcı en az bir alt göreve atanmalı.`,
-        )
-      }
+    // Orphan-designer guard. Same rule on create and edit (see
+    // createProject in services/project-service/admin.js) — every
+    // declared designer except the primary must be on at least one
+    // subtask, unless any subtask carries the ALL_DESIGNERS_SENTINEL
+    // ("Tüm Tasarımcılar" = shared access for the whole team). The
+    // helper handles both the PUT-shape payload (full subtask objects
+    // with `assigned_to` on each) and the POST-shape payload (just
+    // titles/keys + a side `subtaskAssignees` map), so this route
+    // doesn't need to know which wire shape it received.
+    try {
+      assertNoOrphanDesigners(request.body.assignees, subtasks, {})
+    } catch (err) {
+      if (err instanceof OrphanDesignerError) badRequest(err.message)
+      throw err
     }
     const result = await withTx(async (client) => {
       // Lock the project inside the tx so the SQL-level OCC guard on the
@@ -789,7 +768,7 @@ export async function subtaskRoutes(fastify) {
 
     const result = await withTx(async (client) => {
       const { rows: subRows } = await client.query(
-        `SELECT id, project_id, title, kind, total_pages, pages_done, total_stickers, stickers_done
+        `SELECT id, project_id, title, kind, assigned_to, total_pages, pages_done, total_stickers, stickers_done
            FROM subtasks WHERE id = $1 FOR UPDATE`,
         [subtaskId],
       )
@@ -813,6 +792,26 @@ export async function subtaskRoutes(fastify) {
       }
       if (!isLeader && designerId !== request.user.id) {
         badRequest(`Yalnızca kendi adınıza ${unit} ekleyebilirsiniz.`)
+      }
+      // Project-scoped gate on the "Tüm Tasarımcılar" shared-subtask
+      // path (sub.assigned_to IS NULL — İç Sayfalar with the sentinel
+      // unwrapped to null). The single-owner case (sub.assigned_to set)
+      // is already protected by the subtask row's `assigned_to` FK and
+      // the existing ownership check above. Leaders always pass — they
+      // can log on behalf of any designer; that override is by design.
+      //
+      // Without this gate, any active designer in the system could log
+      // pages onto a Tüm-Tasarımcılar row they're not actually assigned
+      // to — the batch would land under their id, get summed into the
+      // shared counter, and silently inflate the project's progress.
+      // "Tüm Tasarımcılar" means every PROJECT designer, not every
+      // SYSTEM designer.
+      if (!isLeader && sub.assigned_to === null) {
+        const projectAssignees = await loadProjectAssignees(client, project)
+        const projectDesignerIds = new Set(projectAssignees.map((a) => a.id))
+        if (!projectDesignerIds.has(designerId)) {
+          badRequest('Bu alt göreve yalnızca projedeki tasarımcılar sayfa ekleyebilir.')
+        }
       }
       // Backstop cap. `total = 0` means the leader hasn't set a page count
       // yet — leave the check off in that case so a designer isn't blocked

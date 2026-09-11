@@ -25,6 +25,7 @@ const BaskiListesi        = lazy(() => import('./pages/BaskiListesi.jsx'))
 const HedefProjeler       = lazy(() => import('./pages/HedefProjeler.jsx'))
 const HedefProjelerDetail = lazy(() => import('./pages/HedefProjelerDetail.jsx'))
 const Toplanti            = lazy(() => import('./pages/Toplanti.jsx'))
+const ToplantiDetail      = lazy(() => import('./pages/ToplantiDetail.jsx'))
 const UrunBilgileri       = lazy(() => import('./pages/UrunBilgileri.jsx'))
 const BaskiReceteleri     = lazy(() => import('./pages/BaskiReceteleri.jsx'))
 const Urunler             = lazy(() => import('./pages/Urunler.jsx'))
@@ -239,6 +240,16 @@ export default function App() {
               element={
                 <RoleGuard allow={['team_leader', 'designer', 'printer']}>
                   <Toplanti />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/toplanti/:id"
+              element={
+                <RoleGuard allow={['team_leader', 'designer', 'printer']}>
+                  <Suspense fallback={<RouteFallback />}>
+                    <ToplantiDetail />
+                  </Suspense>
                 </RoleGuard>
               }
             />

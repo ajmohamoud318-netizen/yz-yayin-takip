@@ -693,35 +693,17 @@ describe('POST /subtasks/:id/updates — handover redo piggyback (migration 085)
 //     NOT cover any extra designer — the only designer it covers is
 //     the primary.
 describe('PUT /projects/:id/subtasks — orphan-designer guard', () => {
-  it('reads assignees off the body and runs the loop', () => {
-    // The guard must (1) pull declaredAssignees from request.body
-    // and (2) iterate over every id, skipping the primary and
-    // accepting any id present in the subtask-assignee set. We assert
-    // the loop body is wired so a future refactor that strips the
-    // guard can't quietly regress the behaviour.
+  it('calls the shared helper with request.body.assignees', () => {
+    // The PUT route delegates the orphan-designer check to the shared
+    // helper in domain/subtask-assignee.js. The helper's own contract
+    // is locked in by __subtask-assignee-orphan-guard.test.js; this
+    // test pins the call-site wiring so a future refactor that drops
+    // the helper call from the route will fail loudly.
     assert.match(
       subtasksRouteSrc,
-      /declaredAssignees = Array\.isArray\(request\.body\.assignees\)/,
-      'guard must pull declaredAssignees from request.body.assignees',
+      /assertNoOrphanDesigners\(\s*request\.body\.assignees,\s*subtasks,\s*\{\s*\}\s*\)/,
+      'PUT route must call the shared helper (the empty {} is fine — PUT-shape payloads carry assigned_to on each subtask)',
     )
-    assert.match(
-      subtasksRouteSrc,
-      /for \(const id of declaredAssignees\)/,
-      'guard must iterate every id in declaredAssignees',
-    )
-  })
-
-  it('skips the first id (the project primary) and any id that is in a subtask', () => {
-    // The two `continue` branches are the only legal ways out of the
-    // loop without raising a 400. Anything else means the guard is
-    // short-circuiting a legitimate case.
-    const guardMatch = subtasksRouteSrc.match(
-      /for \(const id of declaredAssignees\)\s*\{[\s\S]*?\n\s{6}\}/,
-    )
-    assert.ok(guardMatch, 'orphan-guard for-loop not found in source')
-    const body = guardMatch[0]
-    assert.match(body, /if \(id === primaryAssignee\) continue/)
-    assert.match(body, /if \(subAssigneeIds\.has\(id\)\) continue/)
   })
 
   it('rejects orphan designers with a 400 mentioning the missing id', () => {
@@ -731,7 +713,19 @@ describe('PUT /projects/:id/subtasks — orphan-designer guard', () => {
     // is at least locatable in the message.
     assert.match(
       subtasksRouteSrc,
-      /badRequest\([\s\S]*?Listeye eklediğiniz her tasarımcı en az bir alt göreve atanmalı\./,
+      /if \(err instanceof OrphanDesignerError\) badRequest\(err\.message\)/,
+      'PUT route must translate OrphanDesignerError into a 400',
+    )
+    // The wording lives in the helper now — re-assert it there so the
+    // leader-facing message stays stable.
+    const helperSrc = readFileSync(
+      fileURLToPath(new URL('../domain/subtask-assignee.js', import.meta.url)),
+      'utf8',
+    )
+    assert.match(
+      helperSrc,
+      /Listeye eklediğiniz her tasarımcı en az bir alt göreve atanmalı\./,
+      'helper must keep the leader-friendly Turkish wording',
     )
   })
 })
