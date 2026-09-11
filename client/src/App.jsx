@@ -23,6 +23,7 @@ const MyProjects          = lazy(() => import('./pages/MyProjects.jsx'))
 const Documents           = lazy(() => import('./pages/Documents.jsx'))
 const BaskiListesi        = lazy(() => import('./pages/BaskiListesi.jsx'))
 const HedefProjeler       = lazy(() => import('./pages/HedefProjeler.jsx'))
+const HedefProjelerDetail = lazy(() => import('./pages/HedefProjelerDetail.jsx'))
 const Toplanti            = lazy(() => import('./pages/Toplanti.jsx'))
 const UrunBilgileri       = lazy(() => import('./pages/UrunBilgileri.jsx'))
 const BaskiReceteleri     = lazy(() => import('./pages/BaskiReceteleri.jsx'))
@@ -220,6 +221,16 @@ export default function App() {
               element={
                 <RoleGuard allow={['team_leader', 'designer']}>
                   <HedefProjeler />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/hedef-projeler/:id"
+              element={
+                <RoleGuard allow={['team_leader', 'designer']}>
+                  <Suspense fallback={<RouteFallback />}>
+                    <HedefProjelerDetail />
+                  </Suspense>
                 </RoleGuard>
               }
             />

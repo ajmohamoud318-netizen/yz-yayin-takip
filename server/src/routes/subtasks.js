@@ -5,13 +5,13 @@ import {
   getProject, getProjectForUpdate, patchProject, logHistory,
   listProjectSubtasks, listProjectHistory, loadProjectAssignees,
   addSubtaskDesignerBatch,
+  removeSubtaskDesignerBatch,
   markSubtaskDesignerBatchRedone,
   loadSubtaskDesignerBatches,
   getSubtaskDesignerBatches,
-  findOverlappingBatches,
 } from '../services/project-repository.js'
 import { schemas } from '../schemas/index.js'
-import { batchCounter, formatSegments, readBatchSegments } from '../domain/page-segments.js'
+import { batchCounter } from '../domain/page-segments.js'
 import { subtaskProgress } from '../domain/progress.js'
 import { progressFor } from '../domain/progress.js'
 import { ALL_DESIGNERS_SENTINEL } from '../domain/subtask-assignee.js'
@@ -94,18 +94,21 @@ export function describeSubtaskListChange(before, after) {
 /**
  * Subtask API.
  *
- * PATCH /api/subtasks/:id                       — toggle or update fields
- * POST  /api/subtasks/:id/updates               — append a designer note
- * POST  /api/subtasks/:id/revize                — designer clears `needs_revize`
- * PUT   /api/projects/:id/subtasks              — team_leader bulk replaces the list
- * POST  /api/subtasks/:id/designer-batches      — append one batch row (migration 067)
- * POST  /api/subtasks/:id/designer-batches/:id/redone
- *                                              — stamp "Yeniden Çalıştım" on a batch
+ * PATCH  /api/subtasks/:id                                    — toggle or update fields
+ * POST   /api/subtasks/:id/updates                            — append a designer note
+ * POST   /api/subtasks/:id/revize                             — designer clears `needs_revize`
+ * PUT    /api/projects/:id/subtasks                           — team_leader bulk replaces the list
+ * POST   /api/subtasks/:id/designer-batches                   — append one +N batch row (migration 067)
+ * DELETE /api/subtasks/:id/designer-batches/:batchId          — remove one batch row (migration 084)
+ * POST   /api/subtasks/:id/designer-batches/:batchId/redone
+ *                                                             — stamp "Yeniden Çalıştım" on a batch
  *
  * Per-chip PATCH /subtasks/:id/pages/:pageIndex and the
  * per-page ASSIGN / BULK-ASSIGN routes are gone — chip-grid UX is gone.
  * Pages are entered as a session log of "+N ekledim" batches; the running
- * total on the parent subtask row is the SUM of every batch.
+ * total on the parent subtask row is the SUM of every batch. Migration 084
+ * dropped the slot-range (`start_page`) bookkeeping — a designer can now
+ * add or remove their own +N rows and the trigger sums whatever is left.
  *
  * `subtasks.pages_done` and `subtasks.is_done` are derived from
  * `subtask_designer_batches` via a trigger (see migration 067), so this
@@ -636,30 +639,22 @@ export async function subtaskRoutes(fastify) {
   /**
    * POST /api/subtasks/:id/designer-batches
    *
-   * Designer-facing write for the "İç Sayfalar" subtask (migration
-   * 067). Replaces the per-chip PATCH /subtasks/:id/pages/:pageIndex
-   * route: each save creates a batch row, the running total on the
-   * subtask is the SUM of every batch's `pages` (kept in sync by the
-   * `recompute_subtask_pages_counter` trigger). Designers can sit
-   * down, ship 8 pages, save → a tickbox appears in the team's
-   * daily log; ship another 3, save → another tick. The first batch
-   * of 8 doesn't vanish when the second arrives.
+   * Designer-facing write for the "İç Sayfalar" / "Sticker" subtasks
+   * (migrations 067 + 082, simplified in 084). Each save is one +N row
+   * in the per-designer log; the running total on the parent subtask
+   * is the SUM of every batch's `pages`, kept in sync by the
+   * `recompute_subtask_pages_counter` trigger.
    *
-   * Migration 068 — every batch now carries `start_page`. The route
-   * refuses any save whose [start_page, start_page + pages - 1] range
-   * intersects an existing batch on the same subtask, so pages_done
-   * counts DISTINCT pages covered, not the raw sum (no double-counting
-   * across designers logging the same page).
+   * Migration 084 — the slot-range model (`start_page` + range-overlap
+   * probe) is gone. Two designers logging "+5 pages" apiece just each
+   * contribute +5 to `pages_done`; the batch table is a per-designer
+   * audit log ("who did what today"), not a coverage map of unique
+   * pages. That matches how the team actually works: one clicks
+   * "Ekle", another does the same on their own machine, and the row's
+   * counter climbs — nobody has to hand off page numbers.
    *
-   * Body: `{ designer_id: string, segments: [{ start_page, pages }, …] }`,
-   * or the older `{ designer_id, pages, start_page }` for a single
-   * range — readBatchSegments normalises both. A designer who finished
-   * scattered pages types a comma list ("1,5, 7") in the input and it
-   * arrives here as three segments; each becomes its own row, because
-   * the table stores one contiguous range per row and both the overlap
-   * guard and the counter trigger build on that. They share one
-   * transaction, so the save is atomic — a conflict on the third page
-   * leaves none of them behind.
+   * Body: `{ designer_id: string, pages: integer (1..) }`. One batch
+   * per call — a save is one +N entry.
    *
    * Gating:
    *   • team_leader role may add a batch for any active designer;
@@ -668,27 +663,26 @@ export async function subtaskRoutes(fastify) {
    *
    * Inside the transaction:
    *   1. Lock the subtask (FOR UPDATE) and the parent project.
-   *   2. Validate the body — `designer_id` is an active designer;
-   *     every segment's `pages` and `start_page` are positive integers;
-   *     each range [start_page, start_page + pages - 1] fits inside
-   *     total_pages and does not overlap any existing batch on this
-   *     subtask. Enforced in JS, not via CHECK, so the leader can raise
-   *     total_pages mid-stream without orphaning prior batches.
-   *   3. addSubtaskDesignerBatch per segment — each INSERT triggers the
-   *      subtask-pages counter recompute (subtasks.pages_done /
-   *      is_done handled by migration 067's trigger).
-   *   4. patchProject with the recomputed progress (refreshed inside
-   *      the trigger, no extra SELECT needed beyond the row we
-   *      already touched for the lock).
-   *   5. logHistory — one row per save however many segments it
-   *      carried, e.g. "İç Sayfalar: Ayşe sayfa 1, 5, 7-9 ekledi".
-   *      This is read on everything but no-ops on nothing.
+   *   2. Validate — `pages` is a positive integer (schema also
+   *      enforces this, backstopped here so a JSON-native caller can't
+   *      slip a 0 past ajv via a coerced type), `pages_done + pages`
+   *      still fits inside `total_pages` (or `total_stickers` for a
+   *      sticker subtask). The cap is JS-side so the leader can raise
+   *      total_pages mid-stream without orphaning prior batches.
+   *   3. Resolve the designer id → active user; reject unknown /
+   *      inactive designers with a Turkish message.
+   *   4. addSubtaskDesignerBatch — the INSERT fires the counter trigger
+   *      which recomputes pages_done / is_done on the parent row.
+   *   5. Re-select the subtask row (post-trigger), refresh the full
+   *      batch list, recompute project progress, patchProject with
+   *      the locked version as the OCC guard.
+   *   6. logHistory — one row per save, "Alt görev, +5 sayfa (12/40)".
    *
    * Returns a slim shape so the SPA can merge into state without
    * hitting /projects/:id for the full payload:
-   *   { subtask_id, project_id, total_pages, pages_done, is_done,
-   *     batches: [{ id, designer_id, designer_name, pages, start_page,
-   *                 created_at, ... }],       // newest first
+   *   { subtask_id,
+   *     batches: [{ id, designer_id, designer_name, pages, created_at,
+   *                 redone_at, redone_by, redone_by_name }, …],
    *     batch: <batches[0]>,                  // older callers
    *     project_progress, project: { id, progress, version } }
    */
@@ -699,9 +693,14 @@ export async function subtaskRoutes(fastify) {
     const subtaskId = request.params.id
     const designerId = String(request.body?.designer_id ?? '').trim()
     if (!designerId) badRequest('designer_id gerekli.')
-    // Normalises both body shapes to a sorted, non-overlapping segment
-    // list and rejects the malformed ones before we open a transaction.
-    const segments = readBatchSegments(request.body)
+    // Schema enforces `pages >= 1`; backstop here defends against a
+    // future caller that bypasses ajv (test harness, admin script) and
+    // keeps the Turkish message path consistent with everything else in
+    // this handler.
+    const pages = Math.floor(Number(request.body?.pages))
+    if (!Number.isFinite(pages) || pages <= 0) {
+      badRequest('pages sıfırdan büyük olmalı.')
+    }
 
     const result = await withTx(async (client) => {
       const { rows: subRows } = await client.query(
@@ -715,10 +714,11 @@ export async function subtaskRoutes(fastify) {
       // everything below reads the counter so the two share one path.
       const counter = batchCounter(sub.kind)
       if (!counter) {
-        badRequest('Bu alt görev "İç Sayfalar" veya "Sticker" türünde değil.')
+        badRequest('Bu alt görev için tasarımcı sayısı desteklenmiyor.')
       }
       const { unit, unitTitle } = counter
       const total = Number(sub[counter.total] ?? 0)
+      const currentDone = Number(sub[counter.done] ?? 0)
       const project = await getProjectForUpdate(client, sub.project_id)
       if (!project) notFound('Proje bulunamadı.')
 
@@ -729,93 +729,51 @@ export async function subtaskRoutes(fastify) {
       if (!isLeader && designerId !== request.user.id) {
         badRequest(`Yalnızca kendi adınıza ${unit} ekleyebilirsiniz.`)
       }
-      // Migration 068 — each batch covers [start_page, start_page + pages - 1].
-      // Every range must fit inside the book. The "remaining pages" cap
-      // (`pages_done + pages ≤ total`) still applies, but in this model
-      // it's a stricter version of "start_page + pages - 1 ≤ total":
-      // pages_done is the sum of all batches' `pages` (no overlap, so
-      // it equals the highest covered page index — 1 if everything is
-      // contiguous from page 1). The simplest correct check is on the
-      // ranges themselves. Segments are sorted, so the last one holds
-      // the highest page in the save.
-      const lastSeg = segments[segments.length - 1]
-      const highestPage = lastSeg.startPage + lastSeg.pages - 1
-      if (total > 0 && highestPage > total) {
+      // Backstop cap. `total = 0` means the leader hasn't set a page count
+      // yet — leave the check off in that case so a designer isn't blocked
+      // by an unset field. `is_done` is a trigger-flipped flag, not a hard
+      // ceiling, but the running total is a promise ("Kaç sayfa?"), so
+      // going past it here would silently corrupt the promise. Enforced in
+      // JS so the leader can still raise total_pages mid-stream without
+      // orphaning prior batches.
+      if (total > 0 && (currentDone + pages) > total) {
         badRequest(
-          `${unitTitle} ${highestPage} toplam ${unit} sayısını (${total}) aşamaz.`,
+          `${unitTitle} ${currentDone + pages} toplam ${unit} sayısını (${total}) aşamaz.`,
         )
       }
-      // Migration 068 — refuse any save whose range overlaps an existing
-      // batch on this subtask. Without this, two designers shipping the
-      // same page would silently double-count in pages_done. The query
-      // joins users so the error can name the conflicting party. Every
-      // segment is checked before anything is inserted, so a comma list
-      // with one bad page writes nothing at all rather than half of
-      // itself — readBatchSegments already merged the segments against
-      // each other, so they can only collide with pre-existing rows.
-      for (const seg of segments) {
-        const segEnd = seg.startPage + seg.pages - 1
-        const segLabel = seg.pages === 1 ? `${seg.startPage}` : `${seg.startPage}-${segEnd}`
-        const overlaps = await findOverlappingBatches(client, {
-          subtaskId, newStart: seg.startPage, newPages: seg.pages,
-        })
-        const conflict = overlaps.find((o) => o.designer_id !== designerId)
-          || overlaps[0]
-        if (conflict) {
-          const cStart = conflict.start_page
-          const cEnd = conflict.start_page + conflict.pages - 1
-          badRequest(
-            `${unitTitle} aralığı (${segLabel}) zaten `
-            + `${conflict.designer_name ?? conflict.designer_id} tarafından `
-            + `(${cStart}-${cEnd}) tamamlandı.`,
-          )
-        }
-      }
-      // Batched existence/role check — one round-trip verifies the
-      // designer exists, is role='designer', and is_active=true.
-      const { rows: validUsers } = await client.query(
-        `SELECT 1 FROM users
+      // Batched existence/role check + name resolution in one round-trip:
+      // the designer id must exist, be `role='designer'`, and `is_active`.
+      // The name comes back so the response can include it without a
+      // second SELECT the SPA would otherwise need for its optimistic row.
+      const { rows: designerRows } = await client.query(
+        `SELECT name FROM users
           WHERE id = $1::text
             AND role = 'designer'
             AND is_active = true`,
         [designerId],
       )
-      if (validUsers.length === 0) {
-        badRequest(`Tasarımcı bulunamadı veya aktif değil: ${designerId}`)
+      if (designerRows.length === 0) {
+        badRequest('Tasarımcı bulunamadı.')
       }
 
-      // Resolve the designer's display name live so the response
-      // carries it without a second SELECT.
-      const { rows: designerRows } = await client.query(
-        'SELECT name FROM users WHERE id = $1::text',
-        [designerId],
-      )
-      const designerName = designerRows[0]?.name ?? null
+      const inserted = await addSubtaskDesignerBatch(client, {
+        subtaskId: sub.id,
+        designerId,
+        pages,
+      })
+      if (!inserted) badRequest(`${unitTitle} eklenemedi.`)
 
-      // INSERT one batch row per segment. The trigger recomputes the
-      // subtask's pages_done / is_done in the same transaction; we read
-      // them back from the row directly (the SELECT FOR UPDATE above
-      // captured the pre-write values, and the trigger's UPDATE bumped
-      // the row in the same tx). Every INSERT shares this transaction,
-      // so a failure on the third segment rolls back the first two.
-      const insertedRows = []
-      for (const seg of segments) {
-        const row = await addSubtaskDesignerBatch(client, {
-          subtaskId,
-          designerId,
-          pages: seg.pages,
-          startPage: seg.startPage,
-        })
-        if (!row) badRequest(`${unitTitle} eklenemedi.`)
-        insertedRows.push(row)
-      }
-      const totalPagesAdded = segments.reduce((acc, seg) => acc + seg.pages, 0)
-      // `counter.done` is a fixed column name from batchCounter, never input.
-      const { rows: refreshedSub } = await client.query(
+      // The trigger's UPDATE fired inside this transaction, so a
+      // re-SELECT reads the freshly summed pages_done / is_done — the
+      // note below quotes them and the client relies on the batches
+      // list agreeing with the counter.
+      const { rows: refreshedSubRows } = await client.query(
         `SELECT id, ${counter.done} AS done, is_done FROM subtasks WHERE id = $1`,
         [subtaskId],
       )
-      const refreshed = refreshedSub[0] ?? { done: totalPagesAdded, is_done: false }
+      const refreshed = refreshedSubRows[0] ?? { done: currentDone + pages, is_done: false }
+
+      const batches = await getSubtaskDesignerBatches(client, subtaskId)
 
       const { rows: projectSubs } = await client.query(
         'SELECT * FROM subtasks WHERE project_id = $1', [project.id],
@@ -836,43 +794,136 @@ export async function subtaskRoutes(fastify) {
           to_stage: project.stage,
           action: 'system',
           event: 'subtask_progress',
-          // "sayfa 1, 5, 7-9 ekledi" — the list reads the way the designer
-          // typed it, so the timeline stays legible whether the save was
-          // one clean range or a scattered handful.
-          note: `${sub.title}: ${designerName ?? designerId} ${unit} ${formatSegments(segments)} ekledi`,
+          // "Alt görev, +5 sayfa (10/40)" — the running total after this
+          // save is more useful in the timeline than a bare delta, so a
+          // leader scanning the day's activity sees the trajectory
+          // without having to sum rows in their head.
+          note: `${sub.title}, +${pages} ${unit} (${Number(refreshed.done ?? 0)}/${total || '?'})`,
         },
         request.user,
       )
 
-      // Newest first, matching the order the designer's log renders.
-      const batchPayload = insertedRows
-        .map((row) => ({
-          id: row.id,
-          designer_id: row.designer_id,
-          designer_name: designerName,
-          pages: row.pages,
-          start_page: row.start_page,
-          created_at: row.created_at instanceof Date
-            ? row.created_at.toISOString()
-            : row.created_at,
-          redone_at: null,
-          redone_by: null,
-          redone_by_name: null,
-        }))
-        .reverse()
+      return {
+        subtask_id: subtaskId,
+        batches,
+        // Older callers written against the one-row-per-save shape read
+        // `batch`; the new callers read `batches[0]` themselves. Both
+        // point at the same newest row.
+        batch: batches[0] ?? null,
+        project_progress: progress,
+        project: {
+          id: updProject.id,
+          progress: updProject.progress,
+          version: updProject.version,
+        },
+      }
+    })
+    return result
+  })
+
+  /**
+   * DELETE /api/subtasks/:id/designer-batches/:batchId
+   *
+   * Migration 084 — a designer can remove their own +N row; the team
+   * leader can remove anyone's. Removing a row is atomic with the
+   * counter recompute: the DELETE fires the same trigger that
+   * addSubtaskDesignerBatch does, so `pages_done` / `is_done` drop by
+   * exactly the removed row's `pages`.
+   *
+   * The path captures both ids so a stray `DELETE /some-other-subtask/
+   * batches/:batchId` can't wipe a row on a different subtask —
+   * matches the redone route's belt-and-braces.
+   *
+   * Response shape mirrors the POST so the SPA's optimistic merge can
+   * use the same reducer for either delta:
+   *   { subtask_id, removed_batch_id, batches, project_progress,
+   *     project: { id, progress, version } }
+   */
+  fastify.delete('/subtasks/:id/designer-batches/:batchId', {
+    schema: schemas.subtasksDesignerBatchDelete,
+  }, async (request) => {
+    await attachUser(request)
+    const subtaskId = request.params.id
+    const batchId = request.params.batchId
+
+    const result = await withTx(async (client) => {
+      // Lock the batch row by BOTH ids so a concurrent redone/delete on
+      // the same row serialises against us, and a mismatched subtaskId
+      // (URL tampering) fails closed rather than silently deleting a row
+      // on a different subtask.
+      const { rows: batchRows } = await client.query(
+        `SELECT id, subtask_id, designer_id
+           FROM subtask_designer_batches
+          WHERE id = $1 AND subtask_id = $2
+          FOR UPDATE`,
+        [batchId, subtaskId],
+      )
+      const batch = batchRows[0]
+      if (!batch) notFound('Batch bulunamadı.')
+
+      const { rows: subRows } = await client.query(
+        `SELECT id, project_id, title, kind, total_pages, pages_done, total_stickers, stickers_done
+           FROM subtasks WHERE id = $1 FOR UPDATE`,
+        [subtaskId],
+      )
+      const sub = subRows[0]
+      if (!sub) notFound('Alt görev bulunamadı.')
+      const project = await getProjectForUpdate(client, sub.project_id)
+      if (!project) notFound('Proje bulunamadı.')
+
+      // Auth: leader can delete any row; a designer may only delete
+      // their own. Anyone else (matbaa, sales) is refused. Same message
+      // shape as the redone route so the SPA can surface either from
+      // one branch.
+      const isLeader = request.user.role === 'team_leader'
+      if (!isLeader && request.user.id !== batch.designer_id) {
+        badRequest('Bu kaydı silme yetkiniz yok.')
+      }
+
+      // Defensive — the DELETE trigger only exists on subtasks whose
+      // `kind` has a counter. Reject anything else so a future non-
+      // counter subtask type that somehow held rows in this table can't
+      // slip past the guard.
+      const counter = batchCounter(sub.kind)
+      if (!counter) {
+        badRequest('Bu alt görev için tasarımcı sayısı desteklenmiyor.')
+      }
+
+      const removed = await removeSubtaskDesignerBatch(client, { batchId })
+      if (!removed) notFound('Batch bulunamadı.')
+
+      const { rows: projectSubs } = await client.query(
+        'SELECT * FROM subtasks WHERE project_id = $1', [project.id],
+      )
+      const progress = progressFor(project, projectSubs)
+      const updProject = await patchProject(
+        client,
+        project.id,
+        { progress },
+        { expectedVersion: project.version },
+      )
+
+      // Refresh after the trigger recomputed so the returned list is
+      // the ground truth the SPA can replace its optimistic state with.
+      const batches = await getSubtaskDesignerBatches(client, subtaskId)
+
+      await logHistory(
+        client,
+        {
+          project_id: project.id,
+          from_stage: project.stage,
+          to_stage: project.stage,
+          action: 'system',
+          event: 'subtask_progress',
+          note: `${sub.title}, -${removed.pages} ${counter.unit} silindi`,
+        },
+        request.user,
+      )
 
       return {
         subtask_id: subtaskId,
-        project_id: project.id,
-        // total_pages / pages_done for İç Sayfalar, total_stickers /
-        // stickers_done for Sticker — the same columns the row carries.
-        [counter.total]: total,
-        [counter.done]: Number(refreshed.done ?? 0),
-        is_done: !!refreshed.is_done,
-        batches: batchPayload,
-        // Kept alongside `batches` for callers written against the
-        // one-row-per-save shape.
-        batch: batchPayload[0],
+        removed_batch_id: batchId,
+        batches,
         project_progress: progress,
         project: {
           id: updProject.id,
@@ -974,7 +1025,10 @@ export async function subtaskRoutes(fastify) {
           to_stage: project.stage,
           action: 'system',
           event: 'subtask_progress',
-          note: `${sub.title}: ${updated.pages} ${counter.sized} ekleme yeniden çalışıldı`,
+          // `counter.sized` ("sayfalık" / "adetlik") was dropped from
+          // BATCH_COUNTERS in migration 084's domain trim; the plain
+          // unit ("sayfa" / "sticker") is the surviving field.
+          note: `${sub.title}: ${updated.pages} ${counter.unit} ekleme yeniden çalışıldı`,
         },
         request.user,
       )

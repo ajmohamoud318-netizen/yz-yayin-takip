@@ -31,12 +31,12 @@
  * timeline and lets a designer run "Yeniden Çalıştım" against a
  * specific saved session.
  *
- * Migration 068 — every batch also carries `start_page`. The route
- * refuses any save whose [start_page, start_page + pages - 1] range
- * intersects an existing batch on the same subtask, so pages_done is
- * the count of DISTINCT pages covered (no double-counting across
- * designers). Legacy rows were backfilled with chronological
- * start_page values; see migration 068.
+ * Migration 084 — the old `start_page` slot / overlap-guard model
+ * (migration 068) is gone. Each row is now a plain "+N pages I did
+ * today" contribution against the subtask's shared counter; the
+ * trigger sums them as before, but there's no per-row range, no
+ * overlap probe, and no double-counting worry — a designer who
+ * saved too many can just delete the row and try again.
  */
 
 import { batchCounter } from '../domain/page-segments.js'
@@ -57,7 +57,7 @@ const DESIGNER_BATCH_LIMIT = 256
 export async function loadSubtaskDesignerBatches(client, subtaskIds) {
   if (!subtaskIds.length) return new Map()
   const { rows } = await client.query(
-    `SELECT sdb.id, sdb.subtask_id, sdb.designer_id, sdb.pages, sdb.start_page, sdb.created_at,
+    `SELECT sdb.id, sdb.subtask_id, sdb.designer_id, sdb.pages, sdb.created_at,
             sdb.redone_at, sdb.redone_by, sdb.redone_by_name,
             u.name AS designer_name,
             r.name AS redone_by_name_live
@@ -76,7 +76,6 @@ export async function loadSubtaskDesignerBatches(client, subtaskIds) {
       designer_id: r.designer_id,
       designer_name: r.designer_name ?? null,
       pages: r.pages,
-      start_page: r.start_page ?? null,
       created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
       redone_at: r.redone_at instanceof Date ? r.redone_at.toISOString() : r.redone_at,
       redone_by: r.redone_by ?? null,
@@ -96,9 +95,9 @@ export async function loadSubtaskDesignerBatches(client, subtaskIds) {
  *   • actor permissions (designer = own id; team_leader = any),
  *   • `pages > 0` (the column CHECK refuses non-positive inputs
  *     anyway, but the route surfaces a friendlier error),
- *   • `start_page` is a known positive integer (migration 068 — the
- *     per-batch range must fit inside the book and not overlap an
- *     existing batch; both checks live in the route, not here),
+ *   • `pages_done + pages <= total_pages` so the running counter
+ *     never overshoots the subtask cap (migration 084 dropped the
+ *     per-row range, so the only bound left is the shared total),
  *   • designer_id is a known active designer.
  *
  * `actorId` / `actorName` are unused here — the designer_id on the
@@ -110,50 +109,18 @@ export async function loadSubtaskDesignerBatches(client, subtaskIds) {
  * INSERT, so the route's slim response can read those values back
  * without writing them itself.
  */
-export async function addSubtaskDesignerBatch(client, { subtaskId, designerId, pages, startPage }) {
+export async function addSubtaskDesignerBatch(client, { subtaskId, designerId, pages }) {
   if (!subtaskId || !designerId || !Number.isFinite(pages) || pages <= 0) return null
-  if (!Number.isFinite(startPage) || startPage < 1) return null
   if (pages > DESIGNER_BATCH_LIMIT * 1000) {
     throw new Error(`refusing to insert a batch with pages > ${DESIGNER_BATCH_LIMIT * 1000}`)
   }
   const { rows } = await client.query(
-    `INSERT INTO subtask_designer_batches (subtask_id, designer_id, pages, start_page)
-     VALUES ($1::text, $2::text, $3::int, $4::int)
-     RETURNING id, subtask_id, designer_id, pages, start_page, created_at, redone_at, redone_by, redone_by_name`,
-    [subtaskId, designerId, Math.floor(pages), Math.floor(startPage)],
+    `INSERT INTO subtask_designer_batches (subtask_id, designer_id, pages)
+     VALUES ($1::text, $2::text, $3::int)
+     RETURNING id, subtask_id, designer_id, pages, created_at, redone_at, redone_by, redone_by_name`,
+    [subtaskId, designerId, Math.floor(pages)],
   )
   return rows[0] ?? null
-}
-
-/**
- * Return every batch on this subtask whose [start_page, start_page + pages - 1]
- * range overlaps the proposed [newStart, newStart + newPages - 1] range.
- *
- * Used by the POST route to refuse double-counting before the INSERT runs
- * (migration 068). Joins users for designer_name so the error message
- * can name the conflicting party.
- *
- * Legacy rows with NULL start_page (a re-applied migration's brief
- * window, or pre-068 data that survived the backfill oddly) are
- * excluded — we don't know their range, so we can't tell whether they
- * overlap. The leader can spot-fix from the UI.
- */
-export async function findOverlappingBatches(client, { subtaskId, newStart, newPages }) {
-  if (!subtaskId || !Number.isFinite(newStart) || !Number.isFinite(newPages)) return []
-  const newEnd = newStart + newPages - 1
-  const { rows } = await client.query(
-    `SELECT b.id, b.designer_id, b.pages, b.start_page,
-            u.name AS designer_name
-       FROM subtask_designer_batches b
-       LEFT JOIN users u ON u.id = b.designer_id
-      WHERE b.subtask_id = $1::text
-        AND b.start_page IS NOT NULL
-        AND b.start_page <= $3::int
-        AND (b.start_page + b.pages - 1) >= $2::int
-      ORDER BY b.start_page, b.created_at`,
-    [subtaskId, newStart, newEnd],
-  )
-  return rows
 }
 
 /**
@@ -182,6 +149,31 @@ export async function markSubtaskDesignerBatchRedone(client, { batchId, actorId,
       WHERE id = $1
       RETURNING id, subtask_id, designer_id, pages, created_at, redone_at, redone_by, redone_by_name`,
     [batchId, actorId ?? null, actorName ?? null],
+  )
+  return rows[0] ?? null
+}
+
+/**
+ * Delete one designer batch row. The route layer has already checked
+ * that the actor is either the row's own designer or a team leader —
+ * this is the raw DELETE, no auth logic.
+ *
+ * We don't touch `subtasks.pages_done` / `stickers_done` / `is_done`
+ * ourselves: the `trg_subtask_designer_batches` trigger fires on
+ * DELETE (as well as INSERT/UPDATE) and re-sums the surviving rows,
+ * so the counter and the done flag both settle without a follow-up
+ * write here. Returning `subtask_id` lets the route SELECT the
+ * refreshed subtask row for its response.
+ *
+ * Returns the deleted row, or `null` when the batch id doesn't
+ * exist (the route surfaces that as a 404).
+ */
+export async function removeSubtaskDesignerBatch(client, { batchId }) {
+  const { rows } = await client.query(
+    `DELETE FROM subtask_designer_batches
+       WHERE id = $1::text
+       RETURNING id, subtask_id, designer_id, pages`,
+    [batchId],
   )
   return rows[0] ?? null
 }

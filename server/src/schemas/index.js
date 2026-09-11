@@ -879,38 +879,40 @@ const subtasksRevize = {
   },
 }
 
-// migration 067 — per-designer batch log for the "İç Sayfalar" subtask.
-// One row per "sat-down-and-shipped-this-many" session. Designers run
-// their input from "+N ekledim" to a tickbox above; the running total
-// on the subtask is the SUM of every batch's `pages`, kept in sync by
-// the trigger `recompute_subtask_pages_counter` (migration 067).
+// migration 067 — per-designer batch log for the "İç Sayfalar" subtask,
+// simplified in migration 084. One row per "sat-down-and-shipped-this-many"
+// session. Designers run their input from a single number box ("+N ekledim")
+// to a tickbox above; the running total on the subtask is the SUM of every
+// batch's `pages`, kept in sync by the trigger `recompute_subtask_pages_counter`
+// (migration 067).
 //
-// Migration 068 — every batch now carries `start_page`. The route
-// refuses any save whose [start_page, start_page + pages - 1] range
-// intersects an existing batch on the same subtask, so pages_done is
-// the count of DISTINCT pages covered (no double-counting across
-// designers). Legacy rows were backfilled with chronological
-// start_page values; see migration 068.
+// The slot-range model (migration 068's `start_page` column + overlap guard)
+// was dropped by migration 084. Each save is now purely additive: one +N
+// entry against a shared subtask counter, no page-number bookkeeping. Two
+// designers logging "5 pages" apiece just contribute +5 each; the batch table
+// is a per-designer audit log, not a coverage map.
 //
-// Two endpoints, two schemas:
+// Three endpoints, three schemas:
 //
-//   POST /api/subtasks/:id/designer-batches
-//     Body: { designer_id, pages, start_page }. One batch per call —
-//     designers can queue multiple batches in the SPA without a
-//     per-call round-trip. `start_page` is the page number at the
-//     start of the range; `pages` is the count.
+//   POST   /api/subtasks/:id/designer-batches
+//     Body: { designer_id, pages }. One batch per call — one save is one
+//     +N entry in the log.
 //
-//   POST /api/subtasks/:id/designer-batches/:batchId/redone
+//   DELETE /api/subtasks/:id/designer-batches/:batchId
+//     No body. A designer may only remove their own row; team_leader may
+//     remove any row. The trigger recomputes pages_done / is_done.
+//
+//   POST   /api/subtasks/:id/designer-batches/:batchId/redone
 //     No body. Stamps "Yeniden Çalıştım" on a single saved batch.
 //
-// Both endpoints enforce ownership in the route (designer may only
-// touch their own slot; team_leader may touch any).
+// All three endpoints enforce ownership in the route (designer may only
+// touch their own row; team_leader may touch any).
 //
 // Per-batch cap of `pages_done + pages <= total_pages` is enforced in the
 // route; a single batch that would push the running sum past the book is
 // rejected with 400. Enforced in JS rather than via a CHECK so the leader
 // can still raise total_pages mid-stream without orphaning prior batches.
-// the column CHECK only constrains `pages > 0`.
+// The column CHECK only constrains `pages > 0`.
 
 const subtasksDesignerBatchCreate = {
   params: {
@@ -921,58 +923,18 @@ const subtasksDesignerBatchCreate = {
   },
   body: {
     type: 'object',
+    required: ['designer_id', 'pages'],
     additionalProperties: false,
-    // `pages` + `start_page` (one contiguous range) and `segments` (a
-    // list of them) are both accepted; the handler normalises to a
-    // segment list and refuses a body carrying neither. Kept out of
-    // `required` so ajv doesn't reject the shape the other form uses —
-    // "at least one of" is enforced in the route with a Turkish
-    // message rather than ajv's English schema error.
-    required: ['designer_id'],
     properties: {
-      designer_id: { type: 'string', minLength: 1, maxLength: 64 },
-      // Fastify v5's ajv runs in strict mode by default; union types
-      // like `type: ['integer', 'string']` are rejected at route-
-      // registration time with "use allowUnionTypes to allow union
-      // type keyword (strictTypes)", which silently fails the route
-      // mount and turns every request into a 404. The handler does
-      // the string→number coercion via `Number()` + `Math.floor()`
-      // and validates via the route's own badRequest() paths, so a
-      // plain `type: 'integer'` here is enough.
-      pages: {
-        type: 'integer',
-        minimum: 1,
-        maximum: 100000,
-      },
-      // Migration 068 — first page in the batch's range. The range
-      // [start_page, start_page + pages - 1] must fit in total_pages
-      // and not overlap any existing batch's range on this subtask;
-      // both are enforced in the route handler below.
-      start_page: {
-        type: 'integer',
-        minimum: 1,
-        maximum: 100000,
-      },
-      // A designer typing a comma list ("1,5, 7") in the İç Sayfalar
-      // input sends one segment per run of pages. Each lands as its
-      // own batch row — the table stores one contiguous range per row
-      // — inserted inside a single transaction so the save is atomic.
-      // maxItems mirrors PAGE_LIST_MAX_SEGMENTS on the client; the
-      // route re-checks it since the client copy is only a shortcut.
-      segments: {
-        type: 'array',
-        minItems: 1,
-        maxItems: 64,
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['start_page', 'pages'],
-          properties: {
-            start_page: { type: 'integer', minimum: 1, maximum: 100000 },
-            pages: { type: 'integer', minimum: 1, maximum: 100000 },
-          },
-        },
-      },
+      designer_id: { type: 'string', minLength: 1 },
+      // Fastify v5's ajv runs in strict mode by default; union types like
+      // `type: ['integer', 'string']` are rejected at route-registration
+      // time with "use allowUnionTypes to allow union type keyword
+      // (strictTypes)", which silently fails the route mount and turns
+      // every request into a 404. A plain `type: 'integer'` here is enough
+      // — the route also backstops `pages > 0` with a Turkish message
+      // (ajv would otherwise surface the English schema error).
+      pages: { type: 'integer', minimum: 1, maximum: 100000 },
     },
   },
 }
@@ -994,6 +956,21 @@ const subtasksDesignerBatchRedone = {
   body: {
     type: 'object',
     additionalProperties: false,
+  },
+}
+
+// Migration 084 — designer removes their own +N row (or team_leader
+// removes any row). No body: the actor is the authoriser, the trigger
+// on `subtask_designer_batches` recomputes pages_done / is_done.
+export const subtasksDesignerBatchDelete = {
+  params: {
+    type: 'object',
+    required: ['id', 'batchId'],
+    additionalProperties: false,
+    properties: {
+      id: { type: 'string', minLength: 1 },
+      batchId: { type: 'string', minLength: 1 },
+    },
   },
 }
 
@@ -1450,6 +1427,7 @@ export const schemas = {
   subtasksRevize,
   subtasksDesignerBatchCreate,
   subtasksDesignerBatchRedone,
+  subtasksDesignerBatchDelete,
   projectsSubtasksPut,
   demosCreate,
   productInfoUpsert,

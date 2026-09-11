@@ -356,8 +356,8 @@ test('082: a sticker batch counts stickers, a page batch still counts pages', { 
     INSERT INTO subtasks (id, project_id, title, kind, total_pages, total_stickers) VALUES
       ('st','p1','Sticker','sticker-count',NULL,24),
       ('pg','p1','İç Sayfalar','pages',20,NULL);
-    INSERT INTO subtask_designer_batches (subtask_id, designer_id, pages, start_page) VALUES
-      ('st','d1',10,1), ('pg','d1',20,1);
+    INSERT INTO subtask_designer_batches (subtask_id, designer_id, pages) VALUES
+      ('st','d1',10), ('pg','d1',20);
   `)
   const { rows } = await db.query(
     'SELECT id, is_done, stickers_done, pages_done FROM subtasks ORDER BY id',
@@ -372,7 +372,7 @@ test('082: a sticker batch counts stickers, a page batch still counts pages', { 
   assert.equal(byId.pg.is_done, true)
 
   // The last sticker closes the row, the same way the last page does.
-  await db.exec("INSERT INTO subtask_designer_batches (subtask_id, designer_id, pages, start_page) VALUES ('st','d1',14,11)")
+  await db.exec("INSERT INTO subtask_designer_batches (subtask_id, designer_id, pages) VALUES ('st','d1',14)")
   const after = await db.query("SELECT is_done, stickers_done FROM subtasks WHERE id = 'st'")
   assert.deepEqual(after.rows[0], { is_done: true, stickers_done: 24 })
   await db.close()
@@ -399,15 +399,15 @@ test('082: the backfill keeps ticked stickers done and refreshes stuck progress'
   await applyMigration(db, M082)
 
   const batches = await db.query(
-    'SELECT subtask_id, designer_id, pages, start_page FROM subtask_designer_batches ORDER BY subtask_id',
+    'SELECT subtask_id, designer_id, pages FROM subtask_designer_batches ORDER BY subtask_id',
   )
   assert.deepEqual(batches.rows, [
     // Ticked stays ticked: 1..24, credited to the subtask's own designer.
-    { subtask_id: 'b-st', designer_id: 'd1', pages: 24, start_page: 1 },
+    { subtask_id: 'b-st', designer_id: 'd1', pages: 24 },
     // A pre-checkbox counter keeps its count, credited to the project owner
     // because the subtask has none.
-    { subtask_id: 'p-st', designer_id: 'd1', pages: 4, start_page: 1 },
-    { subtask_id: 't-st', designer_id: 'd2', pages: 24, start_page: 1 },
+    { subtask_id: 'p-st', designer_id: 'd1', pages: 4 },
+    { subtask_id: 't-st', designer_id: 'd2', pages: 24 },
   ], 'an untouched Sticker must get no batch — nobody did that work')
 
   const subs = await db.query(
@@ -504,5 +504,77 @@ test('083: two orders on one book can never share a number', { skip: !PGlite }, 
     () => db.query("UPDATE order_requests SET order_no = NULL WHERE id = 'a1'"),
     'order_no must be NOT NULL',
   )
+  await db.close()
+})
+
+/* ==========================================================================
+ *  084 — the designer batch counter goes back to a shared additive model
+ * ======================================================================== */
+
+test('084: start_page and its overlap-probe index are gone', { skip: !PGlite }, async () => {
+  // 072 added both; 084 removes both. If either survives, the route can still
+  // reject perfectly reasonable "+N" saves under the old slot-overlap rule —
+  // which is exactly what this migration exists to stop.
+  const db = await freshDb()
+
+  const col = await db.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'subtask_designer_batches'
+        AND column_name = 'start_page'`,
+  )
+  assert.equal(col.rows.length, 0, 'start_page still on the table — the slot model was supposed to be gone')
+
+  const idx = await db.query(
+    `SELECT indexname FROM pg_indexes
+      WHERE tablename = 'subtask_designer_batches'
+        AND indexname = 'idx_subtask_designer_batches_subtask_start'`,
+  )
+  assert.equal(idx.rows.length, 0, 'the overlap-probe index outlived the column it served')
+
+  await db.close()
+})
+
+test('084: the trigger still sums batches per kind and recomputes downward on delete', { skip: !PGlite }, async () => {
+  // The whole point of dropping start_page is that recompute_subtask_pages_counter
+  // never read it — it sums `pages` across every batch on the subtask and lands
+  // the total on pages_done (or stickers_done, for sticker-count). Two designers
+  // each shipping "+N" must land at N+N on the shared counter, and deleting one
+  // of those batches has to walk the total back down, not just accumulate.
+  const db = await freshDb()
+  await db.exec(`
+    INSERT INTO users (id, name, email, role) VALUES
+      ('d1','Ayşe','a@e.com','designer'), ('d2','Mehmet','m@e.com','designer');
+    INSERT INTO projects (id, title, type, stage) VALUES ('p1','Kitap','TR','tasarim');
+    INSERT INTO subtasks (id, project_id, title, kind, total_pages, total_stickers) VALUES
+      ('pg','p1','İç Sayfalar','pages',5,NULL),
+      ('st','p1','Sticker','sticker-count',NULL,20);
+    INSERT INTO subtask_designer_batches (id, subtask_id, designer_id, pages) VALUES
+      ('b-pg-1','pg','d1',3),
+      ('b-pg-2','pg','d2',2),
+      ('b-st-1','st','d1',6),
+      ('b-st-2','st','d2',4);
+  `)
+
+  const seeded = await db.query(
+    'SELECT id, pages_done, stickers_done, is_done FROM subtasks ORDER BY id',
+  )
+  const byId = Object.fromEntries(seeded.rows.map((r) => [r.id, r]))
+  assert.equal(byId.pg.pages_done, 5, '3 + 2 = 5 on the shared page counter')
+  assert.equal(byId.pg.is_done, true, 'pages_done met total_pages, is_done must flip')
+  assert.equal(byId.st.stickers_done, 10, '6 + 4 = 10 on the shared sticker counter')
+  assert.equal(byId.st.is_done, false, 'stickers_done is still short of total_stickers')
+
+  // Deleting a batch has to retract the credit; without a downward recompute
+  // the counter would drift high after every "Sil" click and is_done would
+  // stay ticked on a subtask that isn't finished any more.
+  await db.query("DELETE FROM subtask_designer_batches WHERE id = 'b-pg-2'")
+  const afterDelete = await db.query(
+    "SELECT pages_done, is_done FROM subtasks WHERE id = 'pg'",
+  )
+  assert.deepEqual(
+    afterDelete.rows[0], { pages_done: 3, is_done: false },
+    'DELETE must recompute pages_done downward and un-flip is_done',
+  )
+
   await db.close()
 })

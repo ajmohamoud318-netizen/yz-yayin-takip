@@ -193,16 +193,19 @@ export function createApi() {
     setSubtaskDone: (subtaskId, isDone) => subtaskRepo.setSubtaskDone(subtaskId, isDone),
     setSubtaskStickers: (subtaskId, stickersDone) =>
       subtaskRepo.setSubtaskStickers(subtaskId, stickersDone),
-    // migration 067/068 — designer pages-done input. Each save appends one
-    // batch row per segment; the running total on the parent subtask is
-    // the SUM of every batch's `pages`. Body is `{ designer_id,
-    // segments: [{ start_page, pages }, …] }` — a comma list ("1,5,7")
-    // in the input is several segments, written in one transaction.
-    // Migration 068 adds `start_page` — the server pins each batch to a
-    // page range and refuses any save that overlaps an existing batch.
-    // Yeniden Çalıştım on a saved batch uses the second method below.
-    addSubtaskDesignerBatch: (subtaskId, { designerId, segments }) =>
-      subtaskRepo.addSubtaskDesignerBatch(subtaskId, { designerId, segments }),
+    // migration 067/084 — designer pages-done input. Each save is a
+    // single "+N today" row on a shared subtask counter (the SUM of
+    // every batch's `pages` across every designer on that subtask).
+    // Migration 084 dropped `start_page`, so the body collapsed to
+    // `{ designer_id, pages }` — no more segment list, no more range
+    // overlap guard. The two sibling verbs handle row removal and the
+    // idempotent "Yeniden Çalıştım" stamp.
+    addSubtaskDesignerBatch: (subtaskId, { designerId, pages }) =>
+      subtaskRepo.addSubtaskDesignerBatch(subtaskId, { designerId, pages }),
+    // Drop a single saved batch row. Server gates so a designer can
+    // only remove their own row; team_leader can remove any.
+    removeSubtaskDesignerBatch: (subtaskId, batchId) =>
+      subtaskRepo.removeSubtaskDesignerBatch(subtaskId, batchId),
     markSubtaskDesignerBatchRedone: (subtaskId, batchId) =>
       subtaskRepo.markSubtaskDesignerBatchRedone(subtaskId, batchId),
     reviseSubtask: (subtaskId) => subtaskRepo.reviseSubtask(subtaskId),

@@ -98,47 +98,51 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
 
   /**
    * migration 067 — designer pages-done save. Each call appends one
-   * batch row to `subtask_designer_batches` per segment; the running
-   * total on the parent subtask is the SUM of every batch's `pages`.
-   * The optimistic merge matches the same recompute the server's
-   * trigger runs so the "X / Y tamamlandı" header is in lockstep with
-   * the DB before the response lands.
+   * batch row to `subtask_designer_batches`; the running total on the
+   * parent subtask is the SUM of every batch's `pages` across every
+   * designer on that subtask. The optimistic merge matches the same
+   * recompute the server's trigger runs so the "X / Y tamamlandı"
+   * header is in lockstep with the DB before the response lands.
    *
-   * `segments` is parsePageList's normalised `[{ start, pages }, …]`
-   * — one entry for a plain "5" / "1-5", several for a comma list
-   * ("1,5,7"). The whole list goes in one request, so the revert path
-   * below covers all of it: either every segment lands or none does.
+   * `pages` is the positive integer the designer typed into the
+   * "Kaç sayfa eklediniz?" box — the body is now a flat
+   * `{ designer_id, pages }` (migration 084 dropped the per-row
+   * `start_page` slot, so a comma-list input like "1,5,7" is gone and
+   * each save is one "+N today" row on a shared counter).
    */
-  async function handleDesignerBatchAdd(sub, designerId, segments) {
+  async function handleDesignerBatchAdd(sub, designerId, pages) {
     if (!canEditSubtask(sub)) return
-    const list = Array.isArray(segments) ? segments : []
-    if (list.length === 0) return
+    const pagesCount = Number(pages)
+    if (!Number.isFinite(pagesCount) || pagesCount <= 0) return
     // pages_done / total_pages for İç Sayfalar, stickers_done /
     // total_stickers for Sticker — the pair the server's trigger writes.
     const counter = batchCounter(sub.kind) ?? batchCounter('pages')
     // Optimistic pre-state for revert.
     const before = project?.subtasks?.find((s) => s.id === sub.id) ?? null
     const stamp = new Date().toISOString()
-    const optimisticBatches = list.map((seg, i) => ({
-      id: `optimistic-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+    const optimisticBatch = {
+      // crypto.randomUUID gives a real UUID-shaped temp id so the row
+      // looks identical to what the server will return — same shape, no
+      // `pending` flag the UI has to special-case.
+      id: `optimistic-${crypto.randomUUID()}`,
+      subtask_id: sub.id,
       designer_id: designerId,
       designer_name: null,
-      pages: seg.pages,
-      start_page: seg.start ?? null,
+      pages: pagesCount,
       created_at: stamp,
       redone_at: null,
       redone_by: null,
       redone_by_name: null,
-    }))
+      pending: true,
+    }
     setProject((prev) => {
       if (!prev) return prev
       const subs = (prev.subtasks ?? []).map((s) => {
         if (s.id !== sub.id) return s
         const total = Number(s[counter.total] ?? 0)
-        // Newest first, and within one save the highest page first so
-        // the log reads the same way the server will return it.
+        // Newest first, the same way the server returns them.
         const nextBatches = [
-          ...[...optimisticBatches].reverse(),
+          optimisticBatch,
           ...(Array.isArray(s.designer_batches) ? s.designer_batches : []),
         ]
         const sum = nextBatches.reduce((acc, b) => acc + Number(b.pages ?? 0), 0)
@@ -153,29 +157,30 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
       return { ...prev, subtasks: subs, progress: subtaskProgress(subs) }
     })
     try {
-      const res = await api.addSubtaskDesignerBatch(sub.id, { designerId, segments: list })
+      const res = await api.addSubtaskDesignerBatch(sub.id, { designerId, pages: pagesCount })
       if (res) {
         setProject((prev) => {
           if (!prev) return prev
           // The server's response carries:
-          //   { subtask_id, project_id, total_pages, pages_done, is_done,
-          //     batches: [{ id, designer_id, designer_name, pages, ... }],
-          //     batch: <batches[0]>,        // kept for older callers
+          //   { subtask_id, batches: [{ id, designer_id, designer_name,
+          //             pages, created_at, redone_at, redone_by,
+          //             redone_by_name }],
+          //     batch: <batches[0]>,
           //     project_progress, project: { id, progress, version } }
-          // Trust the server's pages_done / is_done. We keep the
-          // optimistically-appended batches (their ids are the temp
-          // ones) and let the next refetch swap them — the user's draft
-          // is already cleared and the visible total is correct, which
-          // is what matters for the optimistic path.
-          const subs = (prev.subtasks ?? []).map((s) => (
-            s.id === res.subtask_id
-              ? {
-                  ...s,
-                  [counter.done]: Number(res[counter.done] ?? s[counter.done] ?? 0),
-                  is_done: !!res.is_done,
-                }
-              : s
-          ))
+          // Trust the server's batches list wholesale — that's the row
+          // list the trigger has just recomputed against. We also pull
+          // pages_done / is_done off the matching subtask once the next
+          // refetch lands, but for the optimistic path the visible total
+          // is already correct because we summed every batch.
+          const subs = (prev.subtasks ?? []).map((s) => {
+            if (s.id !== res.subtask_id) return s
+            return {
+              ...s,
+              designer_batches: Array.isArray(res.batches)
+                ? res.batches
+                : s.designer_batches,
+            }
+          })
           const out = { ...prev, subtasks: subs }
           if (res.project && typeof res.project.progress === 'number') {
             out.progress = res.project.progress
@@ -199,6 +204,83 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
         })
       }
       toast.error(err?.message || `${counter.unitTitle} eklenemedi.`)
+      throw err
+    }
+  }
+
+  /**
+   * migration 084 — drop a single saved batch row. The server gates so
+   * a designer may only remove their OWN row (team_leader can remove
+   * any), and the trigger recomputes `pages_done` / `stickers_done`
+   * for us. The optimistic path here mirrors `handleDesignerBatchAdd`
+   * but in reverse: we snapshot the row first so a network failure can
+   * put it back in its original slot, not just at the top.
+   */
+  async function handleDesignerBatchRemove(sub, batchId) {
+    if (!canEditSubtask(sub)) return
+    const currentBatches = Array.isArray(sub.designer_batches) ? sub.designer_batches : []
+    const removedBatch = currentBatches.find((b) => b.id === batchId)
+    if (!removedBatch) return
+    const counter = batchCounter(sub.kind) ?? batchCounter('pages')
+    // Optimistic pre-state for revert — capture the whole subtask so
+    // we can swap it back in one shot if the server rejects the delete.
+    const before = project?.subtasks?.find((s) => s.id === sub.id) ?? null
+    setProject((prev) => {
+      if (!prev) return prev
+      const subs = (prev.subtasks ?? []).map((s) => {
+        if (s.id !== sub.id) return s
+        const total = Number(s[counter.total] ?? 0)
+        const nextBatches = currentBatches.filter((b) => b.id !== batchId)
+        const sum = nextBatches.reduce((acc, b) => acc + Number(b.pages ?? 0), 0)
+        const pagesDoneClamped = total > 0 ? Math.min(sum, total) : sum
+        return {
+          ...s,
+          designer_batches: nextBatches,
+          [counter.done]: pagesDoneClamped,
+          is_done: total > 0 && sum >= total,
+        }
+      })
+      return { ...prev, subtasks: subs, progress: subtaskProgress(subs) }
+    })
+    try {
+      const res = await api.removeSubtaskDesignerBatch(sub.id, batchId)
+      if (res) {
+        setProject((prev) => {
+          if (!prev) return prev
+          const subs = (prev.subtasks ?? []).map((s) => {
+            if (s.id !== res.subtask_id) return s
+            return {
+              ...s,
+              designer_batches: Array.isArray(res.batches)
+                ? res.batches
+                : s.designer_batches,
+            }
+          })
+          const out = { ...prev, subtasks: subs }
+          if (res.project && typeof res.project.progress === 'number') {
+            out.progress = res.project.progress
+          }
+          if (res.project && typeof res.project.version === 'number') {
+            out.version = res.project.version
+          }
+          return out
+        })
+      }
+    } catch (err) {
+      // Revert by swapping the snapshotted subtask back in. That keeps
+      // the row in its ORIGINAL position (not the top of the log) and
+      // restores both `pages_done` and `is_done` to the same numbers
+      // the user saw before the click.
+      if (before) {
+        setProject((prev) => {
+          if (!prev) return prev
+          const subs = (prev.subtasks ?? []).map((s) => (
+            s.id === sub.id ? before : s
+          ))
+          return { ...prev, subtasks: subs, progress: subtaskProgress(subs) }
+        })
+      }
+      toast.error(err?.message || `${counter.unitTitle} kaydı silinemedi.`)
       throw err
     }
   }
@@ -336,7 +418,7 @@ export function useProjectSubtasks(project, refetch, setProject, user, isLeader,
 
     // Helpers + handlers
     subtaskChecked, toggleSubtask,
-    handleDesignerBatchAdd, handleDesignerBatchRedone,
+    handleDesignerBatchAdd, handleDesignerBatchRemove, handleDesignerBatchRedone,
     saveSubtaskChanges, handleRedo, handleRevize,
   }
 }

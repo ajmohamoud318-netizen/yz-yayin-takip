@@ -47,7 +47,8 @@ function normalizeProjectPayload(payload, existing = null) {
       // The value can be a designer id, an empty string (server treats as
       // "inherit primary" via its ?? fallback), or the "__all__" sentinel
       // that means "Tüm Tasarımcılar" (server unwraps to a real null so
-      // any project designer can log pages via subtask_designer_batches).
+      // any project designer can log a "+N sayfa" row on this subtask —
+      // migration 084 shares the counter across everyone assigned).
       // Without this line the mapper dropped `assigned_to` from the İç
       // Sayfalar row entirely, so every PATCH silently reattached it to
       // the project primary.

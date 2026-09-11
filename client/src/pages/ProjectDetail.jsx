@@ -602,6 +602,7 @@ export default function ProjectDetail() {
               onSaveChanges={d.saveSubtaskChanges}
               onAddDesignerBatch={d.handleDesignerBatchAdd}
               onRedoneDesignerBatch={d.handleDesignerBatchRedone}
+              onRemoveDesignerBatch={d.handleDesignerBatchRemove}
               onRedo={d.handleRedo}
               onRevize={d.handleRevize}
             />

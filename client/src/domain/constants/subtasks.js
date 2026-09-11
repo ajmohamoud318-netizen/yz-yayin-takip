@@ -11,9 +11,11 @@ export const SUBTASK_LIBRARY = [
 ]
 
 /**
- * The subtask kinds logged as numbered designer batches ("Ayşe sayfa 1-5
+ * The subtask kinds logged as additive designer batches ("Ayşe +5 sayfa
  * ekledi"), and what each one counts. Sticker joined İç Sayfalar in
- * migration 082 — it used to be a bare checkbox. Mirror of
+ * migration 082 — it used to be a bare checkbox. Migration 084 dropped
+ * the per-batch `start_page` slot so each save is just a "+N today" row
+ * on a shared subtask counter. Mirror of
  * server/src/domain/page-segments.js#batchCounter.
  */
 const BATCH_COUNTERS = {

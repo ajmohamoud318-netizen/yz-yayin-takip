@@ -7,13 +7,20 @@ import { httpClient } from '../client.js'
  * `setSubtaskDone` / `setSubtaskStickers` / `toggleSubtask`. Designers
  * click a checkbox and one row updates.
  *
- * The "İç Sayfalar" (pages) subtask took a different shape with the
- * chip-by-chip UX gone (migration 067). The "+N ekledim" UI sends one
+ * The "İç Sayfalar" (pages) and "Sticker" subtasks share a single
+ * additive counter. The "+N ekledim" UI sends one
  * `addSubtaskDesignerBatch` per save, creating an append-only row in
  * `subtask_designer_batches` whose `pages` contributes to the running
- * subtask total via the migration 067 trigger. Each batch is
- * independently re-touchable: `markSubtaskDesignerBatchRedone` stamps
- * the "Yeniden Çalıştım" affordance on one specific saved batch.
+ * subtask total via the migration 067 trigger. Migration 084 dropped
+ * the per-row `start_page` slot — the running total is just the SUM
+ * of every row's `pages` across every designer on the subtask.
+ *
+ * Each batch is independently mutable:
+ *   • `removeSubtaskDesignerBatch` deletes one row (the server gates
+ *     so a designer can only remove their own row; team_leader can
+ *     remove any). The same trigger recomputes the counter.
+ *   • `markSubtaskDesignerBatchRedone` stamps the "Yeniden Çalıştım"
+ *     audit flag on one specific saved batch. Idempotent.
  *
  * `saveProjectSubtasks` (PUT /projects/:id/subtasks) and
  * `updateSubtask` (PATCH /subtasks/:id) stay leader-driven and remain
@@ -35,38 +42,47 @@ export function createHttpSubtaskRepository() {
       return { project: data }
     },
     /**
-     * migration 067/068 — designer pages-done input. Body is
-     * `{ designer_id, segments: [{ start_page, pages }, …] }`. Server
-     * enforces ownership:
+     * migration 067/084 — designer pages-done input. Body is now the
+     * flat `{ designer_id, pages }` — one "+N today" row on a shared
+     * subtask counter. Migration 084 dropped the per-row `start_page`
+     * slot, so a comma list ("1,5,7") is no longer a single save —
+     * designers type one number per save and the counter just adds up.
+     *
+     * Server enforces ownership:
      *   • team_leader may add a batch for any active designer;
      *   • designer may add only for themselves.
      *
-     * Migration 068 — each segment pins a batch to a specific page
-     * range [start_page, start_page + pages - 1]; the server refuses
-     * the save if any range overlaps an existing batch on the same
-     * subtask (no double-counting across designers).
-     *
-     * A comma list from the input ("1,5,7") arrives as several
-     * segments and lands as one row each, inserted in a single
-     * transaction — the whole save applies or none of it does.
-     *
      * Slim response shape:
-     *   { subtask_id, project_id, total_pages, pages_done, is_done,
-     *     batches: [{ id, designer_id, designer_name, pages, start_page,
+     *   { subtask_id,
+     *     batches: [{ id, subtask_id, designer_id, designer_name, pages,
      *                 created_at, redone_at, redone_by, redone_by_name }],
      *     batch: <batches[0]>,   // kept for older callers
      *     project_progress, project: { id, progress, version } }
      */
-    async addSubtaskDesignerBatch(subtaskId, { designerId, segments }, { signal } = {}) {
+    async addSubtaskDesignerBatch(subtaskId, { designerId, pages }, { signal } = {}) {
       const { data } = await httpClient.post(
         `/subtasks/${subtaskId}/designer-batches`,
-        {
-          designer_id: designerId,
-          segments: (Array.isArray(segments) ? segments : []).map((s) => ({
-            start_page: s.start,
-            pages: s.pages,
-          })),
-        },
+        { designer_id: designerId, pages: Number(pages) },
+        signal ? { signal } : undefined,
+      )
+      return data
+    },
+    /**
+     * migration 084 — drop a single saved batch row. The server gates
+     * so a designer may only remove their OWN row (team_leader can
+     * remove any), and the trigger recomputes `pages_done` /
+     * `stickers_done` for us — same response shape as the add call so
+     * the SPA can reconcile either side off the same envelope.
+     *
+     * Slim response shape:
+     *   { subtask_id, removed_batch_id,
+     *     batches: [{ id, subtask_id, designer_id, designer_name, pages,
+     *                 created_at, redone_at, redone_by, redone_by_name }],
+     *     project_progress, project: { id, progress, version } }
+     */
+    async removeSubtaskDesignerBatch(subtaskId, batchId, { signal } = {}) {
+      const { data } = await httpClient.delete(
+        `/subtasks/${subtaskId}/designer-batches/${batchId}`,
         signal ? { signal } : undefined,
       )
       return data
