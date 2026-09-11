@@ -403,14 +403,9 @@ function CoverSection({ idea, canModify, coverBusy, onPick, onRemove, coverInput
   return (
     <div className="group/cover relative">
       {coverSrc ? (
-        <a
-          href={coverSrc}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block max-h-64 overflow-hidden rounded-xl bg-muted"
-        >
+        <div className="block max-h-64 overflow-hidden rounded-xl bg-muted">
           <img src={coverSrc} alt="" className="mx-auto max-h-64 w-full object-contain" />
-        </a>
+        </div>
       ) : canModify ? (
         <button
           type="button"
@@ -501,9 +496,7 @@ function GallerySection({
                 key={img.id}
                 className="group/gal relative aspect-square overflow-hidden rounded-lg bg-muted"
               >
-                <a href={src} target="_blank" rel="noopener noreferrer">
-                  <img src={src} alt="" className="h-full w-full object-cover" />
-                </a>
+                <img src={src} alt="" className="h-full w-full object-cover" />
                 {canModify && (
                   <button
                     type="button"
@@ -541,7 +534,7 @@ function NotesSection({
           <Skeleton className="h-16 rounded-md" />
         ) : detail?.notes?.length ? (
           detail.notes.map((note) => (
-            <div key={note.id} className="rounded-md bg-card p-2 shadow-sm">
+            <div key={note.id} className="group/note rounded-md bg-card p-2 shadow-sm">
               {editingNoteId === note.id ? (
                 <form onSubmit={onSaveNote} className="space-y-1.5">
                   <Textarea
@@ -576,20 +569,24 @@ function NotesSection({
                       {note.created_by_name ?? 'Ekipten biri'} · {formatDateTr(note.created_at)}
                     </p>
                     {canModifyNote(note) && (
-                      <div className="flex shrink-0 items-center gap-2">
+                      <div className="flex shrink-0 items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => onStartEditNote(note)}
-                          className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                          aria-label="Düzenleyin"
+                          title="Düzenleyin"
+                          className="grid h-6 w-6 place-items-center rounded-full bg-background/90 text-muted-foreground opacity-0 ring-1 ring-border transition-opacity group-hover/note:opacity-100 focus-visible:opacity-100 hover:text-foreground"
                         >
-                          Düzenleyin
+                          <Pencil className="h-3 w-3" />
                         </button>
                         <button
                           type="button"
                           onClick={() => onRemoveNote(note.id)}
-                          className="text-[11px] text-muted-foreground transition-colors hover:text-destructive"
+                          aria-label="Silin"
+                          title="Silin"
+                          className="grid h-6 w-6 place-items-center rounded-full bg-background/90 text-muted-foreground opacity-0 ring-1 ring-border transition-opacity group-hover/note:opacity-100 focus-visible:opacity-100 hover:text-destructive"
                         >
-                          Silin
+                          <X className="h-3 w-3" />
                         </button>
                       </div>
                     )}
