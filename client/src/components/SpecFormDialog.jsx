@@ -319,15 +319,15 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // computed here so the footer can drop its "Taslağı Kaydedin" alongside the
   // lock (a save button on a form nobody may edit is a button that lies).
   const decisionReview = isDecisionReview(decisionContext)
-  // The plain "Ozalit Formu" viewer (mode='view', !notifyOnSave) becomes
-  // read-only the moment the server has any snapshot for the round, OR the
-  // round counter has been bumped past zero. See
-  // isViewerLockedByExistingRound for the full rationale.
-  const viewerLockedByExistingRound = isViewerLockedByExistingRound(
-    { mode, notifyOnSave },
-    { hasServerSnapshot, attempt: round.attempt },
-  )
-  const readOnly =
+  /* `readOnly` is computed in two passes: the FIRST runs before the spec
+   * hook so the hook can load the sheet with the right lock state, and
+   * the SECOND runs after, where the snapshot-aware half
+   * (`viewerLockedByExistingRound`) reads `hasServerSnapshot` off the
+   * hook's return value. Doing it in one pass would reference
+   * `hasServerSnapshot` before `useSpecSheet` declares it — a Temporal
+   * Dead Zone error during render (minified as
+   * "Cannot access '$e' before initialization"). */
+  const readOnlyPre = (
     (variant.isReadOnly({ mode, user }) && !authoringOrderOzalit)
     || baskiOnayLocked
     || demoAlreadyApproved
@@ -347,10 +347,10 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     || decisionReview
     // The ÇİN forward sends the sheet on exactly as it is — see forwardsCinDemo.
     || forwardsCinDemo
-    // "Ozalit Formu" viewer over a round that has already started: the
-    // snapshot on the server is the truth, the form is for reading.
-    || viewerLockedByExistingRound
-  const printable = variant.canPrint({ user, project, readOnly })
+  )
+  const printable = variant.canPrint({ user, project, readOnly: readOnlyPre })
+  /* The post-hook `readOnly` (with viewerLockedByExistingRound) is declared
+   * below, right after useSpecSheet returns `hasServerSnapshot`. */
   // The plain "Demo Formu" button (mode='view', no notify) always opens a
   // round that has ALREADY been sent: at demo_onay it's the sheet sitting with
   // the leader, and from ozalit_teslim onward it's the sheet the demo was
@@ -445,7 +445,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     open, variant, project, order, user, mode,
     scopeId, orderId, orderScoped,
     viewAttempt, viewDemoId, notifyOnSave, rejectContext,
-    readOnly, viewingSentSheet, showsLiveTeslimat,
+    readOnly: readOnlyPre, viewingSentSheet, showsLiveTeslimat,
     attemptNo, liveAttempts, preselectParcalar,
     // A demo re-send (held demo re-requested at demo_onay / cin_demo_onay)
     // should default-tick only the parçalar the prior round APPROVED, not
@@ -457,6 +457,18 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     // every non-demo leg.
     resendApprovedParcalar: willResendBump ? approvedParcalar(project, 'demo') : null,
   })
+
+  // The plain "Ozalit Formu" viewer (mode='view', !notifyOnSave) becomes
+  // read-only the moment the server has any snapshot for the round, OR the
+  // round counter has been bumped past zero. See
+  // isViewerLockedByExistingRound for the full rationale. Computed AFTER
+  // useSpecSheet so `hasServerSnapshot` is in scope; see the readOnlyPre
+  // note above for the two-pass shape.
+  const viewerLockedByExistingRound = isViewerLockedByExistingRound(
+    { mode, notifyOnSave },
+    { hasServerSnapshot, attempt: round.attempt },
+  )
+  const readOnly = readOnlyPre || viewerLockedByExistingRound
 
   /* ── The parça this sheet was opened FOR (migration 074) ────────────────
    * The matbaa's queue hands out parçalar, not projects, so the sheet behind
