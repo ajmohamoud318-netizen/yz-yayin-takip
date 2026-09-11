@@ -6,6 +6,9 @@
 //   dot/topBorder/bar — saturated -500 accents (read fine on light).
 //   badge            — soft tinted chip, contrast-safe in light.
 //   surface/onSurface/border — tinted stat cards (Dashboard SummaryCard).
+//   surfaceBar       — slightly stronger tinted chip used as the YearPlan
+//                      bar background (-100); lets the saturated progress
+//                      track underneath carry the colour weight.
 //   barFill          — darker fill for the timeline gantt bars so white
 //                      label text clears WCAG AA 4.5:1 (verified).
 export const STATUS_STYLES = {
@@ -17,6 +20,7 @@ export const STATUS_STYLES = {
     bar: 'bg-orange-500',
     text: 'text-orange-600',
     surface: 'bg-orange-50',
+    surfaceBar: 'bg-orange-100',
     border: 'border-orange-200',
     onSurface: 'text-orange-700',
     barFill: 'bg-orange-700',
@@ -29,6 +33,7 @@ export const STATUS_STYLES = {
     bar: 'bg-purple-500',
     text: 'text-purple-600',
     surface: 'bg-purple-50',
+    surfaceBar: 'bg-purple-100',
     border: 'border-purple-200',
     onSurface: 'text-purple-700',
     barFill: 'bg-purple-600',
@@ -41,6 +46,7 @@ export const STATUS_STYLES = {
     bar: 'bg-emerald-500',
     text: 'text-emerald-600',
     surface: 'bg-emerald-50',
+    surfaceBar: 'bg-emerald-100',
     border: 'border-emerald-200',
     onSurface: 'text-emerald-700',
     barFill: 'bg-emerald-700',
@@ -53,6 +59,7 @@ export const STATUS_STYLES = {
     bar: 'bg-blue-500',
     text: 'text-blue-600',
     surface: 'bg-blue-50',
+    surfaceBar: 'bg-blue-100',
     border: 'border-blue-200',
     onSurface: 'text-blue-700',
     barFill: 'bg-blue-600',
@@ -66,6 +73,7 @@ export const STATUS_STYLES = {
     bar: 'bg-teal-500',
     text: 'text-teal-600',
     surface: 'bg-teal-50',
+    surfaceBar: 'bg-teal-100',
     border: 'border-teal-200',
     onSurface: 'text-teal-700',
     barFill: 'bg-teal-700',
@@ -79,6 +87,7 @@ export const STATUS_STYLES = {
     bar: 'bg-fuchsia-500',
     text: 'text-fuchsia-600',
     surface: 'bg-fuchsia-50',
+    surfaceBar: 'bg-fuchsia-100',
     border: 'border-fuchsia-200',
     onSurface: 'text-fuchsia-700',
     barFill: 'bg-fuchsia-600',
@@ -91,6 +100,7 @@ export const STATUS_STYLES = {
     bar: 'bg-amber-400',
     text: 'text-amber-700',
     surface: 'bg-amber-50',
+    surfaceBar: 'bg-amber-100',
     border: 'border-amber-200',
     onSurface: 'text-amber-700',
     barFill: 'bg-amber-700',

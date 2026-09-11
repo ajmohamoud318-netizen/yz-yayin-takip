@@ -2,28 +2,32 @@ import OrderBadge from '@/components/OrderBadge'
 import { STATUS_META, statusKeyForProject } from '@/api'
 import { cn, initials } from '@/lib/utils'
 
-// Yellow (Satışta) and peach (Üretimde) bars need dark text for AA contrast.
+// Yellow (Satışta) and peach (Üretimde) bars need dark text for AA contrast
+// on the tinted background. The other five read fine with foreground text.
 function barText(key) {
-  return key === 'yellow' || key === 'pink' ? 'text-[#5A3017]' : 'text-white'
+  return key === 'yellow' || key === 'pink'
+    ? 'text-[#5A3017]'
+    : 'text-foreground/80'
 }
 
 // Bar visual variants. The compact variant matches YearPlan page density;
 // comfortable matches the Dashboard's 48px embed.
 const VARIANT_STYLES = {
-  // YearPlan — dense 36px bar, brightness on hover, order badge inline.
+  // YearPlan — dense 36px bar, two-tone (tinted background + saturated
+  // progress track), brightness on hover, order badge inline.
   compact: {
     bar: 'h-9 px-1.5',
     avatar: 'h-[18px] w-[18px] text-[9px]',
     title: 'text-[11px]',
-    chip: 'text-[10px] opacity-90',
+    chip: 'rounded bg-white/70 px-1 text-[10px] text-foreground/70',
     progressTrack: 'inset-x-1.5 bottom-1 h-1',
-    progressBar: 'h-full',
+    progressBar: 'h-full rounded-full',
     hover: 'hover:shadow-md hover:brightness-105',
     showOrderBadge: true,
   },
-  // Dashboard — taller 48px bar, lifts on hover. It used to hide the order
-  // badge because the Dashboard did not fetch open orders; it does, and a
-  // reprint in flight is exactly what the Dashboard should say.
+  // Dashboard — taller 48px bar, lifts on hover. Solid saturated fill kept:
+  // a tinted background looks washed out at this size against the
+  // surrounding card chrome, and the Dashboard has its own hover card.
   comfortable: {
     bar: 'h-12 px-3',
     avatar: 'h-6 w-6 text-[10px]',
@@ -80,16 +84,24 @@ export default function YearPlanBar({
         variant === 'comfortable' && 'transition-[transform,box-shadow,filter] duration-150 ease-out',
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
         'motion-reduce:transition-none',
-        // YearPlan page uses the -500 shade (meta.dot), Dashboard uses
-        // the darker -600/-700 shade (meta.barFill) for visual prominence.
-        variant === 'comfortable' ? meta.barFill : meta.dot,
+        // Two-tone: YearPlan compact = tinted surface (-100) so the
+        // saturated progress track at the bottom carries the colour.
+        // Dashboard comfortable keeps the solid -600/-700 fill so the
+        // hover card reads against a coloured chip, not a pastel one.
+        variant === 'comfortable' ? meta.barFill : meta.surfaceBar,
         barText(key),
       )}
     >
       <div className="flex items-center gap-1.5 pb-1">
         <span
           className={cn(
-            'grid shrink-0 place-items-center rounded-full bg-white/25 font-semibold ring-1 ring-white/40',
+            // Saturated avatar circle on the tinted compact bar so the
+            // initials read; on comfortable (solid fill) the white/25
+            // ghost we used before still looks right.
+            'grid shrink-0 place-items-center rounded-full font-semibold ring-1',
+            variant === 'comfortable'
+              ? 'bg-white/25 ring-white/40'
+              : cn(meta.barFill, 'text-white ring-white/50'),
             v.avatar,
           )}
           title={project.assigned_name}
@@ -108,17 +120,18 @@ export default function YearPlanBar({
       </div>
       {/* progress bar — animates width via the same clip-path technique.
           Without the wrapper, the bar's own width would jump. */}
-      <div className={cn('absolute overflow-hidden rounded-full bg-black/20', v.progressTrack)}>
+      <div className={cn('absolute overflow-hidden rounded-full bg-black/15', v.progressTrack)}>
         <div
           className={cn(
             'yp-bar-draw',
             v.progressBar,
-            // Compact variant inverts on the two light-bar colors
-            // (yellow/pink) so the fill is still readable.
-            variant === 'compact' &&
-              (key === 'yellow' || key === 'pink'
-                ? 'bg-[#5A3017] rounded-full'
-                : 'bg-white rounded-full'),
+            // Comfortable variant keeps its white fill (sits on a
+            // saturated bar). Compact variant uses the saturated
+            // -600/-700 shade so the progress is the colour carrier
+            // against the new tinted background.
+            variant === 'comfortable'
+              ? 'bg-white'
+              : meta.barFill,
           )}
           style={{
             width: `${project.progress}%`,
