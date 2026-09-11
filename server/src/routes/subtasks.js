@@ -4,12 +4,14 @@ import { withTx } from '../db/pool.js'
 import {
   getProject, getProjectForUpdate, patchProject, logHistory,
   listProjectSubtasks, listProjectHistory, loadProjectAssignees,
+  replaceProjectAssignees,
   addSubtaskDesignerBatch,
   removeSubtaskDesignerBatch,
   markSubtaskDesignerBatchRedone,
   loadSubtaskDesignerBatches,
   getSubtaskDesignerBatches,
 } from '../services/project-repository.js'
+import { notifyDesignersAssigned } from '../services/notifications.js'
 import { schemas } from '../schemas/index.js'
 import { batchCounter } from '../domain/page-segments.js'
 import { subtaskProgress } from '../domain/progress.js'
@@ -449,6 +451,10 @@ export async function subtaskRoutes(fastify) {
       // can mutate underneath us. The earlier non-locking `getProject`
       // read above is only used for the orphan-designer guard.
       const lockedProject = await getProjectForUpdate(client, project.id)
+      // Who is on the project before this save (primary + subtask owners),
+      // so the designers the save adds can be told — see the notify at the
+      // end of the tx.
+      const designersBefore = await loadProjectAssignees(client, lockedProject)
       // ── Reconcile, don't recreate ──────────────────────────────────
       //
       // This route used to DELETE every subtask and re-INSERT the whole
@@ -694,6 +700,27 @@ export async function subtaskRoutes(fastify) {
           },
           request.user,
         )
+      }
+      // Store the leader's designer list (migration 086) when the save
+      // restates it. Without it a designer whose only work is İç Sayfalar on
+      // "Tüm Tasarımcılar" owns no subtask row and fell off the project.
+      // Written before the roster is re-read below, so they're also greeted.
+      if (Array.isArray(request.body.assignees)) {
+        await replaceProjectAssignees(client, project.id, request.body.assignees)
+      }
+      // A project can be created without designers and staffed later from
+      // the edit dialog, so createProject's assignment ping can't be the only
+      // one. Greet whoever this save put on the project for the first time.
+      // The SPA's edit flow runs PATCH /projects/:id first, which greets a
+      // new primary itself — that primary is already in `designersBefore`
+      // here, so nobody is pinged twice.
+      const beforeIds = new Set(designersBefore.map((a) => a.id))
+      const addedDesigners = (await loadProjectAssignees(client, updated))
+        .filter((a) => !beforeIds.has(a.id))
+      if (addedDesigners.length > 0) {
+        await notifyDesignersAssigned(client, {
+          project: updated, actor: request.user, assignees: addedDesigners,
+        })
       }
       return { project: updated, subtasks: inserted, progress }
     })

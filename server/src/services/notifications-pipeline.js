@@ -83,6 +83,29 @@ export async function notifyProjectCreated(client, { project, actor, assignees }
 }
 
 /**
+ * Designers added to an existing project → the same greeting a fresh
+ * assignment gets.
+ *
+ * A project can be created without designers and staffed later from the edit
+ * dialog, so "a new project is yours" can't only fire from createProject.
+ * Callers pass just the designers who weren't on the project before the save —
+ * anyone already on it has had their greeting.
+ */
+export async function notifyDesignersAssigned(client, { project, actor, assignees }) {
+  return emit(client, {
+    recipientIds: (assignees ?? []).map((a) => a.id),
+    actorId: actor?.id,
+    type: 'assignment',
+    title: project.title,
+    body: pickAssignmentGreeting(),
+    tone: 'green',
+    projectId: project.id,
+    link: `/projects/${project.id}`,
+    event: { type: 'project.designers_assigned', aggregateId: project.id },
+  })
+}
+
+/**
  * A delivered demo was just marked "Teslim Alındı" (received).
  *
  * Not a stage transition — the project stays at demo_onay — so it can't ride

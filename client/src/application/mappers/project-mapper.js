@@ -72,6 +72,10 @@ function normalizeProjectPayload(payload, existing = null) {
         total_stickers: Number(stickerCount),
         stickers_done: old?.stickers_done ?? 0,
         is_done: (old?.stickers_done ?? 0) >= Number(stickerCount),
+        // Same gap İç Sayfalar had above: without this the Sticker picker's
+        // choice never reached PUT /projects/:id/subtasks, so every edit put
+        // the row back on the project primary.
+        assigned_to: subtaskAssignees.sticker || null,
       })
     }
     out.subtasks = subs

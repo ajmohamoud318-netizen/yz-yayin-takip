@@ -1,5 +1,5 @@
 import { httpClient } from '../client.js'
-import { PASS_KIND } from '../../../domain/index.js'
+import { PASS_KIND, SUBTASK_LIBRARY } from '../../../domain/index.js'
 import { notFound, badRequest } from '../../shared/errors.js'
 import { createProjectMapper } from '../../../application/mappers/project-mapper.js'
 
@@ -103,8 +103,18 @@ export function createHttpProjectRepository(userRepo) {
       // characters`). Strip the empty entries before posting — the
       // server's `??` fallback then resolves each subtask to the
       // project primary assignee.
+      //
+      // The dialog keys library picks by library key ("kapak"), but the
+      // subtasks above go out as titles only ("Kapak") — the schema forbids a
+      // `key` on them — and createProject looks each override up by the
+      // subtask's title. Re-key library entries to their label so the pick
+      // lands; left as-is, every library subtask silently fell back to the
+      // primary and a second designer could drop off the project entirely.
+      // Custom subtasks are already keyed by their label.
       const subtaskAssignees = Object.fromEntries(
-        Object.entries(payload.subtaskAssignees ?? {}).filter(([, v]) => typeof v === 'string' && v.length > 0),
+        Object.entries(payload.subtaskAssignees ?? {})
+          .filter(([, v]) => typeof v === 'string' && v.length > 0)
+          .map(([k, v]) => [SUBTASK_LIBRARY.find((s) => s.key === k)?.label ?? k, v]),
       )
       const { data } = await httpClient.post('/projects', {
         title: flat.title,

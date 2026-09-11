@@ -26,9 +26,11 @@ export default function DesignerPanel({ project, allDesigners }) {
         {allDesigners.map((a) => {
           // Surface which subtasks this designer owns so the team
           // leader can see at a glance who is doing what — even when
-          // the project-level primary doesn't include them.
+          // the project-level primary doesn't include them. İç Sayfalar
+          // on "Tüm Tasarımcılar" has no single owner: every designer on
+          // the project works it, so it's listed under each of them.
           const owns = (project?.subtasks ?? [])
-            .filter((s) => s.assigned_to === a.id)
+            .filter((s) => s.assigned_to === a.id || (s.kind === 'pages' && !s.assigned_to))
             .map((s) => s.title)
           return (
             <div key={a.id} className="flex items-start gap-3">

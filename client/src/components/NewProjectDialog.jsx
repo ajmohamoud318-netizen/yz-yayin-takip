@@ -304,7 +304,17 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
   }
 
   function toggleDesigner(id) {
+    const removing = assignedIds.includes(id)
     setAssignedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+    // Unticking a designer takes their subtask picks with them. The picker
+    // drops a value that's no longer in its list from view, but the state
+    // still held it — so the save kept the "removed" designer on those
+    // subtasks, and the edit dialog brought them back on the next open.
+    if (removing) {
+      setSubtaskAssignees((prev) =>
+        Object.fromEntries(Object.entries(prev).map(([k, v]) => [k, v === id ? '' : v])),
+      )
+    }
   }
 
   async function handleSubmit(e) {
@@ -360,6 +370,16 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         if (v) acc[c.label] = v
         return acc
       }, {})
+      // With one designer or none the per-subtask pickers are hidden, so any
+      // value they still hold is one the leader can neither see nor change.
+      // The one that bites: a project created without designers has an
+      // ownerless İç Sayfalar, which rehydrates as "Tüm Tasarımcılar" — and
+      // staffing it later with a single designer kept that invisible value,
+      // leaving the row with no owner. Send no picks instead, so every row
+      // goes to the project primary.
+      const pickedAssignees = assignedIds.length > 1
+        ? { ...subtaskAssignees, ...customAssignees }
+        : {}
       // ALL_DESIGNERS is a shared sentinel: the SPA sends it across the wire
       // as a plain string ("__all__"), and both server paths (createProject
       // and PUT /projects/:id/subtasks) recognise it and store `assigned_to`
@@ -376,7 +396,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
         subtasks: mergedSubtasks,
         pageCount: subtasks.sayfalar ? Number(pageCount) : undefined,
         stickerCount: subtasks.sticker ? Number(stickerCount) : undefined,
-        subtaskAssignees: { ...subtaskAssignees, ...customAssignees },
+        subtaskAssignees: pickedAssignees,
         target_month: targetDate || defaultTargetDate(),
         // Only sent on create, not edit. deriveInitialProductInfo returns the
         // Ana Reçete shell plus the Kutu / Kılavuz shells the leader ticked

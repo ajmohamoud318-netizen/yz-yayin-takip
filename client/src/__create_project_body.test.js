@@ -186,4 +186,66 @@ describe('createProject HTTP body shape', () => {
     // alıyor; boş array ile null primary doğru davranış.
     expect(captured.body.assigned_to).toBeNull()
   })
+
+  it('keys library picks by the subtask title the server looks them up by', async () => {
+    // Regression: the dialog keys picks by library key ("kapak") while the
+    // subtasks go out as titles ("Kapak"). createProject resolves overrides
+    // by title, so the untranslated map never matched — every library
+    // subtask fell back to the primary and Feyza dropped off the project.
+    const { createHttpProjectRepository } = await import(
+      '@/infrastructure/http/repositories/http-project.repository.js'
+    )
+    const repo = createHttpProjectRepository(stubUserRepo)
+
+    await repo.createProject({
+      title: 'İki tasarımcı',
+      type: 'TR',
+      assignees: ['u-aylin', 'u-feyza'],
+      subtasks: ['kapak', 'sayfalar', 'sticker', 'Oyun Kartları'],
+      pageCount: 32,
+      stickerCount: 2,
+      subtaskAssignees: {
+        kapak: 'u-feyza',
+        sayfalar: '__all__',
+        sticker: 'u-feyza',
+        'Oyun Kartları': 'u-aylin',
+      },
+    })
+
+    expect(captured.body.subtaskAssignees).toEqual({
+      Kapak: 'u-feyza',
+      'İç Sayfalar': '__all__',
+      Sticker: 'u-feyza',
+      'Oyun Kartları': 'u-aylin',
+    })
+    const titles = captured.body.subtasks.map((s) => s.title)
+    for (const key of Object.keys(captured.body.subtaskAssignees)) {
+      expect(titles).toContain(key)
+    }
+  })
+})
+
+describe('updateProject HTTP body shape', () => {
+  it('sends the Sticker picker choice to PUT /projects/:id/subtasks', async () => {
+    // Regression: the mapper built the Sticker row without `assigned_to`,
+    // so the server put it back on the primary on every edit.
+    const { createHttpProjectRepository } = await import(
+      '@/infrastructure/http/repositories/http-project.repository.js'
+    )
+    const repo = createHttpProjectRepository(stubUserRepo)
+
+    await repo.updateProject('p-1', {
+      title: 'Sticker düzenleme',
+      type: 'TR',
+      assignees: ['u-aylin', 'u-feyza'],
+      subtasks: ['kapak', 'sticker'],
+      stickerCount: 3,
+      subtaskAssignees: { kapak: 'u-aylin', sticker: 'u-feyza' },
+    })
+
+    // The PUT runs after the PATCH, so it is the last body captured.
+    const byTitle = Object.fromEntries(captured.body.subtasks.map((s) => [s.title, s]))
+    expect(byTitle.Sticker.assigned_to).toBe('u-feyza')
+    expect(byTitle.Kapak.assigned_to).toBe('u-aylin')
+  })
 })

@@ -578,3 +578,68 @@ test('084: the trigger still sums batches per kind and recomputes downward on de
 
   await db.close()
 })
+
+/* ==========================================================================
+ *  086 — each project's designer list is stored
+ * ======================================================================== */
+
+test('086: the backfill keeps every designer the old rebuild resolved, primary first', { skip: !PGlite }, async () => {
+  // Before 086 the list was primary + subtask owners, rebuilt on every read.
+  // The backfill must seed exactly that set — nobody who could see a project
+  // yesterday may lose it today — in the order the readers used.
+  const db = await freshDb({ upToExclusive: '086' })
+  await db.exec(`
+    INSERT INTO users (id, name, email, role) VALUES
+      ('d1','Ayşe','a@e.com','designer'), ('d2','Mehmet','m@e.com','designer'),
+      ('d3','Zeynep','z@e.com','designer');
+    INSERT INTO projects (id, title, type, stage, assigned_to) VALUES
+      ('p1','Kitap','TR','tasarim','d2'),
+      ('p2','Defter','TR','tasarim',NULL);
+    INSERT INTO subtasks (id, project_id, title, kind, total_pages, position, assigned_to) VALUES
+      ('s1','p1','Kutu','check',NULL,2,'d1'),
+      ('s2','p1','Kapak','check',NULL,1,'d3'),
+      ('s3','p1','İç Sayfalar','pages',32,0,NULL),
+      ('s4','p1','Ses','check',NULL,3,'d2');
+  `)
+  const sql = await fs.readFile(path.join(MIGRATIONS_DIR, '086__project_assignees.sql'), 'utf8')
+  await db.exec(`BEGIN; ${sql} ; COMMIT;`)
+
+  const { rows } = await db.query(
+    'SELECT project_id, user_id, position FROM project_assignees ORDER BY project_id, position',
+  )
+  assert.deepEqual(rows, [
+    { project_id: 'p1', user_id: 'd2', position: 0 },
+    { project_id: 'p1', user_id: 'd3', position: 1 },
+    { project_id: 'p1', user_id: 'd1', position: 2 },
+  ], 'primary first, then subtask owners in subtask order, each once; a designer-less project gets no rows')
+
+  await db.close()
+})
+
+test('086: one row per designer per project, and it goes with the project or the user', { skip: !PGlite }, async () => {
+  const db = await freshDb()
+  await db.exec(`
+    INSERT INTO users (id, name, email, role) VALUES
+      ('d1','Ayşe','a@e.com','designer'), ('d2','Mehmet','m@e.com','designer');
+    INSERT INTO projects (id, title, type, stage) VALUES
+      ('p1','Kitap','TR','tasarim'), ('p2','Defter','TR','tasarim');
+    INSERT INTO project_assignees (project_id, user_id, position) VALUES
+      ('p1','d1',0), ('p1','d2',1), ('p2','d1',0);
+  `)
+
+  await assert.rejects(
+    db.query("INSERT INTO project_assignees (project_id, user_id) VALUES ('p1','d1')"),
+    /duplicate key/i,
+    'the same designer twice on one project must be refused',
+  )
+
+  await db.query("DELETE FROM projects WHERE id = 'p1'")
+  const afterProject = await db.query('SELECT project_id, user_id FROM project_assignees ORDER BY project_id')
+  assert.deepEqual(afterProject.rows, [{ project_id: 'p2', user_id: 'd1' }], 'deleting a project must take its list with it')
+
+  await db.query("DELETE FROM users WHERE id = 'd1'")
+  const afterUser = await db.query('SELECT count(*)::int AS n FROM project_assignees')
+  assert.equal(afterUser.rows[0].n, 0, 'deleting a user must take them off every list')
+
+  await db.close()
+})

@@ -141,6 +141,25 @@ export async function listProjects() {
       subAssignees.set(row.project_id, list)
     }
   }
+  // The stored designer list (migration 086) for every listed project, in
+  // the order the leader picked. It's what carries a designer whose only work
+  // is İç Sayfalar on "Tüm Tasarımcılar" — no subtask row names them.
+  const storedAssignees = new Map() // projectId -> [{id, name}, ...]
+  if (ids.length > 0) {
+    const storedRes = await getPool().query(
+      `SELECT pa.project_id, pa.user_id, u.name AS assignee_name
+         FROM project_assignees pa
+         JOIN users u ON u.id = pa.user_id
+        WHERE pa.project_id = ANY($1)
+        ORDER BY pa.project_id, pa.position, pa.created_at`,
+      [ids],
+    )
+    for (const row of storedRes.rows) {
+      const list = storedAssignees.get(row.project_id) ?? []
+      list.push({ id: row.user_id, name: row.assignee_name })
+      storedAssignees.set(row.project_id, list)
+    }
+  }
   // History for every listed project in one query. The client's status
   // color rules (statusKeyForProject → isSecondDemoCycle) read history to
   // tell the first demo cycle (purple) from the second (green). Without it
@@ -173,37 +192,29 @@ export async function listProjects() {
     const project = rowToProject(r)
     project.assigned_name = r.assignee_name ?? null
     project.history = historyByProject.get(r.id) ?? []
-    // Build the assignees array from designers who actually have work:
-    //   1. everyone with at least one subtask `assigned_to` set
-    //   2. project primary (`assigned_to`) — but ONLY if they also have a
-    //      subtask. If the team leader reassigned every subtask off the
-    //      primary, that primary is no longer a designer on this project
-    //      and shouldn't render in the row card / dashboard tile.
+    // Build the assignees array from designers who are on the project:
+    //   1. the stored designer list (migration 086), in the order picked
+    //   2. any subtask owner the stored list doesn't carry
+    //   3. the project primary (`assigned_to`) leads — but ONLY while (1) or
+    //      (2) still has them. If the team leader reassigned every subtask
+    //      off the primary and dropped them from the list, they're no longer
+    //      a designer here and shouldn't render in the row card / dashboard
+    //      tile.
+    const projectStored = storedAssignees.get(r.id) ?? []
     const projectSubAssignees = subAssignees.get(r.id) ?? []
-    const subtaskOwnerIds = new Set(projectSubAssignees.map((s) => s.id))
     const seen = new Set()
     const merged = []
-    // Subtask assignees first (they're guaranteed to have real work).
-    for (const sa of projectSubAssignees) {
-      if (seen.has(sa.id)) continue
-      seen.add(sa.id)
-      merged.push(sa)
+    for (const a of [...projectStored, ...projectSubAssignees]) {
+      if (seen.has(a.id)) continue
+      seen.add(a.id)
+      merged.push(a)
     }
-    // Project primary only if they're already one of the subtask owners.
-    if (project.assigned_to && subtaskOwnerIds.has(project.assigned_to)) {
-      // De-dup: the primary may already be in `merged` via the subtask
-      // loop. Move them to the front so the avatar stack always leads
-      // with the primary (matches the "primary leads" convention used
-      // elsewhere in the UI).
-      const existingIdx = merged.findIndex((a) => a.id === project.assigned_to)
-      if (existingIdx > 0) {
-        const [existing] = merged.splice(existingIdx, 1)
-        merged.unshift(existing)
-      } else if (existingIdx === -1) {
-        merged.unshift({ id: project.assigned_to, name: project.assigned_name })
-      }
-      seen.add(project.assigned_to)
-    }
+    // Move the primary to the front so the avatar stack always leads with
+    // them (the "primary leads" convention used elsewhere in the UI).
+    const primaryIdx = project.assigned_to
+      ? merged.findIndex((a) => a.id === project.assigned_to)
+      : -1
+    if (primaryIdx > 0) merged.unshift(...merged.splice(primaryIdx, 1))
     project.assignees = merged
     return project
   }))
@@ -239,12 +250,26 @@ export async function loadProjectAssignees(client, project) {
     }
   }
   if (projectId) {
+    // The stored designer list (migration 086) first, then any subtask owner
+    // it doesn't carry. The stored list is what keeps a designer whose only
+    // work is İç Sayfalar on "Tüm Tasarımcılar" on the project — that row has
+    // no owner, so the subtask scan alone never saw them. One query for both,
+    // so every caller (notifications, gates, the detail payload) still pays a
+    // single round-trip.
     const { rows } = await client.query(
-      `SELECT s.assigned_to, u.name AS assignee_name
-         FROM subtasks s
-         LEFT JOIN users u ON u.id = s.assigned_to
-        WHERE s.project_id = $1 AND s.assigned_to IS NOT NULL
-        ORDER BY s.position, s.created_at, s.id`,
+      `SELECT o.assigned_to, u.name AS assignee_name
+         FROM (
+           SELECT pa.user_id AS assigned_to, 0 AS src_rank, pa.position AS pos,
+                  pa.created_at, ''::text AS sid
+             FROM project_assignees pa
+            WHERE pa.project_id = $1
+           UNION ALL
+           SELECT s.assigned_to, 1, s.position, s.created_at, s.id
+             FROM subtasks s
+            WHERE s.project_id = $1 AND s.assigned_to IS NOT NULL
+         ) o
+         LEFT JOIN users u ON u.id = o.assigned_to
+        ORDER BY o.src_rank, o.pos, o.created_at, o.sid`,
       [projectId],
     )
     for (const r of rows) {
@@ -254,6 +279,45 @@ export async function loadProjectAssignees(client, project) {
     }
   }
   return merged
+}
+
+/**
+ * Replace a project's stored designer list (migration 086) with `userIds`, in
+ * order. Blank and repeated ids are dropped (the first occurrence keeps its
+ * place), and an id with no user row is skipped rather than failing the whole
+ * save on the foreign key.
+ */
+export async function replaceProjectAssignees(client, projectId, userIds) {
+  const ids = [...new Set((userIds ?? []).filter(Boolean))]
+  await client.query(
+    'DELETE FROM project_assignees WHERE project_id = $1 AND NOT (user_id = ANY($2::text[]))',
+    [projectId, ids],
+  )
+  if (ids.length === 0) return
+  await client.query(
+    `INSERT INTO project_assignees (project_id, user_id, position)
+     SELECT $1::text, u.id, (t.ord - 1)::int
+       FROM unnest($2::text[]) WITH ORDINALITY AS t(user_id, ord)
+       JOIN users u ON u.id = t.user_id
+     ON CONFLICT (project_id, user_id) DO UPDATE SET position = EXCLUDED.position`,
+    [projectId, ids],
+  )
+}
+
+/**
+ * Put one designer on a project's stored list (migration 086), after everyone
+ * already there. A no-op for a blank id or someone who's already listed.
+ */
+export async function addProjectAssignee(client, projectId, userId) {
+  if (!userId) return
+  await client.query(
+    `INSERT INTO project_assignees (project_id, user_id, position)
+     SELECT $1::text, $2::text, COALESCE(MAX(position) + 1, 0)
+       FROM project_assignees
+      WHERE project_id = $1::text
+     ON CONFLICT (project_id, user_id) DO NOTHING`,
+    [projectId, userId],
+  )
 }
 
 export async function getProject(id) {

@@ -26,6 +26,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
+import { assertNoOrphanDesigners, OrphanDesignerError } from './subtask-assignee.js'
+
 const subtaskAssigneeSrc = readFileSync(
   fileURLToPath(new URL('./subtask-assignee.js', import.meta.url)),
   'utf8',
@@ -193,5 +195,55 @@ describe('POST /subtasks/:id/designer-batches — project-scoped gate', () => {
       /if \(!isLeader && sub\.assigned_to === null\)/,
     )
     assert.ok(gateMatch, 'gate must be wrapped in !isLeader so leaders always pass')
+  })
+})
+
+// ─── Fix 3: the guard only counts picks that land on a subtask ────────
+
+describe('assertNoOrphanDesigners — resolves picks the way the save does', () => {
+  it('rejects a create-shape pick keyed by something no subtask answers to', () => {
+    // The SPA used to key library picks by "kapak" while the subtask went
+    // out as "Kapak". createProject dropped that pick, so the guard must not
+    // count it either — otherwise u-feyza silently lands on no work.
+    assert.throws(
+      () => assertNoOrphanDesigners(
+        ['u-aylin', 'u-feyza'],
+        [{ title: 'Kapak', kind: 'check' }],
+        { kapak: 'u-feyza' },
+      ),
+      OrphanDesignerError,
+    )
+  })
+
+  it('accepts the same pick keyed by the subtask title', () => {
+    assert.doesNotThrow(() => assertNoOrphanDesigners(
+      ['u-aylin', 'u-feyza'],
+      [{ title: 'Kapak', kind: 'check' }],
+      { Kapak: 'u-feyza' },
+    ))
+  })
+
+  it('reads assigned_to straight off edit-shape subtasks', () => {
+    assert.doesNotThrow(() => assertNoOrphanDesigners(
+      ['u-aylin', 'u-feyza'],
+      [{ title: 'Kapak', kind: 'check', assigned_to: 'u-feyza' }],
+      {},
+    ))
+    assert.throws(
+      () => assertNoOrphanDesigners(
+        ['u-aylin', 'u-feyza'],
+        [{ title: 'Kapak', kind: 'check', assigned_to: null }],
+        {},
+      ),
+      OrphanDesignerError,
+    )
+  })
+
+  it('still lets "Tüm Tasarımcılar" on a real subtask cover every designer', () => {
+    assert.doesNotThrow(() => assertNoOrphanDesigners(
+      ['u-aylin', 'u-feyza'],
+      [{ title: 'İç Sayfalar', kind: 'pages', total_pages: 32 }],
+      { 'İç Sayfalar': '__all__' },
+    ))
   })
 })

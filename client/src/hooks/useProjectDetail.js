@@ -187,22 +187,23 @@ export function useProjectDetail(id) {
     [isAssigned, project?.id],
   )
 
-  // Distinct designers actually doing work on this project.
+  // Designers on this project: the stored list the server sends as
+  // `assignees` (primary first), plus any subtask owner a stale payload
+  // doesn't carry yet. Starting from subtask owners alone left out everyone
+  // whose only work is İç Sayfalar on "Tüm Tasarımcılar" — that row has no
+  // owner.
   const allDesigners = useMemo(() => {
-    const subs = project?.subtasks ?? []
     const byId = new Map()
-    for (const s of subs) {
+    for (const a of project?.assignees ?? []) {
+      if (a?.id && !byId.has(a.id)) byId.set(a.id, a)
+    }
+    for (const s of project?.subtasks ?? []) {
       if (s.assigned_to && !byId.has(s.assigned_to)) {
         byId.set(s.assigned_to, { id: s.assigned_to, name: s.assigned_name ?? null })
       }
     }
-    const primaryId = project?.assigned_to
-    if (primaryId && byId.has(primaryId)) {
-      const primary = project?.assignees?.find((a) => a.id === primaryId)
-      if (primary) byId.set(primary.id, { ...primary, name: primary.name ?? byId.get(primary.id).name })
-    }
     return Array.from(byId.values())
-  }, [project?.assignees, project?.assigned_to, project?.subtasks])
+  }, [project?.assignees, project?.subtasks])
 
   const isDeleted = !!project?.deleted_at
   const isDemoOnayStage = project?.stage === 'demo_onay' || project?.stage === 'cin_demo_onay'

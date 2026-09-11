@@ -54,15 +54,14 @@ export function unwrapAssignee(value) {
  *      under their own row, so "shared" doesn't mean "shared credit" —
  *      just shared write access).
  *   3. The designer is the project primary (first id in declaredAssignees)
- *      OR appears in `subtaskAssignees` under either the subtask's title
- *      or its library key (the lookup chain matches how createProject
- *      resolves the override).
+ *      OR owns a subtask in the payload — its own `assigned_to`, or the
+ *      `subtaskAssignees` entry under its title or key (the same lookup
+ *      chain createProject uses to store the override).
  *
  * Shared between `createProject` (admin.js) and PUT /projects/:id/subtasks
  * (routes/subtasks.js) so the two paths cannot drift apart. Either caller
- * passes the raw `subtasks` array straight from the wire — strings of
- * library keys on create, full subtask objects on edit; the helper handles
- * both shapes via `pickSubtaskKey`.
+ * passes the raw `subtasks` array straight from the wire — `{ title, kind }`
+ * objects plus the side map on create, full subtask objects on edit.
  *
  * @param {string[]|null|undefined} declaredAssignees
  *   The full assignee list the leader submitted. null/undefined = "the
@@ -78,19 +77,15 @@ export function assertNoOrphanDesigners(declaredAssignees, subtasks, subtaskAssi
   const subAssigneeIds = new Set()
   const sentinels = new Set()
   for (const s of subtasks ?? []) {
-    const key = pickSubtaskKey(s)
-    // The wire uses 'assigned_to' on edit (full subtask objects) and
-    // resolves via the subtaskAssignees map on create (just titles/keys).
-    // Read both so the helper doesn't care which shape came in.
-    const direct = s.assigned_to
-    if (direct === ALL_DESIGNERS_SENTINEL) sentinels.add(key)
-    else if (direct) subAssigneeIds.add(direct)
-  }
-  // Also walk subtaskAssignees for the create-shape payload where the
-  // override rides in the side map rather than on the subtask itself.
-  for (const [k, v] of Object.entries(subtaskAssignees ?? {})) {
-    if (v === ALL_DESIGNERS_SENTINEL) sentinels.add(k)
-    else if (v) subAssigneeIds.add(v)
+    // Resolve each subtask's owner the way the save will store it: its own
+    // `assigned_to` on edit, else the side-map entry under its title (or
+    // key) on create. Only picks that land on a subtask count — walking the
+    // whole map let an entry no subtask answers to (library key "kapak"
+    // against the stored title "Kapak") pass the guard while createProject
+    // dropped it, and the designer fell off the project.
+    const owner = s?.assigned_to ?? subtaskAssignees?.[s?.title] ?? subtaskAssignees?.[s?.key]
+    if (owner === ALL_DESIGNERS_SENTINEL) sentinels.add(pickSubtaskKey(s))
+    else if (owner) subAssigneeIds.add(owner)
   }
   if (sentinels.size > 0) return
   // The first id is the project primary (PUT route's behaviour, mirrored

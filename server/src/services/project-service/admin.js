@@ -35,8 +35,15 @@ import {
   patchProject,
   setProjectCatalogHidden,
   logHistory,
+  loadProjectAssignees,
+  replaceProjectAssignees,
+  addProjectAssignee,
 } from '../project-repository.js'
-import { notifyProjectCreated, notifyProductCatalogChanged } from '../notifications.js'
+import {
+  notifyProjectCreated,
+  notifyDesignersAssigned,
+  notifyProductCatalogChanged,
+} from '../notifications.js'
 
 /**
  * Raise the 409 for a title that is already taken by `existing`.
@@ -102,6 +109,15 @@ export async function createProject(actor, body) {
       title, type, target_month, pass_kind, assigned_to: primaryAssignee,
       created_by: actor.id,
     })
+    // Store the designer list the leader picked (migration 086), primary
+    // first. Rebuilding it from subtask owners lost everyone whose only work
+    // is İç Sayfalar on "Tüm Tasarımcılar" — that row has no owner — so the
+    // project never reached them. Written before notifyProjectCreated below,
+    // which reads the list back to greet every designer on it.
+    await replaceProjectAssignees(client, project.id, [
+      primaryAssignee,
+      ...(Array.isArray(assignees) ? assignees : []),
+    ])
     const subRows = []
     for (const [index, s] of subtasks.entries()) {
       // Look up the per-subtask override by either the SPA's library key
@@ -324,6 +340,15 @@ export async function patchProjectFields(id, actor, fields) {
       const clash = await findProjectByTitle(client, fields.title, { excludeId: id })
       if (clash) rejectTitleClash(clash)
     }
+    // A primary who isn't on the project yet — typically a project created
+    // without designers and staffed later from the edit dialog — gets the
+    // assignment greeting createProject would have sent. Read the roster
+    // BEFORE the write, so promoting someone who already owns a subtask
+    // doesn't greet them a second time.
+    const newPrimary = fields.assigned_to
+    const rosterBefore = newPrimary && newPrimary !== before.assigned_to
+      ? await loadProjectAssignees(client, before)
+      : null
     // SQL-level OCC guard: pass the locked row's version so a concurrent
     // writer (admin script that doesn't go through the orchestrator,
     // future non-locking path) can't silently overwrite this admin edit.
@@ -334,6 +359,13 @@ export async function patchProjectFields(id, actor, fields) {
       { expectedVersion: before.version },
     )
     if (!updated) notFound('Proje bulunamadı.')
+    // A new primary joins the stored designer list (migration 086) too, so a
+    // save that changes only the primary can't leave them off it. The edit
+    // dialog's subtask save rewrites the whole list right after.
+    if (rosterBefore) await addProjectAssignee(client, updated.id, newPrimary)
+    if (rosterBefore && !rosterBefore.some((a) => a.id === newPrimary)) {
+      await notifyDesignersAssigned(client, { project: updated, actor, assignees: [{ id: newPrimary }] })
+    }
     const FIELD_LABELS = {
       title: 'Başlık',
       type: 'Tür (TR / ÇİN)',
