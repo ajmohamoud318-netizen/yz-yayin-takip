@@ -131,6 +131,8 @@ export default function HedefProjeler() {
         canModifyIdea={detailIdea ? canRemove(detailIdea) : false}
         canAddNote={canAdd}
         onUpdate={update}
+        onUploadImage={(file) => uploadImage(detailIdea.id, file)}
+        onRemoveImage={() => removeImage(detailIdea.id)}
       />
     </div>
   )
@@ -443,15 +445,17 @@ function AddTargetIdeaDialog({
 }
 
 /**
- * Opened by clicking a card: the cover (view-only here — editing it stays
- * on the card), the name/links (editable in place here — this replaced the
- * old separate "edit" dialog), a photo gallery beyond the cover, and a
- * timestamped notes log whose own entries can each be edited or removed.
- * Gallery/notes are fetched fresh each time this opens via
- * useTargetProjectIdeaDetail, since the card grid never carries them.
+ * Opened by clicking a card: the cover (editable in place when the user
+ * can modify the idea), the name/links (editable in place here — this
+ * replaced the old separate "edit" dialog), a photo gallery beyond the
+ * cover, and a timestamped notes log whose own entries can each be
+ * edited or removed. Gallery/notes are fetched fresh each time this
+ * opens via useTargetProjectIdeaDetail, since the card grid never
+ * carries them.
  */
 function IdeaDetailDialog({
-  open, onOpenChange, idea, startEditing, canModifyIdea, canAddNote, onUpdate,
+  open, onOpenChange, idea, startEditing, canModifyIdea, canAddNote,
+  onUpdate, onUploadImage, onRemoveImage,
 }) {
   const ideaId = open ? idea?.id : null
   const {
@@ -464,7 +468,9 @@ function IdeaDetailDialog({
   const [editName, setEditName] = useState('')
   const [editLinks, setEditLinks] = useState([])
   const [savingIdea, setSavingIdea] = useState(false)
+  const [coverBusy, setCoverBusy] = useState(false)
   const fileInputRef = useRef(null)
+  const coverInputRef = useRef(null)
 
   useEffect(() => {
     if (!open) return
@@ -530,6 +536,31 @@ function IdeaDetailDialog({
     }
   }
 
+  async function handlePickCoverImage(e) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow picking the same file again later
+    if (!file) return
+    setCoverBusy(true)
+    try {
+      await onUploadImage(file)
+    } catch (err) {
+      toast.error(err?.message || 'Görsel yüklenemedi.')
+    } finally {
+      setCoverBusy(false)
+    }
+  }
+
+  async function handleRemoveCoverImage() {
+    setCoverBusy(true)
+    try {
+      await onRemoveImage()
+    } catch (err) {
+      toast.error(err?.message || 'Görsel kaldırılamadı.')
+    } finally {
+      setCoverBusy(false)
+    }
+  }
+
   async function handleAddNote(e) {
     e.preventDefault()
     const trimmed = noteText.trim()
@@ -556,7 +587,7 @@ function IdeaDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between gap-2">
             <span className="inline-flex min-w-0 items-center gap-2">
@@ -579,14 +610,46 @@ function IdeaDetailDialog({
 
         <div className="space-y-5">
           {coverSrc && (
-            <a
-              href={coverSrc}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block max-h-64 overflow-hidden rounded-xl bg-muted"
-            >
-              <img src={coverSrc} alt="" className="mx-auto max-h-64 w-full object-contain" />
-            </a>
+            <div className="relative">
+              <a
+                href={coverSrc}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block max-h-64 overflow-hidden rounded-xl bg-muted"
+              >
+                <img src={coverSrc} alt="" className="mx-auto max-h-64 w-full object-contain" />
+              </a>
+            </div>
+          )}
+          {canModifyIdea && (
+            <div className="mt-1.5 flex items-center gap-x-3">
+              <button
+                type="button"
+                onClick={() => coverInputRef.current?.click()}
+                disabled={coverBusy}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+              >
+                <ImagePlus className="h-3 w-3" />
+                {coverSrc ? 'Görseli değiştirin' : 'Görsel ekleyin'}
+              </button>
+              {coverSrc && (
+                <button
+                  type="button"
+                  onClick={handleRemoveCoverImage}
+                  disabled={coverBusy}
+                  className="text-xs text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+                >
+                  Görseli kaldırın
+                </button>
+              )}
+              <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePickCoverImage}
+              />
+            </div>
           )}
 
           {editing ? (
