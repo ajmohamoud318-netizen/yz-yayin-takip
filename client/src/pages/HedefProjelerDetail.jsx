@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { LinksListInput } from '@/components/LinksListInput'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { formatDateTr } from '@/lib/utils'
 
 /**
@@ -97,6 +98,7 @@ export default function HedefProjelerDetail() {
   const [editLinks, setEditLinks] = useState([])
   const [savingIdea, setSavingIdea] = useState(false)
   const [coverBusy, setCoverBusy] = useState(false)
+  const [previewSrc, setPreviewSrc] = useState(null)
   const coverInputRef = useRef(null)
   const galleryInputRef = useRef(null)
 
@@ -299,6 +301,7 @@ export default function HedefProjelerDetail() {
               onPick={handlePickCoverImage}
               onRemove={handleRemoveCoverImage}
               coverInputRef={coverInputRef}
+              onPreview={setPreviewSrc}
             />
 
             {editing ? (
@@ -368,6 +371,7 @@ export default function HedefProjelerDetail() {
               galleryInputRef={galleryInputRef}
               onPickGallery={handlePickGalleryImage}
               onRemoveGallery={handleRemoveGalleryImage}
+              onPreview={setPreviewSrc}
             />
 
             <NotesSection
@@ -394,18 +398,40 @@ export default function HedefProjelerDetail() {
           </div>
         </>
       )}
+
+      <Dialog open={!!previewSrc} onOpenChange={(open) => { if (!open) setPreviewSrc(null) }}>
+        <DialogContent
+          className="max-w-4xl border-0 bg-transparent p-0 shadow-none sm:max-w-4xl print:hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {previewSrc && (
+            <img
+              src={previewSrc}
+              alt=""
+              className="mx-auto max-h-[85vh] w-auto rounded-lg object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
-function CoverSection({ idea, canModify, coverBusy, onPick, onRemove, coverInputRef }) {
+function CoverSection({
+  idea, canModify, coverBusy, onPick, onRemove, coverInputRef, onPreview,
+}) {
   const coverSrc = ideaImageSrc(idea)
   return (
     <div className="group/cover relative">
       {coverSrc ? (
-        <div className="block max-h-64 overflow-hidden rounded-xl bg-muted">
+        <button
+          type="button"
+          onClick={() => coverSrc && onPreview(coverSrc)}
+          className="block w-full max-h-64 overflow-hidden rounded-xl bg-muted transition-opacity hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label="Görseli büyütün"
+        >
           <img src={coverSrc} alt="" className="mx-auto max-h-64 w-full object-contain" />
-        </div>
+        </button>
       ) : canModify ? (
         <button
           type="button"
@@ -455,7 +481,7 @@ function CoverSection({ idea, canModify, coverBusy, onPick, onRemove, coverInput
 }
 
 function GallerySection({
-  canModify, detail, loading, busy, galleryInputRef, onPickGallery, onRemoveGallery,
+  canModify, detail, loading, busy, galleryInputRef, onPickGallery, onRemoveGallery, onPreview,
 }) {
   return (
     <div className="space-y-2">
@@ -496,13 +522,20 @@ function GallerySection({
                 key={img.id}
                 className="group/gal relative aspect-square overflow-hidden rounded-lg bg-muted"
               >
-                <img src={src} alt="" className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => onPreview(src)}
+                  className="block h-full w-full"
+                  aria-label="Görseli büyütün"
+                >
+                  <img src={src} alt="" className="h-full w-full object-cover" />
+                </button>
                 {canModify && (
                   <button
                     type="button"
-                    onClick={() => onRemoveGallery(img.id)}
+                    onClick={(e) => { e.stopPropagation(); onRemoveGallery(img.id) }}
                     aria-label="Görseli kaldırın"
-                    className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-background/90 text-muted-foreground opacity-0 ring-1 ring-border transition-opacity group-hover/gal:opacity-100 hover:text-destructive"
+                    className="absolute right-1 top-1 z-10 grid h-6 w-6 place-items-center rounded-full bg-background/90 text-muted-foreground opacity-0 ring-1 ring-border transition-opacity group-hover/gal:opacity-100 hover:text-destructive"
                   >
                     <X className="h-3 w-3" />
                   </button>
