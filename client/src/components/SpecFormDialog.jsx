@@ -246,7 +246,19 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
   // ProjectDetail.jsx and wait for the matbaa's accept. Scoped to
   // mode==='view' only — the printer's own delivery-stamp edits
   // (mode='advance'/'approve') and history snapshots are unaffected.
-  const lockedByStart = mode === 'view' && round.started
+  //
+  // `!notifyOnSave`, same carve-out as lockedByFixPending right below, and for
+  // the same reason: a single-parça round is never split, so its accept is the
+  // per-parça one (acceptParcaChange) — it frees that parça's own row but never
+  // touches `demo_started`/`ozalit_started`, which only the WHOLE-SHEET accept
+  // clears. Without this, `openParcaFixSheet`'s edit-and-notify reopen of
+  // exactly that released parça stayed locked forever: `round.started` never
+  // goes false, so the leader could accept nothing back from the matbaa and
+  // still never be able to send the correction. `lockedParcalar` below is what
+  // actually decides per-parça inside the notify flow; this flag guarding the
+  // whole document is redundant with it once notifying, and wrong on this one
+  // round shape.
+  const lockedByStart = mode === 'view' && !notifyOnSave && round.started
   // Migration 049: once the matbaa accepts a change request, the fix is owed
   // and must go through the dedicated notify path (notifyOnSave=true) — the
   // plain "Demo Formu"/"Ozalit Formu" button stays view-only here so there's
