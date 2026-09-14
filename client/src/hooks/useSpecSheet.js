@@ -131,6 +131,17 @@ export function useSpecSheet({
   // silently rewritten from a half-finished form. Computed inside the load
   // effect, where the server snapshot is already being fetched.
   const [hasServerSnapshot, setHasServerSnapshot] = useState(false)
+  /* Whether the sheet in state belongs to THIS opening yet. Until its load has
+     finished, the state is a leftover — the previous sheet this dialog showed
+     (it stays mounted between openings) or the blank initial one, which the
+     adopt effect below used to dress in the catalog template straight away.
+     Rendering that was the glimpse of the wrong form before the right one
+     landed, so the dialog shows a placeholder until `sheetReady`. Keyed on
+     exactly what re-runs the load: a finished load for one sheet can never
+     mark another as ready. */
+  const [loadedKey, setLoadedKey] = useState(null)
+  const sheetKey = open && project ? `${scopeId}|${viewAttempt ?? ''}|${viewDemoId ?? ''}` : null
+  const sheetReady = sheetKey !== null && loadedKey === sheetKey
   // Bumped once the server spec has been fetched for this project, so the
   // catalog memo below recomputes with fresh data even on a cold cache.
   const [catalogVersion, setCatalogVersion] = useState(0)
@@ -218,8 +229,11 @@ export function useSpecSheet({
   )
 
   useEffect(() => {
-    if (!open || !project) return
+    // Closing forgets the finished load, so a reopen — even of the same sheet,
+    // which may have changed since — waits for a fresh one.
+    if (!open || !project) { setLoadedKey(null); return }
     let cancelled = false
+    const key = sheetKey
     detachedRows.current = new Map()
 
     async function load() {
@@ -475,7 +489,12 @@ export function useSpecSheet({
     // `sourceComponents` above) handed the matbaa a blank catalog template
     // for days without a single error on screen or in the console. The sheet
     // still shows whatever managed to load — but the reason is now findable.
-    load().catch((err) => { console.error('[spec-sheet] load failed:', err) })
+    load()
+      .catch((err) => { console.error('[spec-sheet] load failed:', err) })
+      // Ready after a failure too: what loaded is all there is to show, and the
+      // error above says why. Never for a superseded load — `cancelled` means
+      // its key no longer names the sheet being asked for.
+      .finally(() => { if (!cancelled) setLoadedKey(key) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // scopeId, not project.id: switching between two sipariş sheets on the
@@ -500,15 +519,20 @@ export function useSpecSheet({
   // brand-new project came up with every parça UNCHECKED and fell back to the
   // single İŞİN ADI body — the leader had to tick the parçalar the project
   // was just created with.
+  //
+  // …and only once that load HAS resolved. Before it, the selection is not the
+  // catalog's to make — the round's own parçalar are still on their way — and
+  // firing then put the blank template on screen for a moment before the load
+  // replaced it.
   useEffect(() => {
-    if (!open || selectionExplicit.current || catalogComponents.length === 0) return
+    if (!open || !sheetReady || selectionExplicit.current || catalogComponents.length === 0) return
     setSelectedComponents((prev) => (
       prev.length > 0
         ? prev
         : catalogComponents.map((c) => withAdet({ ...c, rows: resolveSayfaSayisiRows(c.rows, project, parcaKind(c)) }))
     ))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, catalogComponents])
+  }, [open, sheetReady, catalogComponents])
 
   /* ── Parça selection ──────────────────────────────────────────────────── */
 
@@ -654,6 +678,7 @@ export function useSpecSheet({
     selectedComponents,
     liveAttemptNo,
     hasServerSnapshot,
+    sheetReady,
     catalogComponents,
     handleChange,
     toggleComponent,

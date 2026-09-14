@@ -170,3 +170,68 @@ describe('useSpecSheet — which parçalar the sheet opens on', () => {
     expect(shown()).toEqual(['KUTU'])
   })
 })
+
+// The follow-up: with the load fixed, the right sheet arrived — but only after
+// a glimpse of a wrong one. The catalog-default effect fired the moment the
+// dialog opened, and state left over from the previous opening counted as the
+// sheet, so the dialog rendered both before the round's own copy landed.
+// `sheetReady` is what the dialog now waits on instead.
+describe('useSpecSheet — nothing from another sheet while this one loads', () => {
+  it('keeps the catalog template off the sheet until the round has loaded', async () => {
+    let release
+    h.api.listDemos.mockReturnValue(new Promise((r) => { release = r }))
+    await mount(baseArgs())
+
+    // Still waiting on the snapshot: not ready, and the catalog default has
+    // NOT been put on the sheet in the meantime.
+    expect(sink.current.sheetReady).toBe(false)
+    expect(shown()).toEqual([])
+
+    await act(async () => { release([sentSheet([KUTU_AS_SENT])]) })
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    expect(sink.current.sheetReady).toBe(true)
+    expect(shown()).toEqual(['KUTU'])
+  })
+
+  it('is not ready for a different sheet until that sheet has loaded', async () => {
+    h.api.listDemos.mockResolvedValue([sentSheet([KUTU_AS_SENT])])
+    await mount(baseArgs())
+    expect(sink.current.sheetReady).toBe(true)
+
+    h.api.listDemos.mockReturnValue(new Promise(() => {}))
+    await mount(baseArgs({
+      scopeId: 'p-2',
+      project: { id: 'p-2', title: 'Başka kitap', stage: 'demo_teslim', demo_attempt: 0, subtasks: [] },
+    }))
+    // State still holds p-1's KUTU — which is exactly why it must not count.
+    expect(sink.current.sheetReady).toBe(false)
+  })
+
+  it('forgets a finished load on close, so a reopen waits for a fresh one', async () => {
+    h.api.listDemos.mockResolvedValue([sentSheet([KUTU_AS_SENT])])
+    await mount(baseArgs())
+    expect(sink.current.sheetReady).toBe(true)
+
+    await mount(baseArgs({ open: false }))
+    expect(sink.current.sheetReady).toBe(false)
+
+    h.api.listDemos.mockReturnValue(new Promise(() => {}))
+    await mount(baseArgs())
+    expect(sink.current.sheetReady).toBe(false)
+  })
+
+  it('still adopts a catalog that only arrives after the load', async () => {
+    h.catalog.components = []
+    let releaseCatalog
+    h.api.getProductInfo.mockReturnValue(new Promise((r) => { releaseCatalog = r }))
+    h.api.listDemos.mockResolvedValue([])
+    await mount(baseArgs())
+    expect(sink.current.sheetReady).toBe(true)
+    expect(shown()).toEqual([])
+
+    h.catalog.components = BLANK_CATALOG
+    await act(async () => { releaseCatalog([]) })
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    expect(shown()).toEqual(['AGUMİNO', 'KUTU'])
+  })
+})

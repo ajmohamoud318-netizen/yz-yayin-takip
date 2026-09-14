@@ -19,6 +19,12 @@ export default function SpecFormFooter({
   order,
   mode,
   busy,
+  // The sheet for this opening hasn't finished loading (useSpecSheet →
+  // sheetReady), so nothing on screen is the document yet. Every action waits
+  // for it — above all the matbaa's "İşlemi Başlatın", which exists to be
+  // pressed after reading the sheet — but unlike `busy` it changes no label:
+  // nothing is being sent, and "Gönderiliyor…" would say otherwise.
+  loading = false,
   readOnly,
   // True when the plain viewer (mode='view', !notifyOnSave) opens over a
   // round that has already started on the server. The Taslağı Kaydedin
@@ -73,7 +79,7 @@ export default function SpecFormFooter({
         {readOnly ? 'Kapatın' : 'İptal'}
       </Button>
       {printable && (
-        <Button type="button" variant="outline" onClick={onPrint}>
+        <Button type="button" variant="outline" disabled={loading} onClick={onPrint}>
           <Printer className="h-4 w-4" />
           Yazdırın
         </Button>
@@ -82,6 +88,7 @@ export default function SpecFormFooter({
         <Button
           disabled={
             busy
+            || loading
             || missingRequired.length > 0
             // Only the save that SHIPS the sheet (notifyEdit) answers to the
             // completeness gate — a plain Kaydet parks a draft, which is
@@ -108,7 +115,7 @@ export default function SpecFormFooter({
           endpoint, not the project-level advance, but it must still be
           stamped from inside the sheet the printer is looking at. */}
       {mode === 'view' && onStartWork && (
-        <Button variant="success" disabled={startingWork} onClick={onStartWork}>
+        <Button variant="success" disabled={startingWork || loading} onClick={onStartWork}>
           <CheckCircle2 className="h-4 w-4" />
           {startingWork ? 'İşleniyor…' : (startWorkLabel ?? 'İşlemi Başlatın')}
         </Button>
@@ -124,7 +131,7 @@ export default function SpecFormFooter({
         <Button
           type="button"
           variant="outline"
-          disabled={busy || missingRequired.length > 0 || incompleteSpec?.length > 0 || noParcaSelected}
+          disabled={busy || loading || missingRequired.length > 0 || incompleteSpec?.length > 0 || noParcaSelected}
           onClick={() => onAdvance('ekran_onayinda')}
         >
           {busy ? 'Gönderiliyor…' : 'Ekran Onayı İsteyin'}
@@ -134,7 +141,7 @@ export default function SpecFormFooter({
         <Button
           type="button"
           variant="outline"
-          disabled={busy || missingRequired.length > 0 || incompleteSpec?.length > 0 || noParcaSelected}
+          disabled={busy || loading || missingRequired.length > 0 || incompleteSpec?.length > 0 || noParcaSelected}
           onClick={() => onAdvance('ekran')}
         >
           {busy ? 'Gönderiliyor…' : 'Ekran Ozalit İsteyin'}
@@ -154,7 +161,7 @@ export default function SpecFormFooter({
           // `route` is computed once here and reused for both the click
           // and the label below, so the button may not say one thing and
           // do another (footer contract — see the file docblock above).
-          disabled={busy || (!rejectContext && missingRequired.length > 0) || incompleteSpec?.length > 0 || noParcaSelected}
+          disabled={busy || loading || (!rejectContext && missingRequired.length > 0) || incompleteSpec?.length > 0 || noParcaSelected}
           onClick={() => onAdvance(
             offersOzalitRoute
               ? 'ozalit'
@@ -174,7 +181,7 @@ export default function SpecFormFooter({
         </Button>
       )}
       {isBaskiOnayApproval && !baskiOnayPrepared && (
-        <Button disabled={busy || missingRequired.length > 0 || noParcaSelected} onClick={onPrepareBaskiOnay}>
+        <Button disabled={busy || loading || missingRequired.length > 0 || noParcaSelected} onClick={onPrepareBaskiOnay}>
           <Send className="h-4 w-4" />
           {busy ? 'Kaydediliyor…' : 'Hazırlayın ve Onaya Gönderin'}
         </Button>
@@ -187,13 +194,13 @@ export default function SpecFormFooter({
           leader is authoring anyway, and never to the approver, whose write the
           server refuses. */}
       {isBaskiOnayApproval && baskiOnayPrepared && canEditBaskiOnay && (
-        <Button type="button" variant="outline" onClick={onToggleBaskiOnayEdit} disabled={busy}>
+        <Button type="button" variant="outline" onClick={onToggleBaskiOnayEdit} disabled={busy || loading}>
           <Pencil className="h-4 w-4" />
           {baskiOnayEditOverride ? 'Kilitleyin' : 'Düzenleyin'}
         </Button>
       )}
       {mode === 'approve' && (!isBaskiOnayApproval || baskiOnayPrepared) && (
-        <Button variant="success" disabled={busy || needsOzalitReceive || ozalitAwaitingLeader || missingRequired.length > 0} onClick={onApprove}>
+        <Button variant="success" disabled={busy || loading || needsOzalitReceive || ozalitAwaitingLeader || missingRequired.length > 0} onClick={onApprove}>
           <Check className="h-4 w-4" />
           {busy ? 'İşleniyor…' : 'Onaylayın'}
         </Button>

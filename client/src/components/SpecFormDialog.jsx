@@ -9,6 +9,7 @@ import {
   DialogTitle,
   DIALOG_MOBILE_SHEET,
 } from '@/components/ui/dialog'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import api from '@/api'
 import SpecFormFooter from '@/components/SpecFormFooter'
@@ -436,7 +437,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
      answers to "which round is this, and who may touch it", which is all that
      loader needs from this file. */
   const {
-    form, setForm, customRows, selectedComponents, liveAttemptNo, hasServerSnapshot, catalogComponents,
+    form, setForm, customRows, selectedComponents, liveAttemptNo, hasServerSnapshot, sheetReady, catalogComponents,
     handleChange,
     toggleComponent, selectAllComponents, clearComponents,
     addCustomRow, updateCustomRow, removeCustomRow, moveCustomRow,
@@ -1137,106 +1138,116 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           </DialogTitle>
         </DialogHeader>
 
-        <SpecFormIntro
-          authoringOrderOzalit={authoringOrderOzalit}
-          order={order}
-          rejectContext={rejectContext}
-          decisionContext={decisionContext}
-          decisionParcalar={scopedParcaNames}
-          projectResubmitOzalit={offersProjectOzalitRoute}
-        />
+        {/* Nothing below describes THIS sheet until its load has finished:
+            the body, the banners and the gates are all computed from state
+            that is still the previous sheet's, or blank. Rendering them flashed
+            the wrong form — and on a per-parça job a "bu turun formunda yok"
+            warning that was never true — before the right one replaced it.
+            See `sheetReady` in hooks/useSpecSheet.js. */}
+        {!sheetReady ? <SpecSheetLoading /> : (
+          <>
+            <SpecFormIntro
+              authoringOrderOzalit={authoringOrderOzalit}
+              order={order}
+              rejectContext={rejectContext}
+              decisionContext={decisionContext}
+              decisionParcalar={scopedParcaNames}
+              projectResubmitOzalit={offersProjectOzalitRoute}
+            />
 
-        <SpecChangeSummary changeSummary={changeSummary} />
+            <SpecChangeSummary changeSummary={changeSummary} />
 
-        {/* What this save is about to ADD to the round, said plainly.
-            The change summary above frames everything as a correction to a
-            sheet the matbaa already has, which is the wrong sentence here:
-            these parçalar are not on their round at all yet, and sending puts
-            work in their queue rather than amending work already in it.
+            {/* What this save is about to ADD to the round, said plainly.
+                The change summary above frames everything as a correction to a
+                sheet the matbaa already has, which is the wrong sentence here:
+                these parçalar are not on their round at all yet, and sending puts
+                work in their queue rather than amending work already in it.
 
-            The sheet opens showing only them, so this says what they ARE
-            rather than that they were "added to the form" — on screen they are
-            the form. */}
-        {(preselectParcalar ?? []).length > 0 && (
-          <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs print:hidden">
-            <p className="text-foreground">
-              <strong className="font-semibold">{preselectParcalar.join(', ')}</strong>{' '}
-              bu turda yok. Bilgilerini doldurup gönderdiğinizde matbaanın
-              işine eklenecek — turun geri kalanı olduğu gibi kalır.
-            </p>
-          </div>
+                The sheet opens showing only them, so this says what they ARE
+                rather than that they were "added to the form" — on screen they are
+                the form. */}
+            {(preselectParcalar ?? []).length > 0 && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs print:hidden">
+                <p className="text-foreground">
+                  <strong className="font-semibold">{preselectParcalar.join(', ')}</strong>{' '}
+                  bu turda yok. Bilgilerini doldurup gönderdiğinizde matbaanın
+                  işine eklenecek — turun geri kalanı olduğu gibi kalır.
+                </p>
+              </div>
+            )}
+
+            {/* The panel asked for one parça; the round's sheet doesn't carry it.
+                Used to widen silently to every block — the picker then re-appeared
+                and the leader who clicked "M Formunu Düzenleyin" landed on a
+                three-parça form. Surfacing the mismatch here leaves no ambiguity
+                about why the body below is empty, and the footer already refuses
+                the save (noParcaSelected gates it). */}
+            {scopeMissedAll && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 print:hidden">
+                <p>
+                  <strong className="font-semibold">{(parcaScope ?? []).filter(Boolean).join(', ')}</strong>{' '}
+                  bu turun formunda yok. Muhtemelen Ürün Bilgileri'nde sonradan
+                  adı değişti ya da önceki bir turdan kalan bir satır. Düzenlemek
+                  için önce turun formuna ekleyin.
+                </p>
+              </div>
+            )}
+
+            <SpecSheetBody
+              variant={variant}
+              project={project}
+              user={user}
+              form={form}
+              onChange={handleChange}
+              readOnly={readOnly}
+              systemRowReadOnly={systemRowReadOnly}
+              shownAttemptNo={shownAttemptNo}
+              customRows={customRows}
+              onAddCustomRow={addCustomRow}
+              onUpdateCustomRow={updateCustomRow}
+              onRemoveCustomRow={removeCustomRow}
+              onMoveCustomRow={moveCustomRow}
+              catalogComponents={catalogComponents}
+              hideParcaPicker={parcaNarrowed && !showAllParca}
+              lockedParcalar={lockedParcalar}
+              decisionParcalar={decisionParcaNames}
+              decisionNotes={decisionCopy}
+              selectedComponents={sheetComponents}
+              onToggleComponent={toggleComponent}
+              onSelectAllComponents={selectAllComponents}
+              onClearComponents={clearComponents}
+              onAddComponentRow={addComponentRow}
+              onUpdateComponentRow={updateComponentRow}
+              onRemoveComponentRow={removeComponentRow}
+              onMoveComponentRow={moveComponentRow}
+            />
+
+            <SpecFormGates
+              variant={variant}
+              project={project}
+              user={user}
+              round={round}
+              readOnly={readOnly}
+              isOzalitApproval={isOzalitApproval}
+              ozalitReceived={ozalitReceived}
+              ozalitAwaitingLeader={ozalitAwaitingLeader}
+              canAckOzalit={canAckOzalit}
+              confirmReceive={confirmReceive}
+              onConfirmReceive={() => setConfirmReceive(true)}
+              onCancelReceive={() => setConfirmReceive(false)}
+              onReceiveOzalit={handleReceiveOzalit}
+              receiving={receiving}
+              isBaskiOnayApproval={isBaskiOnayApproval}
+              baskiOnayPrepared={baskiOnayPrepared}
+              lockedByStart={lockedByStart}
+              lockedByFixPending={lockedByFixPending}
+              onStartWork={onStartWork}
+              missingRequired={missingRequired}
+              incompleteSpec={incompleteSpec}
+              noParcaSelected={noParcaSelected}
+            />
+          </>
         )}
-
-        {/* The panel asked for one parça; the round's sheet doesn't carry it.
-            Used to widen silently to every block — the picker then re-appeared
-            and the leader who clicked "M Formunu Düzenleyin" landed on a
-            three-parça form. Surfacing the mismatch here leaves no ambiguity
-            about why the body below is empty, and the footer already refuses
-            the save (noParcaSelected gates it). */}
-        {scopeMissedAll && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 print:hidden">
-            <p>
-              <strong className="font-semibold">{(parcaScope ?? []).filter(Boolean).join(', ')}</strong>{' '}
-              bu turun formunda yok. Muhtemelen Ürün Bilgileri'nde sonradan
-              adı değişti ya da önceki bir turdan kalan bir satır. Düzenlemek
-              için önce turun formuna ekleyin.
-            </p>
-          </div>
-        )}
-
-        <SpecSheetBody
-          variant={variant}
-          project={project}
-          user={user}
-          form={form}
-          onChange={handleChange}
-          readOnly={readOnly}
-          systemRowReadOnly={systemRowReadOnly}
-          shownAttemptNo={shownAttemptNo}
-          customRows={customRows}
-          onAddCustomRow={addCustomRow}
-          onUpdateCustomRow={updateCustomRow}
-          onRemoveCustomRow={removeCustomRow}
-          onMoveCustomRow={moveCustomRow}
-          catalogComponents={catalogComponents}
-          hideParcaPicker={parcaNarrowed && !showAllParca}
-          lockedParcalar={lockedParcalar}
-          decisionParcalar={decisionParcaNames}
-          decisionNotes={decisionCopy}
-          selectedComponents={sheetComponents}
-          onToggleComponent={toggleComponent}
-          onSelectAllComponents={selectAllComponents}
-          onClearComponents={clearComponents}
-          onAddComponentRow={addComponentRow}
-          onUpdateComponentRow={updateComponentRow}
-          onRemoveComponentRow={removeComponentRow}
-          onMoveComponentRow={moveComponentRow}
-        />
-
-        <SpecFormGates
-          variant={variant}
-          project={project}
-          user={user}
-          round={round}
-          readOnly={readOnly}
-          isOzalitApproval={isOzalitApproval}
-          ozalitReceived={ozalitReceived}
-          ozalitAwaitingLeader={ozalitAwaitingLeader}
-          canAckOzalit={canAckOzalit}
-          confirmReceive={confirmReceive}
-          onConfirmReceive={() => setConfirmReceive(true)}
-          onCancelReceive={() => setConfirmReceive(false)}
-          onReceiveOzalit={handleReceiveOzalit}
-          receiving={receiving}
-          isBaskiOnayApproval={isBaskiOnayApproval}
-          baskiOnayPrepared={baskiOnayPrepared}
-          lockedByStart={lockedByStart}
-          lockedByFixPending={lockedByFixPending}
-          onStartWork={onStartWork}
-          missingRequired={missingRequired}
-          incompleteSpec={incompleteSpec}
-          noParcaSelected={noParcaSelected}
-        />
 
         <SpecFormFooter
           variant={variant}
@@ -1244,6 +1255,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           order={order}
           mode={mode}
           busy={busy}
+          loading={!sheetReady}
           readOnly={readOnly}
           viewerLockedByExistingRound={viewerLockedByExistingRound}
           printable={printable}
@@ -1276,5 +1288,25 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
         />
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * Stands in for the sheet while its load is in flight — see `sheetReady` in
+ * hooks/useSpecSheet.js. A placeholder, because the only alternative on screen
+ * is the leftover state: another sheet, or the blank catalog template.
+ */
+function SpecSheetLoading() {
+  return (
+    <div role="status" className="space-y-3 rounded-xl border p-4 print:hidden">
+      <span className="sr-only">Form yükleniyor…</span>
+      <Skeleton className="mx-auto h-5 w-48" />
+      <Skeleton className="mx-auto h-4 w-64" />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Skeleton className="h-48 rounded-lg" />
+        <Skeleton className="h-48 rounded-lg" />
+      </div>
+      <Skeleton className="h-28 rounded-lg" />
+    </div>
   )
 }
