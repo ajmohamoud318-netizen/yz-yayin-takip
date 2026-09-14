@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 import { useProjects } from '../hooks/useProjects.js'
@@ -18,6 +18,20 @@ const TR_MONTHS_SHORT = [
   'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
   'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
 ]
+
+const YEAR_START = 2013
+const YEAR_END = 2030
+const MONTH_COUNT = (YEAR_END - YEAR_START + 1) * 12
+
+const TIMELINE_MONTHS = Array.from({ length: MONTH_COUNT }, (_, i) => {
+  const year = YEAR_START + Math.floor(i / 12)
+  const month = i % 12
+  return { i, year, month, label: TR_MONTHS_SHORT[month] }
+})
+
+function monthIndex(year, month) {
+  return (year - YEAR_START) * 12 + month
+}
 
 export default function Dashboard() {
   const { projects, loading, error, refetch } = useProjects()
@@ -41,19 +55,22 @@ export default function Dashboard() {
     for (const p of projects) {
       if (!p.target_month) continue
       const y = Number(p.target_month.slice(0, 4))
-      const end = Number(p.target_month.slice(5, 7)) - 1
-      if (y !== year || end < 0 || end > 11) continue
+      const endMonth = Number(p.target_month.slice(5, 7)) - 1
+      if (y < YEAR_START || y > YEAR_END || endMonth < 0 || endMonth > 11) continue
 
       // Bar starts where the project actually started (created_at), not a
       // guessed lead time — a project made this month shows a short bar,
-      // not always a multi-month one. Clip to Jan when created in an
-      // earlier year, and never start after its own target month.
-      const created = p.created_at ? new Date(p.created_at) : null
+      // not always a multi-month one. Clip to the timeline start when
+      // created before 2013, and never start after its own target month.
+      let end = monthIndex(y, endMonth)
       let start = end
+      const created = p.created_at ? new Date(p.created_at) : null
       if (created && !Number.isNaN(created.getTime())) {
-        if (created.getFullYear() < year) start = 0
-        else if (created.getFullYear() === year) start = Math.min(created.getMonth(), end)
+        start = monthIndex(created.getFullYear(), created.getMonth())
       }
+      start = Math.min(Math.max(0, start), end)
+      end = Math.min(end, MONTH_COUNT - 1)
+      if (end < 0 || start > MONTH_COUNT - 1) continue
       barList.push({ p, start, end })
     }
     // Newest project first (matches Yıllık Planı). Falls back to title
@@ -64,63 +81,147 @@ export default function Dashboard() {
         a.p.title.localeCompare(b.p.title, 'tr'),
     )
     return barList
-  }, [projects, year])
+  }, [projects])
 
-  const currentMonth = now.getMonth()
-  const isThisYear = year === now.getFullYear()
+  const nowYear = now.getFullYear()
+  const currentIndex = Math.min(
+    MONTH_COUNT - 1,
+    Math.max(0, monthIndex(nowYear, now.getMonth())),
+  )
+  const isThisYear = year === nowYear
 
-  // --- Swipe / horizontal-scroll to change year ---------------------------
+  // --- Month carousel (2013–2030) ----------------------------------------
   const scrollRef = useRef(null)
-  const touchStart = useRef(null)
-  const wheelLock = useRef(false)
+  const dragRef = useRef(null)
+  const skipClickRef = useRef(false)
+  const didInitScroll = useRef(false)
 
-  // True when the timeline table itself can still scroll sideways — in that
-  // case a horizontal gesture should pan the table, not flip the year.
-  function tableCanScroll(target) {
+  function monthWidth() {
     const el = scrollRef.current
-    if (!el || !target || !el.contains(target)) return false
-    return el.scrollWidth > el.clientWidth + 1
+    if (!el) return 0
+    return el.scrollWidth / MONTH_COUNT
   }
 
-  function changeYear(delta) {
-    setYear((y) => y + delta)
+  function scrollToMonthIndex(index) {
+    const el = scrollRef.current
+    const w = monthWidth()
+    if (!el || w < 1) return
+    const maxIndex = Math.max(0, Math.round((el.scrollWidth - el.clientWidth) / w))
+    const clamped = Math.min(Math.max(0, index), maxIndex)
+    el.scrollLeft = clamped * w
   }
 
-  function onTouchStart(e) {
-    const t = e.touches[0]
-    touchStart.current = { x: t.clientX, y: t.clientY, target: e.target }
+  function scrollByMonth(delta) {
+    const el = scrollRef.current
+    const w = monthWidth()
+    if (!el || w < 1) return
+    const index = Math.round(el.scrollLeft / w)
+    scrollToMonthIndex(index + delta)
   }
 
-  function onTouchEnd(e) {
-    const start = touchStart.current
-    touchStart.current = null
-    if (!start) return
-    const t = e.changedTouches[0]
-    const dx = t.clientX - start.x
-    const dy = t.clientY - start.y
-    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return
-    if (tableCanScroll(start.target)) return
-    changeYear(dx < 0 ? 1 : -1)
+  function snapToNearestMonth() {
+    const el = scrollRef.current
+    const w = monthWidth()
+    if (!el || w < 1) return
+    scrollToMonthIndex(Math.round(el.scrollLeft / w))
   }
 
-  function onWheel(e) {
-    if (Math.abs(e.deltaX) < 40 || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return
-    if (tableCanScroll(e.target)) return
-    if (wheelLock.current) return
-    wheelLock.current = true
-    changeYear(e.deltaX > 0 ? 1 : -1)
-    setTimeout(() => {
-      wheelLock.current = false
-    }, 500)
+  function syncYearFromScroll() {
+    const el = scrollRef.current
+    const w = monthWidth()
+    if (!el || w < 1) return
+    const index = Math.min(MONTH_COUNT - 1, Math.max(0, Math.round(el.scrollLeft / w)))
+    const nextYear = YEAR_START + Math.floor(index / 12)
+    setYear((cur) => (cur === nextYear ? cur : nextYear))
+  }
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el || loading) return
+
+    function applyInitial() {
+      const w = el.scrollWidth / MONTH_COUNT
+      if (w < 1 || el.scrollWidth <= el.clientWidth + 1) return false
+      if (!didInitScroll.current) {
+        el.scrollLeft = currentIndex * w
+        didInitScroll.current = true
+      }
+      return true
+    }
+
+    if (applyInitial()) return undefined
+
+    const ro = new ResizeObserver(() => {
+      if (applyInitial()) ro.disconnect()
+    })
+    ro.observe(el)
+    if (el.firstElementChild) ro.observe(el.firstElementChild)
+    return () => ro.disconnect()
+  }, [loading, bars.length, currentIndex])
+
+  function onTrackPointerDown(e) {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return
+    const el = scrollRef.current
+    if (!el) return
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startScroll: el.scrollLeft,
+      moved: false,
+      captured: false,
+    }
+  }
+
+  function onTrackPointerMove(e) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== e.pointerId) return
+    const el = scrollRef.current
+    if (!el) return
+    const dx = e.clientX - drag.startX
+    if (!drag.moved && Math.abs(dx) < 6) return
+    if (!drag.captured) {
+      el.setPointerCapture(e.pointerId)
+      drag.captured = true
+      drag.moved = true
+      el.classList.remove('snap-x', 'snap-mandatory')
+      el.classList.add('snap-none')
+    }
+    el.scrollLeft = drag.startScroll - dx
+  }
+
+  function onTrackPointerUp(e) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== e.pointerId) return
+    const el = scrollRef.current
+    if (drag.moved) skipClickRef.current = true
+    if (el) {
+      if (drag.captured) el.releasePointerCapture(e.pointerId)
+      el.classList.add('snap-x', 'snap-mandatory')
+      el.classList.remove('snap-none')
+    }
+    dragRef.current = null
+    if (drag.moved) snapToNearestMonth()
+  }
+
+  function onTrackClickCapture(e) {
+    if (!skipClickRef.current) return
+    skipClickRef.current = false
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  function onTrackKeyDown(e) {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      scrollByMonth(-1)
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      scrollByMonth(1)
+    }
   }
 
   return (
-    <div
-      className="mx-auto max-w-7xl 2xl:max-w-screen-2xl 3xl:max-w-[88rem] space-y-6 2xl:space-y-8 touch-pan-y"
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
-      onWheel={onWheel}
-    >
+    <div className="mx-auto max-w-7xl 2xl:max-w-screen-2xl 3xl:max-w-[88rem] space-y-6 2xl:space-y-8">
         {/* Summary cards — Toplam + one per status group.
             8 cards on a single row from xl+ (desktop with sidebar rail) so the count
             strip reads as one horizontal metric row. 4-col at lg (tablet) where 8
@@ -180,20 +281,14 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1">
-                <Button variant="outline" size="icon" onClick={() => setYear((y) => y - 1)} aria-label="Önceki yıl">
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span className="min-w-[4rem] text-center text-sm font-semibold tabular-nums">{year}</span>
-                <Button variant="outline" size="icon" onClick={() => setYear((y) => y + 1)} aria-label="Sonraki yıl">
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
+                <span className="min-w-[4rem] text-center text-sm font-bold tabular-nums">{year}</span>
                 {!isThisYear && (
-                  <Button variant="ghost" size="sm" onClick={() => setYear(now.getFullYear())} className="ml-1">
+                  <Button variant="ghost" size="sm" onClick={() => scrollToMonthIndex(currentIndex)} className="ml-1">
                     Bu yıl
                   </Button>
                 )}
                 {/* Yenileyin as a tiny ghost icon button — no label, sits in
-                    the stepper cluster so it doesn't look like a separate
+                    the year cluster so it doesn't look like a separate
                     chrome control. Title tooltip explains what it does. */}
                 <Button
                   variant="ghost"
@@ -252,50 +347,107 @@ export default function Dashboard() {
             <ErrorState message={error} onRetry={refetch} />
           ) : bars.length === 0 ? (
             <div className="rounded-xl border border-dashed bg-card p-12 text-center">
-              <p className="text-sm font-medium text-foreground">{year} için planlanmış proje yok.</p>
-              <p className="mt-1 text-xs text-muted-foreground">Başka bir yıl seçin veya proje hedef ayı belirleyin.</p>
+              <p className="text-sm font-medium text-foreground">Planlanmış proje yok.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Proje hedef ayı belirleyin.</p>
             </div>
           ) : (
-            <Card className="overflow-hidden shadow-sm ring-1 ring-border/60">
-              <div ref={scrollRef} className="scrollbar-thin overflow-x-auto">
-                <div className="relative min-w-[900px] bg-card">
+            <Card className="relative overflow-hidden shadow-sm ring-1 ring-border/60">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => scrollByMonth(-1)}
+                onPointerDown={(e) => {
+                  e.stopPropagation()
+                }}
+                aria-label="Önceki ay"
+                className="absolute left-1 top-1.5 z-20 h-8 w-8 bg-card/80 text-muted-foreground backdrop-blur-sm hover:text-foreground"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => scrollByMonth(1)}
+                onPointerDown={(e) => {
+                  e.stopPropagation()
+                }}
+                aria-label="Sonraki ay"
+                className="absolute right-1 top-1.5 z-20 h-8 w-8 bg-card/80 text-muted-foreground backdrop-blur-sm hover:text-foreground"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <div
+                ref={scrollRef}
+                tabIndex={0}
+                role="region"
+                aria-label="Yıllık plan, 2013–2030. Sürükleyerek sonraki aya geçin."
+                onScroll={syncYearFromScroll}
+                onPointerDown={onTrackPointerDown}
+                onPointerMove={onTrackPointerMove}
+                onPointerUp={onTrackPointerUp}
+                onPointerCancel={onTrackPointerUp}
+                onClickCapture={onTrackClickCapture}
+                onKeyDown={onTrackKeyDown}
+                className="scrollbar-thin cursor-grab touch-[pan-x_pan-y] overflow-x-auto overscroll-x-contain snap-x snap-mandatory select-none active:cursor-grabbing"
+              >
+                {/*
+                  Track is 216 months (2013–2030). Width is 216 × the
+                  one-year slice we used before, so one / three / four
+                  months stay in view at the same breakpoints.
+                */}
+                <div className="relative w-[19440%] bg-card md:w-[6480%] xl:w-[4860%]">
                   {/* Current-month band (spans full height behind rows) */}
-                  {isThisYear && (
-                    <div
-                      className="pointer-events-none absolute inset-y-0 z-0 border-x border-primary/15 bg-primary/[0.055]"
-                      style={{
-                        left: `calc(100% * ${currentMonth} / 12)`,
-                        width: `calc(100% / 12)`,
-                      }}
-                    />
-                  )}
+                  <div
+                    className="pointer-events-none absolute inset-y-0 z-0 border-x border-primary/15 bg-primary/[0.055]"
+                    style={{
+                      left: `calc(100% * ${currentIndex} / ${MONTH_COUNT})`,
+                      width: `calc(100% / ${MONTH_COUNT})`,
+                    }}
+                  />
 
-                  {/* Header */}
+                  {/* Header — each year keeps its own Oca–Ara. */}
                   <div className="relative z-10 flex bg-muted/50">
-                    <div className="flex flex-1">
-                      {TR_MONTHS_SHORT.map((m, i) => (
-                        <div
-                          key={m}
-                          className={cn(
-                            'flex-1 border-l px-1 py-3 text-center text-[11px] font-semibold uppercase',
-                            isThisYear && i === currentMonth
-                              ? 'bg-primary/10 text-primary'
-                              : 'text-muted-foreground',
-                          )}
-                        >
-                          <span className="inline-flex h-6 min-w-8 items-center justify-center rounded-full px-2">
-                            {m}
+                    {TIMELINE_MONTHS.map((m) => (
+                      <div
+                        key={`${m.year}-${m.label}`}
+                        className={cn(
+                          'w-[calc(100%/216)] shrink-0 snap-start snap-always border-l px-1 py-2 text-center text-[11px] font-semibold uppercase',
+                          m.i === currentIndex
+                            ? 'bg-primary/10 text-primary'
+                            : 'text-muted-foreground',
+                        )}
+                      >
+                        <span className="flex flex-col items-center justify-center gap-0.5">
+                          <span className="h-[13px] text-[9px] font-bold normal-case tabular-nums tracking-wide">
+                            {m.month === 0 ? m.year : '\u00a0'}
                           </span>
-                        </div>
-                      ))}
-                    </div>
+                          <span className="inline-flex h-6 min-w-8 items-center justify-center rounded-full px-2">
+                            {m.label}
+                          </span>
+                        </span>
+                      </div>
+                    ))}
                   </div>
 
                   {/* Rows — one per project, never shared with another. */}
                   <div className="relative z-10">
+                    {/* Shared month gridlines for the whole chart */}
+                    <div className="pointer-events-none absolute inset-0 flex">
+                      {TIMELINE_MONTHS.map((m) => (
+                        <div
+                          key={`g-${m.year}-${m.label}`}
+                          className={cn(
+                            'w-[calc(100%/216)] shrink-0 border-l',
+                            m.month === 0 ? 'border-border/70' : 'border-border/35',
+                          )}
+                        />
+                      ))}
+                    </div>
                     {bars.map(({ p, start, end }) => {
-                      const leftPct = (start / 12) * 100
-                      const widthPct = ((end - start + 1) / 12) * 100
+                      const leftPct = (start / MONTH_COUNT) * 100
+                      const widthPct = ((end - start + 1) / MONTH_COUNT) * 100
                       const orders = openOrders.get(p.id)
                       return (
                         <div
@@ -303,13 +455,6 @@ export default function Dashboard() {
                           className="flex items-center border-b last:border-0 odd:bg-background/35 hover:bg-muted/25"
                         >
                           <div className="relative h-[4.5rem] flex-1">
-                            {/* gridlines */}
-                            <div className="absolute inset-0 flex">
-                              {TR_MONTHS_SHORT.map((m) => (
-                                <div key={m} className="flex-1 border-l border-border/35" />
-                              ))}
-                            </div>
-                            {/* bar — a plain styled chip that navigates on click. */}
                             <YearPlanBar
                               variant="comfortable"
                               project={p}
@@ -367,7 +512,7 @@ function SummaryCard({ label, value, colorKey, interactive = false }) {
         interactive && 'transition-transform hover:-translate-y-0.5 hover:shadow-md',
       )}
     >
-      <p className={cn('truncate text-xs font-medium opacity-80', isTotal ? 'text-background' : meta?.onSurface)}>
+      <p className={cn('truncate text-xs font-bold opacity-80', isTotal ? 'text-background' : meta?.onSurface)}>
         {label}
       </p>
       <p
