@@ -404,21 +404,34 @@ export function useSpecSheet({
       // [] means the user intentionally cleared them — respect that.
       const savedComponents = spec?.selectedComponents ?? null
       selectionExplicit.current = savedComponents !== null
+      // What the sheet starts from: the parçalar the ROUND recorded, and only
+      // failing that the catalog's default.
+      //
+      // This line is load-bearing and was once dropped: the re-send narrowing
+      // below replaced it, leaving `baseComponents` read by its own
+      // initializer. That is a TDZ throw ("Cannot access 'baseComponents'
+      // before initialization") inside an async load nobody catches, so every
+      // open of every sheet died right here — after the künye fields were set
+      // and before the parça blocks were. The form still rendered, filled in
+      // from the catalog by the adopt effect below, which is why it looked
+      // like a sheet rather than an error: the matbaa was handed the blank
+      // Ürün Bilgileri template, SAYFA SAYISI still reading 'auto', in place
+      // of the spec that had been requested from them.
+      const sourceComponents = savedComponents ?? catalogComponents
       // Re-send at demo_onay: the leader/designer's "Demo İsteyin" should
       // default-tick only the parçalar the prior round APPROVED, not every
       // parça the matbaa was sent. Parçalar that were rejected (or never
       // signed off) stay where they are — out for rework, or with the
       // designer — and re-sending them would silently undo the gate's
       // decision. The caller computes the approved list via
-      // `approvedParcalar(project, 'demo')`; we narrow `baseComponents` here
+      // `approvedParcalar(project, 'demo')`; we narrow that default here
       // so the picker is free to ADD more parçalar if the leader wants them
       // sent too. The list is consumed as a default, not a constraint:
       // unticking every box is still honoured, ticking one not on the list
       // works as before.
-      const narrowedBase = mode === 'advance' && resendApprovedParcalar
-        ? narrowToApproved(baseComponents, resendApprovedParcalar)
-        : baseComponents
-      const baseComponents = narrowedBase
+      const baseComponents = mode === 'advance' && resendApprovedParcalar
+        ? narrowToApproved(sourceComponents, resendApprovedParcalar)
+        : sourceComponents
       // Each parça carries its own rows; resolve SAYFA SAYISI placeholders on
       // those too (same 'auto' shell, same substitution rule). Editing a
       // resolved row back to 'auto' would round-trip through the snapshot —
@@ -456,7 +469,13 @@ export function useSpecSheet({
       )
     }
 
-    load()
+    // Nothing awaits `load`, so a throw inside it used to be invisible: the
+    // sheet simply kept whatever state had been set before the failure and
+    // rendered as if that were the form. That is how a dead load (see
+    // `sourceComponents` above) handed the matbaa a blank catalog template
+    // for days without a single error on screen or in the console. The sheet
+    // still shows whatever managed to load — but the reason is now findable.
+    load().catch((err) => { console.error('[spec-sheet] load failed:', err) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // scopeId, not project.id: switching between two sipariş sheets on the

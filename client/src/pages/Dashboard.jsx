@@ -312,9 +312,7 @@ export default function Dashboard() {
                               <div key={m} className="flex-1 border-l border-border/35" />
                             ))}
                           </div>
-                          {/* bar — the rich hover popover lives on Tüm Projeler rows
-                              now (ProjectHoverCard); the bar stays a plain
-                              styled chip that navigates on click. */}
+                          {/* bar — a plain styled chip that navigates on click. */}
                           <YearPlanBar
                             variant="comfortable"
                             project={p}

@@ -46,9 +46,7 @@ const VARIANT_STYLES = {
  * The colored chip — status color + avatar + title + optional order badge +
  * progress fill — that anchors a project to its date range on the timeline.
  * Clicking the bar calls the `onClick` prop (callers pass a navigation handler).
- * Hover does nothing: the rich hover popover has moved to project rows in
- * Tüm Projeler (see ProjectHoverCard), where dense rows benefit from it more
- * than the already-self-describing bar.
+ * Hover does nothing.
  */
 export default function YearPlanBar({
   project,

@@ -216,9 +216,7 @@ export default function YearPlan() {
                               <div key={m} className="flex-1 border-l border-border/40" />
                             ))}
                           </div>
-                          {/* bar — hover popover lives on Tüm Projeler rows now
-                              (ProjectHoverCard), so the bar stays a plain styled
-                              chip that navigates on click. */}
+                          {/* bar — a plain styled chip that navigates on click. */}
                           <YearPlanBar
                             project={p}
                             orders={orders}
