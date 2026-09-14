@@ -19,9 +19,6 @@ const TR_MONTHS_SHORT = [
   'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
 ]
 
-// Estimated lead time (months) used to draw a bar that ends at target_month.
-const LEAD_MONTHS = { TR: 3, CIN: 4 }
-
 export default function Dashboard() {
   const { projects, loading, error, refetch } = useProjects()
   const openOrders = useOpenOrdersByProject()
@@ -46,8 +43,17 @@ export default function Dashboard() {
       const y = Number(p.target_month.slice(0, 4))
       const end = Number(p.target_month.slice(5, 7)) - 1
       if (y !== year || end < 0 || end > 11) continue
-      const dur = LEAD_MONTHS[p.type] ?? 3
-      const start = Math.max(0, end - (dur - 1))
+
+      // Bar starts where the project actually started (created_at), not a
+      // guessed lead time — a project made this month shows a short bar,
+      // not always a multi-month one. Clip to Jan when created in an
+      // earlier year, and never start after its own target month.
+      const created = p.created_at ? new Date(p.created_at) : null
+      let start = end
+      if (created && !Number.isNaN(created.getTime())) {
+        if (created.getFullYear() < year) start = 0
+        else if (created.getFullYear() === year) start = Math.min(created.getMonth(), end)
+      }
       barList.push({ p, start, end })
     }
     // Newest project first (matches Yıllık Planı). Falls back to title
@@ -123,210 +129,206 @@ export default function Dashboard() {
             otherwise the cards flash "0" for ~100–400 ms on every hard
             refresh, which reads as "your data is empty" until numbers pop
             in. */}
-        <div className={cn(
-                  'stagger-children grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 xl:grid-cols-8 2xl:gap-4',
-                  // On a cold-load error, the cards still render but the counts can't
-                  // be trusted — dim them so the user reads "stale data" rather than
-                  // "0 projects". The amber banner below explains why.
-                  error && 'opacity-60',
-                )}>
-          {loading ? (
-            <>
-              <Skeleton className="h-[46px] rounded-lg sm:h-[78px]" />
-              {LEGEND_KEYS.map((k) => (
-                <Skeleton key={k} className="h-[46px] rounded-lg sm:h-[78px]" />
-              ))}
-            </>
-          ) : (
-            <>
-              {/* Toplam → /projects (no filter). The other 7 cards link to
-                  /projects?status=<key> so AllProjects filters the list down
-                  to that pipeline bucket. The status filter banner on that
-                  page is removable. */}
-              <SummaryCardLink label="Toplam Proje" value={counts.total} colorKey="total" to="/projects" />
-              {LEGEND_KEYS.map((k) => (
-                <SummaryCardLink
-                  key={k}
-                  label={STATUS_STYLES[k].label}
-                  value={counts[k]}
-                  colorKey={k}
-                  to={`/projects?status=${k}`}
-                />
-              ))}
-            </>
+        {/* Grouped, not merged — each stat keeps its own card (rounded
+            corners, border, colored surface); the group container just
+            clusters the 8 of them into one visual section. */}
+        <Card
+          className={cn(
+            'bg-muted/30 p-2 shadow-sm ring-1 ring-border/60 sm:p-3',
+            // On a cold-load error, the cards still render but the counts can't
+            // be trusted — dim them so the user reads "stale data" rather than
+            // "0 projects". The amber banner below explains why.
+            error && 'opacity-60',
           )}
-        </div>
-
-        {/* Title row */}
-        <div className="flex flex-wrap items-end justify-between gap-3 pb-4">
-          <div>
-            <h1 className="text-3xl text-foreground">Yıllık Plan</h1>
-            {/* Was a <p> — but the loading branch renders a <Skeleton>
-                (<div>), and the HTML spec disallows block content inside
-                <p>. The browser silently lifts the <div> out of the <p>
-                and React's dev-mode logs a validateDOMNesting warning
-                every render. A <div> with the same prose spacing reads
-                identically and keeps the DOM valid. */}
-            <div className="mt-1 text-sm text-muted-foreground">
-              {loading ? (
-                <Skeleton className="inline-block h-4 w-48 align-middle" />
-              ) : (
-                <>{year} · {bars.length} proje zaman çizelgesinde</>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon" onClick={() => setYear((y) => y - 1)} aria-label="Önceki yıl">
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <span className="min-w-[4rem] text-center text-sm font-semibold tabular-nums">{year}</span>
-              <Button variant="outline" size="icon" onClick={() => setYear((y) => y + 1)} aria-label="Sonraki yıl">
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              {!isThisYear && (
-                <Button variant="ghost" size="sm" onClick={() => setYear(now.getFullYear())} className="ml-1">
-                  Bu yıl
-                </Button>
-              )}
-              {/* Yenileyin as a tiny ghost icon button — no label, sits in
-                  the stepper cluster so it doesn't look like a separate
-                  chrome control. Title tooltip explains what it does. */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={refetch}
-                aria-label="Listeyi yenileyin"
-                title="Listeyi yenileyin"
-                className="ml-1 h-9 w-9 text-muted-foreground hover:text-foreground"
-              >
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Yıllık plan chart. A transient API error (e.g. a 30-second poll
-            tick that 401'd mid-session) used to replace the chart wholesale
-            with a red "X-User-Id header is required" card — even if bars
-            were already loaded. Demote the error to an inline banner when
-            we have data, keep the full-screen error card only as the cold-
-            load fallback. */}
-        {/* Chart area: amber banner for any error, then skeleton/empty/chart/error.
-            The cards above stay visible (just dimmed on cold-load error)
-            so the dashboard never collapses to a single red card. */}
-        {error && (
-          <div
-            role="status"
-            className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
-          >
-            <span>
-              {/* Different copy for cold-load vs warm-failure: a warm error
-                  carries forward existing data, a cold error doesn't. */}
-              {bars.length > 0 || projects.length > 0
-                ? 'Listenin son güncellemesi başarısız oldu, eski veriler gösteriliyor.'
-                : 'Veriler yüklenemedi. Tekrar denemek için aşağıdaki butonu kullanın.'}
-              {/\b(x-user-id header is required|oturum geçersiz)\b/i.test(error) && (
-                <> Oturum sona ermiş olabilir; <button
-                  type="button"
-                  onClick={() => window.location.assign('/login?next=' + encodeURIComponent(window.location.pathname + window.location.search))}
-                  className="underline underline-offset-2 hover:text-amber-900"
-                >tekrar giriş yap</button>.</>
-              )}
-            </span>
-            <button
-              type="button"
-              onClick={refetch}
-              className="rounded-md border border-amber-300 bg-white px-2 py-1 font-medium hover:bg-amber-100"
-            >
-              Yenileyin
-            </button>
-          </div>
-        )}
-        {loading ? (
-          <Skeleton className="h-[420px] w-full rounded-xl" />
-        ) : error && bars.length === 0 && projects.length === 0 ? (
-          // Cold-load error AND nothing to show: a full ErrorState is the
-          // most readable fallback. The cards above are dimmed to flag this.
-          <ErrorState message={error} onRetry={refetch} />
-        ) : bars.length === 0 ? (
-          <div className="rounded-xl border border-dashed bg-card p-12 text-center">
-            <p className="text-sm font-medium text-foreground">{year} için planlanmış proje yok.</p>
-            <p className="mt-1 text-xs text-muted-foreground">Başka bir yıl seçin veya proje hedef ayı belirleyin.</p>
-          </div>
-        ) : (
-              <Card className="overflow-hidden shadow-sm ring-1 ring-border/60">
-            <div ref={scrollRef} className="scrollbar-thin overflow-x-auto">
-              <div className="relative min-w-[900px] bg-card">
-                {/* Current-month band (spans full height behind rows) */}
-                {isThisYear && (
-                  <div
-                    className="pointer-events-none absolute inset-y-0 z-0 border-x border-primary/15 bg-primary/[0.055]"
-                    style={{
-                      left: `calc(100% * ${currentMonth} / 12)`,
-                      width: `calc(100% / 12)`,
-                    }}
+        >
+          <div className="stagger-children grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 xl:grid-cols-8">
+            {loading ? (
+              <>
+                <Skeleton className="h-[46px] rounded-lg sm:h-[78px]" />
+                {LEGEND_KEYS.map((k) => (
+                  <Skeleton key={k} className="h-[46px] rounded-lg sm:h-[78px]" />
+                ))}
+              </>
+            ) : (
+              <>
+                {/* Toplam → /projects (no filter). The other 7 cards link to
+                    /projects?status=<key> so AllProjects filters the list down
+                    to that pipeline bucket. The status filter banner on that
+                    page is removable. */}
+                <SummaryCardLink label="Toplam Proje" value={counts.total} colorKey="total" to="/projects" />
+                {LEGEND_KEYS.map((k) => (
+                  <SummaryCardLink
+                    key={k}
+                    label={STATUS_STYLES[k].label}
+                    value={counts[k]}
+                    colorKey={k}
+                    to={`/projects?status=${k}`}
                   />
+                ))}
+              </>
+            )}
+          </div>
+        </Card>
+
+        {/* Grouped, not merged — the header and the chart each keep their
+            own card; this wrapper just clusters the two into one section,
+            same pattern as the stat-card group above. */}
+        <Card className={cn('space-y-3 bg-muted/30 p-2 shadow-sm ring-1 ring-border/60 sm:p-3', error && 'opacity-60')}>
+          <Card className="flex flex-wrap items-end justify-between gap-3 px-4 py-3 shadow-sm ring-1 ring-border/60">
+            <div>
+              <h1 className="text-3xl text-foreground">Yıllık Plan</h1>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" onClick={() => setYear((y) => y - 1)} aria-label="Önceki yıl">
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="min-w-[4rem] text-center text-sm font-semibold tabular-nums">{year}</span>
+                <Button variant="outline" size="icon" onClick={() => setYear((y) => y + 1)} aria-label="Sonraki yıl">
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                {!isThisYear && (
+                  <Button variant="ghost" size="sm" onClick={() => setYear(now.getFullYear())} className="ml-1">
+                    Bu yıl
+                  </Button>
                 )}
-
-                {/* Header */}
-                <div className="relative z-10 flex bg-muted/50">
-                  <div className="flex flex-1">
-                    {TR_MONTHS_SHORT.map((m, i) => (
-                      <div
-                        key={m}
-                        className={cn(
-                          'flex-1 border-l px-1 py-3 text-center text-[11px] font-semibold uppercase',
-                          isThisYear && i === currentMonth
-                            ? 'bg-primary/10 text-primary'
-                            : 'text-muted-foreground',
-                        )}
-                      >
-                        <span className="inline-flex h-6 min-w-8 items-center justify-center rounded-full px-2">
-                          {m}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Rows */}
-                <div className="relative z-10">
-                  {bars.map(({ p, start, end }) => {
-                    const leftPct = (start / 12) * 100
-                    const widthPct = ((end - start + 1) / 12) * 100
-                    const orders = openOrders.get(p.id)
-                    return (
-                      <div
-                        key={p.id}
-                        className="flex items-center border-b last:border-0 odd:bg-background/35 hover:bg-muted/25"
-                      >
-                        <div className="relative h-[4.5rem] flex-1">
-                          {/* gridlines */}
-                          <div className="absolute inset-0 flex">
-                            {TR_MONTHS_SHORT.map((m) => (
-                              <div key={m} className="flex-1 border-l border-border/35" />
-                            ))}
-                          </div>
-                          {/* bar — a plain styled chip that navigates on click. */}
-                          <YearPlanBar
-                            variant="comfortable"
-                            project={p}
-                            orders={orders}
-                            leftPct={leftPct}
-                            widthPct={widthPct}
-                            animationDelay={0}
-                            onClick={() => navigate(`/projects/${p.id}`)}
-                          />
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                {/* Yenileyin as a tiny ghost icon button — no label, sits in
+                    the stepper cluster so it doesn't look like a separate
+                    chrome control. Title tooltip explains what it does. */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={refetch}
+                  aria-label="Listeyi yenileyin"
+                  title="Listeyi yenileyin"
+                  className="ml-1 h-9 w-9 text-muted-foreground hover:text-foreground"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
               </div>
             </div>
           </Card>
-        )}
+
+          {/* Yıllık plan chart. A transient API error (e.g. a 30-second poll
+              tick that 401'd mid-session) used to replace the chart wholesale
+              with a red "X-User-Id header is required" card — even if bars
+              were already loaded. Demote the error to an inline banner when
+              we have data, keep the full-screen error card only as the cold-
+              load fallback. */}
+          {/* Chart area: amber banner for any error, then skeleton/empty/chart/error. */}
+          {error && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            >
+              <span>
+                {/* Different copy for cold-load vs warm-failure: a warm error
+                    carries forward existing data, a cold error doesn't. */}
+                {bars.length > 0 || projects.length > 0
+                  ? 'Listenin son güncellemesi başarısız oldu, eski veriler gösteriliyor.'
+                  : 'Veriler yüklenemedi. Tekrar denemek için aşağıdaki butonu kullanın.'}
+                {/\b(x-user-id header is required|oturum geçersiz)\b/i.test(error) && (
+                  <> Oturum sona ermiş olabilir; <button
+                    type="button"
+                    onClick={() => window.location.assign('/login?next=' + encodeURIComponent(window.location.pathname + window.location.search))}
+                    className="underline underline-offset-2 hover:text-amber-900"
+                  >tekrar giriş yap</button>.</>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={refetch}
+                className="rounded-md border border-amber-300 bg-white px-2 py-1 font-medium hover:bg-amber-100"
+              >
+                Yenileyin
+              </button>
+            </div>
+          )}
+          {loading ? (
+            <Skeleton className="h-[420px] w-full rounded-xl" />
+          ) : error && bars.length === 0 && projects.length === 0 ? (
+            // Cold-load error AND nothing to show: a full ErrorState is the
+            // most readable fallback. The cards above are dimmed to flag this.
+            <ErrorState message={error} onRetry={refetch} />
+          ) : bars.length === 0 ? (
+            <div className="rounded-xl border border-dashed bg-card p-12 text-center">
+              <p className="text-sm font-medium text-foreground">{year} için planlanmış proje yok.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Başka bir yıl seçin veya proje hedef ayı belirleyin.</p>
+            </div>
+          ) : (
+            <Card className="overflow-hidden shadow-sm ring-1 ring-border/60">
+              <div ref={scrollRef} className="scrollbar-thin overflow-x-auto">
+                <div className="relative min-w-[900px] bg-card">
+                  {/* Current-month band (spans full height behind rows) */}
+                  {isThisYear && (
+                    <div
+                      className="pointer-events-none absolute inset-y-0 z-0 border-x border-primary/15 bg-primary/[0.055]"
+                      style={{
+                        left: `calc(100% * ${currentMonth} / 12)`,
+                        width: `calc(100% / 12)`,
+                      }}
+                    />
+                  )}
+
+                  {/* Header */}
+                  <div className="relative z-10 flex bg-muted/50">
+                    <div className="flex flex-1">
+                      {TR_MONTHS_SHORT.map((m, i) => (
+                        <div
+                          key={m}
+                          className={cn(
+                            'flex-1 border-l px-1 py-3 text-center text-[11px] font-semibold uppercase',
+                            isThisYear && i === currentMonth
+                              ? 'bg-primary/10 text-primary'
+                              : 'text-muted-foreground',
+                          )}
+                        >
+                          <span className="inline-flex h-6 min-w-8 items-center justify-center rounded-full px-2">
+                            {m}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Rows — one per project, never shared with another. */}
+                  <div className="relative z-10">
+                    {bars.map(({ p, start, end }) => {
+                      const leftPct = (start / 12) * 100
+                      const widthPct = ((end - start + 1) / 12) * 100
+                      const orders = openOrders.get(p.id)
+                      return (
+                        <div
+                          key={p.id}
+                          className="flex items-center border-b last:border-0 odd:bg-background/35 hover:bg-muted/25"
+                        >
+                          <div className="relative h-[4.5rem] flex-1">
+                            {/* gridlines */}
+                            <div className="absolute inset-0 flex">
+                              {TR_MONTHS_SHORT.map((m) => (
+                                <div key={m} className="flex-1 border-l border-border/35" />
+                              ))}
+                            </div>
+                            {/* bar — a plain styled chip that navigates on click. */}
+                            <YearPlanBar
+                              variant="comfortable"
+                              project={p}
+                              orders={orders}
+                              leftPct={leftPct}
+                              widthPct={widthPct}
+                              animationDelay={0}
+                              onClick={() => navigate(`/projects/${p.id}`)}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
+        </Card>
 
     </div>
   )

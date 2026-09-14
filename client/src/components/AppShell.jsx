@@ -11,7 +11,6 @@ import TopbarSearch from '@/components/TopbarSearch'
 import RolePrimaryCta from '@/components/RolePrimaryCta'
 import NotificationBell from '@/components/NotificationBell'
 import UserMenu from '@/components/UserMenu'
-import Breadcrumb from '@/components/Breadcrumb'
 import { navGroups } from '@/components/navGroups'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import api, { canRequestHandover, canRequestOrderHandover, ozalitLeaderApproved } from '@/api'
@@ -293,14 +292,11 @@ export default function AppShell() {
             >
               <Menu className="h-5 w-5" />
             </Button>
-            {/* Greeting + page breadcrumb. The greeting is the warm tone, the
-                breadcrumb is the navigation anchor — keeping them next to each
-                other in one flex row reads as one "you-are-here" signal. */}
+            {/* Greeting is the only "you-are-here" signal now that the
+                breadcrumb is gone. */}
             <span className="hidden text-base sm:block">
               Merhaba, <strong>{user?.name?.split(' ')[0]}</strong>!
             </span>
-            <span className="hidden text-sm text-muted-foreground sm:inline">·</span>
-            <Breadcrumb pathname={location.pathname} />
           </div>
 
           {/* Center — search */}
