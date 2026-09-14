@@ -1,4 +1,4 @@
-/* Fonts loaded once in index.html (Baloo 2 + Geist + Geist Mono, combined request) */
+/* Fonts loaded once in index.html (Fraunces + Plus Jakarta Sans + Geist Mono, combined request) */
 
 @tailwind base;
 @tailwind components;
@@ -62,7 +62,7 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Geist', system-ui, 'Segoe UI', sans-serif;
+    font-family: 'Plus Jakarta Sans', system-ui, 'Segoe UI', sans-serif;
     font-optical-sizing: auto;
     /* iOS Safari text-inflation off — keep our 14px body, don't let the
        browser blow it up to 18px when the device is in "Larger Text" mode.
@@ -164,7 +164,7 @@
 /* Editorial label — small, uppercase, tracked. Use on eyebrow/section
    labels above titles for the publishing-house feel. */
 .label-eyebrow {
-  font-family: 'Geist', system-ui, sans-serif;
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.12em;

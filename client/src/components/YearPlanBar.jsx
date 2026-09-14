@@ -2,12 +2,12 @@ import OrderBadge from '@/components/OrderBadge'
 import { STATUS_META, statusKeyForProject } from '@/api'
 import { cn, initials } from '@/lib/utils'
 
-// Yellow (Satışta) and peach (Üretimde) bars need dark text for AA contrast
-// on the tinted background. The other five read fine with foreground text.
-function barText(key) {
-  return key === 'yellow' || key === 'pink'
-    ? 'text-[#5A3017]'
-    : 'text-foreground/80'
+// YearPlan compact uses `surfaceBar` (-100, very pale) → foreground text
+// reads fine. Dashboard comfortable uses `barSoft` (-300/-400) → dark
+// text reads fine. The original heavy `barFill` path (-600/-700) wanted
+// light text, but we no longer use it anywhere.
+function barText(variant) {
+  return variant === 'comfortable' ? 'text-[#3A1F0F]' : 'text-foreground/80'
 }
 
 // Bar visual variants. The compact variant matches YearPlan page density;
@@ -25,16 +25,17 @@ const VARIANT_STYLES = {
     hover: 'hover:shadow-md hover:brightness-105',
     showOrderBadge: true,
   },
-  // Dashboard — taller 48px bar, lifts on hover. Solid saturated fill kept:
-  // a tinted background looks washed out at this size against the
-  // surrounding card chrome, and the Dashboard has its own hover card.
+  // Dashboard — taller 48px bar, lifts on hover. Pastel fill so the row
+  // of large bars doesn't read as a wall of saturated colour; the
+  // Dashboard has its own hover card so the bar doesn't need to be the
+  // colour carrier.
   comfortable: {
     bar: 'h-12 px-3',
     avatar: 'h-6 w-6 text-[10px]',
     title: 'text-xs',
-    chip: 'rounded bg-white/20 px-1.5 py-0.5 text-[10px]',
+    chip: 'rounded bg-black/10 px-1.5 py-0.5 text-[10px]',
     progressTrack: 'inset-x-3 bottom-1.5 h-1',
-    progressBar: 'h-full rounded-full bg-white/95',
+    progressBar: 'h-full rounded-full bg-[#3A1F0F]/85',
     hover: 'hover:-translate-y-[54%] hover:shadow-lg hover:brightness-105',
     showOrderBadge: true,
   },
@@ -84,21 +85,22 @@ export default function YearPlanBar({
         'motion-reduce:transition-none',
         // Two-tone: YearPlan compact = tinted surface (-100) so the
         // saturated progress track at the bottom carries the colour.
-        // Dashboard comfortable keeps the solid -600/-700 fill so the
-        // hover card reads against a coloured chip, not a pastel one.
-        variant === 'comfortable' ? meta.barFill : meta.surfaceBar,
-        barText(key),
+        // Dashboard comfortable uses the softer -300/-400 fill (barSoft)
+        // so the bar reads as gentle, not heavy — a previous -600/-700
+        // barFill here was visually loud.
+        variant === 'comfortable' ? meta.barSoft : meta.surfaceBar,
+        barText(variant),
       )}
     >
       <div className="flex items-center gap-1.5 pb-1">
         <span
           className={cn(
             // Saturated avatar circle on the tinted compact bar so the
-            // initials read; on comfortable (solid fill) the white/25
-            // ghost we used before still looks right.
+            // initials read; on comfortable (softer fill) the dark
+            // ring-around-text variant reads better than the white ghost.
             'grid shrink-0 place-items-center rounded-full font-semibold ring-1',
             variant === 'comfortable'
-              ? 'bg-white/25 ring-white/40'
+              ? 'bg-white/70 ring-black/10 text-[#3A1F0F]'
               : cn(meta.barFill, 'text-white ring-white/50'),
             v.avatar,
           )}
@@ -123,12 +125,12 @@ export default function YearPlanBar({
           className={cn(
             'yp-bar-draw',
             v.progressBar,
-            // Comfortable variant keeps its white fill (sits on a
-            // saturated bar). Compact variant uses the saturated
-            // -600/-700 shade so the progress is the colour carrier
-            // against the new tinted background.
+            // Comfortable variant: dark fill on the lighter bar body
+            // so the progress reads. Compact variant: saturated
+            // -600/-700 (barFill) so the progress is the colour
+            // carrier against the tinted -100 background.
             variant === 'comfortable'
-              ? 'bg-white'
+              ? 'bg-[#3A1F0F]'
               : meta.barFill,
           )}
           style={{

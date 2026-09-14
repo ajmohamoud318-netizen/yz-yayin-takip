@@ -1,10 +1,10 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, CalendarOff, RefreshCw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 import { useProjects } from '../hooks/useProjects.js'
 import { useOpenOrdersByProject } from '../hooks/useOpenOrders.js'
 import { STATUS_STYLES, statusKeyForProject } from '../api.js'
-import { Card, CardContent } from '../components/ui/card.jsx'
+import { Card } from '../components/ui/card.jsx'
 import { Skeleton } from '../components/ui/skeleton.jsx'
 import { Button } from '../components/ui/button.jsx'
 import YearPlanBar from '../components/YearPlanBar.jsx'
@@ -39,14 +39,10 @@ export default function Dashboard() {
     return { ...c, total: projects.length }
   }, [projects])
 
-  const { bars, undated } = useMemo(() => {
-    const undatedList = []
+  const bars = useMemo(() => {
     const barList = []
     for (const p of projects) {
-      if (!p.target_month) {
-        undatedList.push(p)
-        continue
-      }
+      if (!p.target_month) continue
       const y = Number(p.target_month.slice(0, 4))
       const end = Number(p.target_month.slice(5, 7)) - 1
       if (y !== year || end < 0 || end > 11) continue
@@ -61,7 +57,7 @@ export default function Dashboard() {
         (b.p.created_at ?? '').localeCompare(a.p.created_at ?? '') ||
         a.p.title.localeCompare(b.p.title, 'tr'),
     )
-    return { bars: barList, undated: undatedList }
+    return barList
   }, [projects, year])
 
   const currentMonth = now.getMonth()
@@ -329,33 +325,6 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-          </Card>
-        )}
-
-        {!loading && !error && undated.length > 0 && (
-          <Card>
-            <CardContent className="flex flex-wrap items-center gap-3 p-4">
-              <span className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-                <CalendarOff className="h-4 w-4" />
-                Tarihsiz
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {undated.map((p) => {
-                  const meta = STATUS_STYLES[statusKeyForProject(p)]
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => navigate(`/projects/${p.id}`)}
-                      className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs transition-colors hover:border-primary/30 hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <span className={cn('h-1.5 w-1.5 rounded-full', meta.dot)} />
-                      {p.title}
-                    </button>
-                  )
-                })}
-              </div>
-            </CardContent>
           </Card>
         )}
 

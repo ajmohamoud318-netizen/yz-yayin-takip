@@ -4,6 +4,7 @@ import {
 } from 'react'
 import api from '@/api'
 import { useAuth } from '@/hooks/useAuth.js'
+import { useDebouncedCallback } from '@/hooks/useDebouncedCallback.js'
 
 /**
  * Server-backed notification feed, shared app-wide.
@@ -20,6 +21,12 @@ import { useAuth } from '@/hooks/useAuth.js'
 const NotificationsContext = createContext(null)
 
 const POLL_MS = 15_000
+
+// A single pipeline action can fan out more than one SSE `notification`
+// event to the same recipient (e.g. notifyDemoReceived emits once to team
+// leaders and once to designers). Coalescing window so a burst like that
+// triggers one refetch instead of one per event.
+const SSE_REFETCH_DEBOUNCE_MS = 300
 
 // Channel name for cross-tab sync of the notification feed. Two tabs of the
 // same user — same cookie session, same origin — open this channel and
@@ -77,6 +84,10 @@ export function NotificationsProvider({ children }) {
       setLoading(false)
     }
   }, [postNotificationsChanged])
+
+  // SSE-triggered refetches only — the mount-time and BroadcastChannel
+  // refetches below stay immediate since they aren't the source of bursts.
+  const debouncedRefetch = useDebouncedCallback(refetch, SSE_REFETCH_DEBOUNCE_MS)
 
   const markRead = useCallback(async (id) => {
     // Reading implies seeing → flip both locally, then persist.
@@ -202,7 +213,9 @@ export function NotificationsProvider({ children }) {
         // flips back to true. Without this refetch a notification that
         // lands mid-drop never reaches the bell until some unrelated later
         // event triggers a refetch. The server has no replay; this is it.
-        refetch()
+        // Debounced: an open that lands right next to a `notification`
+        // event (reconnect racing a live push) would otherwise double-fire.
+        debouncedRefetch()
       }
       es.addEventListener('notification', (ev) => {
         // The server's signal carries { userId, notificationId, eventId,
@@ -216,7 +229,11 @@ export function NotificationsProvider({ children }) {
           // Malformed event — still refetch (the feed may have changed) but
           // skip subscriber dispatch.
         }
-        refetch()
+        // Debounced — see notifyDemoReceived/notifyOzalitReceived on the
+        // server, which each emit two events (leaders + designers) for one
+        // action; without this, both independently fire an /api/notifications
+        // GET within milliseconds of each other.
+        debouncedRefetch()
       })
       es.onerror = () => {
         // Native EventSource already auto-reconnects on transient network
@@ -271,7 +288,7 @@ export function NotificationsProvider({ children }) {
         channelRef.current = null
       }
     }
-  }, [userId, refetch, dispatchToSubscribers, supportsBroadcast])
+  }, [userId, refetch, debouncedRefetch, dispatchToSubscribers, supportsBroadcast])
 
   const value = useMemo(() => ({
     items, unread, unseen, loading, refetch, markRead, markAllRead, markSeen, subscribe,

@@ -1,15 +1,14 @@
 import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, CalendarOff } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 import { useProjects } from '@/hooks/useProjects'
 import { useOpenOrdersByProject } from '@/hooks/useOpenOrders'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import OrderBadge from '@/components/OrderBadge'
 import YearPlanBar from '@/components/YearPlanBar'
-import { STATUS_META, statusKeyForProject } from '@/api'
+import { STATUS_META } from '@/api'
 import { cn } from '@/lib/utils'
 
 const TR_MONTHS_SHORT = [
@@ -25,29 +24,16 @@ const LEGEND_KEYS = ['orange', 'purple', 'green', 'blue', 'teal', 'pink', 'yello
 const LEAD_MONTHS = { TR: 3, CIN: 4 }
 
 export default function YearPlan() {
-  const { projects, allProjects, loading } = useProjects()
+  const { projects, loading } = useProjects()
   const openOrders = useOpenOrdersByProject()
   const navigate = useNavigate()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
 
-  // Legacy (backlist) projects are excluded from the main pipeline list (see
-  // useProjectsStore), but one with an open sipariş is live work again, so
-  // surface it here — it'll land in the Tarihsiz bucket below since backlist
-  // imports carry no target_month.
-  const visibleProjects = useMemo(() => {
-    const extra = allProjects.filter((p) => p.origin === 'legacy' && openOrders.has(p.id))
-    return extra.length ? [...projects, ...extra] : projects
-  }, [projects, allProjects, openOrders])
-
-  const { bars, undated } = useMemo(() => {
-    const undatedList = []
+  const bars = useMemo(() => {
     const barList = []
-    for (const p of visibleProjects) {
-      if (!p.target_month) {
-        undatedList.push(p)
-        continue
-      }
+    for (const p of projects) {
+      if (!p.target_month) continue
       const y = Number(p.target_month.slice(0, 4))
       const end = Number(p.target_month.slice(5, 7)) - 1
       if (y !== year || end < 0 || end > 11) continue
@@ -56,8 +42,8 @@ export default function YearPlan() {
       barList.push({ p, start, end })
     }
     barList.sort((a, b) => (b.p.created_at ?? '').localeCompare(a.p.created_at ?? ''))
-    return { bars: barList, undated: undatedList }
-  }, [visibleProjects, year])
+    return barList
+  }, [projects, year])
 
   const currentMonth = now.getMonth()
   const isThisYear = year === now.getFullYear()
@@ -235,33 +221,6 @@ export default function YearPlan() {
           </Card>
         )}
 
-        {!loading && undated.length > 0 && (
-          <Card>
-            <CardContent className="flex flex-wrap items-center gap-3 p-4">
-              <span className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-                <CalendarOff className="h-4 w-4" />
-                Tarihsiz
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {undated.map((p) => {
-                  const meta = STATUS_META[statusKeyForProject(p)]
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => navigate(`/projects/${p.id}`)}
-                      className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs transition-colors hover:border-primary/30 hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <span className={cn('h-1.5 w-1.5 rounded-full', meta.dot)} />
-                      {p.title}
-                      <OrderBadge orders={openOrders.get(p.id)} iconClassName="h-3 w-3" />
-                    </button>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
     </>
   )

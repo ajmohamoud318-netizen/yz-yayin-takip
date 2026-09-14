@@ -156,6 +156,10 @@ describe('useNotifications SSE effect', () => {
 
     await act(async () => {
       FakeEventSource.instances[0]._emit('open')
+      // The open→refetch is debounced (SSE_REFETCH_DEBOUNCE_MS) so a
+      // reconnect racing a live push collapses into one call — wait past
+      // the window before asserting.
+      await new Promise((r) => setTimeout(r, 350))
     })
     expect(api.listNotifications.mock.calls.length).toBe(afterMount + 1)
 
@@ -176,7 +180,29 @@ describe('useNotifications SSE effect', () => {
     const beforeReopen = api.listNotifications.mock.calls.length
     await act(async () => {
       FakeEventSource.instances[1]._emit('open')
+      await new Promise((r) => setTimeout(r, 350))
     })
     expect(api.listNotifications.mock.calls.length).toBe(beforeReopen + 1)
+  })
+
+  it('coalesces an open racing a notification event into a single refetch', async () => {
+    // Regression for the "rapid overlapping /api/notifications requests"
+    // finding: a reconnect (open) landing right next to a live push
+    // (notification event) used to fire two independent, un-debounced
+    // refetches. They should now collapse into one.
+    mount()
+    await act(async () => {})
+    const afterMount = api.listNotifications.mock.calls.length
+
+    await act(async () => {
+      FakeEventSource.instances[0]._emit('open')
+      FakeEventSource.instances[0]._emit(
+        'notification',
+        new MessageEvent('notification', { data: JSON.stringify({ userId: 'u-test' }) }),
+      )
+      await new Promise((r) => setTimeout(r, 350))
+    })
+
+    expect(api.listNotifications.mock.calls.length).toBe(afterMount + 1)
   })
 })

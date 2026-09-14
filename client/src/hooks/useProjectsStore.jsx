@@ -3,7 +3,15 @@ import api from '@/api'
 import { useAuth } from './useAuth.js'
 import { useNotifications } from './useNotifications.jsx'
 import { useOnResume } from './useOnResume.js'
+import { useDebouncedCallback } from './useDebouncedCallback.js'
 import { hydrateProductInfo } from '@/data/productCatalog'
+
+// A single pipeline action can fan out more than one SSE notification event
+// carrying the same projectId (e.g. notifyDemoReceived emits once to team
+// leaders and once to designers) — each connected recipient's tab would
+// otherwise fire one /api/projects refetch per event within milliseconds of
+// each other. Coalesce a burst into one refetch instead.
+const SSE_REFETCH_DEBOUNCE_MS = 300
 
 // Channel name for cross-tab sync. Other tabs of the same origin (and same
 // user, by way of the cookie session) listen here; when one tab mutates the
@@ -62,6 +70,8 @@ export function ProjectsProvider({ children }) {
       setLoading(false)
     }
   }, [postProjectsChanged])
+
+  const debouncedRefetch = useDebouncedCallback(refetch, SSE_REFETCH_DEBOUNCE_MS)
 
   const updateOne = useCallback((updated) => {
     if (!updated?.id) return
@@ -161,7 +171,7 @@ export function ProjectsProvider({ children }) {
     // BroadcastChannel message already does.
     const unsubscribeNotifications = subscribe((event) => {
       if (!event?.projectId) return
-      refetch()
+      debouncedRefetch()
     })
     return () => {
       clearInterval(t)
@@ -171,7 +181,7 @@ export function ProjectsProvider({ children }) {
         channelRef.current = null
       }
     }
-  }, [bootstrapping, isAuthenticated, refetch, updateOne, supportsBroadcast, subscribe])
+  }, [bootstrapping, isAuthenticated, refetch, debouncedRefetch, updateOne, supportsBroadcast, subscribe])
 
   // Refresh the moment the app is foregrounded.
   //

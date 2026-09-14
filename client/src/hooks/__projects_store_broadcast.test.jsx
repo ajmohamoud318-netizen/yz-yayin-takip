@@ -222,11 +222,35 @@ describe('useProjectsStore cross-tab BroadcastChannel sync', () => {
 
     await act(async () => {
       __emitNotification({ userId: 'u-1', projectId: 'p-1', type: 'demo_advance' })
-      await new Promise((r) => setTimeout(r, 0))
+      // The projectId-triggered refetch is debounced (SSE_REFETCH_DEBOUNCE_MS)
+      // so a burst of events for one action collapses into one call — wait
+      // past the window before asserting.
+      await new Promise((r) => setTimeout(r, 350))
     })
 
     expect(api.listProjects).toHaveBeenCalledTimes(2)
     expect(store.projects.find((p) => p.id === 'p-1')?.stage).toBe('demo_onay')
+  })
+
+  it('coalesces a burst of same-action SSE events into a single refetch', async () => {
+    // Regression: a single pipeline action can emit more than one SSE event
+    // to the same recipient (notifyDemoReceived/notifyOzalitReceived each
+    // call emit() twice — once for leaders, once for designers). Before the
+    // debounce, each independently fired its own /api/projects GET.
+    api.listProjects.mockResolvedValueOnce([{ id: 'p-1', stage: 'demo_teslim' }])
+    api.listProjects.mockResolvedValueOnce([{ id: 'p-1', stage: 'demo_onay' }])
+
+    mount()
+    await act(async () => {})
+    expect(api.listProjects).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      __emitNotification({ userId: 'u-1', projectId: 'p-1', type: 'demo_approval_pending' })
+      __emitNotification({ userId: 'u-1', projectId: 'p-1', type: 'demo_received' })
+      await new Promise((r) => setTimeout(r, 350))
+    })
+
+    expect(api.listProjects).toHaveBeenCalledTimes(2)
   })
 
   it('ignores SSE events with no projectId', async () => {

@@ -74,7 +74,7 @@ export default {
         sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
-        sans: ['Geist', 'system-ui', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: ['"Plus Jakarta Sans"', 'system-ui', 'Segoe UI', 'Roboto', 'sans-serif'],
         mono: ['"Geist Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
         display: ['Fraunces', 'Georgia', 'serif'],
         serif: ['Fraunces', 'Georgia', 'serif'],
