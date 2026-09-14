@@ -112,6 +112,27 @@ describe('ParcaChangeRequestPanel', () => {
     expect(buttonByText(/Değişiklik İste/)).toBeTruthy()
   })
 
+  // The regression this bug report was about: a single-parça round is never
+  // split, so the matbaa's "İşlemi Başlatın" is the whole-sheet action and
+  // writes no routing row at all — `rows` stays empty. Without
+  // `wholeSheetStartedAt`, this parça was synthesised as untouched and the
+  // leader saw the free-edit button forever, even after the matbaa's own
+  // queue already showed the round "teslime hazır".
+  it('offers the ask on a single-parça round started via the whole-sheet flag, with no routing row', () => {
+    render(
+      <ParcaChangeRequestPanel
+        rows={[]}
+        snapshotParcalar={['KUTU']}
+        gate="demo"
+        wholeSheetStartedAt="2026-09-14T08:00:00Z"
+        canAct onRequestChange={() => {}}
+        onEditParca={() => {}}
+      />,
+    )
+    expect(buttonByText(/KUTU Formunu Düzenleyin/)).toBeUndefined()
+    expect(buttonByText(/Değişiklik İste/)).toBeTruthy()
+  })
+
   // Single-parça round, matbaa is holding it but hasn't started yet: this is
   // the panel's new ground on one-parça rounds. Before, the panel bailed out
   // because the header's whole-sheet "Gönderilen Demoyu Düzenleyin" was
@@ -358,6 +379,29 @@ describe('heldParcalar — what the matbaa is holding', () => {
     const { held, untouched } = heldParcalar([], ['KUTU'], 'demo')
     expect(held).toHaveLength(1)
     expect(untouched).toHaveLength(1)
+  })
+
+  // The bug: a single-parça round never gets split, so its "İşlemi Başlatın"
+  // is the whole-sheet one and stamps `projects.demo_started_at`, never a
+  // parça_state row. Without the fallback, this round's only parça had no
+  // routing row and was synthesised with `started_at: null` forever — the
+  // matbaa's own queue said "teslime hazır" while the leader's panel kept
+  // insisting nobody had started, offering the free edit instead of the ask.
+  it('trusts the whole-sheet stamp when no routing row exists yet', () => {
+    const { held } = heldParcalar([], ['KUTU'], 'demo', '2026-09-14T08:00:00Z')
+    expect(held[0].started_at).toBe('2026-09-14T08:00:00Z')
+  })
+
+  it('leaves untouched rows unstarted when the whole sheet never started', () => {
+    const { held } = heldParcalar([], ['KUTU'], 'demo', null)
+    expect(held[0].started_at).toBeNull()
+  })
+
+  it('never overrides a real row with the whole-sheet stamp', () => {
+    // A split round's own per-parça started_at is the truth once it exists —
+    // the whole-sheet flag is a fallback for rows that don't, not an override.
+    const { held } = heldParcalar([onPress('KUTU')], ['KUTU'], 'demo', '2026-09-14T08:00:00Z')
+    expect(held[0].started_at).toBe('2026-09-01T10:00:00Z')
   })
 })
 

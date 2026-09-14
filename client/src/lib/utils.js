@@ -61,16 +61,22 @@ export function daysUntilTargetEnd(targetMonth, now = new Date()) {
   return diffDays > 0 ? diffDays : 0
 }
 
+const TR_DATE_BASE = { day: 'numeric', month: 'long', year: 'numeric' }
+
 /** Format an ISO date as `15 Haziran 2026` (tr-TR). */
 export function formatDateTr(iso, opts = {}) {
   if (!iso) return '—'
   const d = iso instanceof Date ? iso : new Date(iso)
-  return d.toLocaleDateString('tr-TR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    ...opts,
-  })
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('tr-TR', { ...TR_DATE_BASE, ...opts })
+}
+
+/** Same calendar as `formatDateTr`, split so the month name can be styled. */
+export function formatDateTrParts(iso, opts = {}) {
+  if (!iso) return []
+  const d = iso instanceof Date ? iso : new Date(iso)
+  if (Number.isNaN(d.getTime())) return []
+  return new Intl.DateTimeFormat('tr-TR', { ...TR_DATE_BASE, ...opts }).formatToParts(d)
 }
 
 /** Format an ISO date as `Haziran 2026` (tr-TR). */

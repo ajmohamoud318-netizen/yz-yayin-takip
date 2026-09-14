@@ -356,15 +356,28 @@ async function loadParcaForUpdate(client, projectId, parca) {
    * project timeline hold what happened on the finished leg, while these rows
    * only ever answer "where is this parça in THIS round". */
   if (existing) await deleteParcaState(client, projectId, parca)
+  // A single-parça round never gets split, so its "İşlemi Başlatın" is the
+  // whole-sheet one (computeDemoStart/computeOzalitStart) — it stamps
+  // `projects.demo_started`/`ozalit_started` and never touches parça_state at
+  // all. Materialising this row with `started_at: null` regardless would tell
+  // every started_at-driven check (parcaEditLocked, parcaChangeRequestable)
+  // that the matbaa hasn't begun, on the exact round where they already have:
+  // the leader's "Değişiklik İste" would 400 with "henüz başlamadı" while the
+  // matbaa's own queue already shows it ready to deliver. Inheriting the
+  // whole-sheet stamp here is safe precisely because that flag only exists on
+  // a round with one parça — `canMarkDemoStarted`/`canMarkOzalitStarted` hide
+  // the button once the round is split.
+  const wholeSheetStartedAt = gate === 'ozalit' ? project.ozalit_started_at : project.demo_started_at
   const created = await upsertParcaState(client, projectId, parca, {
     gate,
-    state: 'with_matbaa',
+    state: wholeSheetStartedAt ? 'in_round' : 'with_matbaa',
     owner_role: 'printer',
     route: 'physical',
     // 1, not `snapshot.attempt` — see deriveTeslimParcalar's note. This is the
     // parça's FIRST time round by definition: we are here precisely because it
     // has no row on this gate, and only a reject raises the count from here.
     attempt: 1,
+    started_at: wholeSheetStartedAt ?? null,
   })
   return { project, row: created }
 }

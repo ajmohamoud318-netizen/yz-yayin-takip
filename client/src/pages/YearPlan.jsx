@@ -181,7 +181,7 @@ export default function YearPlan() {
                       aria-expanded={isOpen}
                       className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/20"
                     >
-                      <span className={cn('text-sm font-semibold', isCurrent ? 'text-primary' : 'text-foreground')}>
+                      <span className={cn('text-sm font-bold', isCurrent ? 'text-primary' : 'text-foreground')}>
                         {label}
                       </span>
                       <span className="flex items-center gap-2">

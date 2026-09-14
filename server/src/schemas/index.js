@@ -277,7 +277,7 @@ const targetProjectIdeaNoteCreate = {
     type: 'object',
     additionalProperties: false,
     required: ['body'],
-    properties: { body: { type: 'string', minLength: 1, maxLength: 2000 } },
+    properties: { body: { type: 'string', minLength: 1, maxLength: 20000 } },
   },
 }
 
@@ -299,7 +299,7 @@ const targetProjectIdeaNoteUpdate = {
     type: 'object',
     additionalProperties: false,
     required: ['body'],
-    properties: { body: { type: 'string', minLength: 1, maxLength: 2000 } },
+    properties: { body: { type: 'string', minLength: 1, maxLength: 20000 } },
   },
 }
 

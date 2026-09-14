@@ -11,7 +11,7 @@
  * suite exercises exactly that fallback.
  */
 import { describe, expect, it } from 'vitest'
-import { MAX_SOURCE_BYTES, prepareAvatarFile } from '@/lib/image.js'
+import { MAX_SOURCE_BYTES, cropIdeaImageFile, prepareAvatarFile } from '@/lib/image.js'
 
 function fakeFile(name = 'photo.jpg', type = 'image/jpeg', bytes = 1024) {
   return new File([new Uint8Array(bytes)], name, { type })
@@ -22,6 +22,12 @@ describe('prepareAvatarFile()', () => {
     const original = fakeFile()
     const out = await prepareAvatarFile(original)
     expect(out).toBe(original)
+  })
+
+  it('falls back when cropIdeaImageFile cannot decode the file', async () => {
+    const original = fakeFile()
+    const out = await cropIdeaImageFile(original, { x: 0, y: 0, width: 10, height: 10 })
+    expect(out).toBeInstanceOf(File)
   })
 
   it('never rejects on an undecodable file', async () => {

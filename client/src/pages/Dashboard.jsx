@@ -274,15 +274,15 @@ export default function Dashboard() {
         {/* Grouped, not merged — the header and the chart each keep their
             own card; this wrapper just clusters the two into one section,
             same pattern as the stat-card group above. */}
-        <Card className={cn('space-y-3 bg-muted/30 p-2 shadow-sm ring-1 ring-border/60 sm:p-3', error && 'opacity-60')}>
-          <Card className="relative grid grid-cols-1 items-end gap-3 px-4 py-3 shadow-sm ring-1 ring-border/60 sm:grid-cols-[1fr_auto_1fr]">
+        <Card className={cn('space-y-3 bg-gradient-to-br from-sky-100/50 via-rose-50/40 to-amber-50/35 p-2 shadow-sm ring-1 ring-border/60 sm:p-3', error && 'opacity-60')}>
+          <Card className="ios-glass relative grid grid-cols-1 items-end gap-3 rounded-2xl border-transparent bg-transparent px-4 py-3 shadow-none ring-0 sm:grid-cols-[1fr_auto_1fr]">
             <div className="hidden sm:block" aria-hidden="true" />
-            <h1 className="text-center text-3xl text-foreground">Yıllık Plan</h1>
+            <h1 className="text-center text-3xl text-slate-900">Yıllık Plan</h1>
             <div className="flex items-center justify-end gap-2">
               <div className="flex items-center gap-1">
-                <span className="min-w-[4rem] text-center text-sm font-bold tabular-nums">{year}</span>
+                <span className="min-w-[4rem] text-center text-sm font-bold tabular-nums text-slate-800">{year}</span>
                 {!isThisYear && (
-                  <Button variant="ghost" size="sm" onClick={() => scrollToMonthIndex(currentIndex)} className="ml-1">
+                  <Button variant="ghost" size="sm" onClick={() => scrollToMonthIndex(currentIndex)} className="ml-1 text-slate-600 hover:bg-white/50 hover:text-slate-900">
                     Bu yıl
                   </Button>
                 )}
@@ -295,7 +295,7 @@ export default function Dashboard() {
                   onClick={refetch}
                   aria-label="Listeyi yenileyin"
                   title="Listeyi yenileyin"
-                  className="ml-1 h-9 w-9 text-muted-foreground hover:text-foreground"
+                  className="ml-1 h-9 w-9 text-slate-500 hover:bg-white/50 hover:text-slate-900"
                 >
                   <RefreshCw className="h-4 w-4" />
                 </Button>
@@ -414,7 +414,7 @@ export default function Dashboard() {
                       <div
                         key={`${m.year}-${m.label}`}
                         className={cn(
-                          'w-[calc(100%/var(--mc))] shrink-0 snap-start snap-always border-l px-1 py-2 text-center text-[11px] font-semibold uppercase',
+                          'w-[calc(100%/var(--mc))] shrink-0 snap-start snap-always border-l px-1 py-2 text-center text-[11px] font-bold uppercase',
                           m.i === currentIndex
                             ? 'bg-primary/10 text-primary'
                             : 'text-muted-foreground',
@@ -424,7 +424,7 @@ export default function Dashboard() {
                           <span className="h-[13px] text-[9px] font-bold normal-case tabular-nums tracking-wide">
                             {m.month === 0 ? m.year : '\u00a0'}
                           </span>
-                          <span className="inline-flex h-6 min-w-8 items-center justify-center rounded-full px-2">
+                          <span className="inline-flex h-6 min-w-8 items-center justify-center rounded-full px-2 font-bold">
                             {m.label}
                           </span>
                         </span>

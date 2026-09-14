@@ -12,6 +12,9 @@
 //   barFill          — heavier fill (-600/-700) used as the saturated
 //                      progress track on YearPlan compact bars (small,
 //                      white-on-fill label clears WCAG AA).
+//   barProgress      — one step darker than barSoft; Dashboard comfortable
+//                      bars already carry the colour, so the track stays in
+//                      the same family instead of dropping to a muddy dark.
 //   barSoft          — softer fill (-400/-500) used as the full bar body
 //                      on Dashboard comfortable bars — the bar is large
 //                      enough that the heavier shade felt visually heavy.
@@ -29,6 +32,7 @@ export const STATUS_STYLES = {
     border: 'border-orange-200',
     onSurface: 'text-orange-700',
     barFill: 'bg-orange-700',
+    barProgress: 'bg-orange-600',
     barSoft: 'bg-orange-400',
   },
   purple: {
@@ -43,6 +47,7 @@ export const STATUS_STYLES = {
     border: 'border-purple-200',
     onSurface: 'text-purple-700',
     barFill: 'bg-purple-600',
+    barProgress: 'bg-purple-500',
     barSoft: 'bg-purple-400',
   },
   green: {
@@ -57,6 +62,7 @@ export const STATUS_STYLES = {
     border: 'border-emerald-200',
     onSurface: 'text-emerald-700',
     barFill: 'bg-emerald-700',
+    barProgress: 'bg-emerald-600',
     barSoft: 'bg-emerald-400',
   },
   blue: {
@@ -71,6 +77,7 @@ export const STATUS_STYLES = {
     border: 'border-blue-200',
     onSurface: 'text-blue-700',
     barFill: 'bg-blue-600',
+    barProgress: 'bg-blue-500',
     barSoft: 'bg-blue-400',
   },
   teal: {
@@ -86,6 +93,7 @@ export const STATUS_STYLES = {
     border: 'border-teal-200',
     onSurface: 'text-teal-700',
     barFill: 'bg-teal-700',
+    barProgress: 'bg-teal-600',
     barSoft: 'bg-teal-400',
   },
   pink: {
@@ -101,6 +109,7 @@ export const STATUS_STYLES = {
     border: 'border-fuchsia-200',
     onSurface: 'text-fuchsia-700',
     barFill: 'bg-fuchsia-600',
+    barProgress: 'bg-fuchsia-500',
     barSoft: 'bg-fuchsia-400',
   },
   yellow: {
@@ -117,7 +126,8 @@ export const STATUS_STYLES = {
     surfaceBar: 'bg-amber-100',
     border: 'border-amber-200',
     onSurface: 'text-amber-700',
-    barFill: 'bg-amber-700',
+    barFill: 'bg-amber-600',
+    barProgress: 'bg-amber-500',
     barSoft: 'bg-amber-300',
   },
 }

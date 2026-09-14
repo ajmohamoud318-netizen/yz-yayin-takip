@@ -191,3 +191,49 @@ export async function prepareIdeaImageFile(
     if (typeof source?.close === 'function') source.close()
   }
 }
+
+/**
+ * Crop a source rectangle (pixel coords) then downscale like
+ * `prepareIdeaImageFile`. `outputScale` (0.25–1) is the resize slider —
+ * 1 keeps the cropped region at full resolution (capped at `size`).
+ */
+export async function cropIdeaImageFile(
+  file,
+  crop,
+  { size = IDEA_IMAGE_MAX_PX, quality = IDEA_IMAGE_QUALITY, outputScale = 1 } = {},
+) {
+  if (!file) throw new Error('Dosya bulunamadı.')
+  let source
+  try {
+    source = await decodeImage(file)
+    const srcW = source.width
+    const srcH = source.height
+    if (!srcW || !srcH) throw new Error('Görüntü boyutu okunamadı.')
+    const sx = Math.max(0, Math.min(srcW - 1, Math.round(crop?.x ?? 0)))
+    const sy = Math.max(0, Math.min(srcH - 1, Math.round(crop?.y ?? 0)))
+    const sw = Math.max(1, Math.min(srcW - sx, Math.round(crop?.width ?? srcW)))
+    const sh = Math.max(1, Math.min(srcH - sy, Math.round(crop?.height ?? srcH)))
+    const scale = Math.min(1, size / Math.max(sw, sh), Math.max(0.25, Math.min(1, outputScale)))
+    const tw = Math.max(1, Math.round(sw * scale))
+    const th = Math.max(1, Math.round(sh * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = tw
+    canvas.height = th
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas kullanılamıyor.')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, tw, th)
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(source, sx, sy, sw, sh, 0, 0, tw, th)
+    const blob = await canvasToBlob(canvas, 'image/jpeg', quality)
+    return new File([blob], 'idea.jpg', {
+      type: 'image/jpeg',
+      lastModified: Date.now(),
+    })
+  } catch {
+    return prepareIdeaImageFile(file, { size, quality })
+  } finally {
+    if (typeof source?.close === 'function') source.close()
+  }
+}

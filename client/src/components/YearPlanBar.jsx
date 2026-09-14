@@ -4,10 +4,10 @@ import { cn, initials } from '@/lib/utils'
 
 // YearPlan compact uses `surfaceBar` (-100, very pale) → foreground text
 // reads fine. Dashboard comfortable uses `barSoft` (-300/-400) → dark
-// text reads fine. The original heavy `barFill` path (-600/-700) wanted
-// light text, but we no longer use it anywhere.
+// stone text keeps contrast without the muddy chocolate fill we used to
+// paint the progress track with.
 function barText(variant) {
-  return variant === 'comfortable' ? 'text-[#3A1F0F]' : 'text-foreground/80'
+  return variant === 'comfortable' ? 'text-stone-800' : 'text-foreground/80'
 }
 
 // Bar visual variants. The compact variant matches YearPlan page density;
@@ -16,7 +16,7 @@ const VARIANT_STYLES = {
   // YearPlan — dense 36px bar, two-tone (tinted background + saturated
   // progress track), brightness on hover, order badge inline.
   compact: {
-    bar: 'h-9 px-1.5',
+    bar: 'h-9 px-1.5 rounded-md',
     avatar: 'h-[18px] w-[18px] text-[9px]',
     title: 'text-[11px]',
     chip: 'rounded bg-white/70 px-1 text-[10px] text-foreground/70',
@@ -30,12 +30,12 @@ const VARIANT_STYLES = {
   // Dashboard has its own hover card so the bar doesn't need to be the
   // colour carrier.
   comfortable: {
-    bar: 'h-12 px-3',
+    bar: 'h-12 px-3 rounded-full',
     avatar: 'h-6 w-6 text-[10px]',
     title: 'text-xs',
-    chip: 'rounded bg-black/10 px-1.5 py-0.5 text-[10px]',
+    chip: 'rounded-full bg-black/10 px-1.5 py-0.5 text-[10px]',
     progressTrack: 'inset-x-3 bottom-1.5 h-1',
-    progressBar: 'h-full rounded-full bg-[#3A1F0F]/85',
+    progressBar: 'h-full rounded-full',
     hover: 'hover:-translate-y-[54%] hover:shadow-lg hover:brightness-105',
     showOrderBadge: true,
   },
@@ -73,7 +73,7 @@ export default function YearPlanBar({
         animationDelay: `${animationDelay}ms`,
       }}
       className={cn(
-        'yp-bar-draw group absolute top-1/2 -translate-y-1/2 flex-col justify-center overflow-hidden rounded-md shadow-sm',
+        'yp-bar-draw group absolute top-1/2 -translate-y-1/2 flex-col justify-center overflow-hidden shadow-sm',
         v.bar,
         // The comfortable variant lifts the bar; the compact variant
         // just brightens. Both keep the bar's resting position
@@ -100,7 +100,7 @@ export default function YearPlanBar({
             // ring-around-text variant reads better than the white ghost.
             'grid shrink-0 place-items-center rounded-full font-semibold ring-1',
             variant === 'comfortable'
-              ? 'bg-white/70 ring-black/10 text-[#3A1F0F]'
+              ? 'bg-white/70 ring-black/10 text-stone-800'
               : cn(meta.barFill, 'text-white ring-white/50'),
             v.avatar,
           )}
@@ -120,18 +120,15 @@ export default function YearPlanBar({
       </div>
       {/* progress bar — animates width via the same clip-path technique.
           Without the wrapper, the bar's own width would jump. */}
-      <div className={cn('absolute overflow-hidden rounded-full bg-black/15', v.progressTrack)}>
+      <div className={cn('absolute overflow-hidden rounded-full bg-black/20', v.progressTrack)}>
         <div
           className={cn(
             'yp-bar-draw',
             v.progressBar,
-            // Comfortable variant: dark fill on the lighter bar body
-            // so the progress reads. Compact variant: saturated
-            // -600/-700 (barFill) so the progress is the colour
-            // carrier against the tinted -100 background.
-            variant === 'comfortable'
-              ? 'bg-[#3A1F0F]'
-              : meta.barFill,
+            // Compact: saturated barFill against the pale -100 chip.
+            // Comfortable: same-family barProgress so a full yellow
+            // pill gets a gold track, not a chocolate underline.
+            variant === 'comfortable' ? meta.barProgress : meta.barFill,
           )}
           style={{
             width: `${project.progress}%`,

@@ -173,6 +173,89 @@
 }
 
 /* ------------------------------------------------------------------ */
+/*  iOS glass — frosted material for floating chrome (Control Center). */
+/*  Translucency + saturate + a bright top edge so it reads as glass,  */
+/*  not a flat white card. Content must stay above the specular wash.  */
+/* ------------------------------------------------------------------ */
+.ios-glass {
+  isolation: isolate;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.52) 0%,
+      rgba(255, 255, 255, 0.22) 100%
+    );
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border-color: transparent;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(148, 163, 184, 0.22),
+    0 0 0 0.5px rgba(15, 23, 42, 0.08),
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 32px -10px rgba(15, 23, 42, 0.18);
+}
+
+.ios-glass::before {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0) 42%
+  );
+}
+
+/* Prismatic rim — the thin light-catching edge of iOS liquid glass. */
+.ios-glass::after {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(186, 210, 255, 0.45) 38%,
+    rgba(255, 196, 214, 0.28) 68%,
+    rgba(255, 255, 255, 0.55) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+.ios-glass > * {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .ios-glass {
+    background: hsl(var(--card));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-color: hsl(var(--border));
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  }
+  .ios-glass::before,
+  .ios-glass::after {
+    content: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  Page transition — fade + tiny lift on route change                 */
 /*  AppShell mounts <main key={pathname}> so this fires on navigation  */
 /* ------------------------------------------------------------------ */
@@ -276,6 +359,168 @@
     from { opacity: 0; }
     to   { opacity: 1; }
   }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Note editor — checklist boxes live in the left gutter so a tap on  */
+/*  the mark toggles done without stealing the text caret.             */
+/* ------------------------------------------------------------------ */
+.note-editor ul.note-check,
+.note-prose ul.note-check {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.4rem 0;
+}
+.note-editor ul.note-check li,
+.note-prose ul.note-check li {
+  position: relative;
+  padding-left: 1.7rem;
+  margin: 0.2rem 0;
+}
+.note-editor ul.note-check li::before,
+.note-prose ul.note-check li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.28rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 1.5px solid rgba(0, 0, 0, 0.35);
+  border-radius: 0.28rem;
+  background: #fff;
+}
+.note-editor ul.note-check li.checked,
+.note-prose ul.note-check li.checked {
+  color: rgba(0, 0, 0, 0.45);
+  text-decoration: line-through;
+}
+.note-editor ul.note-check li.checked::before,
+.note-prose ul.note-check li.checked::before {
+  background: #1c1c1e;
+  border-color: #1c1c1e;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' d='M2.5 6.2 5 8.6 9.5 3.4'/></svg>");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 0.75rem;
+}
+
+.note-editor ul.note-ul-circle,
+.note-prose ul.note-ul-circle {
+  list-style-type: circle;
+}
+.note-editor ul.note-ul-square,
+.note-prose ul.note-ul-square {
+  list-style-type: square;
+}
+.note-editor ul.note-ul-disc,
+.note-prose ul.note-ul-disc {
+  list-style-type: disc;
+}
+.note-editor ul.note-ul-dash,
+.note-prose ul.note-ul-dash,
+.note-editor ul.note-ul-arrow,
+.note-prose ul.note-ul-arrow,
+.note-editor ul.note-ul-diamond,
+.note-prose ul.note-ul-diamond,
+.note-editor ul.note-ul-mark,
+.note-prose ul.note-ul-mark {
+  list-style: none;
+  padding-left: 0.15rem;
+}
+.note-editor ul.note-ul-dash li,
+.note-prose ul.note-ul-dash li,
+.note-editor ul.note-ul-arrow li,
+.note-prose ul.note-ul-arrow li,
+.note-editor ul.note-ul-diamond li,
+.note-prose ul.note-ul-diamond li,
+.note-editor ul.note-ul-mark li,
+.note-prose ul.note-ul-mark li {
+  position: relative;
+  padding-left: 1.2rem;
+}
+.note-editor ul.note-ul-dash li::before,
+.note-prose ul.note-ul-dash li::before {
+  content: '–';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: inherit;
+}
+.note-editor ul.note-ul-arrow li::before,
+.note-prose ul.note-ul-arrow li::before {
+  content: '→';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: inherit;
+}
+.note-editor ul.note-ul-diamond li::before,
+.note-prose ul.note-ul-diamond li::before {
+  content: '◆';
+  position: absolute;
+  left: 0.05rem;
+  top: 0.18em;
+  font-size: 0.62em;
+  color: inherit;
+}
+.note-editor ul.note-ul-mark li::before,
+.note-prose ul.note-ul-mark li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.38em;
+  width: 0.72rem;
+  height: 0.52rem;
+  border-radius: 0.18rem;
+  background: var(--note-mark, #FFE58F);
+}
+
+/* Highlighter wrap — pill, not a sharp rectangle. clone so wrapped
+   lines each get their own rounded ends instead of one jagged box. */
+.note-editor span[style*="background-color"],
+.note-prose span[style*="background-color"],
+.note-editor mark,
+.note-prose mark {
+  border-radius: 0.4em;
+  padding: 0.08em 0.28em;
+  margin: 0 -0.08em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.note-editor span[style*="background-color"]:empty,
+.note-prose span[style*="background-color"]:empty,
+.note-editor mark:empty,
+.note-prose mark:empty {
+  display: none;
+  padding: 0;
+  margin: 0;
+  background: none;
+}
+.note-editor span[style*="transparent"],
+.note-prose span[style*="transparent"] {
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  background: none;
+}
+
+.note-editor ::selection,
+.note-prose ::selection {
+  background-color: rgb(21 113 242 / 0.42);
+  color: inherit;
+}
+.note-editor span[style*="background-color"]::selection,
+.note-prose span[style*="background-color"]::selection,
+.note-editor mark::selection,
+.note-prose mark::selection {
+  background-color: rgb(21 113 242 / 0.55);
+  color: inherit;
+}
+
+.note-editor img[data-note-selected] {
+  outline: 2px solid #C5920B;
+  outline-offset: 3px;
+  cursor: nwse-resize;
 }
 
 /* ------------------------------------------------------------------ */
@@ -521,7 +766,18 @@ html.font-creative * {
   }
 
   /* Flat ink — shadows and entrance animations cost toner and mean nothing
-     on a printed sheet. */
+     on a printed sheet. Frosted glass also prints as a grey smear. */
+  .ios-glass {
+    background: white !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: hsl(var(--border)) !important;
+  }
+  .ios-glass::before,
+  .ios-glass::after {
+    content: none !important;
+  }
+
   *,
   *::before,
   *::after {

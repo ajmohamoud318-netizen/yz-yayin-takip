@@ -14,7 +14,10 @@ const PopoverContent = React.forwardRef(({ className, align = 'center', sideOffs
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        'motion-pop z-50 w-72 rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+        // pointer-events-auto: a Radix Dialog sets pointer-events:none on
+        // body, and a portalled popover is a body child — without this,
+        // swatches inside a note dialog never receive the click.
+        'motion-pop pointer-events-auto z-[70] w-72 rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
         className,
       )}
       {...props}

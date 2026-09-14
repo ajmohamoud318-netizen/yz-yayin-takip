@@ -536,6 +536,10 @@ export default function ProjectDetail() {
             // `ledgerKind` is already 'demo' | 'ozalit' at the *_teslim stages,
             // which is exactly the parca_state.gate domain.
             gate={ledgerKind}
+            // The whole-sheet stamp a single-parça round's "İşlemi Başlatın"
+            // writes — see heldParcalar's own note. Split rounds never set
+            // either project column, so this is a no-op for them.
+            wholeSheetStartedAt={ledgerKind === 'ozalit' ? project.ozalit_started_at : project.demo_started_at}
             canAct={isLeader}
             busyParca={parcaRoundBusy}
             onRequestChange={handleRequestParcaChange}

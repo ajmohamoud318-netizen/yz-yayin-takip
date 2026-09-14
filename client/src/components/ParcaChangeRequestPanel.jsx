@@ -68,11 +68,20 @@ import { cn } from '@/lib/utils'
  * `untouched` is returned alongside because the caller needs to tell a
  * single-parça round the header already covers from a real one.
  *
+ * `wholeSheetStartedAt` answers "did the matbaa start via the whole-sheet
+ * İşlemi Başlatın, not a per-parça one?" — a single-parça round never gets
+ * split, so its start is `projects.demo_started_at`/`ozalit_started_at`,
+ * which never touches parça_state (see startParca's own note). Without this,
+ * an untouched row on exactly that round reads as unstarted forever: the free
+ * edit button stays offered and "Değişiklik İste" never appears, even though
+ * the matbaa's own queue already shows the round ready to deliver.
+ *
  * @param {Array<object>} rows
  * @param {Array<string | { component?: string }>} snapshotParcalar
  * @param {'demo' | 'ozalit' | null} gate
+ * @param {string | null} wholeSheetStartedAt
  */
-export function heldParcalar(rows, snapshotParcalar, gate = null) {
+export function heldParcalar(rows, snapshotParcalar, gate = null, wholeSheetStartedAt = null) {
   // Only rows the matbaa is actually holding this round. An approved parça, or
   // one back with the designer, has nothing to do with "can I still change the
   // sheet the printer is working from".
@@ -94,7 +103,7 @@ export function heldParcalar(rows, snapshotParcalar, gate = null) {
   const untouched = parcaNames(snapshotParcalar)
     .filter((parca) => !known.has(parca))
     .map((parca) => ({
-      parca, gate, state: 'with_matbaa', started_at: null, fix_pending: false,
+      parca, gate, state: 'with_matbaa', started_at: wholeSheetStartedAt ?? null, fix_pending: false,
     }))
   return { held: [...routed, ...untouched], untouched }
 }
@@ -106,6 +115,7 @@ export function heldParcalar(rows, snapshotParcalar, gate = null) {
  *                 change_requested_note?: string|null, attempt?: number }>,
  *   snapshotParcalar?: Array<string | { component?: string }>,
  *   gate?: 'demo' | 'ozalit',
+ *   wholeSheetStartedAt?: string | null,
  *   canAct?: boolean,
  *   busyParca?: string | null,
  *   onRequestChange: (parca: string, note: string) => void,
@@ -114,10 +124,10 @@ export function heldParcalar(rows, snapshotParcalar, gate = null) {
  * }} props
  */
 export default function ParcaChangeRequestPanel({
-  rows = [], snapshotParcalar = [], gate = null, canAct = false, busyParca = null,
+  rows = [], snapshotParcalar = [], gate = null, wholeSheetStartedAt = null, canAct = false, busyParca = null,
   onRequestChange, onEditParca, className,
 }) {
-  const { held, untouched } = heldParcalar(rows, snapshotParcalar, gate)
+  const { held, untouched } = heldParcalar(rows, snapshotParcalar, gate, wholeSheetStartedAt)
   // Nothing to say on a round the matbaa isn't holding — every other round
   // draws here, single parça included. The whole-sheet "Değişiklik İste" used
   // to live in the header and bail this out; with it gone, a one-parça round

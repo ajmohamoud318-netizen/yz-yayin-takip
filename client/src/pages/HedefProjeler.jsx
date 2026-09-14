@@ -20,7 +20,8 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { cn, formatDateTr } from '@/lib/utils'
+import DateWithBoldMonth from '@/components/DateWithBoldMonth'
+import { cn } from '@/lib/utils'
 
 /**
  * Hedef Projeler — paylaşılan fikir defteri. Henüz projeye dönüşmemiş
@@ -50,18 +51,13 @@ export default function HedefProjeler() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="flex min-h-[calc(100dvh-5.5rem)] w-full flex-col gap-6 sm:min-h-[calc(100dvh-7rem)]">
       <header className="flex items-center justify-between gap-3">
         <div className="inline-flex items-center gap-2.5">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
             <Target className="h-[18px] w-[18px]" />
           </span>
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Hedef Projeler</h1>
-            <p className="text-xs text-muted-foreground">
-              Henüz proje olmamış fikirler.
-            </p>
-          </div>
+          <h1 className="text-2xl font-semibold tracking-tight">Hedef Projeler</h1>
         </div>
         {canAdd && (
           <Button size="sm" className="shrink-0 gap-1.5" onClick={openAddDialog}>
@@ -72,18 +68,18 @@ export default function HedefProjeler() {
       </header>
 
       {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[0, 1, 2].map((i) => <Skeleton key={i} className="aspect-[4/5] rounded-2xl" />)}
+        <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+          {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="aspect-[4/5] rounded-2xl" />)}
         </div>
       ) : ideas.length === 0 ? (
-        <div className="grid place-items-center gap-3 rounded-2xl border border-dashed bg-card/50 px-6 py-16 text-center">
+        <div className="grid flex-1 place-items-center gap-3 rounded-2xl border border-dashed bg-card/50 px-6 py-16 text-center">
           <span className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">
             <Target className="h-6 w-6" />
           </span>
           <p className="text-sm text-muted-foreground">Henüz hedef proje eklenmedi.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid flex-1 content-start grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {ideas.map((idea) => (
             <TargetIdeaCard
               key={idea.id}
@@ -191,7 +187,7 @@ function TargetIdeaCard({ idea, canRemove, onRemove }) {
         )}
 
         <p className="mt-auto border-t border-dashed pt-2 text-[11px] text-muted-foreground">
-          {idea.created_by_name ?? 'Ekipten biri'} · {formatDateTr(idea.created_at)}
+          {idea.created_by_name ?? 'Ekipten biri'} · <DateWithBoldMonth iso={idea.created_at} />
         </p>
       </div>
     </Link>
