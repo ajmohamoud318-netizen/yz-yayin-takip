@@ -59,6 +59,11 @@ export default function SpecFormFooter({
   onStartWork,
   startingWork,
   startWorkLabel = null,
+  // True when this button is actually the per-parça Reddedin, reusing the
+  // matbaa's "İşlemi Başlatın" slot (see onStartWork below and
+  // SpecFormDialog's decisionContext). The label already says Reddedin —
+  // the color has to agree, or a reject reads as a green confirm.
+  startWorkDestructive = false,
   authoringOrderOzalit,
   offersOzalitRoute,
   rejectContext,
@@ -115,7 +120,7 @@ export default function SpecFormFooter({
           endpoint, not the project-level advance, but it must still be
           stamped from inside the sheet the printer is looking at. */}
       {mode === 'view' && onStartWork && (
-        <Button variant="success" disabled={startingWork || loading} onClick={onStartWork}>
+        <Button variant={startWorkDestructive ? 'destructive' : 'success'} disabled={startingWork || loading} onClick={onStartWork}>
           <CheckCircle2 className="h-4 w-4" />
           {startingWork ? 'İşleniyor…' : (startWorkLabel ?? 'İşlemi Başlatın')}
         </Button>

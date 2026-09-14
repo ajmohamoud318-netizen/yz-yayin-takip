@@ -20,7 +20,7 @@ const TR_MONTHS_SHORT = [
 ]
 
 const YEAR_START = 2013
-const YEAR_END = 2030
+const YEAR_END = 2045
 const MONTH_COUNT = (YEAR_END - YEAR_START + 1) * 12
 
 const TIMELINE_MONTHS = Array.from({ length: MONTH_COUNT }, (_, i) => {
@@ -90,7 +90,7 @@ export default function Dashboard() {
   )
   const isThisYear = year === nowYear
 
-  // --- Month carousel (2013–2030) ----------------------------------------
+  // --- Month carousel (2013–2045) ----------------------------------------
   const scrollRef = useRef(null)
   const dragRef = useRef(null)
   const skipClickRef = useRef(false)
@@ -382,7 +382,7 @@ export default function Dashboard() {
                 ref={scrollRef}
                 tabIndex={0}
                 role="region"
-                aria-label="Yıllık plan, 2013–2030. Sürükleyerek sonraki aya geçin."
+                aria-label="Yıllık plan, 2013–2045. Sürükleyerek sonraki aya geçin."
                 onScroll={syncYearFromScroll}
                 onPointerDown={onTrackPointerDown}
                 onPointerMove={onTrackPointerMove}
@@ -393,11 +393,13 @@ export default function Dashboard() {
                 className="scrollbar-thin cursor-grab touch-[pan-x_pan-y] overflow-x-auto overscroll-x-contain snap-x snap-mandatory select-none active:cursor-grabbing"
               >
                 {/*
-                  Track is 216 months (2013–2030). Width is 216 × the
-                  one-year slice we used before, so one / three / four
-                  months stay in view at the same breakpoints.
+                  --mc is the month count (2013–2045). Each month stays the
+                  same on-screen width as before: ~1 / 3 / 4 months in view.
                 */}
-                <div className="relative w-[19440%] bg-card md:w-[6480%] xl:w-[4860%]">
+                <div
+                  className="relative bg-card w-[calc(var(--mc)*90%)] md:w-[calc(var(--mc)*30%)] xl:w-[calc(var(--mc)*22.5%)]"
+                  style={{ '--mc': MONTH_COUNT }}
+                >
                   {/* Current-month band (spans full height behind rows) */}
                   <div
                     className="pointer-events-none absolute inset-y-0 z-0 border-x border-primary/15 bg-primary/[0.055]"
@@ -413,7 +415,7 @@ export default function Dashboard() {
                       <div
                         key={`${m.year}-${m.label}`}
                         className={cn(
-                          'w-[calc(100%/216)] shrink-0 snap-start snap-always border-l px-1 py-2 text-center text-[11px] font-semibold uppercase',
+                          'w-[calc(100%/var(--mc))] shrink-0 snap-start snap-always border-l px-1 py-2 text-center text-[11px] font-semibold uppercase',
                           m.i === currentIndex
                             ? 'bg-primary/10 text-primary'
                             : 'text-muted-foreground',
@@ -439,7 +441,7 @@ export default function Dashboard() {
                         <div
                           key={`g-${m.year}-${m.label}`}
                           className={cn(
-                            'w-[calc(100%/216)] shrink-0 border-l',
+                            'w-[calc(100%/var(--mc))] shrink-0 border-l',
                             m.month === 0 ? 'border-border/70' : 'border-border/35',
                           )}
                         />

@@ -1270,6 +1270,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
           onStartWork={onStartWork}
           startingWork={startingWork}
           startWorkLabel={startWorkLabel}
+          startWorkDestructive={decisionContext?.action === 'reject'}
           decisionReview={decisionReview}
           authoringOrderOzalit={authoringOrderOzalit}
           offersOzalitRoute={offersProjectOzalitRoute}

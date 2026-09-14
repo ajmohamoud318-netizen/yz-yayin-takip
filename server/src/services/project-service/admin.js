@@ -67,6 +67,20 @@ const rethrowTitleConflict = (title) => (err) => {
 }
 
 /**
+ * Format `target_month` for the edit-history note, mirroring the client's
+ * `formatTargetDate` (client/src/lib/utils.js): month-only precision reads
+ * as "Ekim 2026", the post-2026-07 day-precision values as "1 Ekim 2026".
+ */
+function formatTargetMonthTr(value) {
+  if (!value) return '—'
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.getUTCDate() === 1
+    ? d.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    : d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+}
+
+/**
  * POST /api/projects — create a new project + its subtasks.
  *
  * The bulk of the body parsing (subtaskAssignees lookup, kind='pages' page
@@ -385,6 +399,11 @@ export async function patchProjectFields(id, actor, fields) {
           'SELECT name FROM users WHERE id = $1', [newVal],
         )
         changes.push(`${label} → ${u[0]?.name ?? 'atanmadı'}`)
+      } else if (key === 'target_month') {
+        // newVal comes back as a JS Date (pg's default DATE parser) — a bare
+        // template-literal interpolation would call Date#toString() and log
+        // "Thu Oct 01 2026 00:00:00 GMT+0000 (...)" instead of a date.
+        changes.push(`${label} → ${formatTargetMonthTr(newVal)}`)
       } else {
         changes.push(`${label} → ${newVal ?? '—'}`)
       }

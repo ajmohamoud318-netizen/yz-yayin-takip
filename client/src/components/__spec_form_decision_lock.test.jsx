@@ -184,6 +184,24 @@ describe('the footer under a decision', () => {
     expect(labels.some((l) => l.includes('Taslağı Kaydedin'))).toBe(false)
     expect(labels.some((l) => l.includes('KUTU · Reddedin'))).toBe(true)
   })
+
+  // Regression — the button reuses the matbaa's "İşlemi Başlatın" slot, which
+  // is green (variant="success") because starting work is never destructive.
+  // A per-parça Reddedin borrows the same slot, so without startWorkDestructive
+  // it rendered "KUTU · Reddedin" in the same green — a reject that reads as
+  // a confirm.
+  it('colors the reject decision button destructive, not the matbaa green', () => {
+    renderFooter({ decisionReview: true, startWorkLabel: 'KUTU · Reddedin', startWorkDestructive: true })
+    const btn = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('KUTU · Reddedin'))
+    expect(btn.className).toContain('bg-destructive')
+    expect(btn.className).not.toContain('bg-emerald-600')
+  })
+
+  it('keeps the approve decision button the matbaa green', () => {
+    renderFooter({ decisionReview: true, startWorkLabel: 'KUTU · Onaylayın' })
+    const btn = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('KUTU · Onaylayın'))
+    expect(btn.className).toContain('bg-emerald-600')
+  })
 })
 
 /**
