@@ -13,6 +13,38 @@ export function useProjects() {
 }
 
 /**
+ * Scalar fields the list endpoint may have seen more recently than a locally
+ * fetched detail (e.g. an approval on another screen). Overlay these — and
+ * only these — onto the detail so the page cannot show an older pipeline
+ * stage than Tüm Projeler.
+ *
+ * `assigned_name` is intentionally absent. The list used to hydrate it from
+ * the primary assignee only; copying that over the detail's "A, B, C"
+ * summary was the flash where a three-designer project opened with every
+ * name and then snapped to one. `assignees` stays off the list too: a
+ * stale list refetch must not clobber a designer edit made on this page.
+ */
+export const LIST_OVERLAY_KEYS = [
+  'stage',
+  'progress',
+  'demo_attempt',
+  'ozalit_attempt',
+  'assigned_to',
+  'target_month',
+  'updated_at',
+]
+
+export function overlayStoreOnDetail(detail, storeEntry) {
+  if (!detail) return null
+  if (!storeEntry) return detail
+  const overlay = {}
+  for (const key of LIST_OVERLAY_KEYS) {
+    if (storeEntry[key] !== undefined) overlay[key] = storeEntry[key]
+  }
+  return { ...detail, ...overlay }
+}
+
+/**
  * Loads a single project by id. Used by ProjectDetail.
  *
  * The detail view used to keep a completely independent fetched copy, so it
@@ -55,36 +87,12 @@ export function useProject(id) {
   // The shared store is the single source of truth for pipeline state. Overlay
   // its live scalar fields on top of the locally-fetched detail so the detail
   // view can never show data older than the list (e.g. right after an approval
-  // made from another screen).
-  //
-  // IMPORTANT: use a whitelist, not "all keys defined on the list entry". The
-  // list endpoint (`GET /api/projects`) only returns scalar columns from the
-  // `projects` table — it does NOT include subtasks, stage_history,
-  // demo forms, orders, handovers or assignees. A bare seed entry has those
-  // keys as `undefined`, and the old "copy every defined key" overlay would
-  // happily write `subtasks: undefined` on top of the freshly-loaded detail,
-  // crashing any `.some`/`.filter`/`.map` chain the moment the user edits a
-  // subtask. Only the fields listed below are safe to overlay.
+  // made from another screen). Whitelist only — see LIST_OVERLAY_KEYS.
   const storeEntry = projects.find((p) => p.id === id)
-  const LIST_OVERLAY_KEYS = [
-    'stage',
-    'progress',
-    'demo_attempt',
-    'ozalit_attempt',
-    'assigned_to',
-    'assigned_name',
-    'target_month',
-    'updated_at',
-  ]
-  const project = useMemo(() => {
-    if (!detail) return null
-    if (!storeEntry) return detail
-    const overlay = {}
-    for (const key of LIST_OVERLAY_KEYS) {
-      if (storeEntry[key] !== undefined) overlay[key] = storeEntry[key]
-    }
-    return { ...detail, ...overlay }
-  }, [detail, storeEntry])
+  const project = useMemo(
+    () => overlayStoreOnDetail(detail, storeEntry),
+    [detail, storeEntry],
+  )
 
   // setProject keeps the detail's local copy AND the shared store in lockstep,
   // so subtask/page/update edits made in the detail show up immediately on the

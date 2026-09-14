@@ -554,6 +554,50 @@ export function truncateTimeline(days, limit) {
 }
 
 /**
+ * Older `project_edit` rows interpolated `target_month` with Date#toString(),
+ * so the timeline printed "Hedef ay → Sun Nov 01 2026 00:00:00 GMT+0300
+ * (Türkiye Standard Time)". Rewrite that dump — and ISO datetimes — into
+ * the same Turkish month/day the rest of the app uses. Do not run leftover
+ * copy through `new Date()`: V8 treats "Kasım 2026" as 1 January 2026.
+ */
+export function humanizeHistoryNote(note) {
+  if (!note) return null
+  return String(note)
+    .replace(JS_DATE_IN_TEXT, (_blob, monthName, day, year) => (
+      formatCalendarDay(Number(year), MONTH_INDEX[monthName], Number(day))
+    ))
+    .replace(/Hedef ay → ([^·]+)/g, (_, raw) => phraseTargetUpdate(raw.trim()))
+    .replace(/Hedef tarih: ([^·]+)/g, (_, raw) => phraseTargetUpdate(raw.trim()))
+}
+
+function phraseTargetUpdate(raw) {
+  const value = humanizeTargetValue(raw)
+  if (value === '—') return 'Hedef tarih kaldırıldı'
+  return `Hedef tarih ${value} olarak güncellendi`
+}
+
+const JS_DATE_IN_TEXT = /\b(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}) (\d{4}) \d{2}:\d{2}:\d{2} GMT[+-]\d{4}(?: \([^)]+\))?/g
+
+const MONTH_INDEX = {
+  Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6,
+  Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12,
+}
+
+function formatCalendarDay(year, month, day) {
+  const utc = new Date(Date.UTC(year, month - 1, day))
+  return day === 1
+    ? utc.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    : utc.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+}
+
+function humanizeTargetValue(raw) {
+  if (!raw || raw === '—') return '—'
+  const ymd = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (ymd) return formatCalendarDay(Number(ymd[1]), Number(ymd[2]), Number(ymd[3]))
+  return raw
+}
+
+/**
  * Notes are written server-side without knowing what label the row will get,
  * so several of them restate it: 'Proje oluşturuldu' under "Proje Oluşturuldu"
  * is a dead line, and 'Demo teslim edildi, onaya gönderildi' spends half its
@@ -595,7 +639,7 @@ export function dedupeNote(note, label) {
  * space for both.
  */
 export function rowText(entry, meta, { dense = false } = {}) {
-  const note = isOrderEntry(entry) ? null : dedupeNote(entry.note, meta.label)
+  const note = isOrderEntry(entry) ? null : dedupeNote(humanizeHistoryNote(entry.note), meta.label)
   if (!note || meta.noteMode === 'echo') return { title: meta.label, detail: null }
   if (dense && meta.noteMode === 'detail') return { title: note, detail: null }
   return { title: meta.label, detail: note }

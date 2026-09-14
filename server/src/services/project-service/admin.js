@@ -70,14 +70,36 @@ const rethrowTitleConflict = (title) => (err) => {
  * Format `target_month` for the edit-history note, mirroring the client's
  * `formatTargetDate` (client/src/lib/utils.js): month-only precision reads
  * as "Ekim 2026", the post-2026-07 day-precision values as "1 Ekim 2026".
+ *
+ * pg may hand back a DATE as UTC-midnight or as local-midnight. Using only
+ * UTC (or only local) shifts the calendar day across the other style, so
+ * we pick the clock that is actually midnight.
  */
-function formatTargetMonthTr(value) {
+export function formatTargetMonthTr(value) {
   if (!value) return '—'
+  const ymd = calendarYmd(value)
+  if (!ymd) return '—'
+  const utc = new Date(Date.UTC(ymd.y, ymd.month - 1, ymd.day))
+  return ymd.day === 1
+    ? utc.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    : utc.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+}
+
+function calendarYmd(value) {
+  if (typeof value === 'string') {
+    const m = value.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (m) return { y: Number(m[1]), month: Number(m[2]), day: Number(m[3]) }
+  }
   const d = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.getUTCDate() === 1
-    ? d.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
-    : d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
+  if (Number.isNaN(d.getTime())) return null
+  const utcMidnight = d.getUTCHours() === 0
+    && d.getUTCMinutes() === 0
+    && d.getUTCSeconds() === 0
+    && d.getUTCMilliseconds() === 0
+  if (utcMidnight) {
+    return { y: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() }
+  }
+  return { y: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() }
 }
 
 /**
@@ -385,7 +407,7 @@ export async function patchProjectFields(id, actor, fields) {
     const FIELD_LABELS = {
       title: 'Başlık',
       type: 'Tür (TR / ÇİN)',
-      target_month: 'Hedef ay',
+      target_month: 'Hedef tarih',
       assigned_to: 'Tasarımcı',
     }
     const changes = []
@@ -403,7 +425,7 @@ export async function patchProjectFields(id, actor, fields) {
         // newVal comes back as a JS Date (pg's default DATE parser) — a bare
         // template-literal interpolation would call Date#toString() and log
         // "Thu Oct 01 2026 00:00:00 GMT+0000 (...)" instead of a date.
-        changes.push(`${label} → ${formatTargetMonthTr(newVal)}`)
+        changes.push(`Hedef tarih ${formatTargetMonthTr(newVal)} olarak güncellendi`)
       } else {
         changes.push(`${label} → ${newVal ?? '—'}`)
       }

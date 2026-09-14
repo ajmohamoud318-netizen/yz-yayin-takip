@@ -98,6 +98,7 @@ export function monthOffset(n) {
 export function formatTargetDate(iso) {
   if (!iso) return '—'
   const d = iso instanceof Date ? iso : new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
   if (d.getDate() === 1) {
     return d.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })
   }

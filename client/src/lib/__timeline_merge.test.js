@@ -152,6 +152,45 @@ describe('rowText', () => {
     expect(text(sub, { dense: true })).toEqual({ title: 'Kapak, sayfa 12/40', detail: null })
     expect(text(sub)).toEqual({ title: 'Alt Görev İlerlemesi', detail: 'Kapak, sayfa 12/40' })
   })
+
+  it('rewrites a Date#toString() target-month dump into a Turkish date', () => {
+    expect(
+      text(at('12:00', {
+        event: 'project_edit',
+        note: 'Hedef ay → Sun Nov 01 2026 00:00:00 GMT+0300 (Türkiye Standard Time)',
+      })),
+    ).toEqual({ title: 'Proje Düzenlendi', detail: 'Hedef tarih Kasım 2026 olarak güncellendi' })
+  })
+
+  it('keeps an already-readable target month and only retitles the field', () => {
+    expect(
+      text(at('12:01', {
+        event: 'project_edit',
+        note: 'Başlık → Yeni ad · Hedef ay → Kasım 2026',
+      })),
+    ).toEqual({
+      title: 'Proje Düzenlendi',
+      detail: 'Başlık → Yeni ad · Hedef tarih Kasım 2026 olarak güncellendi',
+    })
+  })
+
+  it('formats an ISO target-month note without shifting the calendar day', () => {
+    expect(
+      text(at('12:02', {
+        event: 'project_edit',
+        note: 'Hedef ay → 2026-11-15T00:00:00.000Z',
+      })),
+    ).toEqual({ title: 'Proje Düzenlendi', detail: 'Hedef tarih 15 Kasım 2026 olarak güncellendi' })
+  })
+
+  it('rewrites the short "Hedef tarih:" spelling into the same sentence', () => {
+    expect(
+      text(at('12:03', {
+        event: 'project_edit',
+        note: 'Hedef tarih: Kasım 2026',
+      })),
+    ).toEqual({ title: 'Proje Düzenlendi', detail: 'Hedef tarih Kasım 2026 olarak güncellendi' })
+  })
 })
 
 describe('historyMeta — demo/ozalit round lifecycle', () => {

@@ -275,11 +275,10 @@ export default function Dashboard() {
             own card; this wrapper just clusters the two into one section,
             same pattern as the stat-card group above. */}
         <Card className={cn('space-y-3 bg-muted/30 p-2 shadow-sm ring-1 ring-border/60 sm:p-3', error && 'opacity-60')}>
-          <Card className="flex flex-wrap items-end justify-between gap-3 px-4 py-3 shadow-sm ring-1 ring-border/60">
-            <div>
-              <h1 className="text-3xl text-foreground">Yıllık Plan</h1>
-            </div>
-            <div className="flex items-center gap-2">
+          <Card className="relative grid grid-cols-1 items-end gap-3 px-4 py-3 shadow-sm ring-1 ring-border/60 sm:grid-cols-[1fr_auto_1fr]">
+            <div className="hidden sm:block" aria-hidden="true" />
+            <h1 className="text-center text-3xl text-foreground">Yıllık Plan</h1>
+            <div className="flex items-center justify-end gap-2">
               <div className="flex items-center gap-1">
                 <span className="min-w-[4rem] text-center text-sm font-bold tabular-nums">{year}</span>
                 {!isThisYear && (

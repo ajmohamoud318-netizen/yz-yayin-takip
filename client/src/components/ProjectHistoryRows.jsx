@@ -10,6 +10,7 @@ import {
   hasDemoForm,
   hasOzalitForm,
   ozalitFormAttempt,
+  humanizeHistoryNote,
   rowText,
 } from '@/lib/project-history.js'
 import {
@@ -279,7 +280,7 @@ function MinorRow({ row, isLast, onOpenDemoForm, onOpenOzalitForm }) {
             beside it needs the space. */}
         <span
           className="line-clamp-2 min-w-0 flex-1 text-[12.5px] leading-snug text-foreground/85"
-          title={entry.note || title}
+          title={humanizeHistoryNote(entry.note) || title}
         >
           {title}
         </span>

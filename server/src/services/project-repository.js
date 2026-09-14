@@ -94,19 +94,15 @@ const deliveredByNameSql = (table) => `
 `
 
 export async function listProjects() {
-  // LEFT JOIN the assignee so the list path returns a fully-hydrated
-  // `assigned_name`. Without this every project card on the dashboard
-  // crashed with "Cannot read properties of null (reading 'split')"
-  // because `project-mapper.js` passed the null straight into
-  // `initials(project.assigned_name)`. The `assigned_name = $alias`
-  // fallback keeps unassigned projects rendering "—".
+  // `assigned_name` is set after the stored+subtask merge below so a
+  // three-designer book lists every name, not just `assigned_to`.
+  // Unassigned projects stay `null`, which `initials()` already guards against.
   const { rows } = await getPool().query(
     // NB: the `p.`-prefixing below splits PROJECT_COLUMNS on commas, so that
     // constant must stay a flat list of bare column names — derived
     // expressions are appended separately, already qualified.
     `SELECT ${PROJECT_COLUMNS.split(',').map((c) => 'p.' + c.trim()).join(', ')}
        , ${deliveredByNameSql('p')}
-       , a.name AS assignee_name
        -- The components check is not redundant with EXISTS: Ürün Bilgileri's
        -- "Ürünü Sil" clears a product's spec by saving an EMPTY components
        -- array, so the row keeps existing. A bare EXISTS reported
@@ -114,7 +110,6 @@ export async function listProjects() {
        -- against a product with a blank spec sheet.
        , EXISTS(SELECT 1 FROM product_info pi WHERE pi.project_id = p.id AND pi.components <> '[]'::jsonb) AS has_product_info
      FROM projects p
-     LEFT JOIN users a ON a.id = p.assigned_to
      WHERE p.deleted_at IS NULL
      ORDER BY p.created_at DESC, p.id`,
   )
@@ -190,7 +185,6 @@ export async function listProjects() {
   }
   return Promise.all(rows.map(async (r) => {
     const project = rowToProject(r)
-    project.assigned_name = r.assignee_name ?? null
     project.history = historyByProject.get(r.id) ?? []
     // Build the assignees array from designers who are on the project:
     //   1. the stored designer list (migration 086), in the order picked
@@ -216,6 +210,10 @@ export async function listProjects() {
       : -1
     if (primaryIdx > 0) merged.unshift(...merged.splice(primaryIdx, 1))
     project.assignees = merged
+    // Same summary the detail route ships. Hydrating this from `assigned_to`
+    // alone made every list card — and the detail overlay that copied it —
+    // collapse a three-designer book to one name a moment after opening.
+    project.assigned_name = merged.map((a) => a.name).filter(Boolean).join(', ') || null
     return project
   }))
 }

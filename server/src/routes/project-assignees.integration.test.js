@@ -142,6 +142,13 @@ async function listedDesignerIds(app, viewer, projectId) {
   return (row?.assignees ?? []).map((a) => a.id)
 }
 
+async function listedAssignedName(app, viewer, projectId) {
+  const res = await app.inject({ method: 'GET', url: '/api/projects', headers: as(viewer) })
+  assert.equal(res.statusCode, 200, res.body)
+  const row = JSON.parse(res.body).find((p) => p.id === projectId)
+  return row?.assigned_name ?? null
+}
+
 async function greetedIds(db, projectId) {
   const { rows } = await db.query(
     "SELECT user_id FROM notifications WHERE project_id = $1 AND type = 'assignment' ORDER BY user_id",
@@ -179,6 +186,11 @@ test('Kapak to one designer, İç Sayfalar to "Tüm Tasarımcılar" → every pi
     assert.deepEqual(
       await listedDesignerIds(app, ZEYNEP, id), ALL_THREE,
       'the list must carry them too — it decides whose Projelerim the book lands in',
+    )
+    assert.equal(
+      await listedAssignedName(app, ZEYNEP, id),
+      'Ayşe, Mehmet, Zeynep',
+      'the list summary must name every designer, not only the primary',
     )
     assert.deepEqual(await greetedIds(db, id), [...ALL_THREE].sort(), 'each designer gets the new-project notification')
 

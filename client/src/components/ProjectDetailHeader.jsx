@@ -8,7 +8,7 @@ import {
   User as UserIcon,
 } from 'lucide-react'
 
-import { STAGE_LABELS, TYPE_LABELS } from '@/api'
+import { STAGE_LABELS, STATUS_STYLES, TYPE_LABELS, statusKeyForProject } from '@/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -146,6 +146,8 @@ export default function ProjectDetailHeader({ d }) {
     restoring, setEditOpen, handleRestore,
   } = d
 
+  const stageStyle = STATUS_STYLES[statusKeyForProject(project)]
+
   return (
     <>
       <div>
@@ -186,7 +188,10 @@ export default function ProjectDetailHeader({ d }) {
                 <Badge variant="secondary" className="font-mono">
                   {TYPE_LABELS[project.type]}
                 </Badge>
-                <Badge variant="outline" className="font-medium">
+                <Badge
+                  variant="outline"
+                  className={cn('font-medium ring-1 ring-inset', stageStyle?.badge, stageStyle?.border)}
+                >
                   {d.sentStatus ?? STAGE_LABELS[project.stage]}
                 </Badge>
                 {project.demo_attempt > 0 && (
@@ -204,7 +209,7 @@ export default function ProjectDetailHeader({ d }) {
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5">
                   <UserIcon className="h-3.5 w-3.5" />
-                  {project.assigned_name}
+                  {d.allDesigners.map((a) => a.name).filter(Boolean).join(', ') || project.assigned_name || '—'}
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <Calendar className="h-3.5 w-3.5" />
