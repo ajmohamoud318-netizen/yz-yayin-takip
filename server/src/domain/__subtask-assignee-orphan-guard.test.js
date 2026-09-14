@@ -26,7 +26,13 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { assertNoOrphanDesigners, OrphanDesignerError } from './subtask-assignee.js'
+import {
+  assertNoOrphanDesigners,
+  OrphanDesignerError,
+  ALL_DESIGNERS_SENTINEL,
+  UNASSIGNED_SENTINEL,
+  unwrapAssignee,
+} from './subtask-assignee.js'
 
 const subtaskAssigneeSrc = readFileSync(
   fileURLToPath(new URL('./subtask-assignee.js', import.meta.url)),
@@ -244,6 +250,40 @@ describe('assertNoOrphanDesigners — resolves picks the way the save does', () 
       ['u-aylin', 'u-feyza'],
       [{ title: 'İç Sayfalar', kind: 'pages', total_pages: 32 }],
       { 'İç Sayfalar': '__all__' },
+    ))
+  })
+})
+
+// ─── "Henüz atanmadı": a subtask nobody owns yet ──────────────────────
+
+describe('UNASSIGNED_SENTINEL — "Henüz atanmadı"', () => {
+  it('unwraps to a real null, like "Tüm Tasarımcılar"', () => {
+    assert.equal(unwrapAssignee(UNASSIGNED_SENTINEL), null)
+    assert.equal(unwrapAssignee(ALL_DESIGNERS_SENTINEL), null)
+    assert.equal(unwrapAssignee('u-aylin'), 'u-aylin')
+    assert.equal(unwrapAssignee(undefined), undefined)
+  })
+
+  it('does not cover the other designers the way "Tüm Tasarımcılar" does', () => {
+    // Nobody owns Kutu, so u-feyza is still on no work.
+    assert.throws(
+      () => assertNoOrphanDesigners(
+        ['u-aylin', 'u-feyza'],
+        [{ title: 'Kapak', kind: 'check' }, { title: 'Kutu', kind: 'check' }],
+        { Kutu: UNASSIGNED_SENTINEL },
+      ),
+      OrphanDesignerError,
+    )
+  })
+
+  it('lets one row wait for its designer while another designer owns a row', () => {
+    assert.doesNotThrow(() => assertNoOrphanDesigners(
+      ['u-aylin', 'u-feyza'],
+      [
+        { title: 'Kapak', kind: 'check', assigned_to: 'u-feyza' },
+        { title: 'Kutu', kind: 'check', assigned_to: UNASSIGNED_SENTINEL },
+      ],
+      {},
     ))
   })
 })

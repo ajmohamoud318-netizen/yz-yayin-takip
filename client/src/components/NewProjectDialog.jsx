@@ -128,6 +128,14 @@ const emptySubtaskAssignees = () => SUBTASK_LIBRARY.reduce((acc, s) => ({ ...acc
 // and other library items never see the sentinel.
 const ALL_DESIGNERS = '__all__'
 
+// Sentinel for "Henüz atanmadı", offered on every other subtask picker: the
+// team hasn't decided who does this job yet. An empty pick hands the row to
+// the project primary, so "nobody yet" needs a value of its own. The server
+// (domain/subtask-assignee.js) stores it as a null `assigned_to` — the same
+// value "Tüm Tasarımcılar" leaves on İç Sayfalar; the row's kind tells the two
+// apart.
+const UNASSIGNED = '__none__'
+
 // Build a stable, collision-free key for a custom (ad-hoc) subtask label.
 // We never put customs into SUBTASK_LIBRARY, so a synthetic key keeps them
 // out of the library's namespace while still being unique per dialog session.
@@ -210,20 +218,27 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
           if (s.assigned_to) {
             assigneeMap[libMatch.key] = s.assigned_to
           } else if (libMatch.key === 'sayfalar') {
-            // İç Sayfalar is the only subtask whose null `assigned_to` has
-            // an explicit meaning ("Tüm Tasarımcılar") — preserve it in the
-            // picker so a re-save doesn't silently reattach the row to the
-            // project primary. Other subtasks keep the empty-string default,
-            // which the server treats as "inherit from primary" on submit.
+            // An ownerless İç Sayfalar means "Tüm Tasarımcılar" — preserve it
+            // in the picker so a re-save doesn't silently reattach the row to
+            // the project primary.
             assigneeMap[libMatch.key] = ALL_DESIGNERS
+          } else if (designerMap.size > 0) {
+            // Any other ownerless row on a staffed project was left on "Henüz
+            // atanmadı" — an empty pick would have gone to the primary — so it
+            // rehydrates that way and a re-save keeps it unassigned. On a
+            // project with no designers yet every row is ownerless for want of
+            // anyone to give it to, not by choice; those keep the empty
+            // default and go to the primary once the project is staffed.
+            assigneeMap[libMatch.key] = UNASSIGNED
           }
         } else if (s.kind !== 'pages' && s.kind !== 'sticker-count' && s.title) {
           // Anything in the project's saved subtasks that isn't a library
           // item or a numeric counter is a custom one — rehydrate it so the
-          // team leader can edit / remove it.
+          // team leader can edit / remove it. Same ownerless rule as above.
           const id = customSubtaskKey(s.title)
           customs.push({ id, label: s.title })
           if (s.assigned_to) assigneeMap[id] = s.assigned_to
+          else if (designerMap.size > 0) assigneeMap[id] = UNASSIGNED
         }
         if (s.kind === 'pages' && s.total_pages) pc = s.total_pages
         if (s.kind === 'sticker-count' && s.total_stickers) setStickerCount(s.total_stickers)
@@ -380,15 +395,15 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
       const pickedAssignees = assignedIds.length > 1
         ? { ...subtaskAssignees, ...customAssignees }
         : {}
-      // ALL_DESIGNERS is a shared sentinel: the SPA sends it across the wire
-      // as a plain string ("__all__"), and both server paths (createProject
-      // and PUT /projects/:id/subtasks) recognise it and store `assigned_to`
-      // as null. We can't just send `null` from the client because the
-      // repository filter strips nullish/empty values and the server falls
-      // back to the project primary when no entry is present — which would
-      // silently attach every "Tüm Tasarımcılar" subtask to the primary
-      // designer instead. Only İç Sayfalar exposes this option in the
-      // picker, so custom subtasks and other library items never carry it.
+      // ALL_DESIGNERS and UNASSIGNED are shared sentinels: the SPA sends them
+      // across the wire as plain strings ("__all__" / "__none__"), and both
+      // server paths (createProject and PUT /projects/:id/subtasks) recognise
+      // them and store `assigned_to` as null. We can't just send `null` from
+      // the client because the repository filter strips nullish/empty values
+      // and the server falls back to the project primary when no entry is
+      // present — which would silently attach every "Tüm Tasarımcılar" or
+      // "Henüz atanmadı" subtask to the primary designer instead. Only İç
+      // Sayfalar offers the first; every other subtask offers the second.
       const payload = {
         title: title.trim(),
         type,
@@ -622,10 +637,13 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                                 pages via subtask_designer_batches without a
                                 primary owner. Kapak / Kutu / Kılavuz / Sticker
                                 / customs stay single-owner (atomic deliverables
-                                or single-counter subtasks), so they don't get
-                                this option. */}
-                            {s.key === 'sayfalar' && (
+                                or single-counter subtasks), so they get "Henüz
+                                atanmadı" instead — no owner until the team
+                                decides who does it. */}
+                            {s.key === 'sayfalar' ? (
                               <SelectItem value={ALL_DESIGNERS}>Tüm Tasarımcılar</SelectItem>
+                            ) : (
+                              <SelectItem value={UNASSIGNED}>Henüz atanmadı</SelectItem>
                             )}
                             {designers
                               .filter((d) => assignedIds.includes(d.id))
@@ -744,6 +762,7 @@ export default function NewProjectDialog({ open, onOpenChange, onCreated, onUpda
                               <SelectValue placeholder={isCustomChecked ? 'Tasarımcı seç…' : '—'} />
                             </SelectTrigger>
                             <SelectContent>
+                              <SelectItem value={UNASSIGNED}>Henüz atanmadı</SelectItem>
                               {designers
                                 .filter((d) => assignedIds.includes(d.id))
                                 .map((d) => (

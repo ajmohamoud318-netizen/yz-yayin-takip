@@ -17,7 +17,7 @@ import { batchCounter } from '../domain/page-segments.js'
 import { subtaskProgress } from '../domain/progress.js'
 import { progressFor } from '../domain/progress.js'
 import {
-  ALL_DESIGNERS_SENTINEL,
+  unwrapAssignee,
   assertNoOrphanDesigners,
   OrphanDesignerError,
 } from '../domain/subtask-assignee.js'
@@ -513,16 +513,17 @@ export async function subtaskRoutes(fastify) {
         // project's primary `assigned_to` so a subtask is never ownerless
         // when the leader leaves the picker empty.
         //
-        // The SPA sends ALL_DESIGNERS_SENTINEL for İç Sayfalar when the
-        // leader picks "Tüm Tasarımcılar". That's a deliberate "no primary
-        // owner" signal, so it MUST bypass the null→primary fallback (and
-        // MUST NOT reach the FK-constrained assigned_to column as a
-        // literal string). null / undefined without the sentinel still
-        // means "no picker choice" and keeps the existing primary
-        // fallback, so non-İç-Sayfalar subtasks are unaffected.
-        const subAssignee = s.assigned_to === ALL_DESIGNERS_SENTINEL
-          ? null
-          : (s.assigned_to ?? project.assigned_to ?? null)
+        // The SPA sends a sentinel when the leader leaves a row without an
+        // owner on purpose: ALL_DESIGNERS_SENTINEL for İç Sayfalar on "Tüm
+        // Tasarımcılar", UNASSIGNED_SENTINEL for any other subtask on
+        // "Henüz atanmadı". Either one MUST bypass the null→primary fallback
+        // (and MUST NOT reach the FK-constrained assigned_to column as a
+        // literal string), so unwrapAssignee turns both into a real null.
+        // null / undefined without a sentinel still means "no picker
+        // choice" and keeps the primary fallback.
+        const subAssignee = s.assigned_to == null
+          ? (project.assigned_to ?? null)
+          : unwrapAssignee(s.assigned_to)
         const existing = claim(s)
         // NOTE: `is_done` is intentionally absent from this param list. The
         // designer's work state is owned by the toggle and the

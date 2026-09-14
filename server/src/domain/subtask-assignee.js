@@ -25,16 +25,30 @@
 export const ALL_DESIGNERS_SENTINEL = '__all__'
 
 /**
- * Convert the SPA's "Tüm Tasarımcılar" sentinel to a real null, otherwise
- * return the input unchanged. Safe to call with `undefined` (returns
- * `undefined`) so callers can chain it into their existing `??` fallback
- * pipelines without adding a null check.
+ * The SPA's "Henüz atanmadı" option on every other subtask picker (Kapak,
+ * Kutu, Kılavuz, Sticker, customs): the team hasn't decided who does this job
+ * yet.
+ *
+ * It needs its own value for the same reason "__all__" does — an empty pick
+ * means "give it to the project primary" on both save paths, so "nobody yet"
+ * can't travel as null. It's stored the same way too: a real NULL
+ * `assigned_to`. The subtask's kind tells the two apart on read — an
+ * ownerless İç Sayfalar is shared by every project designer, any other
+ * ownerless subtask is still waiting for its designer.
+ */
+export const UNASSIGNED_SENTINEL = '__none__'
+
+/**
+ * Convert either no-owner sentinel ("Tüm Tasarımcılar" / "Henüz atanmadı") to
+ * a real null, otherwise return the input unchanged. Safe to call with
+ * `undefined` (returns `undefined`) so callers can chain it into their
+ * existing `??` fallback pipelines without adding a null check.
  *
  * @param {string|null|undefined} value
  * @returns {string|null|undefined}
  */
 export function unwrapAssignee(value) {
-  return value === ALL_DESIGNERS_SENTINEL ? null : value
+  return value === ALL_DESIGNERS_SENTINEL || value === UNASSIGNED_SENTINEL ? null : value
 }
 
 /**
@@ -85,7 +99,9 @@ export function assertNoOrphanDesigners(declaredAssignees, subtasks, subtaskAssi
     // dropped it, and the designer fell off the project.
     const owner = s?.assigned_to ?? subtaskAssignees?.[s?.title] ?? subtaskAssignees?.[s?.key]
     if (owner === ALL_DESIGNERS_SENTINEL) sentinels.add(pickSubtaskKey(s))
-    else if (owner) subAssigneeIds.add(owner)
+    // "Henüz atanmadı" names nobody: it neither covers a designer nor shares
+    // the row with all of them the way "Tüm Tasarımcılar" does.
+    else if (owner && owner !== UNASSIGNED_SENTINEL) subAssigneeIds.add(owner)
   }
   if (sentinels.size > 0) return
   // The first id is the project primary (PUT route's behaviour, mirrored

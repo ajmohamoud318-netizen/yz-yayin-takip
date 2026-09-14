@@ -249,3 +249,50 @@ describe('updateProject HTTP body shape', () => {
     expect(byTitle.Kapak.assigned_to).toBe('u-aylin')
   })
 })
+
+describe('"Henüz atanmadı" pick', () => {
+  // An empty pick is stripped so the server hands the row to the primary; the
+  // "__none__" sentinel has to reach the server intact on both saves, since
+  // it's the only thing that tells "nobody yet" apart from "the default".
+  it('reaches POST /projects under the subtask title', async () => {
+    const { createHttpProjectRepository } = await import(
+      '@/infrastructure/http/repositories/http-project.repository.js'
+    )
+    const repo = createHttpProjectRepository(stubUserRepo)
+
+    await repo.createProject({
+      title: 'Kutu sonra',
+      type: 'TR',
+      assignees: ['u-aylin', 'u-feyza'],
+      subtasks: ['kapak', 'kutu', 'Oyun Kartları'],
+      subtaskAssignees: { kapak: 'u-feyza', kutu: '__none__', 'Oyun Kartları': '__none__' },
+    })
+
+    expect(captured.body.subtaskAssignees).toEqual({
+      Kapak: 'u-feyza',
+      Kutu: '__none__',
+      'Oyun Kartları': '__none__',
+    })
+  })
+
+  it('reaches PUT /projects/:id/subtasks on the row', async () => {
+    const { createHttpProjectRepository } = await import(
+      '@/infrastructure/http/repositories/http-project.repository.js'
+    )
+    const repo = createHttpProjectRepository(stubUserRepo)
+
+    await repo.updateProject('p-1', {
+      title: 'Kutu sonra',
+      type: 'TR',
+      assignees: ['u-aylin', 'u-feyza'],
+      subtasks: ['kapak', 'kutu', 'sticker'],
+      stickerCount: 2,
+      subtaskAssignees: { kapak: 'u-feyza', kutu: '__none__', sticker: '__none__' },
+    })
+
+    const byTitle = Object.fromEntries(captured.body.subtasks.map((s) => [s.title, s]))
+    expect(byTitle.Kapak.assigned_to).toBe('u-feyza')
+    expect(byTitle.Kutu.assigned_to).toBe('__none__')
+    expect(byTitle.Sticker.assigned_to).toBe('__none__')
+  })
+})

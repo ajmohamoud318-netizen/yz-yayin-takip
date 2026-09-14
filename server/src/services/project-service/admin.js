@@ -125,11 +125,13 @@ export async function createProject(actor, body) {
       // team leader just typed. Falls back to the project primary so the
       // assignment is never silently empty.
       //
-      // The SPA sends the ALL_DESIGNERS_SENTINEL string for İç Sayfalar
-      // when the leader picks "Tüm Tasarımcılar" — unwrap that BEFORE the
-      // ?? chain, so the sentinel takes precedence over the primary
-      // fallback (leaving `assigned_to` genuinely null) instead of being
-      // inserted as a literal string that would fail the users(id) FK.
+      // The SPA sends a sentinel when the leader leaves a row without an
+      // owner on purpose — ALL_DESIGNERS_SENTINEL for İç Sayfalar on "Tüm
+      // Tasarımcılar", UNASSIGNED_SENTINEL for any other subtask on "Henüz
+      // atanmadı". Unwrap it BEFORE the fallback, so the pick takes
+      // precedence over the primary (leaving `assigned_to` genuinely null)
+      // instead of being inserted as a literal string that would fail the
+      // users(id) FK.
       const rawOverride =
         subtaskAssignees?.[s.title] ??
         subtaskAssignees?.[s.key]

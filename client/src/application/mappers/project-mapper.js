@@ -28,7 +28,8 @@ function normalizeProjectPayload(payload, existing = null) {
       const lib = SUBTASK_LIBRARY.find((s) => s.key === key)
       const title = lib ? lib.label : key
       const old = prev.find((s) => s.title === title && s.kind !== 'pages' && s.kind !== 'sticker-count')
-      // Per-subtask designer assignment ('' means "inherit from project")
+      // Per-subtask designer assignment ('' means "inherit from project",
+      // "__none__" means "Henüz atanmadı" — the server stores no owner)
       const assignedTo = subtaskAssignees[key] || null
       const assignedUser = assignedTo ? findUserById(assignedTo) : null
       subs.push({

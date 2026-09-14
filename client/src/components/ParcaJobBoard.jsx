@@ -47,12 +47,16 @@ import { opensNarrowed } from '@/lib/spec-form-scope'
 export default function ParcaJobBoard({ rows = [], onChanged, compact = false }) {
   const navigate = useNavigate()
   // Which sheet is open, and for which parçalar:
-  // { project, mode, parca: rows[], scope: string[] }
+  // { project, order, mode, parca: rows[], scope: string[] }
   const [demoForm, setDemoForm] = useState(null)
   const [ozalitForm, setOzalitForm] = useState(null)
   // Project id of the run in flight — disables that group's buttons so the
   // same parça can't be stamped by both a card and the bulk shortcut.
   const [busy, setBusy] = useState(null)
+  // Round key of the sheet being fetched (see openSheet). Gates the same
+  // buttons, so a second tap can't open it twice, but stays apart from `busy`,
+  // which the dialogs read as a stamp in flight.
+  const [opening, setOpening] = useState(null)
 
   // Grouped by ROUND so the matbaa can take a whole sheet in one pass or pick
   // parçalar off it individually — whatever they don't act on stays queued.
@@ -114,23 +118,48 @@ export default function ParcaJobBoard({ rows = [], onChanged, compact = false })
    * three-parça document from a button that names one, and had to work out
    * which page was theirs. The narrowing is display-only; the sheet itself
    * still carries the round (see lib/spec-form-scope.js).
+   *
+   * The sheet opens on the round's own records — the project, and for a
+   * sipariş the order — never on the queue row. The row carries a title and
+   * nothing else, but SpecFormDialog finds the requested sheet by the round
+   * counter (`demo_attempt` / `ozalit_attempt`, or the order's own) and by who
+   * owns the round (`order`). Built from the row, every job opened slot 1 of
+   * the PROJECT's sheet: a later round showed round 1's spec, and a sipariş
+   * showed the title's own ozalit — never what the matbaa was asked to produce.
+   *
+   * Fetched, not read from the projects store: the dialog resolves its
+   * snapshot once, as it opens, so the counter has to be right by then. Same
+   * shape the sipariş pages open an order's sheet with
+   * (SiparisTalepleri#openOzalit).
    */
-  function openSheet(rowOrRows) {
+  async function openSheet(rowOrRows) {
     const list = Array.isArray(rowOrRows) ? rowOrRows : [rowOrRows]
     const first = list[0]
     if (!first) return
-    const form = {
-      project: { id: first.project_id, title: first.project_title },
-      // A sipariş round has its own sheet, keyed by the ORDER (migration 053).
-      // Without this the printer would open the PROJECT's latest ozalit — a
-      // different document, possibly from a different round entirely.
-      orderId: first.order_id ?? null,
-      mode: 'view',
-      parca: list,
-      scope: list.map((r) => r.parca),
+    setOpening(first.order_id ?? first.project_id)
+    try {
+      const [project, order] = await Promise.all([
+        api.getProject(first.project_id),
+        first.order_id
+          ? api.listOrderRequests().then((all) => (all ?? []).find((o) => o.id === first.order_id) ?? null)
+          : null,
+      ])
+      // The order left the list between the queue load and this tap. Opening
+      // without it falls back to the project's sheet — the wrong document this
+      // function exists to avoid — so refresh the queue instead.
+      if (first.order_id && !order) {
+        toast.error('Sipariş bulunamadı, liste yenileniyor.')
+        onChanged?.()
+        return
+      }
+      const form = { project, order, mode: 'view', parca: list, scope: list.map((r) => r.parca) }
+      if (first.gate === 'ozalit') setOzalitForm(form)
+      else setDemoForm(form)
+    } catch (err) {
+      toast.error(err.message || 'Form açılamadı.')
+    } finally {
+      setOpening(null)
     }
-    if (first.gate === 'ozalit') setOzalitForm(form)
-    else setDemoForm(form)
   }
 
   /**
@@ -223,7 +252,7 @@ export default function ParcaJobBoard({ rows = [], onChanged, compact = false })
             orderId={g.orderId}
             projectTitle={g.projectTitle}
             rows={g.rows}
-            busy={busy === g.key}
+            busy={busy === g.key || opening === g.key}
             compact={compact}
             onAct={openSheet}
             onActAll={openSheet}
@@ -255,6 +284,9 @@ export default function ParcaJobBoard({ rows = [], onChanged, compact = false })
         open={!!ozalitForm}
         onOpenChange={(v) => setOzalitForm(v ? ozalitForm : null)}
         project={ozalitForm?.project}
+        // A sipariş's parçalar are printed from the ORDER's sheet (migration
+        // 053); null on the project's own round. Demo has no sipariş leg.
+        order={ozalitForm?.order ?? null}
         mode="view"
         onStartWork={ozalitForm ? () => commit(ozalitForm.parca, () => setOzalitForm(null)) : undefined}
         parcaScope={ozalitForm?.scope ?? null}

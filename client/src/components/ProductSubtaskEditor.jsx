@@ -14,6 +14,15 @@ const SUBTASK_KINDS = [
   { value: 'sticker-count', label: 'Sticker sayısı' },
 ]
 
+// An ownerless row is İç Sayfalar on "Tüm Tasarımcılar" or a subtask nobody
+// has been given yet ("Henüz atanmadı") — both a null `assigned_to`, told
+// apart by kind. The picker's empty value means "the project's designer", and
+// the server hands a null pick to the primary, so an ownerless row is edited
+// as this sentinel instead: saving the list would otherwise put every one of
+// them on the primary. The server unwraps it back to null
+// (domain/subtask-assignee.js).
+const NO_OWNER = '__none__'
+
 /**
  * Team leader's alt görev editor for one catalog product. Rendered from both
  * Ürün Bilgileri and Ürünler — the leader shouldn't have to switch pages to
@@ -135,7 +144,7 @@ export default function ProductSubtaskEditor({ projectId, designers = [] }) {
         ) : (
           <button
             type="button"
-            onClick={() => setDraft(deepCopy(rows))}
+            onClick={() => setDraft(deepCopy(rows).map((s) => (s.assigned_to ? s : { ...s, assigned_to: NO_OWNER })))}
             className="inline-flex items-center gap-1 rounded-lg border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground transition active:scale-95 hover:border-primary/40 hover:text-primary"
           >
             <Pencil className="h-3.5 w-3.5" /> Düzenleyin
@@ -184,6 +193,7 @@ export default function ProductSubtaskEditor({ projectId, designers = [] }) {
                     className="rounded-md border bg-background px-1.5 py-1 text-xs"
                   >
                     <option value="">Projedeki tasarımcı</option>
+                    <option value={NO_OWNER}>{s.kind === 'pages' ? 'Tüm Tasarımcılar' : 'Henüz atanmadı'}</option>
                     {designers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                   {/* Which parça this görev belongs to (migration 075). It is

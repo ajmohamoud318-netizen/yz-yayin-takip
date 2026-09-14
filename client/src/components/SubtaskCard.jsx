@@ -230,6 +230,18 @@ export default function SubtaskCard({
                           {s.assigned_name ?? initials(s.assigned_to)}
                         </span>
                       )}
+                      {/* No owner: the leader left this row on "Henüz
+                          atanmadı". No person icon — the hint below reads
+                          icon rows as someone else's, and this one is
+                          nobody's yet. */}
+                      {!s.assigned_to && (
+                        <span
+                          className="whitespace-nowrap rounded-full border border-dashed px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                          title="Bu alt göreve henüz tasarımcı atanmadı"
+                        >
+                          Henüz atanmadı
+                        </span>
+                      )}
                       {localDone[s.id] !== undefined && localDone[s.id] !== s.is_done && (
                         <span className={cn('whitespace-nowrap text-[11px] font-medium', flagged ? 'text-amber-600' : 'text-primary')}>
                           kaydedilmedi

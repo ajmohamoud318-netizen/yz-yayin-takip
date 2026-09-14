@@ -71,6 +71,31 @@ export function narrowToApproved(components, approved) {
   return (components ?? []).filter((c) => allowed.has(parcaNameKey(c?.component)))
 }
 
+/**
+ * Which copy of the sheet a load opens on: the round's own snapshot
+ * (`current`), or the project-level blob (`carried` — this browser's
+ * localStorage, else the newest server row of any round).
+ *
+ * The plain viewer (mode='view', no notify) prefers the blob because, for
+ * someone who can edit, it is their personal draft and has to survive a
+ * reopen. A reader who cannot edit has no draft, so for them the blob is only
+ * ever stale — and for the matbaa it is specifically wrong: their browser
+ * keeps the sheet of the last round THEY delivered (handleAdvance saves it),
+ * so "İşlemi Başlatın" on the next round showed that old spec instead of the
+ * one just requested. Anyone who can't type into the sheet reads the round.
+ *
+ * Exported for its own tests, like narrowToApproved above.
+ *
+ * @param {{ mode?: string, notifyOnSave?: boolean, readOnly?: boolean,
+ *           current: object | null, carried: object | null }} args
+ */
+export function pickLoadedSheet({ mode, notifyOnSave, readOnly, current, carried }) {
+  const personalDraft = mode === 'view' && !notifyOnSave && !readOnly
+  return personalDraft
+    ? (stripStamps(carried) ?? current)
+    : (current ?? stripStamps(carried))
+}
+
 export function useSpecSheet({
   open,
   variant,
@@ -247,14 +272,12 @@ export function useSpecSheet({
         loadSaved(variant, scopeId) ??
         (await fetchServerSnapshot(variant, project.id, null, orderId))
       if (cancelled) return
-      // Plain viewer (mode='view' && !notifyOnSave) is a personal draft —
-      // localStorage is the source of truth so the user's edits show on
-      // reopen and the printer is unaffected. Compose / notify / approve
-      // still let the server's attempt-scoped snapshot win, because that IS
-      // the shared state those flows mutate.
-      const draft = (mode === 'view' && !notifyOnSave)
-        ? (stripStamps(carried) ?? current)
-        : (current ?? stripStamps(carried))
+      // An editor's plain viewer (mode='view' && !notifyOnSave) is a personal
+      // draft — localStorage is the source of truth so their edits show on
+      // reopen. Compose / notify / approve, and every read-only reader (the
+      // matbaa above all), let the server's attempt-scoped snapshot win,
+      // because that IS the sheet that was sent. See pickLoadedSheet.
+      const draft = pickLoadedSheet({ mode, notifyOnSave, readOnly, current, carried })
       // A sheet that has already been sent has to reopen as it was sent AND
       // signed — see withRoundStamps for what the stripped blob costs it.
       const data = viewingSentSheet ? withRoundStamps(draft, current) : draft
