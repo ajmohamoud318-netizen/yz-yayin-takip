@@ -61,4 +61,12 @@ COPY --from=build /app/client/dist ./client/dist
 COPY --from=build /app/serve.cjs ./serve.cjs
 
 EXPOSE 3000
+
+# Container-level health probe, same pattern as server/Dockerfile. Dokploy's
+# zero-downtime deploy needs this to know when the new container is ready to
+# take traffic before it stops the old one — see the GET /health handler in
+# serve.cjs.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://127.0.0.1:3000/health || exit 1
+
 CMD ["node", "serve.cjs"]

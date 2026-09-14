@@ -309,6 +309,15 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Dokploy's zero-downtime deploy needs something to poll: it starts the
+  // new container, waits for this to return 200, then kills the old one.
+  // Mirrors the API's GET /api/health — see server/src/index.js and
+  // server/Dockerfile's HEALTHCHECK for the same pattern.
+  if (url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: true, ts: new Date().toISOString() }));
+  }
+
   // Every /api/* path is proxied (no static headers — that's the API's job).
   // Everything below this line is a static-file response and gets defense
   // headers unconditionally: 200s, 405s, and 404s all stack the CSP and

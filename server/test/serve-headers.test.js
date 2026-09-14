@@ -48,3 +48,13 @@ test('serve.cjs emits CSP + defense headers on every static response', async () 
   assert.equal(notFound.statusCode, 404)
   assert.match(notFound.headers['content-security-policy'], /frame-ancestors 'none'/)
 })
+
+test('serve.cjs GET /health returns 200 for Dokploy zero-downtime probing', async () => {
+  await ready
+  const res = await get('/health')
+  assert.equal(res.statusCode, 200)
+  assert.equal(res.headers['content-type'], 'application/json')
+  let body = ''
+  for await (const chunk of res) body += chunk
+  assert.equal(JSON.parse(body).ok, true)
+})
