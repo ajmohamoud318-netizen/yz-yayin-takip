@@ -1,6 +1,6 @@
 // Status visual language. Keys are app status groups (not Tailwind names):
-//   orange→orange  purple→purple  green→emerald  blue→blue
-//   teal→teal      pink→fuchsia   yellow→amber
+//   gray→stone     purple→purple  orange→orange  cyan→cyan
+//   lime→lime      teal→teal      blue→blue      pink→fuchsia  yellow→amber
 //
 // Token roles:
 //   dot/topBorder/bar — saturated -500 accents (read fine on light).
@@ -19,21 +19,27 @@
 //                      on Dashboard comfortable bars — the bar is large
 //                      enough that the heavier shade felt visually heavy.
 //                      Label colour is dark on these to keep contrast.
+//
+// No status is green: emerald means "approved / done" across the rest of
+// the app (success buttons, approved parça rows, positive history events).
 export const STATUS_STYLES = {
-  orange: {
+  gray: {
+    // "Yeni Proje" — %0, work not started yet. Stone (warm gray) to sit on
+    // the ivory paper canvas; the tints are one step darker than the other
+    // keys because stone-50 is indistinguishable from the page background.
     label: 'Yeni Proje',
-    dot: 'bg-orange-400',
-    topBorder: 'border-t-[3px] border-t-orange-400',
-    badge: 'bg-orange-50 text-orange-700 ring-orange-600/20',
-    bar: 'bg-orange-400',
-    text: 'text-orange-600',
-    surface: 'bg-orange-50',
-    surfaceBar: 'bg-orange-100',
-    border: 'border-orange-200',
-    onSurface: 'text-orange-700',
-    barFill: 'bg-orange-700',
-    barProgress: 'bg-orange-600',
-    barSoft: 'bg-orange-400',
+    dot: 'bg-stone-400',
+    topBorder: 'border-t-[3px] border-t-stone-400',
+    badge: 'bg-stone-100 text-stone-700 ring-stone-600/20',
+    bar: 'bg-stone-400',
+    text: 'text-stone-600',
+    surface: 'bg-stone-100',
+    surfaceBar: 'bg-stone-200',
+    border: 'border-stone-300',
+    onSurface: 'text-stone-700',
+    barFill: 'bg-stone-600',
+    barProgress: 'bg-stone-500',
+    barSoft: 'bg-stone-300',
   },
   purple: {
     label: 'Devam Eden',
@@ -50,20 +56,71 @@ export const STATUS_STYLES = {
     barProgress: 'bg-purple-500',
     barSoft: 'bg-purple-400',
   },
-  green: {
-    label: 'Demo aşamasında',
-    dot: 'bg-emerald-400',
-    topBorder: 'border-t-[3px] border-t-emerald-400',
-    badge: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-    bar: 'bg-emerald-400',
-    text: 'text-emerald-600',
-    surface: 'bg-emerald-50',
-    surfaceBar: 'bg-emerald-100',
-    border: 'border-emerald-200',
-    onSurface: 'text-emerald-700',
-    barFill: 'bg-emerald-700',
-    barProgress: 'bg-emerald-600',
-    barSoft: 'bg-emerald-400',
+  orange: {
+    // TR demo_teslim.
+    label: 'Demo Teslim',
+    dot: 'bg-orange-400',
+    topBorder: 'border-t-[3px] border-t-orange-400',
+    badge: 'bg-orange-50 text-orange-700 ring-orange-600/20',
+    bar: 'bg-orange-400',
+    text: 'text-orange-600',
+    surface: 'bg-orange-50',
+    surfaceBar: 'bg-orange-100',
+    border: 'border-orange-200',
+    onSurface: 'text-orange-700',
+    barFill: 'bg-orange-700',
+    barProgress: 'bg-orange-600',
+    barSoft: 'bg-orange-400',
+  },
+  cyan: {
+    // TR demo_onay. Text runs one step darker (-700) than the other keys:
+    // cyan-600 misses AA as small text on the light surfaces.
+    label: 'Demo Onay',
+    dot: 'bg-cyan-400',
+    topBorder: 'border-t-[3px] border-t-cyan-400',
+    badge: 'bg-cyan-50 text-cyan-700 ring-cyan-600/20',
+    bar: 'bg-cyan-400',
+    text: 'text-cyan-700',
+    surface: 'bg-cyan-50',
+    surfaceBar: 'bg-cyan-100',
+    border: 'border-cyan-200',
+    onSurface: 'text-cyan-700',
+    barFill: 'bg-cyan-700',
+    barProgress: 'bg-cyan-600',
+    barSoft: 'bg-cyan-400',
+  },
+  lime: {
+    // ÇİN cin_demo_teslim. Lime is the lightest hue here, so its text sits
+    // at -700/-800 to stay readable on the tinted surfaces.
+    label: 'Çin Demo Teslim',
+    dot: 'bg-lime-400',
+    topBorder: 'border-t-[3px] border-t-lime-400',
+    badge: 'bg-lime-50 text-lime-800 ring-lime-600/20',
+    bar: 'bg-lime-400',
+    text: 'text-lime-700',
+    surface: 'bg-lime-50',
+    surfaceBar: 'bg-lime-100',
+    border: 'border-lime-200',
+    onSurface: 'text-lime-800',
+    barFill: 'bg-lime-700',
+    barProgress: 'bg-lime-600',
+    barSoft: 'bg-lime-400',
+  },
+  teal: {
+    // ÇİN cin_demo_onay.
+    label: 'Çin Demo Onay',
+    dot: 'bg-teal-400',
+    topBorder: 'border-t-[3px] border-t-teal-400',
+    badge: 'bg-teal-50 text-teal-700 ring-teal-600/20',
+    bar: 'bg-teal-400',
+    text: 'text-teal-600',
+    surface: 'bg-teal-50',
+    surfaceBar: 'bg-teal-100',
+    border: 'border-teal-200',
+    onSurface: 'text-teal-700',
+    barFill: 'bg-teal-700',
+    barProgress: 'bg-teal-600',
+    barSoft: 'bg-teal-400',
   },
   blue: {
     label: 'Ozalit aşamasında',
@@ -80,24 +137,8 @@ export const STATUS_STYLES = {
     barProgress: 'bg-blue-500',
     barSoft: 'bg-blue-400',
   },
-  teal: {
-    // "Üretime Hazır" — approved & queued, waiting for an order.
-    label: 'Üretime Hazır',
-    dot: 'bg-teal-400',
-    topBorder: 'border-t-[3px] border-t-teal-400',
-    badge: 'bg-teal-50 text-teal-700 ring-teal-600/20',
-    bar: 'bg-teal-400',
-    text: 'text-teal-600',
-    surface: 'bg-teal-50',
-    surfaceBar: 'bg-teal-100',
-    border: 'border-teal-200',
-    onSurface: 'text-teal-700',
-    barFill: 'bg-teal-700',
-    barProgress: 'bg-teal-600',
-    barSoft: 'bg-teal-400',
-  },
   pink: {
-    // "Üretimde" — fuchsia, distinct from the green/blue stages.
+    // "Üretimde" — fuchsia, distinct from the demo/ozalit stages.
     label: 'Üretimde',
     dot: 'bg-fuchsia-400',
     topBorder: 'border-t-[3px] border-t-fuchsia-400',

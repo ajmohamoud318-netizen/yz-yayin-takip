@@ -23,7 +23,7 @@ const GROUP_LABELS = { all: 'Tümü', yeni_proje: 'Yeni Proje', devam_eden: 'Dev
 
 // Status keys the Dashboard cards link to (matches Dashboard.jsx LEGEND_KEYS
 // order). Anything else in the URL falls through and shows all rows.
-const VALID_STATUS_KEYS = new Set(['orange', 'purple', 'green', 'blue', 'teal', 'pink', 'yellow'])
+const VALID_STATUS_KEYS = new Set(['gray', 'purple', 'orange', 'cyan', 'lime', 'teal', 'blue', 'pink', 'yellow'])
 
 export default function AllProjects() {
   const { projects, allProjects, loading } = useProjects()

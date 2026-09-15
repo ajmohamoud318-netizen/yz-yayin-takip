@@ -14,46 +14,28 @@ describe('statusKeyForProject', () => {
     expect(statusKeyForProject({ stage: 'baski_onay' })).toBe('blue')
     expect(statusKeyForProject({ stage: 'cin_baski_onay' })).toBe('blue')
   })
-  // "Demo aşamasında" (green) means: the second demo cycle is in
-  // flight — the leader has already approved the first demo, the
-  // designer finished to 100%, and re-sent the demo for the leader
-  // to send to Ozalit. The first demo cycle (leader hasn't approved
-  // yet) reads purple — the project is clearly past tasarim but the
-  // design isn't necessarily finished. demo_onay at <100% on the
-  // first cycle (held) also reads purple — the team leader can tell
-  // at a glance which projects are stuck waiting on the designer.
-  it('maps first-cycle demo_teslim to devam eden regardless of progress', () => {
-    expect(statusKeyForProject({ stage: 'demo_teslim', progress: 0 })).toBe('purple')
-    expect(statusKeyForProject({ stage: 'demo_teslim', progress: 50 })).toBe('purple')
-    expect(statusKeyForProject({ stage: 'cin_demo_teslim', progress: 100 })).toBe('purple')
+  it('gives each demo stage its own color', () => {
+    expect(statusKeyForProject({ stage: 'demo_teslim', progress: 50 })).toBe('orange')
+    expect(statusKeyForProject({ stage: 'demo_onay', progress: 50 })).toBe('cyan')
+    expect(statusKeyForProject({ stage: 'cin_demo_teslim', progress: 50 })).toBe('lime')
+    expect(statusKeyForProject({ stage: 'cin_demo_onay', progress: 50 })).toBe('teal')
   })
-  it('maps first-cycle demo_onay at <100% (held) to devam eden', () => {
-    expect(statusKeyForProject({ stage: 'demo_onay', progress: 25 })).toBe('purple')
-    expect(statusKeyForProject({ stage: 'cin_demo_onay', progress: 50 })).toBe('purple')
+  // The old rule painted a first-round demo purple — the same as tasarım in
+  // progress — so a project entering demo didn't change color at all. The
+  // demo color now depends on the stage alone: not progress, not round.
+  it('ignores progress and earlier demo approvals on demo stages', () => {
+    const approved = { history: [{ action: 'approve', to_stage: 'demo_onay' }] }
+    expect(statusKeyForProject({ stage: 'demo_teslim', progress: 0 })).toBe('orange')
+    expect(statusKeyForProject({ ...approved, stage: 'demo_teslim', progress: 100 })).toBe('orange')
+    expect(statusKeyForProject({ ...approved, stage: 'demo_onay', progress: 0 })).toBe('cyan')
+    expect(statusKeyForProject({ ...approved, stage: 'demo_onay', progress: 100 })).toBe('cyan')
   })
-  it('maps second-cycle demo_teslim / demo_onay to green', () => {
-    const approved = {
-      history: [
-        { action: 'approve', to_stage: 'demo_onay' },
-      ],
-    }
-    expect(statusKeyForProject({ ...approved, stage: 'demo_teslim', progress: 100 })).toBe('green')
-    expect(statusKeyForProject({ ...approved, stage: 'demo_onay', progress: 100 })).toBe('green')
-    expect(statusKeyForProject({ stage: 'cin_demo_teslim', progress: 100, history: [
-      { action: 'approve', to_stage: 'cin_demo_onay' },
-    ] })).toBe('green')
+  it('maps retired production stages to pink, not the demo teal', () => {
+    expect(statusKeyForProject({ stage: 'uretime_hazir', progress: 100 })).toBe('pink')
+    expect(statusKeyForProject({ stage: 'uretimde', progress: 100 })).toBe('pink')
   })
-  it('keeps an approved-but-unfinished (held) demo purple at any stage', () => {
-    const held = {
-      history: [
-        { action: 'approve', to_stage: 'demo_onay' },
-      ],
-    }
-    expect(statusKeyForProject({ ...held, stage: 'demo_onay', progress: 0 })).toBe('purple')
-    expect(statusKeyForProject({ ...held, stage: 'demo_teslim', progress: 60 })).toBe('purple')
-  })
-  it('maps tasarim with progress 0 to orange (yeni proje)', () => {
-    expect(statusKeyForProject({ stage: 'tasarim', progress: 0 })).toBe('orange')
+  it('maps tasarim with progress 0 to gray (yeni proje)', () => {
+    expect(statusKeyForProject({ stage: 'tasarim', progress: 0 })).toBe('gray')
   })
   it('maps tasarim with any progress to purple (devam eden)', () => {
     expect(statusKeyForProject({ stage: 'tasarim', progress: 1 })).toBe('purple')

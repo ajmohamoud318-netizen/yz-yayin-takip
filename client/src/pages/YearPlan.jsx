@@ -16,9 +16,10 @@ const TR_MONTHS = [
   'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
 ]
 
-// The seven status color keys, in legend order.
-// Order = pipeline order (Yeni → Devam → Demo → Özalit → Üretime Hazır → Üretimde → Satışta)
-const LEGEND_KEYS = ['orange', 'purple', 'green', 'blue', 'teal', 'pink', 'yellow']
+// The nine status color keys, in legend order.
+// Order = pipeline order (Yeni → Devam → Demo Teslim → Demo Onay → Çin Demo
+// Teslim → Çin Demo Onay → Özalit → Üretimde → Satışta)
+const LEGEND_KEYS = ['gray', 'purple', 'orange', 'cyan', 'lime', 'teal', 'blue', 'pink', 'yellow']
 
 export default function YearPlan() {
   const { projects, loading } = useProjects()

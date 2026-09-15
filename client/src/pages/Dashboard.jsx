@@ -10,9 +10,10 @@ import { Button } from '../components/ui/button.jsx'
 import YearPlanBar from '../components/YearPlanBar.jsx'
 import { cn, formatNumber } from '../lib/utils.js'
 
-// The seven status color keys, in legend order.
-// Order = pipeline order (Yeni → Devam → Demo → Özalit → Üretime Hazır → Üretimde → Satışta)
-const LEGEND_KEYS = ['orange', 'purple', 'green', 'blue', 'teal', 'pink', 'yellow']
+// The nine status color keys, in legend order.
+// Order = pipeline order (Yeni → Devam → Demo Teslim → Demo Onay → Çin Demo
+// Teslim → Çin Demo Onay → Özalit → Üretimde → Satışta)
+const LEGEND_KEYS = ['gray', 'purple', 'orange', 'cyan', 'lime', 'teal', 'blue', 'pink', 'yellow']
 
 const TR_MONTHS = [
   'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
@@ -273,7 +274,7 @@ export default function Dashboard() {
             error && 'opacity-60',
           )}
         >
-          <div className="stagger-children grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 xl:grid-cols-8">
+          <div className="stagger-children grid grid-cols-2 gap-2 sm:grid-cols-5 sm:gap-3">
             {loading ? (
               <>
                 <Skeleton className="h-[46px] rounded-lg sm:h-[78px]" />
