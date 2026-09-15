@@ -433,36 +433,28 @@ export default function Dashboard() {
                   />
 
                   {/* Header — independent comic/vector planner tabs, each with
-                      its own bold 3px black outline and rounded top corners,
+                      its own thin 1px black outline and rounded top corners,
                       a cobalt blue (#0B4ED2) cap, and a pure white body with
-                      a large bold black sans-serif month label. Each tab is
-                      inset by a hairline gap (padding, not extra width — the
-                      slot itself stays exactly 100%/mc so it never drifts
-                      from the gridlines/rows below) so whichever months are
-                      scrolled into view read as separate rounded tabs, the
-                      way the spec image shows them — not one long strip
-                      whose corners only round at the very ends of 2013–2045. */}
+                      a large bold black sans-serif month label. Tabs sit
+                      flush shoulder-to-shoulder (no horizontal gap); the
+                      1px black border on each side is the only divider
+                      between them, matching the reference design exactly. */}
                   <div className="relative z-10 flex">
                     {TIMELINE_MONTHS.map((m) => {
                       const isCurrent = m.i === currentIndex
                       return (
                         <div
                           key={`${m.year}-${m.label}`}
-                          className="flex w-[calc(100%/var(--mc))] shrink-0 snap-start snap-always flex-col items-stretch px-[3px] pb-[2px] text-center"
+                          className="flex w-[calc(100%/var(--mc))] shrink-0 snap-start snap-always flex-col items-stretch pb-[2px] text-center"
                         >
                           <div
                             className={cn(
                               // Rounded ONLY on the top-left and top-right
                               // corners; bottom corners stay sharp so the
                               // tab sits flush against the chart body.
-                              // Tailwind's rounded-t-md maps to var(--radius)-2px
-                              // in this config, so we set an explicit radius
-                              // (8px) — small enough to remain visible at the
-                              // narrow cell width without clipping.
-                              'flex flex-1 flex-col overflow-hidden rounded-tl-lg rounded-tr-lg rounded-bl-none rounded-br-none border-[3px] border-b-0 border-black',
+                              'flex flex-1 flex-col overflow-hidden rounded-tl-md rounded-tr-md rounded-bl-none rounded-br-none border border-b-0 border-black',
                               isCurrent ? 'bg-blue-50/60' : 'bg-white',
                             )}
-                            style={{ borderTopLeftRadius: 10, borderTopRightRadius: 10 }}
                           >
                             {/* Cobalt blue header bar — solid #0B4ED2 fills the
                                 rounded top portion of each tab. */}
