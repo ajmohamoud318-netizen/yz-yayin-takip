@@ -11,9 +11,9 @@ import YearPlanBar from '@/components/YearPlanBar'
 import { STATUS_META } from '@/api'
 import { cn } from '@/lib/utils'
 
-const TR_MONTHS_SHORT = [
-  'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
-  'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
+const TR_MONTHS = [
+  'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+  'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
 ]
 
 // The seven status color keys, in legend order.
@@ -169,7 +169,7 @@ export default function YearPlan() {
             {/* key={year} remounts the accordion on year change so entrance
                 animations fire every time the user navigates years. */}
             <div key={year} className="divide-y">
-              {TR_MONTHS_SHORT.map((label, i) => {
+              {TR_MONTHS.map((label, i) => {
                 const group = monthGroups[i]
                 const isOpen = expandedMonth === i
                 const isCurrent = isThisYear && i === currentMonth

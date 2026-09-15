@@ -14,9 +14,9 @@ import { cn, formatNumber } from '../lib/utils.js'
 // Order = pipeline order (Yeni → Devam → Demo → Özalit → Üretime Hazır → Üretimde → Satışta)
 const LEGEND_KEYS = ['orange', 'purple', 'green', 'blue', 'teal', 'pink', 'yellow']
 
-const TR_MONTHS_SHORT = [
-  'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
-  'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
+const TR_MONTHS = [
+  'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+  'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
 ]
 
 // School-year season tints — painted in the year-row (the strip ABOVE the
@@ -50,7 +50,7 @@ const MONTH_COUNT = (YEAR_END - YEAR_START + 1) * 12
 const TIMELINE_MONTHS = Array.from({ length: MONTH_COUNT }, (_, i) => {
   const year = YEAR_START + Math.floor(i / 12)
   const month = i % 12
-  return { i, year, month, label: TR_MONTHS_SHORT[month] }
+  return { i, year, month, label: TR_MONTHS[month] }
 })
 
 function monthIndex(year, month) {
