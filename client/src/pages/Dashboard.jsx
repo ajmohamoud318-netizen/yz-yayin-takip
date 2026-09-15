@@ -19,6 +19,30 @@ const TR_MONTHS_SHORT = [
   'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
 ]
 
+// School-year season tints — painted in the year-row (the strip ABOVE the
+// horizontal divider, between the divider and the top border of the cell).
+// Eylül–Haziran = BİLSEM hazırlık dönemi (mavi). Tem–Ağu–Eyl = yaza hazırlık
+// dönemi (turuncu). Eylül sits in both lists in your spec; we paint it blue
+// because the *active* period is the school year, not the trailing wrap-up.
+const SCHOOL_YEAR_MONTHS = new Set([8, 9, 10, 11, 0, 1, 2, 3, 4, 5])
+
+// Solid Tailwind colors used as both the band fill and a darker divider
+// line so the divider sits ON the band edge (no white sliver).
+function seasonColors(month) {
+  if (month === 6 || month === 7) {
+    // Orange (yaza hazırlık) for Temmuz + Ağustos.
+    return {
+      band: 'bg-orange-300 dark:bg-orange-700',
+      divider: 'divide-orange-500/60 dark:divide-orange-500/70',
+    }
+  }
+  // Eylül + the rest of the school year: blue.
+  return {
+    band: 'bg-sky-300 dark:bg-sky-800',
+    divider: 'divide-sky-600/60 dark:divide-sky-400/60',
+  }
+}
+
 const YEAR_START = 2013
 const YEAR_END = 2045
 const MONTH_COUNT = (YEAR_END - YEAR_START + 1) * 12
@@ -408,28 +432,50 @@ export default function Dashboard() {
                     }}
                   />
 
-                  {/* Header — each year keeps its own Oca–Ara. */}
-                  <div className="relative z-10 flex bg-muted/50">
-                    {TIMELINE_MONTHS.map((m) => (
-                      <div
-                        key={`${m.year}-${m.label}`}
-                        className={cn(
-                          'w-[calc(100%/var(--mc))] shrink-0 snap-start snap-always border-l px-1 py-2 text-center text-[11px] font-bold uppercase',
-                          m.i === currentIndex
-                            ? 'bg-primary/10 text-primary'
-                            : 'text-muted-foreground',
-                        )}
-                      >
-                        <span className="flex flex-col items-center justify-center gap-0.5">
-                          <span className="h-[13px] text-[9px] font-bold normal-case tabular-nums tracking-wide">
-                            {m.month === 0 ? m.year : '\u00a0'}
-                          </span>
-                          <span className="inline-flex h-6 min-w-8 items-center justify-center rounded-full px-2 font-bold">
-                            {m.label}
-                          </span>
-                        </span>
-                      </div>
-                    ))}
+                  {/* Header — independent comic/vector planner tabs, each with
+                      its own bold 3px black outline and rounded top corners,
+                      a cobalt blue (#0B4ED2) cap, and a pure white body with
+                      a large bold black sans-serif month label. Each tab is
+                      inset by a hairline gap (padding, not extra width — the
+                      slot itself stays exactly 100%/mc so it never drifts
+                      from the gridlines/rows below) so whichever months are
+                      scrolled into view read as separate rounded tabs, the
+                      way the spec image shows them — not one long strip
+                      whose corners only round at the very ends of 2013–2045. */}
+                  <div className="relative z-10 flex">
+                    {TIMELINE_MONTHS.map((m) => {
+                      const isCurrent = m.i === currentIndex
+                      return (
+                        <div
+                          key={`${m.year}-${m.label}`}
+                          className="flex w-[calc(100%/var(--mc))] shrink-0 snap-start snap-always flex-col items-stretch px-[3px] pb-[2px] text-center"
+                        >
+                          <div
+                            className={cn(
+                              // Rounded ONLY on the top-left and top-right
+                              // corners; bottom corners stay sharp so the
+                              // tab sits flush against the chart body.
+                              // Tailwind's rounded-t-md maps to var(--radius)-2px
+                              // in this config, so we set an explicit radius
+                              // (8px) — small enough to remain visible at the
+                              // narrow cell width without clipping.
+                              'flex flex-1 flex-col overflow-hidden rounded-tl-lg rounded-tr-lg rounded-bl-none rounded-br-none border-[3px] border-b-0 border-black',
+                              isCurrent ? 'bg-blue-50/60' : 'bg-white',
+                            )}
+                            style={{ borderTopLeftRadius: 10, borderTopRightRadius: 10 }}
+                          >
+                            {/* Cobalt blue header bar — solid #0B4ED2 fills the
+                                rounded top portion of each tab. */}
+                            <div className="h-5 w-full bg-[#0B4ED2]" />
+                            {/* Month label — bold black sans-serif centered on a
+                                pure white body, matching the spec exactly. */}
+                            <div className="flex h-7 w-full items-center justify-center px-1 text-base font-black leading-none text-black">
+                              {m.label}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
 
                   {/* Rows — one per project, never shared with another. */}

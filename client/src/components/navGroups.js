@@ -180,7 +180,6 @@ export function navGroups(role, counts, pendingOrders = 0, printerOrders = 0, de
   if (approvalItems.length > 0) groups.push({ id: 'approvals', label: role === 'satis' ? null : 'Onaylar', items: approvalItems })
   if (resourceItems.length > 0) groups.push({ id: 'resources', label: null, items: resourceItems })
   // No "Acil İşler" group — demo/özalit re-send pressure is already reflected
-  // in the per-project "Acil" chips in the pinned list and in the badge of
-  // the nav item the work actually lives under.
+  // in the urgent badge of the nav item the work actually lives under.
   return groups
 }

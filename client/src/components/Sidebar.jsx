@@ -8,7 +8,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import UserAvatar from '@/components/UserAvatar.jsx'
-import { ROLE_LABELS, STATUS_META, statusKeyForProject } from '@/api'
+import { ROLE_LABELS } from '@/api'
 import { cn } from '@/lib/utils'
 import WorkLogPill from '@/components/WorkLogPill'
 
@@ -22,10 +22,10 @@ import WorkLogPill from '@/components/WorkLogPill'
  * SidebarFooter so each piece can be tweaked without touching the others —
  * e.g. "change the bell" never needs to scroll past the rail's body.
  */
-export default function Sidebar({ collapsed, groups, pinned, counts, user, onLogout, onNavigate, onToggleCollapsed, onOpenProject }) {
-  // Same rule as the "Acil İşler" group in navGroups(): the pinned re-send
-  // list and the period goal are leader/designer context. Matbaa gets the
-  // nav and its own queues, nothing else.
+export default function Sidebar({ collapsed, groups, counts, user, onLogout, onNavigate, onToggleCollapsed, onOpenProject }) {
+  // Same rule as the "Acil İşler" group in navGroups(): the period goal is
+  // leader/designer context. Matbaa gets the nav and its own queues, nothing
+  // else.
   const showOverview = user?.role !== 'printer'
   return (
     <>
@@ -47,30 +47,6 @@ export default function Sidebar({ collapsed, groups, pinned, counts, user, onLog
             )}
           </SidebarSection>
         ))}
-
-        {!collapsed && showOverview && pinned.length > 0 && (
-          <SidebarSection collapsed={collapsed}>
-            {pinned.map((p) => {
-              const meta = STATUS_META[statusKeyForProject(p)]
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => { onNavigate?.(); onOpenProject?.(p.id) }}
-                  className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <span className={cn('h-2 w-2 shrink-0 rounded-full', meta.dot)} />
-                  <span className="flex-1 truncate text-left">{p.title}</span>
-                  {p.demo_attempt >= 2 && (
-                    <span className="shrink-0 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[9px] font-semibold text-destructive">
-                      Acil
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </SidebarSection>
-        )}
 
         {!collapsed && showOverview && (
           // Sticky to the bottom of the scroll container so the goal widget

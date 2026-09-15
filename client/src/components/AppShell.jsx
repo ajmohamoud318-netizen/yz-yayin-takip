@@ -58,7 +58,7 @@ function useCommandPaletteHotkey(open) {
 /**
  * Layout used by every authenticated page. The sidebar can collapse to an
  * icon-only rail on desktop (state is remembered) and opens as a drawer on
- * mobile. Badges, pinned projects and the period widget use live data.
+ * mobile. Badges and the period widget use live data.
  */
 export default function AppShell() {
   const { user, logout } = useAuth()
@@ -146,15 +146,6 @@ export default function AppShell() {
     }
   }, [projects, user?.role, user?.id, reprintHandovers])
 
-  const pinned = useMemo(
-    () =>
-      [...projects]
-        .filter((p) => p.stage !== 'satista')
-        .sort((a, b) => (b.demo_attempt ?? 0) - (a.demo_attempt ?? 0))
-        .slice(0, 3),
-    [projects],
-  )
-
   const groups = navGroups(user?.role, counts, pendingOrders, printerOrders, designerOrders, pendingHandovers)
 
   useEffect(() => {
@@ -231,7 +222,6 @@ export default function AppShell() {
         <Sidebar
           collapsed={collapsed}
           groups={groups}
-          pinned={pinned}
           counts={counts}
           user={user}
           onLogout={handleLogout}
@@ -256,7 +246,6 @@ export default function AppShell() {
             <Sidebar
               collapsed={false}
               groups={groups}
-              pinned={pinned}
               counts={counts}
               user={user}
               onLogout={handleLogout}
