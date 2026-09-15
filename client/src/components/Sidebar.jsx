@@ -240,12 +240,87 @@ function SidebarNavItem({ item, collapsed, onNavigate }) {
   )
 }
 
+// Season model — mirrors Dashboard.jsx so the sidebar and the Yıllık Plan
+// chart describe the same periods. Two seasons a year:
+//
+//   • "Yaza Hazırlık" (Temmuz–Ağustos) — short 2-month wrap-up before the
+//     new school year starts in September.
+//   • "BİLSEM Yılı"    (Eylül–Haziran) — the long active school year.
+//
+// Months are 0-indexed. The season that owns a given month is whichever
+// `seasons[].months` array contains it. Since Eylül belongs to BİLSEM Yılı
+// in the chart (SCHOOL_YEAR_MONTHS includes 8 = Eylül), the Eylül–Haziran
+// set matches here too.
+const SEASONS = [
+  { id: 'bilsem', label: 'BİLSEM Yılı', months: [8, 9, 10, 11, 0, 1, 2, 3, 4, 5] },
+  { id: 'yaza',   label: 'Yaza Hazırlık', months: [6, 7] },
+]
+
+function currentSeason(now = new Date()) {
+  const m = now.getMonth()
+  return SEASONS.find((s) => s.months.includes(m)) ?? SEASONS[0]
+}
+
+// Returns the first-day Date of the next season boundary strictly after
+// `now`. Each season has a "first month" (the smallest index in its months
+// array): yaza-hazırlık → 6 (Temmuz), school-year → 8 (Eylül). The next
+// season is whichever of those first-of-month dates lands earliest at-or-
+// after the current instant; if both have passed in the current calendar
+// year, the next one is in the next calendar year.
+//
+// Worked examples:
+//   • 15 Eylül 2026 → next m=6 is Temmuz 2026 (past), next m=8 is Eylül
+//     2026 (present/just passed), so the earliest future date is Temmuz
+//     2027 → "Yaza Hazırlık, 10 ay kaldı".
+//   • 20 Temmuz 2026 → next m=6 is Temmuz 2026 (today, but the season
+//     just started, so the strict-after rule uses 1 Ağustos 2026? — see
+//     note below). We use "first-of-month strictly after now's first-of-
+//     month" so the season-switch countdown is anchored to month starts,
+//     which is what users actually plan against.
+function nextSeasonStart(now) {
+  const year = now.getFullYear()
+  const month = now.getMonth()
+  // First-of-month of the current month. The next-season boundary must be
+  // strictly after THIS date so the countdown never lands on "0 ay kaldı"
+  // on the first day of a fresh season.
+  const cursor = new Date(year, month, 1).getTime()
+  const candidates = [
+    new Date(year, 6, 1).getTime(),     // Temmuz this year
+    new Date(year, 8, 1).getTime(),     // Eylül this year
+    new Date(year + 1, 6, 1).getTime(), // Temmuz next year
+    new Date(year + 1, 8, 1).getTime(), // Eylül next year
+  ]
+  const next = candidates.find((t) => t > cursor)
+  return new Date(next)
+}
+
+function monthsBetween(from, to) {
+  // Whole months between two dates, rounded down. From the first day of one
+  // month to the first day of another, the count is exact (no day-of-month
+  // drift). E.g. 1 Eylül → 1 Temmuz = 10 months.
+  return (
+    (to.getFullYear() - from.getFullYear()) * 12 +
+    (to.getMonth() - from.getMonth())
+  )
+}
+
+const TR_MONTHS_FULL = [
+  'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+  'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
+]
+
+function formatMonthYear(d) {
+  const m = TR_MONTHS_FULL[d.getMonth()]
+  return `${m} ${d.getFullYear()}`
+}
+
 function PeriodWidget({ satista, total }) {
   const pct = total ? Math.round((satista / total) * 100) : 0
   const now = new Date()
-  const deadline = new Intl.DateTimeFormat('tr-TR', { month: 'long', year: 'numeric' }).format(
-    new Date(now.getFullYear(), now.getMonth() + 1, 0),
-  )
+  const season = currentSeason(now)
+  const start = nextSeasonStart(now)
+  const monthsLeft = monthsBetween(now, start)
+
   // Click-through to the pipeline filtered to "Satışta" so the bar reads as
   // an actionable KPI rather than a static label.
   const navigate = useNavigate()
@@ -256,10 +331,20 @@ function PeriodWidget({ satista, total }) {
       className="group block w-full rounded-lg border border-rose-200 bg-rose-50 p-3 text-left transition-colors hover:border-rose-300 hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="flex items-center justify-between">
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-primary">Bu Dönem</div>
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-primary">Bu Sezon</div>
         <div className="font-mono text-[10px] font-semibold tabular-nums text-primary transition-transform group-hover:translate-x-0.5">{pct}%</div>
       </div>
-      <div className="mt-1.5 text-xs font-medium text-foreground">Hedef: projeleri satışa çıkar</div>
+      {/* Current season name in display type, plus a countdown to the next
+          season switch so the user knows how much runway they have in this
+          period. The season label is the headline; the months-left chip
+          and start date are the supporting line. */}
+      <div className="mt-1.5 text-xs font-medium text-foreground">{season.label}</div>
+      <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+        <span className="inline-flex items-center rounded-full bg-rose-100 px-1.5 py-0.5 font-semibold text-primary">
+          {monthsLeft} ay kaldı
+        </span>
+        <span>· {formatMonthYear(start)} başlar</span>
+      </div>
       {/* Slightly thicker track that lives one step darker than the card
           itself (rose-100 on rose-50) so the whole card reads as a single
           monochromatic rose surface, and the percentage gets bolder so
@@ -271,7 +356,7 @@ function PeriodWidget({ satista, total }) {
         />
       </div>
       <div className="mt-1.5 text-[10px] text-muted-foreground">
-        {satista} / {total} satışta · {deadline} sonu
+        {satista} / {total} satışta
       </div>
     </button>
   )

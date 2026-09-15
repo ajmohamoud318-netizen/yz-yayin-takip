@@ -252,7 +252,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl 2xl:max-w-screen-2xl 3xl:max-w-[88rem] space-y-6 2xl:space-y-8">
+    <div className="mx-auto w-full space-y-6 2xl:space-y-8">
         {/* Summary cards — Toplam + one per status group.
             8 cards on a single row from xl+ (desktop with sidebar rail) so the count
             strip reads as one horizontal metric row. 4-col at lg (tablet) where 8
@@ -461,16 +461,18 @@ export default function Dashboard() {
                               // corners; bottom corners stay sharp so the
                               // tab sits flush against the chart body.
                               'flex flex-1 flex-col overflow-hidden rounded-tl-md rounded-tr-md rounded-bl-none rounded-br-none border border-b-0 border-black',
-                              isCurrent ? 'bg-blue-50/60' : 'bg-white',
+                              // The season tint fills the whole tab so it shows
+                              // through the label's rounded top corners.
+                              season.band,
                             )}
                           >
                             {/* Season-tinted header bar — orange for Jul/Aug
                                 (yaza hazırlık), cobalt blue for the rest of
                                 the school year. */}
-                            <div className={cn('h-5 w-full', season.band)} />
-                            {/* Month label — bold black sans-serif centered on a
-                                pure white body, matching the spec exactly. */}
-                            <div className="flex h-7 w-full items-center justify-center px-1 text-base font-black leading-none text-black">
+                            <div className="h-5 w-full" />
+                            {/* Month label — bold black sans-serif on a white
+                                body with rounded top corners. */}
+                            <div className="flex h-7 w-full items-center justify-center rounded-t-md bg-white px-1 text-base font-black leading-none text-black">
                               {m.label}
                             </div>
                           </div>
