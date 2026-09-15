@@ -49,6 +49,9 @@ coverage/
 *.sqlite3
 *.db
 
+# Local embedded Postgres cluster dir (see scripts/dev-db.cjs if/when re-added).
+.pgdata/
+
 # Uploads (if/when added)
 uploads/
 
