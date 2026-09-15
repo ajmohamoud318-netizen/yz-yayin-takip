@@ -15,12 +15,14 @@ import { Progress } from '@/components/ui/progress'
 import AssigneeAvatars from '@/components/AssigneeAvatars'
 import api, {
   STAGE_LABELS, STAGE_PIPELINE, TYPE_LABELS, ORDER_STEPS, ORDER_STEP_LABELS,
-  statusKeyForProject, STATUS_STYLES,
+  statusKeyForProject, statusKeyForStage, STATUS_STYLES,
 } from '@/api'
 import { cn, formatNumber, formatTargetDate } from '@/lib/utils'
 
-// Each column gets a unique soft pastel. Light tints keep the
-// dark heading text readable. Cycles if there are more stages than colors.
+// Siparişler board only — each order column gets a unique soft pastel. Light
+// tints keep the dark heading text readable. Cycles if there are more steps
+// than colors. Project columns use their stage's status color instead (see
+// statusKeyForStage) so a column matches the cards, Dashboard and Yıllık Plan.
 const COLUMN_PASTELS = ['#E7DBF5', '#D7F0E4', '#FDE3D1', '#D6ECF8', '#F8DCE8', '#FBF0C9', '#E0E4FA']
 
 const SORT_OPTIONS = [
@@ -278,7 +280,7 @@ export default function Kanban() {
             </div>
           ) : (
             <div ref={boardRef} className="scrollbar-thin -mx-3 flex gap-3 overflow-x-auto px-3 pb-2 sm:-mx-4 sm:px-4" onKeyDown={handleBoardKeyDown}>
-              {pipeline.map((stage, i) => {
+              {pipeline.map((stage) => {
                 const items = grouped[stage] ?? []
                 const isCollapsed = collapsed.has(stage) && items.length === 0
                 return (
@@ -286,7 +288,7 @@ export default function Kanban() {
                     key={stage}
                     stage={stage}
                     label={STAGE_LABELS[stage]}
-                    color={COLUMN_PASTELS[i % COLUMN_PASTELS.length]}
+                    tone={STATUS_STYLES[statusKeyForStage(stage)]}
                     items={items}
                     isCollapsed={isCollapsed}
                     onToggleCollapse={() => toggleCollapsed(stage)}
@@ -329,17 +331,20 @@ export default function Kanban() {
 }
 
 // ── Column ─────────────────────────────────────────────────────────────────
+// `tone` (a STATUS_STYLES entry) colors a project column with Tailwind
+// classes; `color` (a hex pastel) is the Siparişler board's fallback.
 function KanbanColumn({
-  stage, label, color, items, isCollapsed, onToggleCollapse,
+  stage, label, color, tone, items, isCollapsed, onToggleCollapse,
   overdueCount, renderItem, emptyIcon: EmptyIcon = Inbox,
 }) {
+  const borderStyle = tone ? undefined : { borderTop: `3px solid ${color}` }
   if (isCollapsed) {
     return (
       <button
         type="button"
         onClick={onToggleCollapse}
-        className="flex w-10 shrink-0 flex-col items-center rounded-xl border bg-muted/30 py-3 transition-colors hover:bg-muted/50"
-        style={{ borderTop: `3px solid ${color}` }}
+        className={cn('flex w-10 shrink-0 flex-col items-center rounded-xl border bg-muted/30 py-3 transition-colors hover:bg-muted/50', tone?.topBorder)}
+        style={borderStyle}
         title={`${label} (${items.length})`}
       >
         <span className="mb-1 text-[10px] font-semibold text-muted-foreground">{items.length}</span>
@@ -350,10 +355,13 @@ function KanbanColumn({
 
   return (
     <section
-      className="flex w-72 2xl:w-80 shrink-0 flex-col overflow-hidden rounded-xl border bg-muted/30"
-      style={{ borderTop: `3px solid ${color}` }}
+      className={cn('flex w-72 2xl:w-80 shrink-0 flex-col overflow-hidden rounded-xl border bg-muted/30', tone?.topBorder)}
+      style={borderStyle}
     >
-      <header className="flex items-center justify-between border-b px-3 py-2.5" style={{ backgroundColor: color }}>
+      <header
+        className={cn('flex items-center justify-between border-b px-3 py-2.5', tone?.surfaceBar)}
+        style={tone ? undefined : { backgroundColor: color }}
+      >
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-foreground">{label}</h2>
           <span className="rounded-full bg-white/70 px-1.5 py-0.5 text-[10px] font-semibold text-foreground">{items.length}</span>

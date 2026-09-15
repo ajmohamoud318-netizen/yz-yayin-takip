@@ -2,8 +2,14 @@
  * Maps a project (stage + progress) to one of the status color keys.
  */
 
-export function statusKeyForProject(p) {
-  switch (p.stage) {
+/**
+ * The color key a stage stands for on its own, without a project's progress.
+ * İş Akışı paints each column with this so the column header matches the
+ * cards in it. Tasarım (and any unknown stage) is 'purple'; only a project
+ * can be 'gray', because that depends on its progress being 0.
+ */
+export function statusKeyForStage(stage) {
+  switch (stage) {
     case 'satista':
       return 'yellow'
     case 'baskida':
@@ -33,8 +39,13 @@ export function statusKeyForProject(p) {
     case 'cin_demo_onay':
       return 'teal'
     default:
-      return p.progress > 0 ? 'purple' : 'gray'
+      return 'purple'
   }
+}
+
+export function statusKeyForProject(p) {
+  const key = statusKeyForStage(p.stage)
+  return key === 'purple' && !(p.progress > 0) ? 'gray' : key
 }
 
 /** Dashboard grouping: which bucket a project falls into. */

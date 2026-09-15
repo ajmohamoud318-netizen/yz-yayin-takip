@@ -1,4 +1,20 @@
-import { statusKeyForProject, groupKeyForProject } from './project-status.js'
+import { statusKeyForProject, statusKeyForStage, groupKeyForProject } from './project-status.js'
+
+describe('statusKeyForStage', () => {
+  it('matches statusKeyForProject for every stage a project has started on', () => {
+    const stages = [
+      'tasarim', 'demo_teslim', 'demo_onay', 'ozalit_teslim', 'ozalit_onay', 'baski_onay',
+      'cin_demo_teslim', 'cin_demo_onay', 'cin_baski_onay', 'baskida', 'gumruk', 'satista',
+    ]
+    for (const stage of stages) {
+      expect(statusKeyForStage(stage)).toBe(statusKeyForProject({ stage, progress: 50 }))
+    }
+  })
+  it('paints the tasarım column purple — gray is a %0 project, not a stage', () => {
+    expect(statusKeyForStage('tasarim')).toBe('purple')
+    expect(statusKeyForStage(undefined)).toBe('purple')
+  })
+})
 
 describe('statusKeyForProject', () => {
   it('maps satışta to yellow', () => {

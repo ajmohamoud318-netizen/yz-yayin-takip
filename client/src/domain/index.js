@@ -66,4 +66,4 @@ export {
   bulkApproveAvailable,
 } from './services/pipeline.js'
 export { subtaskProgress } from './services/progress.js'
-export { statusKeyForProject, groupKeyForProject } from './services/project-status.js'
+export { statusKeyForProject, statusKeyForStage, groupKeyForProject } from './services/project-status.js'
