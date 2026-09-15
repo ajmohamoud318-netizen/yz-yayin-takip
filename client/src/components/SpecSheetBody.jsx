@@ -6,7 +6,7 @@ import {
   FormSheetHead,
   SheetAddRow,
   SheetRow,
-  SheetSpecRow,
+  SheetSpecRowList,
 } from '@/components/FormSheet'
 import { missingTemplateLabels, parcaKind } from '@/data/parcaTemplates'
 import { isAdetLabel } from '@/lib/spec-form-adet'
@@ -40,7 +40,7 @@ export default function SpecSheetBody({
   onAddCustomRow,
   onUpdateCustomRow,
   onRemoveCustomRow,
-  onMoveCustomRow,
+  onMoveCustomRowToIndex,
   catalogComponents,
   hideParcaPicker = false,
   lockedParcalar = [],
@@ -53,7 +53,7 @@ export default function SpecSheetBody({
   onAddComponentRow,
   onUpdateComponentRow,
   onRemoveComponentRow,
-  onMoveComponentRow,
+  onMoveComponentRowToIndex,
 }) {
   const hasCatalog = catalogComponents.length > 0
   /* Parçalar the matbaa is producing right now (migration 077). Their blocks
@@ -303,20 +303,25 @@ export default function SpecSheetBody({
       {!showsComponentCards && !awaitingParcaPick && (
         <FormSheetBlock className="bg-muted/10">
           <SheetRow label="İŞİN ADI" name="isinAdi" value={form.isinAdi} onChange={onChange} readOnly={systemRowReadOnly} />
-          {customRows.map((r, i) => (
-            <SheetSpecRow
-              key={r.id}
-              label={r.label}
-              value={r.value}
-              onLabelChange={(v) => onUpdateCustomRow(r.id, 'label', v)}
-              onValueChange={(v) => onUpdateCustomRow(r.id, 'value', v)}
-              onRemove={() => onRemoveCustomRow(r.id)}
-              onMoveUp={customRows.length > 1 && i > 0 ? () => onMoveCustomRow(r.id, -1) : null}
-              onMoveDown={customRows.length > 1 && i < customRows.length - 1 ? () => onMoveCustomRow(r.id, 1) : null}
-              readOnly={readOnly || (hasLivePageCount && isSayfaSayisiRow(r.label))}
-              required={isRequiredRow(r.label)}
-            />
-          ))}
+          <SheetSpecRowList
+            rows={customRows}
+            onReorder={(id, toIndex) => onMoveCustomRow(id, toIndex)}
+            getRowProps={(r) => ({
+              label: r.label,
+              value: r.value,
+              onLabelChange: (v) => onUpdateCustomRow(r.id, 'label', v),
+              onValueChange: (v) => onUpdateCustomRow(r.id, 'value', v),
+              onRemove: () => onRemoveCustomRow(r.id),
+              // The live-page-count lock lives on the SAYFA SAYISI row alone
+              // (lib/spec-form-resolve.js). It is a per-row concern — the
+              // rest of the list is editable on a project whose pages are
+              // still in motion — so the list-level `readOnly` stays a
+              // default and the row wins when it asks for itself to lock.
+              readOnly: hasLivePageCount && isSayfaSayisiRow(r.label),
+            })}
+            isRequired={(r) => isRequiredRow(r.label)}
+            readOnly={readOnly}
+          />
           {/* With no parça blocks these rows ARE the product's own sheet, so
               the lead parça's template is what they can be missing. */}
           {!readOnly && (
@@ -457,20 +462,24 @@ export default function SpecSheetBody({
               {(c.rows ?? []).length === 0 && readOnly && (
                 <p className="py-2 text-center text-[11px] text-muted-foreground">Satır yok.</p>
               )}
-              {(c.rows ?? []).map((r, i) => (
-                <SheetSpecRow
-                  key={r.id}
-                  label={r.label}
-                  value={r.value}
-                  onLabelChange={(v) => onUpdateComponentRow(c.id, r.id, 'label', v)}
-                  onValueChange={(v) => onUpdateComponentRow(c.id, r.id, 'value', v)}
-                  onRemove={() => onRemoveComponentRow(c.id, r.id)}
-                  onMoveUp={(c.rows ?? []).length > 1 && i > 0 ? () => onMoveComponentRow(c.id, r.id, -1) : null}
-                  onMoveDown={(c.rows ?? []).length > 1 && i < (c.rows ?? []).length - 1 ? () => onMoveComponentRow(c.id, r.id, 1) : null}
-                  readOnly={readOnly || parcaLocked || (livePageCountLocks(c) && isSayfaSayisiRow(r.label))}
-                  required={isRequiredRow(r.label)}
-                />
-              ))}
+              <SheetSpecRowList
+                rows={c.rows ?? []}
+                onReorder={(id, toIndex) => onMoveComponentRowToIndex(c.id, id, toIndex)}
+                getRowProps={(r) => ({
+                  label: r.label,
+                  value: r.value,
+                  onLabelChange: (v) => onUpdateComponentRow(c.id, r.id, 'label', v),
+                  onValueChange: (v) => onUpdateComponentRow(c.id, r.id, 'value', v),
+                  onRemove: () => onRemoveComponentRow(c.id, r.id),
+                  // Live-page-count lock is a per-row concern (only the main
+                  // parça's SAYFA SAYISI is owned by İç Sayfalar) and so is
+                  // the per-parça production lock — both default to false
+                  // and the row asks for itself to be locked.
+                  readOnly: parcaLocked || (livePageCountLocks(c) && isSayfaSayisiRow(r.label)),
+                })}
+                isRequired={(r) => isRequiredRow(r.label)}
+                readOnly={readOnly}
+              />
               {!readOnly && !parcaLocked && (
                 <SheetAddRow
                   onClick={() => onAddComponentRow(c.id)}

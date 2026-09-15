@@ -19,7 +19,7 @@ import {
   FormSheetHead,
   SheetAddRow,
   SheetRow,
-  SheetSpecRow,
+  SheetSpecRowList,
 } from '@/components/FormSheet'
 import {
   Dialog,
@@ -195,6 +195,24 @@ export default function SiparisBaskiOnayFormDialog({
       return { ...c, rows }
     }))
   }
+  // Drag-to-reorder lands the row at an arbitrary slot; the ±1 arrows above
+  // still ride on `moveRow`. `SheetSpecRowList` passes `(rowId, toIndex)`
+  // through with `toIndex` interpreted AFTER the row has been lifted out, so
+  // it is the position in the resulting list.
+  function moveRowToIndex(ci, id, toIndex) {
+    setComponents((prev) => prev.map((c, i) => {
+      if (i !== ci) return c
+      const list = c.rows ?? []
+      const from = list.findIndex((r) => r.id === id)
+      if (from < 0) return c
+      const clamped = Math.max(0, Math.min(list.length - 1, toIndex))
+      if (clamped === from) return c
+      const rows = [...list]
+      const [row] = rows.splice(from, 1)
+      rows.splice(clamped, 0, row)
+      return { ...c, rows }
+    }))
+  }
 
   function currentPayload() {
     return {
@@ -334,20 +352,28 @@ export default function SiparisBaskiOnayFormDialog({
               />
             </FormSheetBlock>
             <FormSheetBlock className="border-b-0 px-3">
-              {c.rows.map((r, ri) => (
-                <SheetSpecRow
-                  key={r.id ?? ri}
-                  label={r.label}
-                  value={r.value}
-                  onLabelChange={(v) => setRow(ci, ri, { label: v })}
-                  onValueChange={(v) => setRow(ci, ri, { value: v })}
-                  onRemove={() => removeRow(ci, ri)}
-                  onMoveUp={c.rows.length > 1 && ri > 0 ? () => moveRow(ci, ri, -1) : null}
-                  onMoveDown={c.rows.length > 1 && ri < c.rows.length - 1 ? () => moveRow(ci, ri, 1) : null}
-                  readOnly={isReadOnly}
-                  required={isAdetLabel(r.label) || isBasimYeriLabel(r.label)}
-                />
-              ))}
+              <SheetSpecRowList
+                rows={c.rows}
+                onReorder={(id, toIndex) => moveRowToIndex(ci, id, toIndex)}
+                getRowProps={(r) => ({
+                  label: r.label,
+                  value: r.value,
+                  onLabelChange: (v) => {
+                    const idx = c.rows.findIndex((x) => x.id === r.id)
+                    if (idx >= 0) setRow(ci, idx, { label: v })
+                  },
+                  onValueChange: (v) => {
+                    const idx = c.rows.findIndex((x) => x.id === r.id)
+                    if (idx >= 0) setRow(ci, idx, { value: v })
+                  },
+                  onRemove: () => {
+                    const idx = c.rows.findIndex((x) => x.id === r.id)
+                    if (idx >= 0) removeRow(ci, idx)
+                  },
+                })}
+                isRequired={(r) => isAdetLabel(r.label) || isBasimYeriLabel(r.label)}
+                readOnly={isReadOnly}
+              />
               {!isReadOnly && (
                 <SheetAddRow
                   onClick={() => addRow(ci)}

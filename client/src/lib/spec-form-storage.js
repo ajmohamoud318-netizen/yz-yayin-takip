@@ -204,6 +204,30 @@ export function moveById(rows, id, dir) {
   return next
 }
 
+/**
+ * Move the row with `id` to an arbitrary new index. Used by drag-to-reorder:
+ * the arrows above move by ±1, but a drag can land the row anywhere in the
+ * list. Returns the list untouched when the row isn't in it or `toIndex` is
+ * out of range, so the caller can wire `DndContext`'s `onDragEnd` without
+ * bounds-checking twice.
+ *
+ * `toIndex` is interpreted AFTER the row has been removed — i.e. it is the
+ * position in the resulting list, not the slot the row would otherwise have
+ * occupied. dnd-kit's `arrayMove` makes the same assumption, so calling this
+ * with `arrayMove`'s `[from, to]` keeps the two aligned.
+ */
+export function moveByIdToIndex(rows, id, toIndex) {
+  const list = rows ?? []
+  const from = list.findIndex((r) => r.id === id)
+  if (from < 0) return list
+  const clamped = Math.max(0, Math.min(list.length - 1, toIndex))
+  if (clamped === from) return list
+  const next = [...list]
+  const [row] = next.splice(from, 1)
+  next.splice(clamped, 0, row)
+  return next
+}
+
 export function saveForm(variant, id, data, customRows, selectedComponents) {
   localStorage.setItem(STORAGE_KEY(variant, id), JSON.stringify({
     ...data,

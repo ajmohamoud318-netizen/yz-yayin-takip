@@ -1,5 +1,21 @@
 import { useLayoutEffect, useRef } from 'react'
-import { ChevronDown, ChevronUp, Plus, X } from 'lucide-react'
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { GripVertical, Plus, X } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
@@ -19,12 +35,24 @@ import { cn } from '@/lib/utils'
  */
 export const SHEET_ROW = 'grid grid-cols-[minmax(5.5rem,36%)_auto_1fr] items-start border-b last:border-b-0'
 /**
- * The same row with a trailing column for the edit controls (move / remove).
- * The first three tracks are identical, so the label column and the colon —
- * and with them the rule down the value column — stay aligned with every
- * plain row on the sheet; only the value cell gives up the width.
+ * The same row with a trailing column for the edit controls (remove). The
+ * first three tracks are identical, so the label column and the colon — and
+ * with them the rule down the value column — stay aligned with every plain
+ * row on the sheet; only the value cell gives up the width.
+ *
+ * (Drag-to-reorder lives on a LEFT-edge grip the row renders as its first
+ * child when reorderable, so the right edge stays clean — the rule down
+ * the value column never has to dodge a drag handle.)
  */
 const SHEET_ROW_TOOLS = 'grid grid-cols-[minmax(5.5rem,36%)_auto_1fr_auto] items-start border-b last:border-b-0'
+/**
+ * Same shape, with a leading column for the drag handle. Defined separately
+ * so the label column starts at the SAME absolute pixel position on a
+ * sortable row as it does on every plain row — even though the handle is
+ * always present on a sortable list, a row never reflows when it joins or
+ * leaves it.
+ */
+const SHEET_ROW_SORTABLE = 'grid grid-cols-[auto_minmax(5.5rem,36%)_auto_1fr_auto] items-start border-b last:border-b-0'
 const SHEET_TOOL_BTN = 'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition active:scale-90 disabled:pointer-events-none disabled:opacity-25'
 export const SHEET_LABEL = 'py-1.5 pr-2 text-[11px] font-semibold uppercase leading-snug tracking-wide text-muted-foreground'
 const SHEET_COLON = 'self-stretch pt-1.5 text-center text-xs font-bold text-muted-foreground'
@@ -160,24 +188,82 @@ export function SheetRow({ label, name, value, onChange, readOnly, required = fa
  * rows, where a leader may rename a field. Read-only collapses both halves to
  * plain text, which is then indistinguishable from a SheetRow.
  *
- * `onMoveUp` / `onMoveDown` reorder the row. Pass them whenever the row sits in
- * a list of more than one — a row at an end passes null for the direction it
- * cannot go, and that arrow renders disabled rather than disappearing, so the
- * controls keep the same width on every row and the value column does not
- * jitter as rows move. With neither handler (a lone row) the arrows are left
- * out altogether and only the remove button takes space.
+ * Reordering is drag-to-reorder: a left-edge grip (rendered when reorderable,
+ * hidden while read-only or when the row sits outside a sortable list) is the
+ * drag handle, and rows sit in a `<SortableContext>` the caller wires up via
+ * `SheetSpecRowList` below. The handle replaces the up/down arrows the rows
+ * used to carry — a row no longer needs two buttons to reorder, and one
+ * affordance on every row keeps the value column from jittering on move. A
+ * lone row keeps the column reserved for layout stability but renders no
+ * grip (there is nothing to swap with), the same way the lone-row case used
+ * to drop the arrows.
  *
  * `required` gives the value cell the same red wash SheetRow uses while it is
  * blank — the Baskı Onay Formu's ADET row is a spec row now, and a sheet that
  * may not go out with it empty has to say so where the gap is, not only in a
  * footer a scroll away on a phone.
+ *
+ * The row receives its drag wiring from `SheetSpecRowList` via the four
+ * `__sortable*` props. Standalone callers (a row rendered outside a list) get
+ * `dragHandleProps={null}` and `style={undefined}`, which fall through to a
+ * static grip with no listeners — handy for read-only previews but rarely used
+ * in this app.
  */
-export function SheetSpecRow({ label, value, onLabelChange, onValueChange, onRemove, onMoveUp, onMoveDown, readOnly, required = false }) {
-  const canReorder = !readOnly && (onMoveUp || onMoveDown)
+export function SheetSpecRow({
+  label, value, onLabelChange, onValueChange, onRemove,
+  readOnly, required = false,
+  __sortableId, __sortableStyle, __sortableSetNodeRef, __sortableHandleProps, __isDragging,
+}) {
+  const canReorder = !readOnly && !!__sortableId
   const hasTools = !readOnly && (canReorder || onRemove)
+  // Drag-to-reorder rows get a leading column for the grip; otherwise the
+  // label column on a sortable row would sit one column to the right of
+  // every plain row on the sheet and the colons would no longer line up.
+  const rowClass = canReorder
+    ? SHEET_ROW_SORTABLE
+    : hasTools
+      ? SHEET_ROW_TOOLS
+      : SHEET_ROW
   const missing = required && !String(value ?? '').trim()
   return (
-    <div className={hasTools ? SHEET_ROW_TOOLS : SHEET_ROW}>
+    <div
+      ref={__sortableSetNodeRef}
+      className={rowClass}
+      style={__sortableStyle}
+      data-dragging={__isDragging ? '' : undefined}
+    >
+      {/* Drag handle — a dedicated grip on the left edge so a row is never
+          draggable from its label or value (typing must keep working there).
+          Off the sheet on paper. `cursor-grab` shows the affordance, the
+          listeners from useSortable do the rest. */}
+      {canReorder && (
+        <button
+          type="button"
+          aria-label="Satırı sürükleyin"
+          title="Satırı sürükleyin"
+          // preventDefault on pointerdown keeps the click from reaching the
+          // label/value textareas underneath when the user starts a drag —
+          // otherwise a short tap on the grip would put a caret in the field.
+          onPointerDown={(e) => {
+            if (e.button !== 0) return
+            e.preventDefault()
+          }}
+          {...(__sortableHandleProps ?? {})}
+          className={cn(
+            SHEET_TOOL_BTN,
+            'print:hidden',
+            // Show the grip is grabbable only on touch / when the keyboard
+            // sensor is engaged. Mouse users get the cursor from
+            // `useSortable`'s transform feedback — and an always-on grip on
+            // every row of a tall form is visual noise.
+            'cursor-grab touch-manipulation active:cursor-grabbing',
+            'text-muted-foreground/60 hover:text-foreground',
+            __isDragging && 'text-foreground',
+          )}
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </button>
+      )}
       {readOnly ? (
         <span className={SHEET_LABEL}>{label}</span>
       ) : (
@@ -209,28 +295,6 @@ export function SheetSpecRow({ label, value, onLabelChange, onValueChange, onRem
           bloat to twice the height of the fixed ones. Off the sheet on paper. */}
       {hasTools && (
         <div className="flex items-start pl-1 pt-0.5 print:hidden">
-          {canReorder && (
-            <>
-              <button
-                type="button"
-                onClick={onMoveUp ?? undefined}
-                disabled={!onMoveUp}
-                aria-label="Satırı yukarı taşıyın"
-                className={cn(SHEET_TOOL_BTN, 'hover:text-foreground')}
-              >
-                <ChevronUp className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={onMoveDown ?? undefined}
-                disabled={!onMoveDown}
-                aria-label="Satırı aşağı taşıyın"
-                className={cn(SHEET_TOOL_BTN, 'hover:text-foreground')}
-              >
-                <ChevronDown className="h-3.5 w-3.5" />
-              </button>
-            </>
-          )}
           {onRemove && (
             <button
               type="button"
@@ -244,6 +308,145 @@ export function SheetSpecRow({ label, value, onLabelChange, onValueChange, onRem
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * `useSortable` hook bound to a row. Lives in its own component so the
+ * `SheetSpecRow` itself stays a presentational primitive that can also render
+ * outside a drag context (a read-only preview, a test fixture). The sortable
+ * styles (transform + transition) are passed through to `SheetSpecRow`'s own
+ * root div — wrapping the row in an extra div would shift its grid columns
+ * out of line with every other row on the sheet, which is the one thing the
+ * form may not do.
+ */
+function SortableSheetSpecRow({ row, readOnly, required, rowProps }) {
+  const {
+    attributes, listeners, setNodeRef, transform, transition, isDragging,
+  } = useSortable({ id: row.id, disabled: readOnly })
+  const style = {
+    // `transform: none` shows up as a translate3d(0,0,0) on dnd-kit — collapse
+    // it so the row doesn't pick up a stray compositing layer when idle.
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+  // The ref lands on the row's root div so the floating preview matches the
+  // row's actual size (label column + colon + value + tools). Without the
+  // ref on the row itself, dnd-kit would animate a phantom box the same
+  // width as its parent block — which on a sheet with no parent padding
+  // is wider than the row, and the dragged shadow spills across the rule
+  // down the value column.
+  return (
+    <SheetSpecRow
+      {...rowProps}
+      required={required}
+      readOnly={readOnly}
+      __sortableId={row.id}
+      __sortableStyle={style}
+      __sortableSetNodeRef={setNodeRef}
+      __sortableHandleProps={{ ...attributes, ...listeners }}
+      __isDragging={isDragging}
+    />
+  )
+}
+
+/**
+ * A drag-to-reorder wrapper for `SheetSpecRow`s. The caller hands in the rows
+ * (each with a stable `id`), the field/remove callbacks for each row, and an
+ * `onReorder(rowId, toIndex)` that the parent uses to splice the new order
+ * into its own state. `onReorder` is called with `toIndex` interpreted AFTER
+ * the row has been lifted out — the same convention dnd-kit's `arrayMove`
+ * uses, so the call site is one line.
+ *
+ * Even a one-row list goes through the sortable path, so the label column
+ * sits at the same pixel position regardless of list length — deleting the
+ * second-to-last row would otherwise snap the whole column 24px left. The
+ * row's grip is hidden because no drag would do anything useful with one
+ * item, but the column is reserved so the layout never reflows.
+ */
+export function SheetSpecRowList({
+  rows,
+  onReorder,
+  getRowProps,
+  isRequired = false,
+  readOnly = false,
+}) {
+  // `closestCenter` lands the row between its visual neighbours on a phone
+  // (the body has no gap rows, so axis-aligned centre is the right pick).
+  // 6px of pointer movement is enough to start a drag without stealing
+  // taps from the row's textareas on the first pixel of a scroll gesture.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+  const list = rows ?? []
+  // `isRequired` may be a flat boolean (one rule for every row) or a
+  // predicate `(row) => bool` (per-row rules keyed on the row's own label —
+  // the ADET / BASIM YERİ cells on the Baskı Onay Formu are spec rows whose
+  // "required" flag depends on what the field is called, not on which row
+  // of the list it sits in).
+  const requiredFor = typeof isRequired === 'function'
+    ? isRequired
+    : () => !!isRequired
+  function resolveReadOnly(row, props) {
+    // Per-row `readOnly` returned from `getRowProps` wins over the list-level
+    // flag — the live SAYFA SAYISI lock is a per-row concern (it depends on
+    // which field the row carries) and the list is just the default.
+    if (readOnly) return true
+    if (typeof props?.readOnly === 'boolean') return props.readOnly
+    return false
+  }
+  if (list.length < 2) {
+    // Even with a single row we still go through the sortable path so the
+    // label column sits at the same pixel position it would if a second row
+    // joined the list — deleting the second-to-last row would otherwise snap
+    // the whole column 24px left. The row's grip is hidden because no drag
+    // would do anything useful with one item, but the column is reserved so
+    // the layout never reflows.
+    return (
+      <DndContext sensors={sensors}>
+        <SortableContext items={list.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+          {list.map((row) => {
+            const props = getRowProps(row)
+            return (
+              <SortableSheetSpecRow
+                key={row.id}
+                row={row}
+                required={requiredFor(row)}
+                readOnly={resolveReadOnly(row, props)}
+                rowProps={props}
+              />
+            )
+          })}
+        </SortableContext>
+      </DndContext>
+    )
+  }
+  function handleDragEnd(event) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const from = list.findIndex((r) => r.id === active.id)
+    const to = list.findIndex((r) => r.id === over.id)
+    if (from < 0 || to < 0) return
+    onReorder?.(active.id, arrayMove(list, from, to).findIndex((r) => r.id === active.id))
+  }
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={list.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+        {list.map((row) => {
+          const props = getRowProps(row)
+          return (
+            <SortableSheetSpecRow
+              key={row.id}
+              row={row}
+              required={requiredFor(row)}
+              readOnly={resolveReadOnly(row, props)}
+              rowProps={props}
+            />
+          )
+        })}
+      </SortableContext>
+    </DndContext>
   )
 }
 

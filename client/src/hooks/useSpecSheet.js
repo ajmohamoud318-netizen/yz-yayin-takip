@@ -20,6 +20,7 @@ import {
   loadSaved,
   loadSnapshot,
   moveById,
+  moveByIdToIndex,
   stripStamps,
   withRoundStamps,
   withoutBlankStamps,
@@ -649,6 +650,17 @@ export function useSpecSheet({
       prev.map((c) => (c.id !== compId ? c : { ...c, rows: moveById(c.rows ?? [], rowId, dir) })),
     )
   }
+  // Drag-to-reorder lands a row at an arbitrary slot; the ±1 arrows still
+  // ride on `moveComponentRow`. The parent passes `(rowId, toIndex)` straight
+  // through from `SheetSpecRowList` so the call site stays one line.
+  function moveComponentRowToIndex(compId, rowId, toIndex) {
+    setSelectedComponents((prev) =>
+      prev.map((c) => (c.id !== compId ? c : { ...c, rows: moveByIdToIndex(c.rows ?? [], rowId, toIndex) })),
+    )
+  }
+  function moveCustomRowToIndex(id, toIndex) {
+    setCustomRows((prev) => moveByIdToIndex(prev, id, toIndex))
+  }
   function handleChange(e) {
     const { name, value } = e.target
     /* BASIM YERİ in the künye is a DEFAULT, so editing it has to reach the
@@ -688,9 +700,11 @@ export function useSpecSheet({
     updateCustomRow,
     removeCustomRow,
     moveCustomRow,
+    moveCustomRowToIndex,
     updateComponentRow,
     addComponentRow,
     removeComponentRow,
     moveComponentRow,
+    moveComponentRowToIndex,
   }
 }

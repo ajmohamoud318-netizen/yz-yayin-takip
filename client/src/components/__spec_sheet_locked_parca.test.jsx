@@ -56,7 +56,7 @@ function render(props) {
         onAddCustomRow={() => {}}
         onUpdateCustomRow={() => {}}
         onRemoveCustomRow={() => {}}
-        onMoveCustomRow={() => {}}
+        onMoveCustomRowToIndex={() => {}}
         catalogComponents={ALL}
         selectedComponents={ALL}
         onToggleComponent={() => {}}
@@ -65,7 +65,7 @@ function render(props) {
         onAddComponentRow={() => {}}
         onUpdateComponentRow={() => {}}
         onRemoveComponentRow={() => {}}
-        onMoveComponentRow={() => {}}
+        onMoveComponentRowToIndex={() => {}}
         {...props}
       />,
     )

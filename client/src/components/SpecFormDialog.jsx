@@ -452,8 +452,8 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
     form, setForm, customRows, selectedComponents, liveAttemptNo, hasServerSnapshot, sheetReady, catalogComponents,
     handleChange,
     toggleComponent, selectAllComponents, clearComponents,
-    addCustomRow, updateCustomRow, removeCustomRow, moveCustomRow,
-    addComponentRow, updateComponentRow, removeComponentRow, moveComponentRow,
+    addCustomRow, updateCustomRow, removeCustomRow, moveCustomRowToIndex,
+    addComponentRow, updateComponentRow, removeComponentRow, moveComponentRowToIndex,
   } = useSpecSheet({
     open, variant, project, order, user, mode,
     scopeId, orderId, orderScoped,
@@ -1218,7 +1218,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               onAddCustomRow={addCustomRow}
               onUpdateCustomRow={updateCustomRow}
               onRemoveCustomRow={removeCustomRow}
-              onMoveCustomRow={moveCustomRow}
+              onMoveCustomRowToIndex={moveCustomRowToIndex}
               catalogComponents={catalogComponents}
               hideParcaPicker={parcaNarrowed && !showAllParca}
               lockedParcalar={lockedParcalar}
@@ -1231,7 +1231,7 @@ export default function SpecFormDialog({ variant: variantName = 'demo', open, on
               onAddComponentRow={addComponentRow}
               onUpdateComponentRow={updateComponentRow}
               onRemoveComponentRow={removeComponentRow}
-              onMoveComponentRow={moveComponentRow}
+              onMoveComponentRowToIndex={moveComponentRowToIndex}
             />
 
             <SpecFormGates

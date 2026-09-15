@@ -100,7 +100,7 @@ function renderSheet(props) {
         onAddCustomRow={() => {}}
         onUpdateCustomRow={() => {}}
         onRemoveCustomRow={() => {}}
-        onMoveCustomRow={() => {}}
+        onMoveCustomRowToIndex={() => {}}
         catalogComponents={[comp('KUTU')]}
         selectedComponents={[comp('KUTU')]}
         onToggleComponent={() => {}}
@@ -109,7 +109,7 @@ function renderSheet(props) {
         onAddComponentRow={() => {}}
         onUpdateComponentRow={() => {}}
         onRemoveComponentRow={() => {}}
-        onMoveComponentRow={() => {}}
+        onMoveComponentRowToIndex={() => {}}
         {...props}
       />,
     )
