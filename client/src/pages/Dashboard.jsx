@@ -442,6 +442,7 @@ export default function Dashboard() {
                   <div className="relative z-10 flex">
                     {TIMELINE_MONTHS.map((m) => {
                       const isCurrent = m.i === currentIndex
+                      const season = seasonColors(m.month)
                       return (
                         <div
                           key={`${m.year}-${m.label}`}
@@ -456,9 +457,10 @@ export default function Dashboard() {
                               isCurrent ? 'bg-blue-50/60' : 'bg-white',
                             )}
                           >
-                            {/* Cobalt blue header bar — solid #0B4ED2 fills the
-                                rounded top portion of each tab. */}
-                            <div className="h-5 w-full bg-[#0B4ED2]" />
+                            {/* Season-tinted header bar — orange for Jul/Aug
+                                (yaza hazırlık), cobalt blue for the rest of
+                                the school year. */}
+                            <div className={cn('h-5 w-full', season.band)} />
                             {/* Month label — bold black sans-serif centered on a
                                 pure white body, matching the spec exactly. */}
                             <div className="flex h-7 w-full items-center justify-center px-1 text-base font-black leading-none text-black">
@@ -472,17 +474,22 @@ export default function Dashboard() {
 
                   {/* Rows — one per project, never shared with another. */}
                   <div className="relative z-10">
-                    {/* Shared month gridlines for the whole chart */}
+                    {/* Shared month gridlines for the whole chart.
+                        Year-end dividers (Jan, m.month === 0) take the
+                        season tint so Jul/Aug visually breaks from Sep–Jun. */}
                     <div className="pointer-events-none absolute inset-0 flex">
-                      {TIMELINE_MONTHS.map((m) => (
-                        <div
-                          key={`g-${m.year}-${m.label}`}
-                          className={cn(
-                            'w-[calc(100%/var(--mc))] shrink-0 border-l',
-                            m.month === 0 ? 'border-border/70' : 'border-border/35',
-                          )}
-                        />
-                      ))}
+                      {TIMELINE_MONTHS.map((m) => {
+                        const season = seasonColors(m.month)
+                        return (
+                          <div
+                            key={`g-${m.year}-${m.label}`}
+                            className={cn(
+                              'w-[calc(100%/var(--mc))] shrink-0 border-l',
+                              m.month === 0 ? season.divider : 'border-border/35',
+                            )}
+                          />
+                        )
+                      })}
                     </div>
                     {bars.map(({ p, start, end }) => {
                       const leftPct = (start / MONTH_COUNT) * 100
