@@ -29,6 +29,13 @@ const SCHOOL_YEAR_MONTHS = new Set([8, 9, 10, 11, 0, 1, 2, 3, 4, 5])
 // Solid Tailwind colors used as both the band fill and a darker divider
 // line so the divider sits ON the band edge (no white sliver).
 function seasonColors(month) {
+  // Kasım — deep cobalt blue to stand out as a featured month.
+  if (month === 10) {
+    return {
+      band: 'bg-[#0B4ED2] dark:bg-blue-700',
+      divider: 'divide-blue-700/70 dark:divide-blue-500/70',
+    }
+  }
   if (month === 6 || month === 7) {
     // Orange (yaza hazırlık) for Temmuz + Ağustos.
     return {
@@ -36,7 +43,7 @@ function seasonColors(month) {
       divider: 'divide-orange-500/60 dark:divide-orange-500/70',
     }
   }
-  // Eylül + the rest of the school year: blue.
+  // Eylül + the rest of the school year: sky blue.
   return {
     band: 'bg-sky-300 dark:bg-sky-800',
     divider: 'divide-sky-600/60 dark:divide-sky-400/60',
