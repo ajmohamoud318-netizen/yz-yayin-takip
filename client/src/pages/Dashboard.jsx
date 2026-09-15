@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { useProjects } from '../hooks/useProjects.js'
 import { useOpenOrdersByProject } from '../hooks/useOpenOrders.js'
 import { STATUS_STYLES, statusKeyForProject } from '../api.js'
@@ -383,32 +383,6 @@ export default function Dashboard() {
             </div>
           ) : (
             <Card className="relative overflow-hidden shadow-sm ring-1 ring-border/60">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => scrollByMonth(-1)}
-                onPointerDown={(e) => {
-                  e.stopPropagation()
-                }}
-                aria-label="Önceki ay"
-                className="absolute left-1 top-1.5 z-20 h-8 w-8 bg-card/80 text-muted-foreground backdrop-blur-sm hover:text-foreground"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => scrollByMonth(1)}
-                onPointerDown={(e) => {
-                  e.stopPropagation()
-                }}
-                aria-label="Sonraki ay"
-                className="absolute right-1 top-1.5 z-20 h-8 w-8 bg-card/80 text-muted-foreground backdrop-blur-sm hover:text-foreground"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
               <div
                 ref={scrollRef}
                 tabIndex={0}

@@ -1,4 +1,4 @@
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 import { LogOut, MoreVertical } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -56,8 +56,8 @@ export default function Sidebar({ collapsed, groups, counts, user, onLogout, onN
           // IntersectionObserver in a follow-up — for now the shadow is
           // always on so the visual separation is reliable regardless of
           // scroll position).
-          <div className="sticky bottom-0 mt-4 border-t border-border bg-background px-3 pb-2 pt-3 shadow-[0_-4px_8px_-4px_rgba(0,0,0,0.06)]">
-            <PeriodWidget satista={counts.satista} total={counts.total} />
+          <div className="sticky bottom-0 mt-4 border-t border-border bg-background px-4 pb-3 pt-4 shadow-[0_-4px_8px_-4px_rgba(0,0,0,0.06)]">
+            <PeriodWidget />
           </div>
         )}
       </div>
@@ -252,113 +252,153 @@ function SidebarNavItem({ item, collapsed, onNavigate }) {
 // in the chart (SCHOOL_YEAR_MONTHS includes 8 = Eylül), the Eylül–Haziran
 // set matches here too.
 const SEASONS = [
-  { id: 'bilsem', label: 'BİLSEM Yılı', months: [8, 9, 10, 11, 0, 1, 2, 3, 4, 5] },
-  { id: 'yaza',   label: 'Yaza Hazırlık', months: [6, 7] },
+  {
+    id: 'bilsem',
+    label: 'BİLSEM Yılı',
+    blurb: 'Yeni okul yılı başlıyor',
+    // Eylül–Ekim, Aralık–Haziran (Kasım is its own season — see below).
+    months: [8, 9, 11, 0, 1, 2, 3, 4, 5],
+  },
+  {
+    id: 'kasim',
+    label: 'Kasım Dönemi',
+    blurb: 'BİLSEM sınav dönemi',
+    months: [10],
+  },
+  {
+    id: 'yaza',
+    label: 'Yaza Hazırlık',
+    blurb: 'Yaz dönemi öncesi son viraj',
+    months: [6, 7],
+  },
 ]
 
-function currentSeason(now = new Date()) {
+function nextSeasonAfter(now) {
   const m = now.getMonth()
-  return SEASONS.find((s) => s.months.includes(m)) ?? SEASONS[0]
+  const currentIdx = SEASONS.findIndex((s) => s.months.includes(m))
+  // Cycle order: BİLSEM Yılı → Kasım Dönemi → Yaza Hazırlık → BİLSEM Yılı.
+  // Kasım is a featured month inside the broader school year but is
+  // treated as its own season boundary so the widget can flag it
+  // separately.
+  const next = SEASONS[(currentIdx + 1) % SEASONS.length]
+  // Pick the season's *first* month in calendar order, not the array
+  // minimum. BİLSEM's months wrap across the year boundary (Sep..Dec,
+  // Jan..Jun) so the array minimum is January — we want September
+  // because that's the season's *start*. Find the smallest month in
+  // `next.months` that is strictly greater than now's month; if none
+  // exists (we're past the last one), the start is in the next year.
+  const orderedMonths = [...next.months].sort((a, b) => a - b)
+  const firstMonth =
+    orderedMonths.find((mm) => mm > m) ??
+    // None of next.months is strictly greater than now's month → the
+    // season already wrapped past us in this calendar year. Its start
+    // is the *first* month of next year.
+    orderedMonths[0]
+  const year = now.getFullYear() + (firstMonth <= m ? 1 : 0)
+  return { ...next, start: new Date(year, firstMonth, 1) }
 }
 
-// Returns the first-day Date of the next season boundary strictly after
-// `now`. Each season has a "first month" (the smallest index in its months
-// array): yaza-hazırlık → 6 (Temmuz), school-year → 8 (Eylül). The next
-// season is whichever of those first-of-month dates lands earliest at-or-
-// after the current instant; if both have passed in the current calendar
-// year, the next one is in the next calendar year.
-//
-// Worked examples:
-//   • 15 Eylül 2026 → next m=6 is Temmuz 2026 (past), next m=8 is Eylül
-//     2026 (present/just passed), so the earliest future date is Temmuz
-//     2027 → "Yaza Hazırlık, 10 ay kaldı".
-//   • 20 Temmuz 2026 → next m=6 is Temmuz 2026 (today, but the season
-//     just started, so the strict-after rule uses 1 Ağustos 2026? — see
-//     note below). We use "first-of-month strictly after now's first-of-
-//     month" so the season-switch countdown is anchored to month starts,
-//     which is what users actually plan against.
-function nextSeasonStart(now) {
-  const year = now.getFullYear()
-  const month = now.getMonth()
-  // First-of-month of the current month. The next-season boundary must be
-  // strictly after THIS date so the countdown never lands on "0 ay kaldı"
-  // on the first day of a fresh season.
-  const cursor = new Date(year, month, 1).getTime()
-  const candidates = [
-    new Date(year, 6, 1).getTime(),     // Temmuz this year
-    new Date(year, 8, 1).getTime(),     // Eylül this year
-    new Date(year + 1, 6, 1).getTime(), // Temmuz next year
-    new Date(year + 1, 8, 1).getTime(), // Eylül next year
-  ]
-  const next = candidates.find((t) => t > cursor)
-  return new Date(next)
+// Days between two dates, floored to the start of "from". Two Date objects
+// at different times of day would otherwise drift; anchoring both at
+// local midnight keeps the count stable for a given calendar day.
+// `Math.round` is used (not `floor`) so a "23h59m" gap still counts as a
+// full day rather than 0.
+function daysBetween(from, to) {
+  const a = new Date(from.getFullYear(), from.getMonth(), from.getDate())
+  const b = new Date(to.getFullYear(), to.getMonth(), to.getDate())
+  const ms = b.getTime() - a.getTime()
+  return Math.max(0, Math.round(ms / 86_400_000))
 }
 
-function monthsBetween(from, to) {
-  // Whole months between two dates, rounded down. From the first day of one
-  // month to the first day of another, the count is exact (no day-of-month
-  // drift). E.g. 1 Eylül → 1 Temmuz = 10 months.
-  return (
-    (to.getFullYear() - from.getFullYear()) * 12 +
-    (to.getMonth() - from.getMonth())
-  )
-}
-
-const TR_MONTHS_FULL = [
-  'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
-  'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
-]
-
-function formatMonthYear(d) {
-  const m = TR_MONTHS_FULL[d.getMonth()]
-  return `${m} ${d.getFullYear()}`
-}
-
-function PeriodWidget({ satista, total }) {
-  const pct = total ? Math.round((satista / total) * 100) : 0
+function PeriodWidget() {
   const now = new Date()
-  const season = currentSeason(now)
-  const start = nextSeasonStart(now)
-  const monthsLeft = monthsBetween(now, start)
+  // The widget only answers one question: when does the next season start?
+  // `nextSeason` walks the SEASONS list in order from the current one and
+  // picks the first boundary strictly after now.
+  const nextSeason = nextSeasonAfter(now)
+  // Always show days — the day count is more precise and never lies
+  // ("47 gün kaldı" is more honest than "2 ay kaldı" when the season
+  // is 7 weeks away). The user asked for days over months, so the
+  // month-based unit switch is gone.
+  const value = daysBetween(now, nextSeason.start)
+  const unit = 'gün kaldı'
 
-  // Click-through to the pipeline filtered to "Satışta" so the bar reads as
-  // an actionable KPI rather than a static label.
-  const navigate = useNavigate()
+  // Same season palette as the Yıllık Plan tabs in Dashboard.jsx so this
+  // widget reads as part of the same visual language.
+  //   • Yaza Hazırlık  → orange (matches Jul/Aug tabs)
+  //   • BİLSEM Yılı    → sky blue (matches Sep/Oct, Dec–Jun tabs)
+  //   • Kasım Dönemi   → deep cobalt blue (matches the featured Kasım
+  //                       tab — darker than the rest of school year on
+  //                       purpose so it pops as the exam-cycle month)
+  const BAND_CLASSES = {
+    yaza:   'bg-orange-300 dark:bg-orange-700',
+    bilsem: 'bg-sky-300 dark:bg-sky-800',
+    kasim:  'bg-[#0B4ED2] dark:bg-blue-700',
+  }
+  const bandClass = BAND_CLASSES[nextSeason.id] ?? BAND_CLASSES.bilsem
+
   return (
-    <button
-      type="button"
-      onClick={() => navigate('/kanban?stage=satista')}
-      className="group block w-full rounded-lg border border-rose-200 bg-rose-50 p-3 text-left transition-colors hover:border-rose-300 hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    // Outer "tab" — same outline + corner treatment as a Yıllık Plan tab:
+    // 1px black border, rounded top corners only, the season band fills
+    // the whole upper portion so the rounded top corners show through.
+    <div
+      className={cn(
+        'overflow-hidden rounded-t-md border border-b-0 border-black',
+        bandClass,
+      )}
     >
-      <div className="flex items-center justify-between">
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-primary">Bu Sezon</div>
-        <div className="font-mono text-[10px] font-semibold tabular-nums text-primary transition-transform group-hover:translate-x-0.5">{pct}%</div>
-      </div>
-      {/* Current season name in display type, plus a countdown to the next
-          season switch so the user knows how much runway they have in this
-          period. The season label is the headline; the months-left chip
-          and start date are the supporting line. */}
-      <div className="mt-1.5 text-xs font-medium text-foreground">{season.label}</div>
-      <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-        <span className="inline-flex items-center rounded-full bg-rose-100 px-1.5 py-0.5 font-semibold text-primary">
-          {monthsLeft} ay kaldı
-        </span>
-        <span>· {formatMonthYear(start)} başlar</span>
-      </div>
-      {/* Slightly thicker track that lives one step darker than the card
-          itself (rose-100 on rose-50) so the whole card reads as a single
-          monochromatic rose surface, and the percentage gets bolder so
-          the 67% lands as the eye-catch instead of the eyebrow. */}
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-rose-100/70">
+      {/* Season-tinted band — matches the tab's colored header bar,
+          bumped from h-5 to h-6 so the colored top stripe carries more
+          visual weight. */}
+      <div className="h-6 w-full" />
+
+      {/* White body — the tab's month-label surface, re-purposed for the
+          widget content. Same rounded-t-md + bold black treatment, but
+          with generous padding so the widget feels substantial in the
+          sidebar instead of cramped against the user row below. */}
+      <div className="rounded-t-md bg-white px-4 pb-4 pt-3 text-black">
+        {/* Eyebrow — bold black, uppercase, tight tracking, mirroring the
+            tab label's font weight. "Yaklaşan Sezon" reads more naturally
+            than "Sıradaki Sezon" when the headline below already names
+            the season. */}
+        <div className="text-[11px] font-black uppercase leading-none tracking-[0.14em] text-black/70">
+          Yaklaşan Sezon
+        </div>
+
+        {/* Hero — the season name as the editorial headline. Fraunces
+            at maximum drama: heaviest weight (900), italic, and opened
+            up via the variable font's opsz axis to 144 so the display
+            serifs really bloom at this size. The italic + 900 combo
+            gives the season name a magazine-cover feel rather than a
+            plain tab label. */}
         <div
-          className="h-full rounded-full bg-primary transition-[width,filter] duration-500 ease-out group-hover:brightness-110"
-          style={{ width: `${pct}%` }}
-        />
+          className="mt-2 font-display text-[28px] leading-[1.0] text-black"
+          style={{
+            fontWeight: 900,
+            fontStyle: 'italic',
+            fontVariationSettings: '"opsz" 144, "SOFT" 100',
+            letterSpacing: '-0.02em',
+          }}
+        >
+          {nextSeason.label}
+        </div>
+
+        {/* Metric row — the countdown in a chunky numeric type so it
+            reads at a glance. Bumped to text-3xl so it has real presence
+            as the widget's anchor. Switches from "X ay kaldı" to "X gün
+            kaldı" inside the final ~2 months so the user gets a precise
+            countdown when it matters. Tabular-nums keeps digit widths
+            stable across the unit switch. */}
+        <div className="mt-3 flex items-baseline gap-1.5">
+          <span className="font-mono text-3xl font-black leading-none tabular-nums text-black">
+            {value}
+          </span>
+          <span className="text-[11px] font-bold uppercase leading-none tracking-wider text-black/70">
+            {unit}
+          </span>
+        </div>
       </div>
-      <div className="mt-1.5 text-[10px] text-muted-foreground">
-        {satista} / {total} satışta
-      </div>
-    </button>
+    </div>
   )
 }
 
