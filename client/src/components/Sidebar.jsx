@@ -241,29 +241,32 @@ function SidebarNavItem({ item, collapsed, onNavigate }) {
 }
 
 // Season model — mirrors Dashboard.jsx so the sidebar and the Yıllık Plan
-// chart describe the same periods. Two seasons a year:
+// chart describe the same periods. Three seasons a year:
 //
 //   • "Yaza Hazırlık" (Temmuz–Ağustos) — short 2-month wrap-up before the
 //     new school year starts in September.
-//   • "BİLSEM Yılı"    (Eylül–Haziran) — the long active school year.
+//   • "BİLSEM Yılı"    (Eylül + Kasım–Haziran) — the long active school year.
+//   • "Bilsem Dönemi"  (Ekim)            — featured mid-fall month called out
+//     separately so the sidebar widget and Yıllık Plan tab can pop with the
+//     deep cobalt tint instead of the regular sky-blue school-year band.
 //
 // Months are 0-indexed. The season that owns a given month is whichever
 // `seasons[].months` array contains it. Since Eylül belongs to BİLSEM Yılı
-// in the chart (SCHOOL_YEAR_MONTHS includes 8 = Eylül), the Eylül–Haziran
-// set matches here too.
+// in the chart (SCHOOL_YEAR_MONTHS includes 8 = Eylül), the Eylül + Kasım–
+// Haziran set matches here too.
 const SEASONS = [
   {
     id: 'bilsem',
     label: 'BİLSEM Yılı',
     blurb: 'Yeni okul yılı başlıyor',
-    // Eylül–Ekim, Aralık–Haziran (Kasım is its own season — see below).
-    months: [8, 9, 11, 0, 1, 2, 3, 4, 5],
+    // Eylül, Kasım–Haziran (Ekim is its own featured month — see below).
+    months: [8, 11, 0, 1, 2, 3, 4, 5],
   },
   {
-    id: 'kasim',
-    label: 'Kasım Dönemi',
+    id: 'ekim',
+    label: 'Bilsem Dönemi',
     blurb: 'BİLSEM sınav dönemi',
-    months: [10],
+    months: [9],
   },
   {
     id: 'yaza',
@@ -276,8 +279,8 @@ const SEASONS = [
 function nextSeasonAfter(now) {
   const m = now.getMonth()
   const currentIdx = SEASONS.findIndex((s) => s.months.includes(m))
-  // Cycle order: BİLSEM Yılı → Kasım Dönemi → Yaza Hazırlık → BİLSEM Yılı.
-  // Kasım is a featured month inside the broader school year but is
+  // Cycle order: BİLSEM Yılı → Bilsem Dönemi → Yaza Hazırlık → BİLSEM Yılı.
+  // Ekim is a featured month inside the broader school year but is
   // treated as its own season boundary so the widget can flag it
   // separately.
   const next = SEASONS[(currentIdx + 1) % SEASONS.length]
@@ -318,22 +321,21 @@ function PeriodWidget() {
   const nextSeason = nextSeasonAfter(now)
   // Always show days — the day count is more precise and never lies
   // ("47 gün kaldı" is more honest than "2 ay kaldı" when the season
-  // is 7 weeks away). The user asked for days over months, so the
-  // month-based unit switch is gone.
+  // is 7 weeks away).
   const value = daysBetween(now, nextSeason.start)
   const unit = 'gün kaldı'
 
   // Same season palette as the Yıllık Plan tabs in Dashboard.jsx so this
   // widget reads as part of the same visual language.
   //   • Yaza Hazırlık  → orange (matches Jul/Aug tabs)
-  //   • BİLSEM Yılı    → sky blue (matches Sep/Oct, Dec–Jun tabs)
-  //   • Kasım Dönemi   → deep cobalt blue (matches the featured Kasım
+  //   • BİLSEM Yılı    → sky blue (matches Sep + Kasım–Haziran tabs)
+  //   • Bilsem Dönemi  → deep cobalt blue (matches the featured Ekim
   //                       tab — darker than the rest of school year on
   //                       purpose so it pops as the exam-cycle month)
   const BAND_CLASSES = {
     yaza:   'bg-orange-300 dark:bg-orange-700',
     bilsem: 'bg-sky-300 dark:bg-sky-800',
-    kasim:  'bg-[#0B4ED2] dark:bg-blue-700',
+    ekim:   'bg-[#0B4ED2] dark:bg-blue-700',
   }
   const bandClass = BAND_CLASSES[nextSeason.id] ?? BAND_CLASSES.bilsem
 

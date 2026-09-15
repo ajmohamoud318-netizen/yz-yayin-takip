@@ -22,16 +22,16 @@ const TR_MONTHS = [
 
 // School-year season tints — painted in the year-row (the strip ABOVE the
 // horizontal divider, between the divider and the top border of the cell).
-// Eylül–Haziran = BİLSEM hazırlık dönemi (mavi). Tem–Ağu–Eyl = yaza hazırlık
-// dönemi (turuncu). Eylül sits in both lists in your spec; we paint it blue
-// because the *active* period is the school year, not the trailing wrap-up.
+// Eylül + Kasım–Haziran = BİLSEM hazırlık dönemi (mavi). Tem–Ağu = yaza
+// hazırlık dönemi (turuncu). Ekim is its own featured month (cobalt) so it
+// pops against the rest of the school year as the BİLSEM exam cycle.
 const SCHOOL_YEAR_MONTHS = new Set([8, 9, 10, 11, 0, 1, 2, 3, 4, 5])
 
 // Solid Tailwind colors used as both the band fill and a darker divider
 // line so the divider sits ON the band edge (no white sliver).
 function seasonColors(month) {
-  // Kasım — deep cobalt blue to stand out as a featured month.
-  if (month === 10) {
+  // Ekim — deep cobalt blue to stand out as a featured month.
+  if (month === 9) {
     return {
       band: 'bg-[#0B4ED2] dark:bg-blue-700',
       divider: 'divide-blue-700/70 dark:divide-blue-500/70',
